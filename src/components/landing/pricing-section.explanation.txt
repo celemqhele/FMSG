@@ -1,0 +1,15 @@
+FILE: pricing-section.tsx
+PURPOSE: Pricing section showing all 4 tiers as liquid glass cards with monthly/annual toggle, ZAR pricing, feature lists, and CTA buttons. All text is white for readability over the dark video background.
+
+IMPORTS:
+- lucide-react (Check) — checkmark icon for features
+- LiquidGlassCard from ./liquid-glass-card — wraps each pricing tier in a glass surface
+
+EXPORTS:
+- PricingSection — renders pricing cards with toggle
+
+DEPENDENCIES: Consumed by page.tsx (landing page)
+
+SIDE EFFECTS: None
+
+LAST UPDATED: 2025-06-18

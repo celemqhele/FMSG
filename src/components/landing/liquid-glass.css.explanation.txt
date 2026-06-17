@@ -1,0 +1,12 @@
+FILE: liquid-glass.css
+PURPOSE: CSS styles for the liquid glass visual effect. Defines two variants: .liquid-glass (full card with noise texture and gradient highlight) and .liquid-glass-surface (lighter variant for pricing cards). Uses backdrop-filter for the frosted glass blur, SVG noise filter for texture, and linear-gradient overlays for the "bending light" effect. Both light and dark mode variants via .dark selector.
+
+IMPORTS: None (standalone stylesheet)
+
+EXPORTS: None (consumed by liquid-glass-card.tsx via import)
+
+DEPENDENCIES: Imported by liquid-glass-card.tsx
+
+SIDE EFFECTS: None
+
+LAST UPDATED: 2025-06-18

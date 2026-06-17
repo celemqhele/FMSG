@@ -1,0 +1,15 @@
+FILE: space-video-background.tsx
+PURPOSE: Full-screen video background for the landing page. Plays a space video in slow motion (0.5x) during normal viewing. When isTransitioning is true, fast-forwards (2x) for a cinematic transition effect. Uses requestAnimationFrame for smooth playback rate interpolation and gradient overlays for text readability.
+
+IMPORTS:
+- useTransition from transition-provider — reads isTransitioning state to switch between slow/fast playback
+- React (useRef, useEffect, useState, useCallback) — video ref, smooth rate animation, ready state
+
+EXPORTS:
+- SpaceVideoBackground — accepts src, optional slowPlaybackRate and fastPlaybackRate props
+
+DEPENDENCIES: Consumed by page.tsx (landing page)
+
+SIDE EFFECTS: Starts video autoplay on mount (muted). Smoothly animates playbackRate via requestAnimationFrame.
+
+LAST UPDATED: 2025-06-18

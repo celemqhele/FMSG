@@ -1,0 +1,17 @@
+FILE: layout.tsx
+PURPOSE: Root layout for the entire app. Loads Geist fonts, sets metadata, wraps children in ThemeProvider for dark/light mode and TransitionProvider for video transition effects. Injects inline script to prevent FOUC by setting the dark class before hydration.
+
+IMPORTS:
+- next/font/google (Geist, Geist_Mono) — sans-serif and monospace font families used throughout the app
+- ThemeProvider from @/components/providers/theme-provider — enables class-based dark mode toggling
+- TransitionProvider from @/components/providers/transition-provider — manages video fast-forward/slow-motion during page transitions
+- ./globals.css — design system tokens and base styles
+
+EXPORTS:
+- RootLayout (default) — wraps all pages in HTML/body with fonts, theme provider, transition provider, and metadata
+
+DEPENDENCIES: All pages in src/app/ render inside this layout
+
+SIDE EFFECTS: Injects blocking script in <head> for flash-free theme initialization. Sets global HTML class for font variables.
+
+LAST UPDATED: 2025-06-18

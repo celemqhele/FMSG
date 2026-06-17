@@ -1,0 +1,12 @@
+FILE: package.json
+PURPOSE: Project manifest. Lists dependencies, scripts (dev, build, start), and metadata.
+
+IMPORTS: None (config file)
+
+EXPORTS: None (config file)
+
+DEPENDENCIES: Consumed by npm and Next.js
+
+SIDE EFFECTS: Defines build scripts and package dependencies
+
+LAST UPDATED: 2025-06-18

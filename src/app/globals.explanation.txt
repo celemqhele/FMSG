@@ -1,0 +1,13 @@
+FILE: globals.css
+PURPOSE: Defines the design system CSS custom properties for light/dark mode, Tailwind v4 theme tokens, and base body styles.
+
+IMPORTS:
+- @import "tailwindcss" — brings in Tailwind v4 base styles and utilities
+
+EXPORTS: None (styles only)
+
+DEPENDENCIES: Consumed by layout.tsx via import "./globals.css"
+
+SIDE EFFECTS: None
+
+LAST UPDATED: 2025-06-18

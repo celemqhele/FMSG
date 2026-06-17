@@ -1,0 +1,14 @@
+FILE: liquid-glass-card.tsx
+PURPOSE: Reusable liquid glass card wrapper component. Applies the frosted glass visual effect to any content. Two variants: "card" (full effect with noise texture and gradient border highlight) and "surface" (lighter version for pricing tier cards). Interfaces with the space video background via backdrop-filter, creating the "bending" visual where the video appears distorted behind the glass.
+
+IMPORTS:
+- ./liquid-glass.css — glass effect styles, noise texture, and dark mode overrides
+
+EXPORTS:
+- LiquidGlassCard — accepts children, optional className, and variant ("card" | "surface")
+
+DEPENDENCIES: Consumed by how-it-works.tsx, data-privacy.tsx, and pricing-section.tsx
+
+SIDE EFFECTS: None
+
+LAST UPDATED: 2025-06-18

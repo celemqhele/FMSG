@@ -1,0 +1,12 @@
+FILE: tsconfig.json
+PURPOSE: TypeScript configuration. Targets ES2017, uses bundler module resolution, sets up the @/ path alias for src/ directory imports.
+
+IMPORTS: None (config file)
+
+EXPORTS: None (config file)
+
+DEPENDENCIES: Consumed by TypeScript compiler and Next.js
+
+SIDE EFFECTS: None
+
+LAST UPDATED: 2025-06-18

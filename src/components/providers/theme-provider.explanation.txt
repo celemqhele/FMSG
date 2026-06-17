@@ -1,0 +1,15 @@
+FILE: theme-provider.tsx
+PURPOSE: Custom theme provider that replaces next-themes. Provides light/dark/system theme with no hydration mismatch issues. Uses a React context for runtime switching and relies on a blocking script in layout.tsx for flash-free initialization.
+
+IMPORTS:
+- React (createContext, useContext, useEffect, useState, useCallback) — standard React hooks and context API
+
+EXPORTS:
+- ThemeProvider — wraps children with theme context; reads localStorage, listens to system preference changes, applies dark class to <html>
+- useTheme — hook returning { theme, resolved, setTheme, toggle }
+
+DEPENDENCIES: Consumed by layout.tsx. The useTheme hook is used by any component that needs to read or toggle the theme.
+
+SIDE EFFECTS: Reads and writes to localStorage("theme") on mount and on theme change. Listens to prefers-color-scheme media query changes. Adds/removes "dark" class on document.documentElement.
+
+LAST UPDATED: 2025-06-18

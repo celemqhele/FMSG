@@ -1,0 +1,13 @@
+FILE: sign-up-form.tsx
+PURPOSE: Sign-up form with Name, Surname, Email, and Password fields. On submit, calls onSuccess with the email to trigger the verification code screen.
+
+IMPORTS: None
+
+EXPORTS:
+- SignUpForm — accepts onSuccess callback
+
+DEPENDENCIES: Consumed by auth-modal.tsx
+
+SIDE EFFECTS: None in Type 1 preview
+
+LAST UPDATED: 2025-06-18
