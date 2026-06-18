@@ -1,0 +1,3 @@
+TransitionLink wraps Next.js Link to trigger video fast-forward (startTransition) on click.
+The TransitionProvider detects the route change via usePathname and resets transition state after navigation completes.
+This gives a smooth visual effect where the space video speeds up during page transitions.

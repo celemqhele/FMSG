@@ -1,0 +1,4 @@
+Pricing page route at /pricing.
+Reuses the PricingSection component from the landing section.
+Includes SpaceVideoBackground, FloatingNavbar, Footer, AuthModal.
+When navigated to, the TransitionProvider auto-resets the video speed to slow-motion after route change completes.

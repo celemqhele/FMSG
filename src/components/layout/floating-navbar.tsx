@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Menu, X } from "lucide-react";
+import { TransitionLink } from "@/components/ui/transition-link";
 import "../landing/liquid-glass.css";
 
 interface FloatingNavbarProps {
@@ -21,19 +22,19 @@ export function FloatingNavbar({ onLoginClick, onSignUpClick }: FloatingNavbarPr
   return (
     <nav className="fixed top-4 left-1/2 -translate-x-1/2 z-50 w-[calc(100%-2rem)] max-w-5xl">
       <div className="liquid-glass-surface flex items-center justify-between px-6 py-3 rounded-2xl">
-        <a href="/" className="text-lg font-semibold text-white select-none">
+        <TransitionLink href="/" className="text-lg font-semibold text-white select-none">
           FMSG
-        </a>
+        </TransitionLink>
 
         <div className="hidden md:flex items-center gap-6">
           {navLinks.map((link) => (
-            <a
+            <TransitionLink
               key={link.href}
               href={link.href}
               className="text-sm font-medium text-white/70 hover:text-white transition-colors"
             >
               {link.label}
-            </a>
+            </TransitionLink>
           ))}
         </div>
 
@@ -65,14 +66,14 @@ export function FloatingNavbar({ onLoginClick, onSignUpClick }: FloatingNavbarPr
         <div className="md:hidden mt-2 liquid-glass rounded-2xl">
           <div className="flex flex-col gap-1 p-4">
             {navLinks.map((link) => (
-              <a
+              <TransitionLink
                 key={link.href}
                 href={link.href}
                 className="w-full px-4 py-2.5 text-sm font-medium text-white/70 hover:text-white transition-colors rounded-lg hover:bg-white/5"
                 onClick={() => setMobileMenuOpen(false)}
               >
                 {link.label}
-              </a>
+              </TransitionLink>
             ))}
             <hr className="my-2 border-white/10" />
             <button
