@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ExternalLink, FileText, X, Loader2 } from "lucide-react";
+import { ExternalLink, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 interface JobResultCardProps {
@@ -28,7 +28,6 @@ export function JobResultCard({
   onDelete,
 }: JobResultCardProps) {
   const [showDeleteMenu, setShowDeleteMenu] = useState(false);
-  const [tailoring, setTailoring] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
   const scoreLabel =
@@ -56,50 +55,6 @@ export function JobResultCard({
       body: JSON.stringify({ ban_job: banJob, ban_company: banCompany }),
     });
     setTimeout(() => onDelete(id), 300);
-  };
-
-  const handleTailor = async () => {
-    setTailoring(true);
-    const supabase = createClient();
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
-      setTailoring(false);
-      return;
-    }
-
-    try {
-      const res = await fetch("/api/tailor-cv", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ job_description: fullDescription, job_title: jobTitle, company }),
-      });
-
-      if (res.status === 403) {
-        const data = await res.json();
-        if (data.code === "LIMIT_002") {
-          alert("You've used all your CV generations. Upgrade your plan to generate more.");
-          setTailoring(false);
-          return;
-        }
-      }
-
-      if (!res.ok) {
-        alert("Failed to generate CV. Please try again.");
-        setTailoring(false);
-        return;
-      }
-
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${jobTitle}_${company}.docx`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch {
-      alert("Network error. Please try again.");
-    }
-    setTailoring(false);
   };
 
   return (
@@ -149,14 +104,6 @@ export function JobResultCard({
       )}
 
       <div className="flex gap-3 pt-2">
-        <button
-          onClick={handleTailor}
-          disabled={tailoring}
-          className="flex items-center justify-center gap-2 flex-1 px-5 py-2.5 text-sm font-medium text-white bg-[var(--color-accent)] rounded-full hover:bg-[var(--color-accent-hover)] transition-colors disabled:opacity-50"
-        >
-          {tailoring ? <Loader2 size={16} className="animate-spin" /> : <FileText size={16} />}
-          {tailoring ? "Generating..." : "Tailor CV"}
-        </button>
         {jobUrl && (
           <a
             href={jobUrl}
