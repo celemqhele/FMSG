@@ -3,8 +3,9 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard/dashboard-layout";
-import { Loader2, Upload, X } from "lucide-react";
+import { ArrowLeft, Loader2, Upload, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import "@/components/landing/liquid-glass.css";
 
 const JOB_TYPE_OPTIONS = ["Full-time", "Part-time", "Remote", "Contract"];
 
@@ -146,10 +147,15 @@ export default function ProfilePage() {
   return (
     <DashboardLayout>
       <div className="max-w-2xl mx-auto pt-8 pb-24 space-y-8">
-        <h1 className="text-2xl font-bold text-[var(--color-text-primary)]">My Profile</h1>
+        <div className="flex items-center gap-4">
+          <button onClick={() => router.push("/dashboard")} className="p-2 text-white/60 hover:text-white transition-colors">
+            <ArrowLeft size={20} />
+          </button>
+          <h1 className="text-2xl font-bold text-white">My Profile</h1>
+        </div>
 
         {/* Section 1: Personal Information */}
-        <div className="bg-white dark:bg-[#1C1C1E] shadow-md rounded-xl p-6 space-y-5">
+        <div className="liquid-glass rounded-xl p-6 space-y-5">
           <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">Personal Information</h2>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
@@ -194,7 +200,7 @@ export default function ProfilePage() {
         </div>
 
         {/* Section 2: Job Preferences */}
-        <div className="bg-white dark:bg-[#1C1C1E] shadow-md rounded-xl p-6 space-y-5">
+        <div className="liquid-glass rounded-xl p-6 space-y-5">
           <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">Job Preferences</h2>
           <div className="space-y-1.5">
             <label className="text-sm text-[var(--color-text-secondary)]">Job titles wanted</label>
@@ -248,7 +254,7 @@ export default function ProfilePage() {
         </div>
 
         {/* Section 3: CV Management */}
-        <div className="bg-white dark:bg-[#1C1C1E] shadow-md rounded-xl p-6 space-y-5">
+        <div className="liquid-glass rounded-xl p-6 space-y-5">
           <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">CV Management</h2>
           {cvFilePath ? (
             <div className="space-y-3">
@@ -270,7 +276,7 @@ export default function ProfilePage() {
         </div>
 
         {/* Section 4: Danger Zone */}
-        <div className="bg-white dark:bg-[#1C1C1E] shadow-md rounded-xl p-6 space-y-5 border-2 border-red-500/30">
+        <div className="liquid-glass rounded-xl p-6 space-y-5 border-2 border-red-500/30">
           <h2 className="text-lg font-semibold text-red-500">Danger Zone</h2>
           <p className="text-sm text-[var(--color-text-secondary)]">Permanently delete your account and all associated data.</p>
           <button onClick={() => setShowDeleteConfirm(true)} className="px-5 py-2.5 text-sm font-medium text-red-500 border border-red-500/50 rounded-full hover:bg-red-500/10 transition-colors">

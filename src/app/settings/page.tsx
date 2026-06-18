@@ -3,9 +3,10 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard/dashboard-layout";
-import { Loader2, Check, ExternalLink } from "lucide-react";
+import { ArrowLeft, Loader2, Check, ExternalLink } from "lucide-react";
 import { useTheme } from "@/components/providers/theme-provider";
 import { createClient } from "@/lib/supabase/client";
+import "@/components/landing/liquid-glass.css";
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -71,10 +72,15 @@ export default function SettingsPage() {
   return (
     <DashboardLayout>
       <div className="max-w-2xl mx-auto pt-8 pb-24 space-y-8">
-        <h1 className="text-2xl font-bold text-[var(--color-text-primary)]">Settings</h1>
+        <div className="flex items-center gap-4">
+          <button onClick={() => router.push("/dashboard")} className="p-2 text-white/60 hover:text-white transition-colors">
+            <ArrowLeft size={20} />
+          </button>
+          <h1 className="text-2xl font-bold text-white">Settings</h1>
+        </div>
 
         {/* Section 1: Appearance */}
-        <div className="bg-white dark:bg-[#1C1C1E] shadow-md rounded-xl p-6 space-y-5">
+        <div className="liquid-glass rounded-xl p-6 space-y-5">
           <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">Appearance</h2>
           <div className="flex flex-wrap gap-3">
             {(["light", "dark", "system"] as const).map((t) => (
@@ -94,7 +100,7 @@ export default function SettingsPage() {
         </div>
 
         {/* Section 2: Notifications */}
-        <div className="bg-white dark:bg-[#1C1C1E] shadow-md rounded-xl p-6 space-y-5 opacity-60">
+        <div className="liquid-glass rounded-xl p-6 space-y-5 opacity-60">
           <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">Notifications</h2>
           <label className="flex items-center justify-between">
             <span className="text-sm text-[var(--color-text-primary)]">Email me when new matching jobs are found</span>
@@ -107,7 +113,7 @@ export default function SettingsPage() {
         </div>
 
         {/* Section 3: Account */}
-        <div className="bg-white dark:bg-[#1C1C1E] shadow-md rounded-xl p-6 space-y-5">
+        <div className="liquid-glass rounded-xl p-6 space-y-5">
           <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">Account</h2>
           <div className="space-y-4">
             <div className="space-y-1.5">
@@ -140,7 +146,7 @@ export default function SettingsPage() {
         </div>
 
         {/* Section 4: Plan and Usage */}
-        <div className="bg-white dark:bg-[#1C1C1E] shadow-md rounded-xl p-6 space-y-5">
+        <div className="liquid-glass rounded-xl p-6 space-y-5">
           <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">Plan and Usage</h2>
           <div className="space-y-3">
             <div className="flex justify-between items-center">
