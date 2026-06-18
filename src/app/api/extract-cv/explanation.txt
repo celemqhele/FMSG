@@ -1,0 +1,1 @@
+API route for CV extraction. Accepts PDF/TXT form upload, parses PDF via pdf-parse (v1, wraps pdfjs-dist v2 for Node.js compat without DOMMatrix/worker issues), sends text to Cerebras qwen-3-32b, returns structured JSON. Includes detailed error codes (PDF_PARSE_ERROR, CEREBRAS_API_ERROR, EMPTY_RESPONSE, INVALID_JSON, NETWORK_ERROR).
