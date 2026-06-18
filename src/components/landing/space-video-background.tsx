@@ -15,7 +15,7 @@ export function SpaceVideoBackground({
   fastPlaybackRate = 2,
 }: SpaceVideoBackgroundProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
   const animRef = useRef<number>(0);
   const { isTransitioning } = useTransition();
   const [ready, setReady] = useState(false);
@@ -43,24 +43,28 @@ export function SpaceVideoBackground({
     return () => cancelAnimationFrame(animRef.current);
   }, [smoothRate]);
 
-  const handlePointerDown = useCallback((e: React.PointerEvent) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    setHold({ x: e.clientX - rect.left, y: e.clientY - rect.top });
-  }, []);
+  useEffect(() => {
+    const onDown = (e: PointerEvent) => {
+      const t = e.target as HTMLElement;
+      if (t.closest("button,a,input,textarea,select,[role=button]")) return;
+      setHold({ x: e.clientX, y: e.clientY });
+    };
+    const onUp = () => setHold(null);
 
-  const handlePointerUp = useCallback(() => {
-    setHold(null);
+    document.addEventListener("pointerdown", onDown);
+    document.addEventListener("pointerup", onUp);
+    document.addEventListener("pointerleave", onUp);
+    return () => {
+      document.removeEventListener("pointerdown", onDown);
+      document.removeEventListener("pointerup", onUp);
+      document.removeEventListener("pointerleave", onUp);
+    };
   }, []);
 
   return (
-    <div
-      ref={containerRef}
-      className="fixed inset-0 -z-10 overflow-hidden cursor-pointer select-none"
-      onPointerDown={handlePointerDown}
-      onPointerUp={handlePointerUp}
-      onPointerLeave={handlePointerUp}
-    >
+    <div className="fixed inset-0 overflow-hidden" style={{ zIndex: -10 }}>
       <div
+        ref={wrapperRef}
         className="absolute inset-0 transition-transform duration-[250ms] ease-out will-change-transform"
         style={
           hold

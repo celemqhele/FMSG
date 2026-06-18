@@ -6,17 +6,25 @@ import { Footer } from "@/components/layout/footer";
 import { PricingSection } from "@/components/landing/pricing-section";
 import { SpaceVideoBackground } from "@/components/landing/space-video-background";
 import { AuthModal } from "@/components/auth/auth-modal";
+import { PageTransitionWrapper } from "@/components/ui/page-transition-wrapper";
 import { useTransition } from "@/components/providers/transition-provider";
 
 export default function PricingPage() {
   const [authOpen, setAuthOpen] = useState(false);
   const [authTab, setAuthTab] = useState<"login" | "signup">("signup");
-  const { endTransition } = useTransition();
+  const { startTransition, endTransition } = useTransition();
 
   useEffect(() => {
-    const timer = setTimeout(endTransition, 400);
-    return () => clearTimeout(timer);
+    endTransition();
   }, [endTransition]);
+
+  useEffect(() => {
+    if (authOpen) {
+      startTransition();
+      const timer = setTimeout(endTransition, 800);
+      return () => clearTimeout(timer);
+    }
+  }, [authOpen, startTransition, endTransition]);
 
   const openAuth = (tab: "login" | "signup") => {
     setAuthTab(tab);
@@ -30,9 +38,11 @@ export default function PricingPage() {
         onLoginClick={() => openAuth("login")}
         onSignUpClick={() => openAuth("signup")}
       />
-      <main className="flex-1">
-        <PricingSection />
-      </main>
+      <PageTransitionWrapper>
+        <main className="flex-1">
+          <PricingSection />
+        </main>
+      </PageTransitionWrapper>
       <Footer />
       <AuthModal
         isOpen={authOpen}

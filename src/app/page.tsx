@@ -9,6 +9,7 @@ import { DataPrivacy } from "@/components/landing/data-privacy";
 import { PricingSection } from "@/components/landing/pricing-section";
 import { SpaceVideoBackground } from "@/components/landing/space-video-background";
 import { AuthModal } from "@/components/auth/auth-modal";
+import { PageTransitionWrapper } from "@/components/ui/page-transition-wrapper";
 import { useTransition } from "@/components/providers/transition-provider";
 
 export default function HomePage() {
@@ -38,12 +39,14 @@ export default function HomePage() {
         onLoginClick={() => openAuth("login")}
         onSignUpClick={() => openAuth("signup")}
       />
-      <main className="flex-1">
-        <Hero onCtaClick={() => openAuth("signup")} />
-        <HowItWorks />
-        <DataPrivacy />
-        <PricingSection />
-      </main>
+      <PageTransitionWrapper>
+        <main className="flex-1">
+          <Hero onCtaClick={() => openAuth("signup")} />
+          <HowItWorks />
+          <DataPrivacy />
+          <PricingSection />
+        </main>
+      </PageTransitionWrapper>
       <Footer />
       <AuthModal
         isOpen={authOpen}
