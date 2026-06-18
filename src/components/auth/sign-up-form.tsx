@@ -1,20 +1,49 @@
 "use client";
 
 import { useState } from "react";
+import { createClient } from "@/lib/supabase/client";
 
 export function SignUpForm({ onSuccess }: { onSuccess: (email: string) => void }) {
   const [name, setName] = useState("");
   const [surname, setSurname] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError("");
+    setLoading(true);
+    const supabase = createClient();
+
+    const { error: signUpErr } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: { full_name: `${name} ${surname}` } },
+    });
+
+    if (signUpErr) {
+      setLoading(false);
+      setError(signUpErr.message);
+      return;
+    }
+
+    const { error: otpErr } = await supabase.auth.signInWithOtp({ email });
+
+    if (otpErr) {
+      setLoading(false);
+      setError(otpErr.message);
+      return;
+    }
+
+    setLoading(false);
     onSuccess(email);
   };
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+      {error && <p className="text-sm text-red-400 text-center">{error}</p>}
       <div className="flex gap-3">
         <div className="flex-1">
           <label htmlFor="signup-name" className="block text-sm font-medium text-[var(--color-text-primary)] mb-1.5">
@@ -69,16 +98,17 @@ export function SignUpForm({ onSuccess }: { onSuccess: (email: string) => void }
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required
-          minLength={8}
+          minLength={6}
           className="w-full px-3.5 py-2.5 text-sm rounded-lg border border-[var(--color-border)] bg-transparent text-[var(--color-text-primary)] placeholder:text-[var(--color-text-secondary)] focus:outline-none focus:border-[var(--color-accent)] transition-colors"
-          placeholder="At least 8 characters"
+          placeholder="At least 6 characters"
         />
       </div>
       <button
         type="submit"
-        className="mt-2 w-full px-5 py-2.5 text-sm font-medium text-white bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] rounded-full transition-colors"
+        disabled={loading}
+        className="mt-2 w-full px-5 py-2.5 text-sm font-medium text-white bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] rounded-full transition-colors disabled:opacity-50"
       >
-        Create Account
+        {loading ? "Creating account..." : "Create Account"}
       </button>
     </form>
   );
