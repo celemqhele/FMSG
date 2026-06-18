@@ -5,14 +5,19 @@ const GROQ_API_KEY = process.env.GROQ_API_KEY;
 
 const SYSTEM_PROMPT = `You are a CV parsing assistant. Extract structured information from the CV text below and return ONLY valid JSON with this exact schema (no markdown, no code fences):
 {
+  "name": string,
+  "surname": string,
   "skills": string[],
   "experience": { "company": string, "role": string, "start_date": string, "end_date": string, "description": string }[],
   "education": { "institution": string, "degree": string, "year": number }[],
   "years_of_experience": number,
   "current_role": string,
-  "location": string
+  "location": string,
+  "salary_min": number | null,
+  "salary_max": number | null,
+  "career_goals": string
 }
-Use empty arrays and empty strings for missing data. Never invent information.`;
+Use empty arrays and empty strings for missing data. Set salary_min and salary_max to null if not mentioned. Never invent information.`;
 
 async function callGemini(text: string): Promise<any> {
   const res = await fetch(
@@ -148,12 +153,17 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({
+      name: parsed.name ?? "",
+      surname: parsed.surname ?? "",
       skills: parsed.skills ?? [],
       experience: parsed.experience ?? [],
       education: parsed.education ?? [],
       years_of_experience: parsed.years_of_experience ?? 0,
       current_role: parsed.current_role ?? "",
       location: parsed.location ?? "",
+      salary_min: parsed.salary_min ?? null,
+      salary_max: parsed.salary_max ?? null,
+      career_goals: parsed.career_goals ?? "",
       cv_text: text.slice(0, 10000),
     });
   } catch (err) {
