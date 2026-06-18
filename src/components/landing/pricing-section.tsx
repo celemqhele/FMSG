@@ -205,7 +205,7 @@ export function PricingSection() {
   const [annual, setAnnual] = useState(false);
 
   return (
-    <section className="px-6 py-24 md:py-32" id="pricing">
+    <section className="px-6 py-16 md:py-32" id="pricing">
       <div className="max-w-6xl mx-auto">
         <div className="text-center">
           <h2 className="text-3xl md:text-4xl font-semibold text-white tracking-tight">

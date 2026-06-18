@@ -2,7 +2,7 @@ import { LiquidGlassCard } from "./liquid-glass-card";
 
 export function DataPrivacy() {
   return (
-    <section className="px-6 py-24 md:py-32">
+    <section className="px-6 py-16 md:py-32">
       <div className="max-w-3xl mx-auto">
         <LiquidGlassCard className="text-center p-8 md:p-12">
           <h2 className="text-3xl md:text-4xl font-semibold text-white tracking-tight">

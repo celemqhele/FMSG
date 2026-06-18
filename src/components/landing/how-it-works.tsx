@@ -23,13 +23,13 @@ const steps = [
 
 export function HowItWorks() {
   return (
-    <section className="px-6 py-24 md:py-32">
+    <section className="px-6 py-16 md:py-32">
       <div className="max-w-5xl mx-auto">
         <h2 className="text-3xl md:text-4xl font-semibold text-center text-white tracking-tight">
           How it works
         </h2>
 
-        <div className="mt-16 md:hidden">
+        <div className="mt-10 md:hidden">
           <LiquidGlassCard className="text-center p-8">
             <p className="text-base text-white/70 leading-relaxed">
               Upload your CV or fill in your details. AI reads your experience

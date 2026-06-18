@@ -93,7 +93,7 @@ export function SpaceVideoBackground({
       >
         <video
           ref={videoRef}
-          className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ${ready ? "opacity-100" : "opacity-0"}`}
+          className={`absolute inset-0 w-full h-full object-cover object-[55%_50%] md:object-center transition-opacity duration-1000 ${ready ? "opacity-100" : "opacity-0"}`}
           src={src}
           autoPlay
           muted
