@@ -35,10 +35,15 @@ export function AuthModal({ isOpen, onClose, defaultTab = "signup" }: AuthModalP
     setScreen(s);
   }, []);
 
-  const handleSignUpSubmit = useCallback(({ email }: { email: string }) => {
-    setPendingEmail(email);
-    setScreen("signup-sent");
-  }, []);
+  const handleSignUpSubmit = useCallback(({ email, autoConfirmed }: { email: string; autoConfirmed: boolean }) => {
+    if (autoConfirmed) {
+      onClose();
+      router.push("/auth/confirm");
+    } else {
+      setPendingEmail(email);
+      setScreen("signup-sent");
+    }
+  }, [onClose, router]);
 
   const handleVerified = useCallback(() => {
     onClose();

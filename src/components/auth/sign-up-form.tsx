@@ -8,6 +8,7 @@ interface SignUpData {
   password: string;
   name: string;
   surname: string;
+  autoConfirmed: boolean;
 }
 
 export function SignUpForm({ onSuccess }: { onSuccess: (data: SignUpData) => void }) {
@@ -26,7 +27,7 @@ export function SignUpForm({ onSuccess }: { onSuccess: (data: SignUpData) => voi
 
     const fullName = [name, surname].filter(Boolean).join(" ");
 
-    const { error: signUpErr } = await supabase.auth.signUp({
+    const { data, error: signUpErr } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -45,7 +46,13 @@ export function SignUpForm({ onSuccess }: { onSuccess: (data: SignUpData) => voi
       return;
     }
 
-    onSuccess({ email, password, name, surname });
+    onSuccess({
+      email,
+      password,
+      name,
+      surname,
+      autoConfirmed: !!data.session,
+    });
   };
 
   return (
