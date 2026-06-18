@@ -4,20 +4,23 @@ import { createContext, useContext, useState, useCallback, type ReactNode } from
 
 interface TransitionContextValue {
   isTransitioning: boolean;
+  videoFast: boolean;
   startTransition: () => void;
   endTransition: () => void;
+  setVideoFast: (fast: boolean) => void;
 }
 
 const TransitionContext = createContext<TransitionContextValue | null>(null);
 
 export function TransitionProvider({ children }: { children: ReactNode }) {
   const [isTransitioning, setIsTransitioning] = useState(false);
+  const [videoFast, setVideoFast] = useState(false);
 
   const startTransition = useCallback(() => setIsTransitioning(true), []);
   const endTransition = useCallback(() => setIsTransitioning(false), []);
 
   return (
-    <TransitionContext.Provider value={{ isTransitioning, startTransition, endTransition }}>
+    <TransitionContext.Provider value={{ isTransitioning, videoFast, startTransition, endTransition, setVideoFast }}>
       {children}
     </TransitionContext.Provider>
   );

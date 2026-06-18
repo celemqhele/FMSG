@@ -17,14 +17,14 @@ export function SpaceVideoBackground({
   const videoRef = useRef<HTMLVideoElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const animRef = useRef<number>(0);
-  const { isTransitioning } = useTransition();
+  const { isTransitioning, videoFast } = useTransition();
   const [ready, setReady] = useState(false);
   const [hold, setHold] = useState(false);
   const holdRef = useRef(false);
   const [warp, setWarp] = useState({ x: 0, y: 0, s: 1 });
   const [perspective, setPerspective] = useState(900);
 
-  const baseRate = isTransitioning ? fastPlaybackRate : slowPlaybackRate;
+  const baseRate = isTransitioning || videoFast ? fastPlaybackRate : slowPlaybackRate;
   const holdBoost = hold ? 1.1 : 1;
   const targetRate = baseRate * holdBoost;
 

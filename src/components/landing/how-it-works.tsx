@@ -28,7 +28,20 @@ export function HowItWorks() {
         <h2 className="text-3xl md:text-4xl font-semibold text-center text-white tracking-tight">
           How it works
         </h2>
-        <div className="mt-16 grid gap-6 md:grid-cols-3 md:gap-6">
+
+        <div className="mt-16 md:hidden">
+          <LiquidGlassCard className="text-center p-8">
+            <p className="text-base text-white/70 leading-relaxed">
+              Upload your CV or fill in your details. AI reads your experience
+              and preferences so every search is personal. It searches live job
+              listings, filters out mismatches, and scores each role against
+              your profile. Review ranked results with match scores, tailor your
+              CV instantly, and apply with confidence.
+            </p>
+          </LiquidGlassCard>
+        </div>
+
+        <div className="hidden md:grid mt-16 gap-6 md:grid-cols-3 md:gap-6">
           {steps.map((step) => (
             <LiquidGlassCard key={step.number} className="flex flex-col items-center text-center p-8">
               <span className="text-5xl font-bold text-white/20 select-none">

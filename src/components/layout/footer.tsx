@@ -2,7 +2,7 @@ import { TransitionLink } from "@/components/ui/transition-link";
 
 export function Footer() {
   return (
-    <footer className="px-6 py-12 border-t border-white/10">
+    <footer className="px-6 py-12 pb-24 md:pb-12 border-t border-white/10">
       <div className="max-w-5xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
         <div className="flex flex-col items-center md:items-start gap-1">
           <span className="text-lg font-semibold text-white select-none">
