@@ -1,7 +1,67 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const CEREBRAS_API_KEY = process.env.CEREBRAS_API_KEY;
-const MODELS = ["zai-glm-4.7", "gpt-oss-120b"];
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const GROQ_API_KEY = process.env.GROQ_API_KEY;
+
+const SYSTEM_PROMPT = `You are a CV parsing assistant. Extract structured information from the CV text below and return ONLY valid JSON with this exact schema (no markdown, no code fences):
+{
+  "skills": string[],
+  "experience": { "company": string, "role": string, "start_date": string, "end_date": string, "description": string }[],
+  "education": { "institution": string, "degree": string, "year": number }[],
+  "years_of_experience": number,
+  "current_role": string,
+  "location": string
+}
+Use empty arrays and empty strings for missing data. Never invent information.`;
+
+async function callGemini(text: string): Promise<any> {
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: `${SYSTEM_PROMPT}\n\n${text}` }] }],
+        generationConfig: { temperature: 0.1, maxOutputTokens: 2000 },
+      }),
+    }
+  );
+
+  if (!res.ok) {
+    const errBody = await res.text();
+    throw new Error(`Gemini error (${res.status}): ${errBody.slice(0, 200)}`);
+  }
+
+  const data = await res.json();
+  return data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+}
+
+async function callGroq(text: string): Promise<any> {
+  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${GROQ_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "llama-3.3-70b-versatile",
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: text },
+      ],
+      max_tokens: 2000,
+      temperature: 0.1,
+    }),
+  });
+
+  if (!res.ok) {
+    const errBody = await res.text();
+    throw new Error(`Groq error (${res.status}): ${errBody.slice(0, 200)}`);
+  }
+
+  const data = await res.json();
+  return data.choices?.[0]?.message?.content ?? "";
+}
 
 async function extractTextFromPDF(buffer: Buffer): Promise<string> {
   // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
@@ -48,63 +108,33 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Could not extract any text from the file." }, { status: 400 });
     }
 
-    if (!CEREBRAS_API_KEY) {
-      return NextResponse.json({ error: "Cerebras API key not configured." }, { status: 500 });
+    if (!GEMINI_API_KEY) {
+      return NextResponse.json({ error: "Gemini API key not configured." }, { status: 500 });
     }
 
-    let cerebData: any;
+    let content: string | null = null;
     let lastErr: string | null = null;
 
-    for (const model of MODELS) {
-      const cerebRes = await fetch("https://api.cerebras.ai/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${CEREBRAS_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model,
-          messages: [
-            {
-              role: "system",
-              content: `You are a CV parsing assistant. Extract structured information from the CV text below and return ONLY valid JSON with this exact schema (no markdown, no code fences):
-{
-  "skills": string[],
-  "experience": { "company": string, "role": string, "start_date": string, "end_date": string, "description": string }[],
-  "education": { "institution": string, "degree": string, "year": number }[],
-  "years_of_experience": number,
-  "current_role": string,
-  "location": string
-}
-Use empty arrays and empty strings for missing data. Never invent information.`,
-            },
-            { role: "user", content: text },
-          ],
-          max_tokens: 2000,
-          temperature: 0.1,
-        }),
-      });
+    try {
+      content = await callGemini(text);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("Gemini error:", msg);
+      lastErr = msg;
 
-      if (cerebRes.ok) {
-        cerebData = await cerebRes.json();
-        break;
+      if (GROQ_API_KEY) {
+        try {
+          content = await callGroq(text);
+        } catch (groqErr) {
+          const groqMsg = groqErr instanceof Error ? groqErr.message : String(groqErr);
+          console.error("Groq error:", groqMsg);
+          lastErr += ` | ${groqMsg}`;
+        }
       }
-
-      const errBody = await cerebRes.text();
-      console.error(`Cerebras model ${model} error:`, cerebRes.status, errBody);
-      lastErr = `Model "${model}" failed (${cerebRes.status}): ${errBody.slice(0, 200)}`;
     }
-
-    if (!cerebData) {
-      let detail = "AI extraction failed. ";
-      detail += lastErr ?? "All models exhausted.";
-      return NextResponse.json({ error: detail, code: "CEREBRAS_API_ERROR" }, { status: 502 });
-    }
-    const content = cerebData.choices?.[0]?.message?.content;
 
     if (!content) {
-      console.error("Cerebras returned empty content:", JSON.stringify(cerebData));
-      return NextResponse.json({ error: "Empty response from AI. The model may have been interrupted.", code: "EMPTY_RESPONSE" }, { status: 502 });
+      return NextResponse.json({ error: `AI extraction failed. ${lastErr}`, code: "AI_ERROR" }, { status: 502 });
     }
 
     const cleaned = content.replace(/```(?:json)?\s*/g, "").trim();
@@ -112,7 +142,7 @@ Use empty arrays and empty strings for missing data. Never invent information.`,
     try {
       parsed = JSON.parse(cleaned);
     } catch {
-      console.error("Failed to parse Cerebras response as JSON. Raw:", content.slice(0, 500));
+      console.error("Failed to parse AI response as JSON. Raw:", content.slice(0, 500));
       return NextResponse.json({ error: "AI returned invalid JSON. Please try again.", code: "INVALID_JSON" }, { status: 502 });
     }
 
