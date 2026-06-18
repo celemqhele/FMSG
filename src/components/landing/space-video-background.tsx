@@ -22,6 +22,7 @@ export function SpaceVideoBackground({
   const [hold, setHold] = useState(false);
   const holdRef = useRef(false);
   const [warp, setWarp] = useState({ x: 0, y: 0, s: 1 });
+  const [perspective, setPerspective] = useState(900);
 
   const baseRate = isTransitioning ? fastPlaybackRate : slowPlaybackRate;
   const holdBoost = hold ? 1.1 : 1;
@@ -46,6 +47,10 @@ export function SpaceVideoBackground({
   }, [smoothRate]);
 
   useEffect(() => {
+    setPerspective(window.innerWidth < 640 ? 1200 : 900);
+  }, []);
+
+  useEffect(() => {
     const onDown = (e: PointerEvent) => {
       const t = e.target as HTMLElement;
       if (t.closest("button,a,input,textarea,select,[role=button]")) return;
@@ -53,9 +58,10 @@ export function SpaceVideoBackground({
       setHold(true);
       const cx = window.innerWidth / 2;
       const cy = window.innerHeight / 2;
+      const factor = window.innerWidth < 640 ? 1.5 : 3;
       setWarp({
-        x: ((e.clientX - cx) / cx) * 3,
-        y: -((e.clientY - cy) / cy) * 3,
+        x: ((e.clientX - cx) / cx) * factor,
+        y: -((e.clientY - cy) / cy) * factor,
         s: 1.02,
       });
     };
@@ -81,7 +87,7 @@ export function SpaceVideoBackground({
         ref={wrapperRef}
         className="absolute inset-0 will-change-transform"
         style={{
-          transform: `perspective(900px) rotateX(${warp.y}deg) rotateY(${warp.x}deg) scale(${warp.s})`,
+          transform: `perspective(${perspective}px) rotateX(${warp.y}deg) rotateY(${warp.x}deg) scale(${warp.s})`,
           transition: hold ? "none" : "transform 350ms cubic-bezier(0.34, 1.56, 0.64, 1)",
         }}
       >

@@ -71,10 +71,10 @@ export function PricingSection() {
           <p className="mt-4 text-white/60">
             All plans include AI-powered job matching. Upgrade anytime.
           </p>
-          <div className="mt-8 inline-flex items-center gap-3 p-1 rounded-full bg-white/10 border border-white/10">
+          <div className="mt-8 inline-flex flex-wrap items-center justify-center gap-3 p-1 rounded-full bg-white/10 border border-white/10">
             <button
               onClick={() => setAnnual(false)}
-              className={`px-4 py-2 text-sm font-medium rounded-full transition-colors ${
+              className={`px-4 py-2 text-sm font-medium rounded-full transition-colors whitespace-nowrap ${
                 !annual
                   ? "bg-white/15 text-white shadow-[var(--shadow-sm)]"
                   : "text-white/60 hover:text-white"
@@ -84,14 +84,14 @@ export function PricingSection() {
             </button>
             <button
               onClick={() => setAnnual(true)}
-              className={`px-4 py-2 text-sm font-medium rounded-full transition-colors ${
+              className={`px-4 py-2 text-sm font-medium rounded-full transition-colors whitespace-nowrap ${
                 annual
                   ? "bg-white/15 text-white shadow-[var(--shadow-sm)]"
                   : "text-white/60 hover:text-white"
               }`}
             >
               Annual{" "}
-              <span className="text-[var(--color-success)]">Save 2 months</span>
+              <span className="text-[var(--color-success)] whitespace-nowrap">Save 2 months</span>
             </button>
           </div>
         </div>
