@@ -1,0 +1,3 @@
+About page route at /about.
+Uses AboutSection component for content, with SpaceVideoBackground, FloatingNavbar, Footer, AuthModal.
+Same transition behavior as pricing page.

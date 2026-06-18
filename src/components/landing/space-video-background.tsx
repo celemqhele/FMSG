@@ -19,7 +19,9 @@ export function SpaceVideoBackground({
   const animRef = useRef<number>(0);
   const { isTransitioning } = useTransition();
   const [ready, setReady] = useState(false);
-  const [hold, setHold] = useState<{ x: number; y: number } | null>(null);
+  const [hold, setHold] = useState(false);
+  const holdRef = useRef(false);
+  const [warp, setWarp] = useState({ x: 0, y: 0, s: 1 });
 
   const baseRate = isTransitioning ? fastPlaybackRate : slowPlaybackRate;
   const holdBoost = hold ? 1.1 : 1;
@@ -47,9 +49,21 @@ export function SpaceVideoBackground({
     const onDown = (e: PointerEvent) => {
       const t = e.target as HTMLElement;
       if (t.closest("button,a,input,textarea,select,[role=button]")) return;
-      setHold({ x: e.clientX, y: e.clientY });
+      holdRef.current = true;
+      setHold(true);
+      const cx = window.innerWidth / 2;
+      const cy = window.innerHeight / 2;
+      setWarp({
+        x: ((e.clientX - cx) / cx) * 3,
+        y: -((e.clientY - cy) / cy) * 3,
+        s: 1.02,
+      });
     };
-    const onUp = () => setHold(null);
+    const onUp = () => {
+      holdRef.current = false;
+      setHold(false);
+      setWarp({ x: 0, y: 0, s: 1 });
+    };
 
     document.addEventListener("pointerdown", onDown);
     document.addEventListener("pointerup", onUp);
@@ -65,15 +79,11 @@ export function SpaceVideoBackground({
     <div className="fixed inset-0 overflow-hidden" style={{ zIndex: -10 }}>
       <div
         ref={wrapperRef}
-        className="absolute inset-0 transition-transform duration-[250ms] ease-out will-change-transform"
-        style={
-          hold
-            ? {
-                transformOrigin: `${hold.x}px ${hold.y}px`,
-                transform: "scale(1.04)",
-              }
-            : undefined
-        }
+        className="absolute inset-0 will-change-transform"
+        style={{
+          transform: `perspective(900px) rotateX(${warp.y}deg) rotateY(${warp.x}deg) scale(${warp.s})`,
+          transition: hold ? "none" : "transform 350ms cubic-bezier(0.34, 1.56, 0.64, 1)",
+        }}
       >
         <video
           ref={videoRef}
