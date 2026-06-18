@@ -30,6 +30,12 @@ function normalize(r: any) {
   return { ...r, full_description: r.full_spec ?? "" };
 }
 
+function buildJobUrl(job: { link?: string; job_id?: string; title: string; company_name: string }): string {
+  if (job.link) return job.link;
+  if (job.job_id) return `https://www.google.com/search?q=${encodeURIComponent(job.title)}&ibp=htl;jobs&id=${encodeURIComponent(job.job_id)}`;
+  return `https://www.google.com/search?q=${encodeURIComponent(`${job.title} ${job.company_name}`)}`;
+}
+
 export async function POST(request: NextRequest) {
   const supabase = getSupabase();
   const searchId = crypto.randomUUID();
@@ -213,7 +219,7 @@ export async function POST(request: NextRequest) {
         estimated_salary: result.estimated_salary,
         match_score: result.score,
         match_summary: result.match_summary,
-        job_url: job.link ?? "",
+        job_url: buildJobUrl(job),
         full_spec: specText,
         search_query: query,
       });
