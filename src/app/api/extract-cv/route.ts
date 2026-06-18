@@ -21,7 +21,8 @@ async function callGemini(text: string): Promise<any> {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: `${SYSTEM_PROMPT}\n\n${text}` }] }],
+        system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+        contents: [{ parts: [{ text }] }],
         generationConfig: { temperature: 0.1, maxOutputTokens: 2000 },
       }),
     }
@@ -137,7 +138,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: `AI extraction failed. ${lastErr}`, code: "AI_ERROR" }, { status: 502 });
     }
 
-    const cleaned = content.replace(/```(?:json)?\s*/g, "").trim();
+    const cleaned = content.slice(content.indexOf("{"), content.lastIndexOf("}") + 1).trim();
     let parsed: Record<string, unknown>;
     try {
       parsed = JSON.parse(cleaned);
