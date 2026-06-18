@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback, type ReactNode } from "react";
 import { X } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { LogInForm } from "./log-in-form";
 import { SignUpForm } from "./sign-up-form";
 import { ForgotPasswordForm } from "./forgot-password-form";
@@ -19,7 +18,6 @@ export function AuthModal({ isOpen, onClose, defaultTab = "signup" }: AuthModalP
   const [mounted, setMounted] = useState(false);
   const [screen, setScreen] = useState<Screen>(defaultTab);
   const [pendingEmail, setPendingEmail] = useState("");
-  const router = useRouter();
 
   useEffect(() => {
     if (isOpen) {
@@ -35,47 +33,22 @@ export function AuthModal({ isOpen, onClose, defaultTab = "signup" }: AuthModalP
     setScreen(s);
   }, []);
 
-  const redirectAfterAuth = useCallback(async () => {
-    const supabase = (await import("@/lib/supabase/client")).createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { router.push("/auth/confirm"); return; }
-
-    try {
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("onboarding_completed")
-        .eq("id", user.id)
-        .single();
-
-      if (profile?.onboarding_completed) {
-        router.push("/");
-      } else {
-        router.push("/auth/confirm");
-      }
-    } catch {
-      router.push("/auth/confirm");
-    }
-  }, [router]);
-
   const handleSignUpSubmit = useCallback(({ email, autoConfirmed }: { email: string; autoConfirmed: boolean }) => {
     if (autoConfirmed) {
       onClose();
-      redirectAfterAuth();
     } else {
       setPendingEmail(email);
       setScreen("signup-sent");
     }
-  }, [onClose, redirectAfterAuth]);
+  }, [onClose]);
 
   const handleVerified = useCallback(() => {
     onClose();
-    redirectAfterAuth();
-  }, [onClose, redirectAfterAuth]);
+  }, [onClose]);
 
   const handleLoggedIn = useCallback(() => {
     onClose();
-    redirectAfterAuth();
-  }, [onClose, redirectAfterAuth]);
+  }, [onClose]);
 
   if (!mounted && !isOpen) return null;
 
