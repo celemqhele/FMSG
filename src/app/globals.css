@@ -43,7 +43,7 @@
 }
 
 body {
-  background: var(--color-bg);
+  background: transparent;
   color: var(--color-text-primary);
   font-family: var(--font-sans, Arial, Helvetica, sans-serif);
   -webkit-font-smoothing: antialiased;

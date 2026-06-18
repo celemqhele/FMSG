@@ -82,7 +82,7 @@ export function SpaceVideoBackground({
   }, []);
 
   return (
-    <div className="fixed inset-0 overflow-hidden bg-black" style={{ zIndex: -10 }}>
+    <div className="fixed inset-0 overflow-hidden bg-black" style={{ zIndex: 0 }}>
       <div
         ref={wrapperRef}
         className="absolute inset-0 will-change-transform"
