@@ -15,11 +15,15 @@ export function SpaceVideoBackground({
   fastPlaybackRate = 2,
 }: SpaceVideoBackgroundProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const animRef = useRef<number>(0);
   const { isTransitioning } = useTransition();
   const [ready, setReady] = useState(false);
+  const [hold, setHold] = useState<{ x: number; y: number } | null>(null);
 
-  const targetRate = isTransitioning ? fastPlaybackRate : slowPlaybackRate;
+  const baseRate = isTransitioning ? fastPlaybackRate : slowPlaybackRate;
+  const holdBoost = hold ? 1.1 : 1;
+  const targetRate = baseRate * holdBoost;
 
   const smoothRate = useCallback(() => {
     const video = videoRef.current;
@@ -39,25 +43,52 @@ export function SpaceVideoBackground({
     return () => cancelAnimationFrame(animRef.current);
   }, [smoothRate]);
 
+  const handlePointerDown = useCallback((e: React.PointerEvent) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    setHold({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+  }, []);
+
+  const handlePointerUp = useCallback(() => {
+    setHold(null);
+  }, []);
+
   return (
-    <div className="fixed inset-0 -z-10 overflow-hidden">
-      <video
-        ref={videoRef}
-        className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ${ready ? "opacity-100" : "opacity-0"}`}
-        src={src}
-        autoPlay
-        muted
-        loop
-        playsInline
-        onCanPlay={() => {
-          if (videoRef.current) {
-            videoRef.current.playbackRate = slowPlaybackRate;
-            setReady(true);
-          }
-        }}
-      />
-      <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/30 to-black/60" />
-      <div className="absolute inset-0 bg-gradient-to-r from-black/20 via-transparent to-black/20" />
+    <div
+      ref={containerRef}
+      className="fixed inset-0 -z-10 overflow-hidden cursor-pointer select-none"
+      onPointerDown={handlePointerDown}
+      onPointerUp={handlePointerUp}
+      onPointerLeave={handlePointerUp}
+    >
+      <div
+        className="absolute inset-0 transition-transform duration-[250ms] ease-out will-change-transform"
+        style={
+          hold
+            ? {
+                transformOrigin: `${hold.x}px ${hold.y}px`,
+                transform: "scale(1.04)",
+              }
+            : undefined
+        }
+      >
+        <video
+          ref={videoRef}
+          className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ${ready ? "opacity-100" : "opacity-0"}`}
+          src={src}
+          autoPlay
+          muted
+          loop
+          playsInline
+          onCanPlay={() => {
+            if (videoRef.current) {
+              videoRef.current.playbackRate = slowPlaybackRate;
+              setReady(true);
+            }
+          }}
+        />
+      </div>
+      <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/30 to-black/60 pointer-events-none" />
+      <div className="absolute inset-0 bg-gradient-to-r from-black/20 via-transparent to-black/20 pointer-events-none" />
     </div>
   );
 }

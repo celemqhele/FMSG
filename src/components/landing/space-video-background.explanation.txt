@@ -12,4 +12,7 @@ DEPENDENCIES: Consumed by page.tsx (landing page)
 
 SIDE EFFECTS: Starts video autoplay on mount (muted). Smoothly animates playbackRate via requestAnimationFrame.
 
+- Hold interaction: on pointer down, video container scales 1.04x from the click point (transform-origin) and playback speed boosts 10%; releases on pointer up/leave
+- Gradient overlays have pointer-events-none so clicks pass through to the interactive wrapper
+
 LAST UPDATED: 2025-06-18
