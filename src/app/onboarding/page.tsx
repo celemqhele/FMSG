@@ -29,8 +29,8 @@ export default function OnboardingPage() {
 
   useEffect(() => {
     const supabase = createClient();
-    supabase.auth.getUser().then(({ data }) => {
-      if (!data.user) {
+    supabase.auth.getUser().then(({ data }: { data: { user: any } | null }) => {
+      if (!data?.user) {
         router.push("/");
       }
     });

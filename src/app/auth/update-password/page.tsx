@@ -14,8 +14,8 @@ export default function UpdatePasswordPage() {
 
   useEffect(() => {
     const supabase = createClient();
-    supabase.auth.getSession().then(({ data }) => {
-      if (!data.session) {
+    supabase.auth.getSession().then(({ data }: { data: { session: any } | null }) => {
+      if (!data?.session) {
         setError("Invalid or expired reset link. Please request a new one.");
       }
       setChecking(false);

@@ -11,7 +11,7 @@ export function AuthHandler() {
   useEffect(() => {
     const supabase = createClient();
 
-    supabase.auth.onAuthStateChange(async (event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event: string, session: any) => {
       if (event !== "SIGNED_IN" || !session) return;
       if (pathname.startsWith("/auth/")) return;
       document.cookie = `sb-access-token=${session.access_token}; path=/; max-age=3600; SameSite=Lax`;
@@ -33,6 +33,10 @@ export function AuthHandler() {
 
       router.push("/auth/confirm");
     });
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, [router, pathname]);
 
   return null;

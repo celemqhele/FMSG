@@ -13,8 +13,8 @@ function ConfirmContent() {
   useEffect(() => {
     if (searchParams.has("code")) {
       const supabase = createClient();
-      supabase.auth.getSession().then(({ data }) => {
-        if (!data.session) {
+      supabase.auth.getSession().then(({ data }: { data: { session: any } | null }) => {
+        if (!data?.session) {
           router.replace("/");
         }
       });
