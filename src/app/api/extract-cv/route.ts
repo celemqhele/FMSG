@@ -3,7 +3,73 @@ import { NextRequest, NextResponse } from "next/server";
 const CEREBRAS_API_KEY = process.env.CEREBRAS_API_KEY;
 const MODEL = "qwen-3-32b";
 
+function polyfillDOMMatrix() {
+  if (globalThis.DOMMatrix) return;
+  // Minimal DOMMatrix polyfill for pdfjs-dist in Node.js
+  class DOMMatrix {
+    a = 1; b = 0; c = 0; d = 1; e = 0; f = 0;
+    constructor(init?: string | number[]) {
+      if (typeof init === "string") {
+        const m = init.match(/matrix\(([^)]+)\)/)?.[1]?.split(",").map(Number);
+        if (m && m.length === 6) {
+          this.a = m[0]; this.b = m[1]; this.c = m[2]; this.d = m[3]; this.e = m[4]; this.f = m[5];
+        }
+      }
+    }
+    translate(tx: number, ty: number) {
+      this.e += tx; this.f += ty;
+      return this;
+    }
+    scale(sx: number, sy: number) {
+      this.a *= sx; this.b *= sx; this.c *= sy; this.d *= sy;
+      return this;
+    }
+    multiply(other: DOMMatrix) {
+      const { a, b, c, d, e, f } = this;
+      this.a = a * other.a + c * other.b;
+      this.b = b * other.a + d * other.b;
+      this.c = a * other.c + c * other.d;
+      this.d = b * other.c + d * other.d;
+      this.e = a * other.e + c * other.f + e;
+      this.f = b * other.e + d * other.f + f;
+      return this;
+    }
+    inverse() {
+      const det = this.a * this.d - this.b * this.c;
+      if (det === 0) throw new Error("DOMMatrix: not invertible");
+      const inv = Object.assign(Object.create(DOMMatrix.prototype), {
+        a: this.d / det, b: -this.b / det, c: -this.c / det, d: this.a / det,
+        e: (this.c * this.f - this.d * this.e) / det,
+        f: (this.b * this.e - this.a * this.f) / det,
+      });
+      return inv;
+    }
+    rotate(angle: number) {
+      const rad = (angle * Math.PI) / 180;
+      const cos = Math.cos(rad); const sin = Math.sin(rad);
+      const { a, b, c, d, e, f } = this;
+      this.a = a * cos + c * sin;
+      this.b = b * cos + d * sin;
+      this.c = a * -sin + c * cos;
+      this.d = b * -sin + d * cos;
+      this.e = e; this.f = f;
+      return this;
+    }
+    rotateAxisAngle(_x: number, _y: number, _z: number, angle: number) {
+      return this.rotate(angle);
+    }
+    toString() {
+      return `matrix(${this.a}, ${this.b}, ${this.c}, ${this.d}, ${this.e}, ${this.f})`;
+    }
+    static fromString(s: string) {
+      return new DOMMatrix(s);
+    }
+  }
+  globalThis.DOMMatrix = DOMMatrix as any;
+}
+
 async function extractTextFromPDF(buffer: Buffer): Promise<string> {
+  polyfillDOMMatrix();
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
   const data = new Uint8Array(buffer);
