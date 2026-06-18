@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { TransitionProvider } from "@/components/providers/transition-provider";
 import { TransitionOverlay } from "@/components/ui/transition-overlay";
+import { AuthHandler } from "@/components/auth/auth-handler";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -44,6 +45,7 @@ export default function RootLayout({
           <TransitionProvider>
             {children}
             <TransitionOverlay />
+            <AuthHandler />
           </TransitionProvider>
         </ThemeProvider>
       </body>
