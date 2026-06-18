@@ -15,8 +15,27 @@ interface JobResult {
   location: string;
   estimated_salary: string;
   match_score: number;
+  match_summary: string;
   job_url: string;
   full_description: string;
+}
+
+function SkeletonCard() {
+  return (
+    <div className="bg-white dark:bg-[#1C1C1E] shadow-md rounded-xl p-6 animate-pulse">
+      <div className="flex justify-between items-start mb-4">
+        <div className="h-5 w-32 rounded-full bg-gray-200 dark:bg-white/10" />
+        <div className="h-4 w-4 rounded bg-gray-200 dark:bg-white/10" />
+      </div>
+      <div className="h-5 w-3/4 rounded bg-gray-200 dark:bg-white/10 mb-2" />
+      <div className="h-4 w-1/2 rounded bg-gray-200 dark:bg-white/10 mb-1" />
+      <div className="h-4 w-1/3 rounded bg-gray-200 dark:bg-white/10 mb-4" />
+      <div className="flex gap-3 pt-2">
+        <div className="h-10 flex-1 rounded-full bg-gray-200 dark:bg-white/10" />
+        <div className="h-10 flex-1 rounded-full bg-gray-200 dark:bg-white/10" />
+      </div>
+    </div>
+  );
 }
 
 export default function DashboardPage() {
@@ -24,6 +43,7 @@ export default function DashboardPage() {
   const [searching, setSearching] = useState(false);
   const [progress, setProgress] = useState(0);
   const [results, setResults] = useState<JobResult[]>([]);
+  const [hasSearched, setHasSearched] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [showLimitModal, setShowLimitModal] = useState<string | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
@@ -41,8 +61,8 @@ export default function DashboardPage() {
   const handleSearch = useCallback(async (query: string) => {
     setSearching(true);
     setProgress(0);
+    setHasSearched(true);
 
-    // Animate progress
     const interval = setInterval(() => {
       setProgress((p) => Math.min(p + Math.random() * 15, 85));
     }, 1000);
@@ -56,7 +76,7 @@ export default function DashboardPage() {
     }
 
     try {
-      const res = await fetch("/api/search-jobs", {
+      const res = await fetch("/api/search", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${session.access_token}`,
@@ -76,7 +96,6 @@ export default function DashboardPage() {
       }
 
       if (!res.ok) {
-        console.error("Search error:", data.error);
         clearInterval(interval);
         setSearching(false);
         setProgress(0);
@@ -94,6 +113,10 @@ export default function DashboardPage() {
       setSearching(false);
       setProgress(0);
     }
+  }, []);
+
+  const handleDelete = useCallback((id: string) => {
+    setResults((prev) => prev.filter((x) => x.id !== id));
   }, []);
 
   if (!authChecked) return null;
@@ -115,9 +138,16 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {results.length > 0 && (
+        {searching && (
           <div className="space-y-4">
-            <p className="text-sm text-white/40">{results.length} results found</p>
+            <SkeletonCard />
+            <SkeletonCard />
+            <SkeletonCard />
+          </div>
+        )}
+
+        {!searching && results.length > 0 && (
+          <div className="space-y-4">
             {results.map((r) => (
               <JobResultCard
                 key={r.id}
@@ -129,13 +159,19 @@ export default function DashboardPage() {
                 matchScore={r.match_score}
                 jobUrl={r.job_url}
                 fullDescription={r.full_description}
-                onDelete={(id) => setResults((prev) => prev.filter((x) => x.id !== id))}
+                onDelete={handleDelete}
               />
             ))}
           </div>
         )}
 
-        {!searching && results.length === 0 && (
+        {!searching && hasSearched && results.length === 0 && (
+          <div className="text-center py-20">
+            <p className="text-white/60 text-sm">No matching jobs found. Try updating your profile or search again.</p>
+          </div>
+        )}
+
+        {!searching && !hasSearched && results.length === 0 && (
           <div className="text-center py-20">
             <p className="text-white/40 text-sm">Search for jobs to get started</p>
           </div>
@@ -145,13 +181,13 @@ export default function DashboardPage() {
       {showLimitModal && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center">
           <div className="absolute inset-0 bg-black/60" onClick={() => setShowLimitModal(null)} />
-          <div className="relative bg-[#1C1C1E] border border-white/10 rounded-2xl p-6 max-w-sm mx-4 text-center space-y-4">
-            <p className="text-white font-semibold">
+          <div className="relative bg-white dark:bg-[#1C1C1E] border border-[var(--color-border)] rounded-2xl p-6 max-w-sm mx-4 text-center space-y-4">
+            <p className="text-[var(--color-text-primary)] font-semibold">
               {showLimitModal === "LIMIT_001"
                 ? "No searches remaining"
                 : "No CV generations remaining"}
             </p>
-            <p className="text-sm text-white/60">
+            <p className="text-sm text-[var(--color-text-secondary)]">
               {showLimitModal === "LIMIT_001"
                 ? "You've used all your free searches. Upgrade your plan to continue searching."
                 : "You've used all your free CV generations. Upgrade your plan to generate more."}
