@@ -34,7 +34,7 @@ export default function UpdatePasswordPage() {
       setError(err.message);
     } else {
       setSuccess(true);
-      setTimeout(() => router.push("/auth/confirm"), 2000);
+      setTimeout(() => router.push("/dashboard"), 2000);
     }
   };
 

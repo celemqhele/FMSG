@@ -24,14 +24,14 @@ export function AuthHandler() {
           .single();
 
         if (profile?.onboarding_completed) {
-          router.push("/");
+          router.push("/dashboard");
           return;
         }
       } catch {
         // profiles table may not exist yet — first login
       }
 
-      router.push("/auth/confirm");
+      router.push("/dashboard");
     });
 
     return () => {
