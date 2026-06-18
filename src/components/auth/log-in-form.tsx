@@ -11,6 +11,7 @@ interface LogInFormProps {
 export function LogInForm({ onForgotPassword, onLoggedIn }: LogInFormProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [keepSignedIn, setKeepSignedIn] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -18,6 +19,9 @@ export function LogInForm({ onForgotPassword, onLoggedIn }: LogInFormProps) {
     e.preventDefault();
     setError("");
     setLoading(true);
+
+    localStorage.setItem("keep_signed_in", keepSignedIn ? "true" : "false");
+
     const supabase = createClient();
     const { error: err } = await supabase.auth.signInWithPassword({ email, password });
     setLoading(false);
@@ -64,6 +68,15 @@ export function LogInForm({ onForgotPassword, onLoggedIn }: LogInFormProps) {
           placeholder="Enter your password"
         />
       </div>
+      <label className="flex items-center gap-2 text-sm text-[var(--color-text-secondary)]">
+        <input
+          type="checkbox"
+          checked={keepSignedIn}
+          onChange={(e) => setKeepSignedIn(e.target.checked)}
+          className="rounded border-[var(--color-border)] text-[var(--color-accent)] focus:ring-[var(--color-accent)]"
+        />
+        Keep me signed in
+      </label>
       <div className="flex justify-end">
         <button
           type="button"

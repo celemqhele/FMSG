@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { Search, ChevronDown, Clock } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
 
 interface SearchPillProps {
   onSearch: (query: string) => void;
@@ -10,7 +11,6 @@ interface SearchPillProps {
 }
 
 export function SearchPill({ onSearch, onToggleHistory, searching }: SearchPillProps) {
-  const [query, setQuery] = useState("");
   const [showDropdown, setShowDropdown] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -24,15 +24,25 @@ export function SearchPill({ onSearch, onToggleHistory, searching }: SearchPillP
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (query.trim() && !searching) {
-      onSearch(query.trim());
-    }
+  const handleSearch = async () => {
+    if (searching) return;
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("job_titles, location")
+      .eq("id", user.id)
+      .single();
+
+    const titles = (profile?.job_titles ?? []).slice(0, 3).join(" ");
+    const loc = profile?.location ?? "";
+    const query = [titles, loc].filter(Boolean).join(" in ") || "jobs";
+    onSearch(query);
   };
 
   return (
-    <form onSubmit={handleSubmit} className="w-full max-w-2xl mx-auto">
+    <div className="w-full max-w-2xl mx-auto">
       <div className="flex items-center h-14 rounded-full bg-white/10 border border-white/20 backdrop-blur-xl overflow-hidden">
         <div ref={dropdownRef} className="relative">
           <button
@@ -46,7 +56,7 @@ export function SearchPill({ onSearch, onToggleHistory, searching }: SearchPillP
             <div className="absolute left-0 top-14 w-48 rounded-xl bg-[#1C1C1E] border border-white/10 shadow-xl overflow-hidden z-50">
               <button
                 type="button"
-                onClick={() => { setShowDropdown(false); }}
+                onClick={() => { setShowDropdown(false); handleSearch(); }}
                 className="w-full flex items-center gap-3 px-4 py-3 text-sm text-white/80 hover:bg-white/5 transition-colors"
               >
                 <Search size={16} />
@@ -64,23 +74,19 @@ export function SearchPill({ onSearch, onToggleHistory, searching }: SearchPillP
           )}
         </div>
 
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search for jobs..."
-          className="flex-1 bg-transparent text-white placeholder-white/40 text-sm focus:outline-none px-2"
-          disabled={searching}
-        />
+        <span className="flex-1 text-white/40 text-sm px-2 select-none">
+          Search for jobs
+        </span>
 
         <button
-          type="submit"
-          disabled={!query.trim() || searching}
+          onClick={handleSearch}
+          disabled={searching}
           className="flex items-center gap-2 px-6 h-10 mr-2 rounded-full bg-[var(--color-accent)] text-white text-sm font-medium hover:bg-[var(--color-accent-hover)] transition-colors disabled:opacity-50"
         >
           <Search size={16} />
           Search
         </button>
       </div>
-    </form>
+    </div>
   );
 }

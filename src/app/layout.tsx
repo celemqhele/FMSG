@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { TransitionProvider } from "@/components/providers/transition-provider";
 import { TransitionOverlay } from "@/components/ui/transition-overlay";
+import { CookieConsentBanner } from "@/components/ui/cookie-consent-banner";
 import { AuthHandler } from "@/components/auth/auth-handler";
 import "./globals.css";
 
@@ -46,6 +47,7 @@ export default function RootLayout({
             {children}
             <TransitionOverlay />
             <AuthHandler />
+            <CookieConsentBanner />
           </TransitionProvider>
         </ThemeProvider>
       </body>
