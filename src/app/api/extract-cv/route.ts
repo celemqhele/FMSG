@@ -1,23 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GROQ_API_KEY = process.env.GROQ_API_KEY;
+
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
 const SYSTEM_PROMPT = `You are a CV parsing assistant. Extract structured information from the CV text below and return ONLY valid JSON with this exact schema (no markdown, no code fences):
 {
   "name": string,
   "surname": string,
-  "skills": string[],
-  "experience": { "company": string, "role": string, "start_date": string, "end_date": string, "description": string }[],
-  "education": { "institution": string, "degree": string, "year": number }[],
-  "years_of_experience": number,
-  "current_role": string,
-  "location": string,
-  "salary_min": number | null,
-  "salary_max": number | null,
-  "career_goals": string
+  "phone": string,
+  "address": string,
+  "job_titles": string[],
+  "job_types": string[],
+  "preferred_location": string
 }
-Use empty arrays and empty strings for missing data. Set salary_min and salary_max to null if not mentioned. Never invent information.`;
+Use empty arrays and empty strings for missing data. Never invent information.`;
 
 async function callGemini(text: string): Promise<any> {
   const res = await fetch(
@@ -42,33 +41,6 @@ async function callGemini(text: string): Promise<any> {
   return data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
 }
 
-async function callGroq(text: string): Promise<any> {
-  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${GROQ_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "llama-3.3-70b-versatile",
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: text },
-      ],
-      max_tokens: 2000,
-      temperature: 0.1,
-    }),
-  });
-
-  if (!res.ok) {
-    const errBody = await res.text();
-    throw new Error(`Groq error (${res.status}): ${errBody.slice(0, 200)}`);
-  }
-
-  const data = await res.json();
-  return data.choices?.[0]?.message?.content ?? "";
-}
-
 async function extractTextFromPDF(buffer: Buffer): Promise<string> {
   // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
   const pdf = require("pdf-parse/lib/pdf-parse.js");
@@ -85,62 +57,63 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
     }
 
+    if (file.type !== "application/pdf") {
+      return NextResponse.json({ error: "Only PDF files are supported." }, { status: 400 });
+    }
+
     const maxSize = 10 * 1024 * 1024;
     if (file.size > maxSize) {
       return NextResponse.json({ error: "File too large. Max 10MB." }, { status: 400 });
-    }
-
-    const allowedTypes = ["application/pdf", "text/plain"];
-    if (!allowedTypes.includes(file.type) && !file.name.endsWith(".txt")) {
-      return NextResponse.json({ error: "Only PDF and TXT files are supported." }, { status: 400 });
-    }
-
-    const buffer = Buffer.from(await file.arrayBuffer());
-    let text: string;
-
-    if (file.type === "application/pdf") {
-      try {
-        text = await extractTextFromPDF(buffer);
-      } catch (pdfErr) {
-        const pdfMsg = pdfErr instanceof Error ? pdfErr.message : String(pdfErr);
-        console.error("PDF extraction error:", pdfMsg);
-        return NextResponse.json({ error: `Failed to parse PDF: ${pdfMsg.slice(0, 200)}`, code: "PDF_PARSE_ERROR" }, { status: 400 });
-      }
-    } else {
-      text = buffer.toString("utf-8");
-    }
-
-    if (!text.trim()) {
-      return NextResponse.json({ error: "Could not extract any text from the file." }, { status: 400 });
     }
 
     if (!GEMINI_API_KEY) {
       return NextResponse.json({ error: "Gemini API key not configured." }, { status: 500 });
     }
 
-    let content: string | null = null;
-    let lastErr: string | null = null;
+    if (!SUPABASE_SERVICE_KEY) {
+      return NextResponse.json({ error: "Storage not configured." }, { status: 500 });
+    }
 
+    const buffer = Buffer.from(await file.arrayBuffer());
+
+    // Extract text from PDF (server-side only, never stored)
+    let text: string;
+    try {
+      text = await extractTextFromPDF(buffer);
+    } catch (pdfErr) {
+      const pdfMsg = pdfErr instanceof Error ? pdfErr.message : String(pdfErr);
+      console.error("PDF extraction error:", pdfMsg);
+      return NextResponse.json({ error: `Failed to parse PDF: ${pdfMsg.slice(0, 200)}`, code: "PDF_PARSE_ERROR" }, { status: 400 });
+    }
+
+    if (!text.trim()) {
+      return NextResponse.json({ error: "Could not extract any text from the file." }, { status: 400 });
+    }
+
+    // Upload raw PDF to Supabase Storage
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+    const storagePath = `cv-files/${crypto.randomUUID()}/${file.name}`;
+    const { error: uploadErr } = await supabase.storage
+      .from("cv-files")
+      .upload(storagePath, buffer, { contentType: "application/pdf", upsert: true });
+
+    if (uploadErr) {
+      console.error("Storage upload error:", uploadErr.message);
+      return NextResponse.json({ error: "Failed to store file.", code: "STORAGE_ERROR" }, { status: 500 });
+    }
+
+    // Send to Gemini
+    let content: string | null = null;
     try {
       content = await callGemini(text);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error("Gemini error:", msg);
-      lastErr = msg;
-
-      if (GROQ_API_KEY) {
-        try {
-          content = await callGroq(text);
-        } catch (groqErr) {
-          const groqMsg = groqErr instanceof Error ? groqErr.message : String(groqErr);
-          console.error("Groq error:", groqMsg);
-          lastErr += ` | ${groqMsg}`;
-        }
-      }
+      return NextResponse.json({ error: `AI extraction failed. ${msg}`, code: "AI_ERROR" }, { status: 502 });
     }
 
     if (!content) {
-      return NextResponse.json({ error: `AI extraction failed. ${lastErr}`, code: "AI_ERROR" }, { status: 502 });
+      return NextResponse.json({ error: "AI extraction failed. Empty response.", code: "AI_ERROR" }, { status: 502 });
     }
 
     const cleaned = content.slice(content.indexOf("{"), content.lastIndexOf("}") + 1).trim();
@@ -155,23 +128,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       name: parsed.name ?? "",
       surname: parsed.surname ?? "",
-      skills: parsed.skills ?? [],
-      experience: parsed.experience ?? [],
-      education: parsed.education ?? [],
-      years_of_experience: parsed.years_of_experience ?? 0,
-      current_role: parsed.current_role ?? "",
-      location: parsed.location ?? "",
-      salary_min: parsed.salary_min ?? null,
-      salary_max: parsed.salary_max ?? null,
-      career_goals: parsed.career_goals ?? "",
-      cv_text: text.slice(0, 10000),
+      phone: parsed.phone ?? "",
+      address: parsed.address ?? "",
+      job_titles: parsed.job_titles ?? [],
+      job_types: parsed.job_types ?? [],
+      preferred_location: parsed.preferred_location ?? "",
+      cv_file_path: storagePath,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("Extract CV error:", msg);
-    let code = "UNKNOWN";
-    if (msg.includes("pdfjs") || msg.includes("PDF") || msg.includes("getDocument")) code = "PDF_PARSE_ERROR";
-    else if (msg.includes("fetch") || msg.includes("network")) code = "NETWORK_ERROR";
-    return NextResponse.json({ error: msg, code }, { status: 500 });
+    return NextResponse.json({ error: msg, code: "UNKNOWN" }, { status: 500 });
   }
 }
