@@ -30,10 +30,16 @@ function normalize(r: any) {
   return { ...r, full_description: r.full_spec ?? "" };
 }
 
-function buildJobUrl(job: { link?: string; job_id?: string; title: string; company_name: string }): string {
+function buildJobUrl(job: { link?: string; job_id?: string; title: string; company_name: string; via?: string }): string {
   if (job.link) return job.link;
-  if (job.job_id) return `https://www.google.com/search?q=${encodeURIComponent(job.title)}&ibp=htl;jobs&id=${encodeURIComponent(job.job_id)}`;
-  return `https://www.google.com/search?q=${encodeURIComponent(`${job.title} ${job.company_name}`)}`;
+  const q = encodeURIComponent(`${job.title} ${job.company_name} apply`);
+  if (job.job_id) return `https://www.google.com/search?q=${q}&ibp=htl;jobs#fpstate=htl.jobs&htid=${encodeURIComponent(job.job_id)}`;
+  if (job.via) {
+    const via = job.via.toLowerCase();
+    if (via.includes("linkedin")) return `https://www.linkedin.com/jobs/search/?keywords=${encodeURIComponent(job.title)}&f_C=${encodeURIComponent(job.company_name)}`;
+    if (via.includes("indeed")) return `https://za.indeed.com/jobs?q=${encodeURIComponent(job.title)}&l=${encodeURIComponent(job.company_name)}`;
+  }
+  return `https://www.google.com/search?q=${q}`;
 }
 
 export async function POST(request: NextRequest) {
