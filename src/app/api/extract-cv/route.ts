@@ -72,6 +72,7 @@ async function extractTextFromPDF(buffer: Buffer): Promise<string> {
   polyfillDOMMatrix();
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  (pdfjs as any).GlobalWorkerOptions.workerSrc = "";
   const data = new Uint8Array(buffer);
   const doc = await (pdfjs as any).getDocument({ data }).promise;
   const pages: string[] = [];
