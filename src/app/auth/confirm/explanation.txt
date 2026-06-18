@@ -1,0 +1,7 @@
+Post-sign-in confirmation page. Shows "Email Confirmed" pill + "Continue to Dashboard" button. On click, checks profiles table for onboarding_completed — redirects to /onboarding if not done, or / (home) if done.
+
+Arriving users land here via:
+- AuthHandler redirect after SIGNED_IN event (OTP sign-up, password login)
+- Direct navigation after magic link exchange
+
+Has space video background matching the rest of the site.

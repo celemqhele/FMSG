@@ -1,15 +1,1 @@
-FILE: auth-modal.tsx
-PURPOSE: Modal overlay for authentication. Shows Log In / Sign Up tabs. After sign-up submission, switches to 6-digit email verification code screen. Closes on backdrop click or X button.
-
-IMPORTS:
-- lucide-react (X) — close button icon
-- LogInForm, SignUpForm, VerifyCode — child form components
-
-EXPORTS:
-- AuthModal — accepts isOpen, onClose, and defaultTab props
-
-DEPENDENCIES: Consumed by page.tsx (landing page)
-
-SIDE EFFECTS: None in Type 1 preview (no API calls yet)
-
-LAST UPDATED: 2025-06-18
+Modal container wrapping LogInForm, SignUpForm, VerifyCode, ForgotPasswordForm. Tabs for login/signup. After successful verification or login, closes modal and redirects to /auth/confirm.

@@ -1,0 +1,1 @@
+Global client component in root layout. Listens for SIGNED_IN events and redirects to /auth/confirm. Sets sb-access-token cookie for server-side auth detection. Skips if already on /auth/* routes. Uses onAuthStateChange only (no mount-time session detection) to avoid redirect loops.

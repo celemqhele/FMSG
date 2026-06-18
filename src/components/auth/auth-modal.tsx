@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, type ReactNode } from "react";
 import { X } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { LogInForm } from "./log-in-form";
 import { SignUpForm } from "./sign-up-form";
 import { VerifyCode } from "./verify-code";
@@ -27,6 +28,7 @@ export function AuthModal({ isOpen, onClose, defaultTab = "signup" }: AuthModalP
   const [screen, setScreen] = useState<Screen>(defaultTab);
   const [pendingEmail, setPendingEmail] = useState("");
   const [pendingSignUp, setPendingSignUp] = useState<PendingSignUp | null>(null);
+  const router = useRouter();
 
   useEffect(() => {
     if (isOpen) {
@@ -50,11 +52,13 @@ export function AuthModal({ isOpen, onClose, defaultTab = "signup" }: AuthModalP
 
   const handleVerified = useCallback(() => {
     onClose();
-  }, [onClose]);
+    router.push("/auth/confirm");
+  }, [onClose, router]);
 
   const handleLoggedIn = useCallback(() => {
     onClose();
-  }, [onClose]);
+    router.push("/auth/confirm");
+  }, [onClose, router]);
 
   if (!mounted && !isOpen) return null;
 

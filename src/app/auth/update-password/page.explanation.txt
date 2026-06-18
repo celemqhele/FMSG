@@ -1,0 +1,1 @@
+Password reset page. Checks session on mount, allows setting new password via updateUser. On success redirects to /auth/confirm after 2s.
