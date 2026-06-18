@@ -22,17 +22,17 @@ interface JobResult {
 
 function SkeletonCard() {
   return (
-    <div className="bg-white dark:bg-[#1C1C1E] shadow-md rounded-xl p-6 animate-pulse">
+    <div className="liquid-glass rounded-xl p-6 animate-pulse">
       <div className="flex justify-between items-start mb-4">
-        <div className="h-5 w-32 rounded-full bg-gray-200 dark:bg-white/10" />
-        <div className="h-4 w-4 rounded bg-gray-200 dark:bg-white/10" />
+        <div className="h-5 w-32 rounded-full bg-white/10" />
+        <div className="h-4 w-4 rounded bg-white/10" />
       </div>
-      <div className="h-5 w-3/4 rounded bg-gray-200 dark:bg-white/10 mb-2" />
-      <div className="h-4 w-1/2 rounded bg-gray-200 dark:bg-white/10 mb-1" />
-      <div className="h-4 w-1/3 rounded bg-gray-200 dark:bg-white/10 mb-4" />
+      <div className="h-5 w-3/4 rounded bg-white/10 mb-2" />
+      <div className="h-4 w-1/2 rounded bg-white/10 mb-1" />
+      <div className="h-4 w-1/3 rounded bg-white/10 mb-4" />
       <div className="flex gap-3 pt-2">
-        <div className="h-10 flex-1 rounded-full bg-gray-200 dark:bg-white/10" />
-        <div className="h-10 flex-1 rounded-full bg-gray-200 dark:bg-white/10" />
+        <div className="h-10 flex-1 rounded-full bg-white/10" />
+        <div className="h-10 flex-1 rounded-full bg-white/10" />
       </div>
     </div>
   );
@@ -128,13 +128,13 @@ export default function DashboardPage() {
 
         {searching && (
           <div className="space-y-2">
-            <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
+            <div className="h-1.5 rounded-full bg-[var(--color-border)] overflow-hidden">
               <div
                 className="h-full rounded-full bg-[var(--color-accent)] transition-all duration-500"
                 style={{ width: `${progress}%` }}
               />
             </div>
-            <p className="text-xs text-white/40 text-center">Usually takes 30 seconds</p>
+            <p className="text-xs text-[var(--color-text-secondary)] text-center">Usually takes 30 seconds</p>
           </div>
         )}
 
@@ -167,13 +167,13 @@ export default function DashboardPage() {
 
         {!searching && hasSearched && results.length === 0 && (
           <div className="text-center py-20">
-            <p className="text-white/60 text-sm">No matching jobs found. Try updating your profile or search again.</p>
+            <p className="text-[var(--color-text-secondary)] text-sm">No matching jobs found. Try updating your profile or search again.</p>
           </div>
         )}
 
         {!searching && !hasSearched && results.length === 0 && (
           <div className="text-center py-20">
-            <p className="text-white/40 text-sm">Search for jobs to get started</p>
+            <p className="text-[var(--color-text-secondary)] text-sm">Search for jobs to get started</p>
           </div>
         )}
       </div>
@@ -181,7 +181,7 @@ export default function DashboardPage() {
       {showLimitModal && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center">
           <div className="absolute inset-0 bg-black/60" onClick={() => setShowLimitModal(null)} />
-          <div className="relative bg-white dark:bg-[#1C1C1E] border border-[var(--color-border)] rounded-2xl p-6 max-w-sm mx-4 text-center space-y-4">
+          <div className="relative liquid-glass border rounded-2xl p-6 max-w-sm mx-4 text-center space-y-4">
             <p className="text-[var(--color-text-primary)] font-semibold">
               {showLimitModal === "LIMIT_001"
                 ? "No searches remaining"

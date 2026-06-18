@@ -6,7 +6,7 @@ import { SpaceVideoBackground } from "@/components/landing/space-video-backgroun
 
 export function DashboardLayout({ children }: { children: ReactNode }) {
   return (
-    <div className="min-h-dvh flex flex-col bg-black">
+    <div className="min-h-dvh flex flex-col text-[var(--color-text-primary)] bg-[var(--color-bg)]">
       <SpaceVideoBackground src="/videos/space.mp4" />
       <header className="relative z-10 flex justify-end items-center px-6 py-4">
         <ProfileDropdown />

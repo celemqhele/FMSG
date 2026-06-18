@@ -59,7 +59,7 @@ export function ProfileDropdown() {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-12 w-52 py-1.5 rounded-2xl bg-white dark:bg-[#1C1C1E] border border-[var(--color-border)] shadow-lg overflow-hidden z-50">
+        <div className="absolute right-0 top-12 w-52 py-1.5 rounded-2xl liquid-glass border shadow-lg overflow-hidden z-50">
           <button
             onClick={() => { setOpen(false); router.push("/profile"); }}
             className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-[var(--color-text-primary)] hover:bg-white/5 dark:hover:bg-white/5 transition-colors"

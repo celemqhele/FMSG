@@ -59,7 +59,7 @@ export function JobResultCard({
 
   return (
     <div
-      className={`bg-white dark:bg-[#1C1C1E] shadow-md rounded-xl p-6 transition-all duration-300 ${
+      className={`liquid-glass rounded-xl p-6 transition-all duration-300 ${
         deleting ? "opacity-0 scale-95" : "opacity-100 scale-100"
       }`}
     >
@@ -75,7 +75,7 @@ export function JobResultCard({
             <X size={16} />
           </button>
           {showDeleteMenu && (
-            <div className="absolute right-0 top-8 w-64 rounded-xl bg-white dark:bg-[#1C1C1E] border border-[var(--color-border)] shadow-lg overflow-hidden z-50">
+            <div className="absolute right-0 top-8 w-64 rounded-xl liquid-glass border shadow-lg overflow-hidden z-50">
               <button
                 onClick={() => handleDelete(true, false)}
                 className="w-full text-left px-4 py-3 text-sm text-[var(--color-text-primary)] hover:bg-white/5 dark:hover:bg-white/5 transition-colors"
@@ -109,7 +109,7 @@ export function JobResultCard({
             href={jobUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center justify-center gap-1.5 px-5 py-2.5 text-sm font-medium text-[var(--color-text-secondary)] border border-[var(--color-border)] rounded-full hover:bg-white/5 dark:hover:bg-white/5 transition-colors"
+            className="flex items-center justify-center gap-1.5 flex-1 px-5 py-2.5 text-sm font-medium text-white bg-[var(--color-accent)] rounded-full hover:bg-[var(--color-accent-hover)] transition-colors"
           >
             Apply
             <ExternalLink size={14} />
