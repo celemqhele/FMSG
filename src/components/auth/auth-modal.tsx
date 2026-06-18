@@ -6,6 +6,7 @@ import { LogInForm } from "./log-in-form";
 import { SignUpForm } from "./sign-up-form";
 import { ForgotPasswordForm } from "./forgot-password-form";
 import { LoginTransition } from "@/components/ui/login-transition";
+import "@/components/landing/liquid-glass.css";
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -37,12 +38,12 @@ export function AuthModal({ isOpen, onClose, defaultTab = "signup" }: AuthModalP
 
   const handleSignUpSubmit = useCallback(({ email, autoConfirmed }: { email: string; autoConfirmed: boolean }) => {
     if (autoConfirmed) {
-      onClose();
+      setTransitionType("login");
     } else {
       setPendingEmail(email);
       setScreen("signup-sent");
     }
-  }, [onClose]);
+  }, []);
 
   const handleVerified = useCallback(() => {
     onClose();
@@ -75,7 +76,7 @@ export function AuthModal({ isOpen, onClose, defaultTab = "signup" }: AuthModalP
         />
 
         <div
-          className={`relative w-full max-w-md mx-4 p-6 rounded-2xl bg-white dark:bg-[#1C1C1E] border border-[var(--color-border)] shadow-[var(--shadow-lg)] transition-all duration-200 ${
+          className={`relative w-full max-w-md mx-4 p-6 rounded-2xl liquid-glass transition-all duration-200 ${
             isOpen ? "opacity-100 scale-100" : "opacity-0 scale-95"
           }`}
           style={{

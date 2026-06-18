@@ -23,7 +23,7 @@ export function LogInForm({ onForgotPassword, onLoggedIn }: LogInFormProps) {
     localStorage.setItem("keep_signed_in", keepSignedIn ? "true" : "false");
 
     const supabase = createClient();
-    const { error: err } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error: err } = await supabase.auth.signInWithPassword({ email, password });
     setLoading(false);
 
     if (err) {
@@ -32,8 +32,10 @@ export function LogInForm({ onForgotPassword, onLoggedIn }: LogInFormProps) {
       } else {
         setError(err.message);
       }
-    } else {
+    } else if (data?.session) {
       onLoggedIn();
+    } else {
+      setError("Sign in succeeded but no session was returned. Please try again.");
     }
   };
 
