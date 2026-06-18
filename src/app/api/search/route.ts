@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { searchGoogleJobs } from "@/lib/serpapi";
 import { extractTextFromPDF } from "@/lib/pdf";
-import { scoreJobMatch, isJobValid, extractSalary } from "@/lib/scorer";
+import { scoreJobMatch, isJobValid, extractSalary, isDomainVerified } from "@/lib/scorer";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -152,7 +152,8 @@ export async function POST(request: NextRequest) {
 
     // Filter banned
     const candidates = rawJobs.filter((j) => {
-      if (j.link && bannedJobs.includes(j.link)) return false;
+      const url = buildJobUrl(j);
+      if (url && bannedJobs.includes(url)) return false;
       if (bannedCompanies.includes(j.company_name)) return false;
       return true;
     });
@@ -191,6 +192,13 @@ export async function POST(request: NextRequest) {
 
     for (const job of candidates) {
       const jobUrl = buildJobUrl(job);
+
+      // Domain verification
+      if (!isDomainVerified(jobUrl)) {
+        console.log(`[SEARCH] Domain not verified for "${job.title}" — URL: ${jobUrl}`);
+        continue;
+      }
+
       let specText = job.description ?? "";
 
       // Fetch full page via Jina AI reader

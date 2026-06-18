@@ -2,8 +2,6 @@
 
 import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { StarfieldAnimation } from "./starfield-animation";
-
 interface LoginTransitionProps {
   type: "login" | "onboarding";
   onComplete?: () => void;
@@ -24,7 +22,7 @@ export function LoginTransition({ type, onComplete }: LoginTransitionProps) {
       setPhase(1);
       // 200ms — modal content fades
       timers.push(setTimeout(() => setPhase(2), 200));
-      // 400ms — navigate to dashboard + overlay fully black + starfield at 4x
+      // 400ms — navigate to dashboard + overlay fully black
       timers.push(setTimeout(() => {
         setPhase(3);
         router.push("/dashboard");
@@ -56,11 +54,6 @@ export function LoginTransition({ type, onComplete }: LoginTransitionProps) {
 
   return (
     <div className="fixed inset-0 z-[200]">
-      {/* Starfield animation layer — behind overlay */}
-      <div className="absolute inset-0" style={{ zIndex: 1 }}>
-        {phase >= 3 && <StarfieldAnimation speed={4} />}
-      </div>
-
       {/* Black overlay */}
       <div
         className="absolute inset-0 bg-black transition-opacity duration-600"

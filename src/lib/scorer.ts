@@ -169,3 +169,45 @@ export function scoreJobMatch(
 
   return { score, match_summary, estimated_salary };
 }
+
+const VERIFIED_DOMAINS = [
+  "indeed.co.za",
+  "indeed.com",
+  "linkedin.com",
+  "careers24.com",
+  "jobmail.co.za",
+  "pnet.co.za",
+  "bizcommunity.com",
+  "gumtree.co.za",
+  "jobplacements.com",
+  "executiveplacements.com",
+  "jobvine.co.za",
+  "simplyhired.co.za",
+  "glassdoor.com",
+  "hireresolve.co.za",
+  "talentsam.co.za",
+  "networkrecruitment.co.za",
+  "set.co.za",
+  "communicate.co.za",
+  "staffdomain.co.za",
+  "manpower.co.za",
+  "adcorpblu.co.za",
+];
+
+export function isDomainVerified(url: string): boolean {
+  try {
+    const domain = new URL(url).hostname.replace("www.", "");
+    if (VERIFIED_DOMAINS.some((d) => domain === d || domain.endsWith("." + d))) {
+      return true;
+    }
+    const path = new URL(url).pathname.toLowerCase();
+    return (
+      path.includes("/job") ||
+      path.includes("/career") ||
+      path.includes("/vacancy") ||
+      path.includes("/position")
+    );
+  } catch {
+    return false;
+  }
+}
