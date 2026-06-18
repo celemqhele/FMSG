@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 const CEREBRAS_API_KEY = process.env.CEREBRAS_API_KEY;
-const MODEL = "gpt-oss-120b";
+const MODEL = "llama-3.3-70b";
 
 async function extractTextFromPDF(buffer: Buffer): Promise<string> {
   // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
