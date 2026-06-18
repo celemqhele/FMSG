@@ -48,7 +48,7 @@ export function AutoLoginGuard() {
   }
 
   if (guardState === "transition") {
-    return <LoginTransition type="login" onComplete={() => {}} />;
+    return <LoginTransition type="login" onComplete={() => setGuardState("idle")} />;
   }
 
   return null;
