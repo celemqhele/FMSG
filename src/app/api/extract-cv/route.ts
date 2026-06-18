@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 const CEREBRAS_API_KEY = process.env.CEREBRAS_API_KEY;
-const MODEL = "qwen-3-32b";
+const MODEL = "gpt-oss-120b";
 
 async function extractTextFromPDF(buffer: Buffer): Promise<string> {
   // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
@@ -86,9 +86,10 @@ Use empty arrays and empty strings for missing data. Never invent information.`,
       console.error("Cerebras API error:", cerebRes.status, errBody);
       let detail = "AI extraction failed. ";
       if (cerebRes.status === 401) detail += "Invalid API key.";
+      else if (cerebRes.status === 404) detail += `Endpoint or model not found. Response: ${errBody.slice(0, 300)}`;
       else if (cerebRes.status === 429) detail += "Rate limited. Try again later.";
       else if (cerebRes.status >= 500) detail += "Cerebras server error.";
-      else detail += `Status ${cerebRes.status}.`;
+      else detail += `Status ${cerebRes.status}. ${errBody.slice(0, 200)}`;
       return NextResponse.json({ error: detail, code: "CEREBRAS_API_ERROR", status: cerebRes.status }, { status: 502 });
     }
 
