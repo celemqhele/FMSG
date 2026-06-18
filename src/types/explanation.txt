@@ -1,1 +1,0 @@
-Type declaration for pdf-parse v1 (CommonJS module with default export).

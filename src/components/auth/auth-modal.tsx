@@ -35,25 +35,47 @@ export function AuthModal({ isOpen, onClose, defaultTab = "signup" }: AuthModalP
     setScreen(s);
   }, []);
 
+  const redirectAfterAuth = useCallback(async () => {
+    const supabase = (await import("@/lib/supabase/client")).createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { router.push("/auth/confirm"); return; }
+
+    try {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("onboarding_completed")
+        .eq("id", user.id)
+        .single();
+
+      if (profile?.onboarding_completed) {
+        router.push("/");
+      } else {
+        router.push("/auth/confirm");
+      }
+    } catch {
+      router.push("/auth/confirm");
+    }
+  }, [router]);
+
   const handleSignUpSubmit = useCallback(({ email, autoConfirmed }: { email: string; autoConfirmed: boolean }) => {
     if (autoConfirmed) {
       onClose();
-      router.push("/auth/confirm");
+      redirectAfterAuth();
     } else {
       setPendingEmail(email);
       setScreen("signup-sent");
     }
-  }, [onClose, router]);
+  }, [onClose, redirectAfterAuth]);
 
   const handleVerified = useCallback(() => {
     onClose();
-    router.push("/auth/confirm");
-  }, [onClose, router]);
+    redirectAfterAuth();
+  }, [onClose, redirectAfterAuth]);
 
   const handleLoggedIn = useCallback(() => {
     onClose();
-    router.push("/auth/confirm");
-  }, [onClose, router]);
+    redirectAfterAuth();
+  }, [onClose, redirectAfterAuth]);
 
   if (!mounted && !isOpen) return null;
 
