@@ -24,31 +24,29 @@ export function LoginTransition({ type, onComplete }: LoginTransitionProps) {
       setPhase(1);
       // 200ms — modal content fades
       timers.push(setTimeout(() => setPhase(2), 200));
-      // 400ms — modal hidden, overlay fully black, starfield at 4x, overlay begins fading
-      timers.push(setTimeout(() => setPhase(3), 400));
-      // 1000ms — overlay fully gone, dashboard fades in, navigate
+      // 400ms — navigate to dashboard + overlay fully black + starfield at 4x
       timers.push(setTimeout(() => {
-        setPhase(4);
+        setPhase(3);
         router.push("/dashboard");
-      }, 1000));
-      // 1400ms — complete, cleanup
+      }, 400));
+      // 1000ms — overlay fades out revealing dashboard underneath
+      timers.push(setTimeout(() => setPhase(4), 1000));
+      // 1700ms — complete, cleanup
       timers.push(setTimeout(() => {
         cleanupRef.current = true;
         onComplete?.();
-      }, 1400));
+      }, 1700));
     } else {
-      // Onboarding: skip modal steps, start at fully black overlay
+      // Onboarding: start at fully black overlay + navigate immediately
       setPhase(3);
-      // 600ms — overlay fully gone, dashboard fades in, navigate
-      timers.push(setTimeout(() => {
-        setPhase(4);
-        router.push("/dashboard");
-      }, 600));
-      // 1000ms — complete, cleanup
+      router.push("/dashboard");
+      // 600ms — overlay fades out revealing dashboard
+      timers.push(setTimeout(() => setPhase(4), 600));
+      // 1300ms — complete, cleanup
       timers.push(setTimeout(() => {
         cleanupRef.current = true;
         onComplete?.();
-      }, 1000));
+      }, 1300));
     }
 
     return () => timers.forEach(clearTimeout);
@@ -73,18 +71,7 @@ export function LoginTransition({ type, onComplete }: LoginTransitionProps) {
         }}
       />
 
-      {/* Dashboard placeholder — fades in during phase 4 */}
-      {phase >= 4 && (
-        <div
-          className="absolute inset-0 flex items-center justify-center"
-          style={{
-            zIndex: 0,
-            animation: "auth-screen-in 400ms ease-out forwards",
-          }}
-        >
-          <p className="text-white/30 text-sm">Loading dashboard...</p>
-        </div>
-      )}
+      {/* Dashboard renders behind overlay — phase 4 reveals it */}
     </div>
   );
 }
