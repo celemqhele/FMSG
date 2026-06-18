@@ -1,3 +1,5 @@
+import { TransitionLink } from "@/components/ui/transition-link";
+
 export function Footer() {
   return (
     <footer className="px-6 py-12 border-t border-white/10">
@@ -11,18 +13,18 @@ export function Footer() {
           </p>
         </div>
         <div className="flex items-center gap-6 text-sm text-white/50">
-          <a href="/about" className="hover:text-white transition-colors">
+          <TransitionLink href="/about" className="hover:text-white transition-colors">
             About
-          </a>
-          <a href="/pricing" className="hover:text-white transition-colors">
+          </TransitionLink>
+          <TransitionLink href="/pricing" className="hover:text-white transition-colors">
             Pricing
-          </a>
-          <a href="/privacy" className="hover:text-white transition-colors">
+          </TransitionLink>
+          <TransitionLink href="/privacy" className="hover:text-white transition-colors">
             Privacy Policy
-          </a>
-          <a href="/articles" className="hover:text-white transition-colors">
+          </TransitionLink>
+          <span className="text-white/20 cursor-not-allowed select-none">
             Articles
-          </a>
+          </span>
         </div>
         <p className="text-sm text-white/50">
           &copy; 2025 Find Me Some Jobs
