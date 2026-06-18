@@ -131,12 +131,31 @@ export async function POST(request: NextRequest) {
     if (profile.banned_jobs) bannedJobs.push(...profile.banned_jobs);
     if (profile.banned_companies) bannedCompanies.push(...profile.banned_companies);
 
-    // Step 1: SerpAPI search
-    const serpQuery = [query, ...(profile.job_titles ?? [])].slice(0, 3).join(" ");
-    console.log("[SEARCH DEBUG] Step 2 — SerpAPI query:", serpQuery);
+    // Step 1: SerpAPI search — use first job title + location, retry with second if empty
+    const titles = profile.job_titles ?? [];
+    const location = profile.location ?? "";
+
+    function buildSerpParams(title: string) {
+      return {
+        q: `${title} ${location}`.trim(),
+        location: location,
+        hl: "en" as const,
+        gl: "za" as const,
+      };
+    }
+
+    const serpParams = titles.length > 0 ? buildSerpParams(titles[0]) : { q: query || "jobs", hl: "en" as const, gl: "za" as const };
+    console.log("[SEARCH DEBUG] Step 2 — SerpAPI params:", JSON.stringify(serpParams, null, 2));
+
     let rawJobs: Awaited<ReturnType<typeof searchGoogleJobs>>;
+    let activeSerpParams = serpParams;
     try {
-      rawJobs = await searchGoogleJobs(serpQuery);
+      rawJobs = await searchGoogleJobs(serpParams);
+      if (rawJobs.length === 0 && titles.length > 1) {
+        console.log("[SEARCH DEBUG] Step 2 — First title returned 0, retrying with second title:", titles[1]);
+        activeSerpParams = buildSerpParams(titles[1]);
+        rawJobs = await searchGoogleJobs(activeSerpParams);
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.log("[SEARCH DEBUG] Step 2 — SerpAPI error:", msg);
@@ -278,7 +297,7 @@ export async function POST(request: NextRequest) {
       // Fetch full page via SerpAPI
       if (job.job_id) {
         try {
-          const details = await fetchJobDetails(job.job_id, serpQuery);
+          const details = await fetchJobDetails(job.job_id, activeSerpParams);
           fullDesc = details.description ?? fullDesc;
           fetchedFullPage = true;
           console.log(`[SEARCH DEBUG] Step 6 — Full page fetched for "${job.title}" at ${job.company_name}, length: ${fullDesc.length}`);
