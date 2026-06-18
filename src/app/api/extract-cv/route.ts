@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
     // Send to Gemini
     let content: string | null = null;
     try {
-      content = await callGemini(SYSTEM_PROMPT, text);
+      content = await callGemini(SYSTEM_PROMPT, text, { responseMimeType: "application/json" });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error("Gemini error:", msg);

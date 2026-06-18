@@ -7,11 +7,20 @@ const GROQ_MODEL = "llama-3.3-70b-versatile";
 export interface AIConfig {
   maxOutputTokens?: number;
   temperature?: number;
+  responseMimeType?: string;
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export async function callGemini(systemPrompt: string, userText: string, config?: AIConfig): Promise<string> {
+  const generationConfig: Record<string, unknown> = {
+    temperature: config?.temperature ?? 0.1,
+    maxOutputTokens: config?.maxOutputTokens ?? 4096,
+  };
+  if (config?.responseMimeType) {
+    generationConfig.responseMimeType = config.responseMimeType;
+  }
+
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
     {
@@ -20,10 +29,7 @@ export async function callGemini(systemPrompt: string, userText: string, config?
       body: JSON.stringify({
         system_instruction: { parts: [{ text: systemPrompt }] },
         contents: [{ parts: [{ text: userText }] }],
-        generationConfig: {
-          temperature: config?.temperature ?? 0.1,
-          maxOutputTokens: config?.maxOutputTokens ?? 4096,
-        },
+        generationConfig,
       }),
     }
   );

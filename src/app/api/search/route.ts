@@ -20,10 +20,13 @@ async function logError(supabase: ReturnType<typeof getSupabase>, userId: string
   }
 }
 
-const FIRST_PASS_SYSTEM = `You are a job listing quality auditor. Evaluate each job listing snippet against the candidate profile below.
+const FIRST_PASS_SYSTEM = `You are a job listing quality auditor. Evaluate the job listing snippet against the candidate profile below.
 
-For each snippet, return a JSON object with "index" (0-based), "pass" (true/false), and "reason" (short explanation).
-Return ONLY a valid JSON array, no explanation.`;
+Return ONLY valid JSON with this exact schema, no explanation:
+{
+  "pass": true/false,
+  "reason": "short explanation"
+}`;
 
 const SECOND_PASS_SYSTEM = `You are a senior recruitment specialist and CV analyst. You have the full job specification and the candidate's complete CV. Perform a thorough evaluation.
 
@@ -214,55 +217,44 @@ export async function POST(request: NextRequest) {
 
     console.log("[SEARCH DEBUG] Step 3.5 — CV text length:", cvText.length, "chars available for second pass");
 
-    // Step 3: First pass — batched snippet filter
+    // Step 3: First pass — one-at-a-time AI filter
     const profileForFilter = JSON.stringify({
       job_titles: profile.job_titles,
       job_types: profile.job_types,
       location: profile.location,
     });
 
-    interface FirstPassResult {
-      index: number;
-      pass: boolean;
-      reason: string;
-    }
+    const afterFirstPass: typeof candidates = [];
 
-    const batchSize = 10;
-    const allFirstPassResults: FirstPassResult[] = [];
+    for (let i = 0; i < candidates.length; i++) {
+      const job = candidates[i];
+      const snippet = job.description ?? `${job.title} at ${job.company_name} in ${job.location}`;
+      const userText = "CANDIDATE PROFILE:\n" + profileForFilter + "\n\nJOB SNIPPET:\n" + snippet;
 
-    for (let i = 0; i < candidates.length; i += batchSize) {
-      const batch = candidates.slice(i, i + batchSize);
-
-      const userText =
-        "CANDIDATE PROFILE:\n" + profileForFilter + "\n\nJOB SNIPPETS:\n" +
-        batch.map((j, idx) =>
-          `${i + idx}. ${j.description ?? `${j.title} at ${j.company_name} in ${j.location}`}\nURL: ${j.link}`
-        ).join("\n\n");
-
-      console.log(`[SEARCH DEBUG] Step 4 — Batch ${Math.floor(i / batchSize) + 1}, jobs ${i} to ${i + batch.length - 1}`);
+      console.log(`[SEARCH DEBUG] Step 4 — Job ${i + 1}/${candidates.length}: "${job.title}" at ${job.company_name}`);
       try {
-        const raw = await callAI(FIRST_PASS_SYSTEM, userText, { maxOutputTokens: 1000, temperature: 0.1 });
-        const jsonStart = raw.indexOf("[");
-        const jsonEnd = raw.lastIndexOf("]") + 1;
-        if (jsonStart === -1 || jsonEnd === 0) throw new Error("No JSON array in response");
-        const parsed: FirstPassResult[] = JSON.parse(raw.slice(jsonStart, jsonEnd));
+        const raw = await callAI(FIRST_PASS_SYSTEM, userText, {
+          maxOutputTokens: 500,
+          temperature: 0.1,
+          responseMimeType: "application/json",
+        });
 
-        console.log(`[SEARCH DEBUG] Step 4 — Batch results:`, JSON.stringify(parsed, null, 2));
+        const parsed = JSON.parse(raw.trim());
+        console.log(`[SEARCH DEBUG] Step 4 — Result: pass=${parsed.pass}, reason=${parsed.reason ?? "none"}`);
 
-        for (const r of parsed) {
-          allFirstPassResults[i + r.index] = r;
+        if (parsed.pass !== false) {
+          afterFirstPass.push(job);
+        } else {
+          console.log(`[SEARCH DEBUG] Step 4 — REJECTED: ${parsed.reason ?? "no reason"}`);
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        console.log(`[SEARCH DEBUG] Step 4 — Batch ${Math.floor(i / batchSize) + 1} AI call failed:`, msg);
+        console.log(`[SEARCH DEBUG] Step 4 — AI call FAILED for "${job.title}": ${msg}`);
         await logError(supabase, user.id, "AI_003", msg);
-        for (let j = 0; j < batch.length; j++) {
-          allFirstPassResults[i + j] = { index: i + j, pass: true, reason: "AI unavailable" };
-        }
+        // Default: pass through if AI unavailable
+        afterFirstPass.push(job);
       }
     }
-
-    const afterFirstPass = candidates.filter((_, idx) => allFirstPassResults[idx]?.pass !== false);
 
     console.log("[SEARCH DEBUG] Step 5 — Jobs after first pass:", afterFirstPass.length, "out of", candidates.length);
 
@@ -313,13 +305,13 @@ export async function POST(request: NextRequest) {
       try {
         const userText =
           "CANDIDATE CV:\n" + (cvText || "No CV available") + "\n\nFULL JOB SPECIFICATION:\n" + fullDesc;
-        const raw = await callAI(SECOND_PASS_SYSTEM, userText, { maxOutputTokens: 2000, temperature: 0.1 });
+        const raw = await callAI(SECOND_PASS_SYSTEM, userText, {
+          maxOutputTokens: 2000,
+          temperature: 0.1,
+          responseMimeType: "application/json",
+        });
 
-        const jsonStart = raw.indexOf("{");
-        const jsonEnd = raw.lastIndexOf("}") + 1;
-        if (jsonStart === -1 || jsonEnd === 0) throw new Error("No JSON in response");
-
-        const parsed = JSON.parse(raw.slice(jsonStart, jsonEnd));
+        const parsed = JSON.parse(raw.trim());
 
         console.log(`[SEARCH DEBUG] Step 7 — Gemini second pass for "${job.title}" at ${job.company_name}:`, JSON.stringify(parsed, null, 2));
 

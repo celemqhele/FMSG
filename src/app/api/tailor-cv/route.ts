@@ -91,7 +91,7 @@ export async function POST(request: NextRequest) {
     const input = `CV: ${cvText}\n\nJob Title: ${job_title ?? "N/A"}\nCompany: ${company ?? "N/A"}\n\nJob Description: ${job_description}`;
     let result: string;
     try {
-      result = await callGemini(TAILOR_PROMPT, input);
+      result = await callGemini(TAILOR_PROMPT, input, { responseMimeType: "application/json" });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       return NextResponse.json({ error: `AI tailoring failed. ${msg}` }, { status: 502 });
