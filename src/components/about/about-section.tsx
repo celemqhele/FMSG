@@ -26,7 +26,7 @@ const values = [
     icon: Users,
     title: "Who It's For",
     description:
-      "Job seekers who want to stop scrolling and start matching. From fresh graduates to seasoned professionals — if you have skills, FMSG finds where they belong.",
+      "Job seekers who want to stop scrolling and start matching. From fresh graduates to seasoned professionals, if you have skills, FMSG finds where they belong.",
   },
 ];
 
@@ -39,7 +39,7 @@ export function AboutSection() {
         </h1>
         <p className="mt-4 text-lg text-white/60 max-w-2xl mx-auto">
           Find Me Some Jobs is an AI-powered job matching platform. Upload your CV, and
-          we find the roles that fit — no wasted applications, no spam.
+          we find the roles that fit, no wasted applications, no spam.
         </p>
       </div>
 
