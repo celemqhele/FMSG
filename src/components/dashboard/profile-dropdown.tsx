@@ -41,6 +41,7 @@ export function ProfileDropdown() {
   }, []);
 
   const handleLogout = async () => {
+    localStorage.removeItem("logged_in");
     const supabase = createClient();
     await supabase.auth.signOut();
     window.location.href = "/";

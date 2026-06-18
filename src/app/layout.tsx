@@ -5,6 +5,7 @@ import { TransitionProvider } from "@/components/providers/transition-provider";
 import { TransitionOverlay } from "@/components/ui/transition-overlay";
 import { CookieConsentBanner } from "@/components/ui/cookie-consent-banner";
 import { AuthHandler } from "@/components/auth/auth-handler";
+import { AutoLoginGuard } from "@/components/auth/auto-login-guard";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -37,7 +38,7 @@ export default function RootLayout({
       <head>
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem("theme")||"system";var d=window.matchMedia("(prefers-color-scheme:dark)").matches;if(t==="dark"||(t==="system"&&d))document.documentElement.classList.add("dark")}catch(e){}})()`,
+            __html: `(function(){try{var t=localStorage.getItem("theme")||"system";var d=window.matchMedia("(prefers-color-scheme:dark)").matches;if(t==="dark"||(t==="system"&&d))document.documentElement.classList.add("dark")}catch(e){} try{if(localStorage.getItem("logged_in")==="true")document.documentElement.classList.add("auth-loading")}catch(e){}})()`,
           }}
         />
       </head>
@@ -46,6 +47,7 @@ export default function RootLayout({
           <TransitionProvider>
             {children}
             <TransitionOverlay />
+            <AutoLoginGuard />
             <AuthHandler />
             <CookieConsentBanner />
           </TransitionProvider>

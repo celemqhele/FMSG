@@ -1,0 +1,16 @@
+Prevents the "flash of landing page" for returning authenticated users.
+
+On mount, synchronously checks localStorage `logged_in` flag in useState initializer
+(before first React render). If `true`, immediately renders a full-screen black overlay,
+preventing the landing page from ever appearing.
+
+Then verifies the session with Supabase via `getSession()`. If valid, renders
+`LoginTransition` which runs the starfield animation and navigates to `/dashboard`.
+If stale (e.g., session expired), clears the flag and shows nothing (passes through
+to the landing page rendered by the layout's children).
+
+Works alongside the blocking script in `<head>` which sets `html.auth-loading` CSS
+class to hide `<body>` before React even hydrates. The guard removes this class in
+its first effect so the black overlay becomes visible.
+
+Related: auth-handler.tsx sets `logged_in` on SIGNED_IN and clears on SIGNED_OUT.

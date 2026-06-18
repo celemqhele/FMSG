@@ -11,11 +11,16 @@ export function AuthHandler() {
   useEffect(() => {
     const supabase = createClient();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event: string, session: any) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event: string, session: any) => {
+      if (event === "SIGNED_IN" && session) {
+        localStorage.setItem("logged_in", "true");
+      } else if (event === "SIGNED_OUT") {
+        localStorage.removeItem("logged_in");
+      }
+
       if (event !== "SIGNED_IN" || !session) return;
       if (pathname.startsWith("/auth/")) return;
 
-      // Backup navigation with 2s delay — lets LoginTransition animation play first
       setTimeout(() => {
         router.push("/dashboard");
       }, 2000);
