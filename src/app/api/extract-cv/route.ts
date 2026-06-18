@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { callGemini } from "@/lib/gemini";
+import { extractTextFromPDF } from "@/lib/pdf";
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
@@ -17,36 +19,6 @@ const SYSTEM_PROMPT = `You are a CV parsing assistant. Extract structured inform
   "preferred_location": string
 }
 Use empty arrays and empty strings for missing data. Never invent information.`;
-
-async function callGemini(text: string): Promise<any> {
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
-        contents: [{ parts: [{ text }] }],
-        generationConfig: { temperature: 0.1, maxOutputTokens: 2000 },
-      }),
-    }
-  );
-
-  if (!res.ok) {
-    const errBody = await res.text();
-    throw new Error(`Gemini error (${res.status}): ${errBody.slice(0, 200)}`);
-  }
-
-  const data = await res.json();
-  return data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-}
-
-async function extractTextFromPDF(buffer: Buffer): Promise<string> {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
-  const pdf = require("pdf-parse/lib/pdf-parse.js");
-  const data = await pdf(buffer);
-  return data.text;
-}
 
 export async function POST(request: NextRequest) {
   try {
@@ -105,7 +77,7 @@ export async function POST(request: NextRequest) {
     // Send to Gemini
     let content: string | null = null;
     try {
-      content = await callGemini(text);
+      content = await callGemini(SYSTEM_PROMPT, text);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error("Gemini error:", msg);
