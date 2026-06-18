@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 const CEREBRAS_API_KEY = process.env.CEREBRAS_API_KEY;
-const MODEL = "llama-3.3-70b";
+const MODELS = ["zai-glm-4.7", "gpt-oss-120b"];
 
 async function extractTextFromPDF(buffer: Buffer): Promise<string> {
   // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
@@ -52,18 +52,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Cerebras API key not configured." }, { status: 500 });
     }
 
-    const cerebRes = await fetch("https://api.cerebras.ai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${CEREBRAS_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        messages: [
-          {
-            role: "system",
-            content: `You are a CV parsing assistant. Extract structured information from the CV text below and return ONLY valid JSON with this exact schema (no markdown, no code fences):
+    let cerebData: any;
+    let lastErr: string | null = null;
+
+    for (const model of MODELS) {
+      const cerebRes = await fetch("https://api.cerebras.ai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${CEREBRAS_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            {
+              role: "system",
+              content: `You are a CV parsing assistant. Extract structured information from the CV text below and return ONLY valid JSON with this exact schema (no markdown, no code fences):
 {
   "skills": string[],
   "experience": { "company": string, "role": string, "start_date": string, "end_date": string, "description": string }[],
@@ -73,27 +77,29 @@ export async function POST(request: NextRequest) {
   "location": string
 }
 Use empty arrays and empty strings for missing data. Never invent information.`,
-          },
-          { role: "user", content: text },
-        ],
-        max_tokens: 2000,
-        temperature: 0.1,
-      }),
-    });
+            },
+            { role: "user", content: text },
+          ],
+          max_tokens: 2000,
+          temperature: 0.1,
+        }),
+      });
 
-    if (!cerebRes.ok) {
+      if (cerebRes.ok) {
+        cerebData = await cerebRes.json();
+        break;
+      }
+
       const errBody = await cerebRes.text();
-      console.error("Cerebras API error:", cerebRes.status, errBody);
-      let detail = "AI extraction failed. ";
-      if (cerebRes.status === 401) detail += "Invalid API key.";
-      else if (cerebRes.status === 404) detail += `Endpoint or model not found. Response: ${errBody.slice(0, 300)}`;
-      else if (cerebRes.status === 429) detail += "Rate limited. Try again later.";
-      else if (cerebRes.status >= 500) detail += "Cerebras server error.";
-      else detail += `Status ${cerebRes.status}. ${errBody.slice(0, 200)}`;
-      return NextResponse.json({ error: detail, code: "CEREBRAS_API_ERROR", status: cerebRes.status }, { status: 502 });
+      console.error(`Cerebras model ${model} error:`, cerebRes.status, errBody);
+      lastErr = `Model "${model}" failed (${cerebRes.status}): ${errBody.slice(0, 200)}`;
     }
 
-    const cerebData = await cerebRes.json();
+    if (!cerebData) {
+      let detail = "AI extraction failed. ";
+      detail += lastErr ?? "All models exhausted.";
+      return NextResponse.json({ error: detail, code: "CEREBRAS_API_ERROR" }, { status: 502 });
+    }
     const content = cerebData.choices?.[0]?.message?.content;
 
     if (!content) {
