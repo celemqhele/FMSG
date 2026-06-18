@@ -5,11 +5,14 @@ import { createClient } from "@/lib/supabase/client";
 
 interface VerifyCodeProps {
   email: string;
+  password?: string;
+  name?: string;
+  surname?: string;
   onBack: () => void;
   onVerified: () => void;
 }
 
-export function VerifyCode({ email, onBack, onVerified }: VerifyCodeProps) {
+export function VerifyCode({ email, password, name, surname, onBack, onVerified }: VerifyCodeProps) {
   const [codes, setCodes] = useState<string[]>(["", "", "", "", "", ""]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -23,19 +26,36 @@ export function VerifyCode({ email, onBack, onVerified }: VerifyCodeProps) {
     setError("");
     setLoading(true);
     const supabase = createClient();
-    const { error: err } = await supabase.auth.verifyOtp({
+
+    const { error: verifyErr } = await supabase.auth.verifyOtp({
       email,
       token,
       type: "email",
     });
-    setLoading(false);
-    if (err) {
-      setError(err.message);
+
+    if (verifyErr) {
+      setLoading(false);
+      setError(verifyErr.message);
       setCodes(["", "", "", "", "", ""]);
       inputRefs.current[0]?.focus();
-    } else {
-      onVerified();
+      return;
     }
+
+    if (password) {
+      const fullName = [name, surname].filter(Boolean).join(" ");
+      const { error: updateErr } = await supabase.auth.updateUser({
+        password,
+        data: fullName ? { full_name: fullName } : undefined,
+      });
+      if (updateErr) {
+        setLoading(false);
+        setError(updateErr.message);
+        return;
+      }
+    }
+
+    setLoading(false);
+    onVerified();
   };
 
   const handleChange = (index: number, value: string) => {

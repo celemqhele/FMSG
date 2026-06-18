@@ -3,7 +3,14 @@
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 
-export function SignUpForm({ onSuccess }: { onSuccess: (email: string) => void }) {
+interface SignUpData {
+  email: string;
+  password: string;
+  name: string;
+  surname: string;
+}
+
+export function SignUpForm({ onSuccess }: { onSuccess: (data: SignUpData) => void }) {
   const [name, setName] = useState("");
   const [surname, setSurname] = useState("");
   const [email, setEmail] = useState("");
@@ -17,18 +24,6 @@ export function SignUpForm({ onSuccess }: { onSuccess: (email: string) => void }
     setLoading(true);
     const supabase = createClient();
 
-    const { error: signUpErr } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { data: { full_name: `${name} ${surname}` } },
-    });
-
-    if (signUpErr) {
-      setLoading(false);
-      setError(signUpErr.message);
-      return;
-    }
-
     const { error: otpErr } = await supabase.auth.signInWithOtp({ email });
 
     if (otpErr) {
@@ -37,8 +32,7 @@ export function SignUpForm({ onSuccess }: { onSuccess: (email: string) => void }
       return;
     }
 
-    setLoading(false);
-    onSuccess(email);
+    onSuccess({ email, password, name, surname });
   };
 
   return (
@@ -108,7 +102,7 @@ export function SignUpForm({ onSuccess }: { onSuccess: (email: string) => void }
         disabled={loading}
         className="mt-2 w-full px-5 py-2.5 text-sm font-medium text-white bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] rounded-full transition-colors disabled:opacity-50"
       >
-        {loading ? "Creating account..." : "Create Account"}
+        {loading ? "Sending code..." : "Create Account"}
       </button>
     </form>
   );

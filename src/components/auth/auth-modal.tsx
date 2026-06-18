@@ -13,12 +13,20 @@ interface AuthModalProps {
   defaultTab?: "login" | "signup";
 }
 
+interface PendingSignUp {
+  email: string;
+  password: string;
+  name: string;
+  surname: string;
+}
+
 type Screen = "login" | "signup" | "verify" | "forgot" | "forgot-sent";
 
 export function AuthModal({ isOpen, onClose, defaultTab = "signup" }: AuthModalProps) {
   const [mounted, setMounted] = useState(false);
   const [screen, setScreen] = useState<Screen>(defaultTab);
   const [pendingEmail, setPendingEmail] = useState("");
+  const [pendingSignUp, setPendingSignUp] = useState<PendingSignUp | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -34,7 +42,8 @@ export function AuthModal({ isOpen, onClose, defaultTab = "signup" }: AuthModalP
     setScreen(s);
   }, []);
 
-  const handleSignUpSubmit = useCallback((email: string) => {
+  const handleSignUpSubmit = useCallback(({ email, password, name, surname }: PendingSignUp) => {
+    setPendingSignUp({ email, password, name, surname });
     setPendingEmail(email);
     setScreen("verify");
   }, []);
@@ -95,7 +104,14 @@ export function AuthModal({ isOpen, onClose, defaultTab = "signup" }: AuthModalP
           )}
           {screen === "signup" && <SignUpForm onSuccess={handleSignUpSubmit} />}
           {screen === "verify" && (
-            <VerifyCode email={pendingEmail} onBack={() => switchScreen("signup")} onVerified={handleVerified} />
+            <VerifyCode
+              email={pendingEmail}
+              password={pendingSignUp?.password}
+              name={pendingSignUp?.name}
+              surname={pendingSignUp?.surname}
+              onBack={() => switchScreen("signup")}
+              onVerified={handleVerified}
+            />
           )}
           {screen === "forgot" && (
             <ForgotPasswordForm
