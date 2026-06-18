@@ -36,7 +36,7 @@ export function SpaceVideoBackground({
       video.playbackRate = targetRate;
       return;
     }
-    video.playbackRate = current + diff * 0.08;
+    video.playbackRate = current + diff * 0.035;
     animRef.current = requestAnimationFrame(smoothRate);
   }, [targetRate]);
 

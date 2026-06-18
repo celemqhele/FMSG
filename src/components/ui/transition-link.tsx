@@ -21,7 +21,7 @@ export function TransitionLink({ href, children, onClick, className }: Transitio
         e.preventDefault();
         startTransition();
         onClick?.(e);
-        setTimeout(() => router.push(href), 400);
+        router.push(href);
       }}
     >
       {children}

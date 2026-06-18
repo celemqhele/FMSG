@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { TransitionProvider } from "@/components/providers/transition-provider";
+import { TransitionOverlay } from "@/components/ui/transition-overlay";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -40,7 +41,10 @@ export default function RootLayout({
       </head>
       <body className="min-h-dvh flex flex-col">
         <ThemeProvider>
-          <TransitionProvider>{children}</TransitionProvider>
+          <TransitionProvider>
+            {children}
+            <TransitionOverlay />
+          </TransitionProvider>
         </ThemeProvider>
       </body>
     </html>

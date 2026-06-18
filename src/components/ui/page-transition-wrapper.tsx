@@ -1,26 +1,23 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import { useTransition } from "@/components/providers/transition-provider";
 
 export function PageTransitionWrapper({ children }: { children: ReactNode }) {
-  const { isTransitioning } = useTransition();
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    const timer = setTimeout(() => setMounted(true), 50);
+    const timer = setTimeout(() => setMounted(true), 80);
     return () => clearTimeout(timer);
   }, []);
 
   return (
     <div
-      className={`transition-all duration-500 ease-out ${
-        isTransitioning
-          ? "opacity-0 scale-[0.98] blur-[2px]"
-          : mounted
-            ? "opacity-100 scale-100 blur-0"
-            : "opacity-0"
-      }`}
+      className="transition-all duration-700 ease-out"
+      style={{
+        opacity: mounted ? 1 : 0,
+        transform: mounted ? "translateY(0) scale(1)" : "translateY(12px) scale(0.98)",
+        filter: mounted ? "blur(0)" : "blur(4px)",
+      }}
     >
       {children}
     </div>
