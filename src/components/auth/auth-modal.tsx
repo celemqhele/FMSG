@@ -5,7 +5,6 @@ import { X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { LogInForm } from "./log-in-form";
 import { SignUpForm } from "./sign-up-form";
-import { VerifyCode } from "./verify-code";
 import { ForgotPasswordForm } from "./forgot-password-form";
 
 interface AuthModalProps {
@@ -14,20 +13,12 @@ interface AuthModalProps {
   defaultTab?: "login" | "signup";
 }
 
-interface PendingSignUp {
-  email: string;
-  password: string;
-  name: string;
-  surname: string;
-}
-
-type Screen = "login" | "signup" | "verify" | "forgot" | "forgot-sent";
+type Screen = "login" | "signup" | "signup-sent" | "forgot" | "forgot-sent";
 
 export function AuthModal({ isOpen, onClose, defaultTab = "signup" }: AuthModalProps) {
   const [mounted, setMounted] = useState(false);
   const [screen, setScreen] = useState<Screen>(defaultTab);
   const [pendingEmail, setPendingEmail] = useState("");
-  const [pendingSignUp, setPendingSignUp] = useState<PendingSignUp | null>(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -44,10 +35,9 @@ export function AuthModal({ isOpen, onClose, defaultTab = "signup" }: AuthModalP
     setScreen(s);
   }, []);
 
-  const handleSignUpSubmit = useCallback(({ email, password, name, surname }: PendingSignUp) => {
-    setPendingSignUp({ email, password, name, surname });
+  const handleSignUpSubmit = useCallback(({ email }: { email: string }) => {
     setPendingEmail(email);
-    setScreen("verify");
+    setScreen("signup-sent");
   }, []);
 
   const handleVerified = useCallback(() => {
@@ -79,43 +69,49 @@ export function AuthModal({ isOpen, onClose, defaultTab = "signup" }: AuthModalP
         }`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex gap-1 mb-6 p-1 rounded-lg bg-[var(--color-surface)]">
-          <button
-            onClick={() => switchScreen("login")}
-            className={`flex-1 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-              screen === "login"
-                ? "bg-white dark:bg-[#2C2C2E] text-[var(--color-text-primary)] shadow-[var(--shadow-sm)]"
-                : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
-            }`}
-          >
-            Log In
-          </button>
-          <button
-            onClick={() => switchScreen("signup")}
-            className={`flex-1 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-              screen === "signup"
-                ? "bg-white dark:bg-[#2C2C2E] text-[var(--color-text-primary)] shadow-[var(--shadow-sm)]"
-                : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
-            }`}
-          >
-            Sign Up
-          </button>
-        </div>
+        {screen !== "signup-sent" && screen !== "forgot-sent" && (
+          <div className="flex gap-1 mb-6 p-1 rounded-lg bg-[var(--color-surface)]">
+            <button
+              onClick={() => switchScreen("login")}
+              className={`flex-1 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                screen === "login"
+                  ? "bg-white dark:bg-[#2C2C2E] text-[var(--color-text-primary)] shadow-[var(--shadow-sm)]"
+                  : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
+              }`}
+            >
+              Log In
+            </button>
+            <button
+              onClick={() => switchScreen("signup")}
+              className={`flex-1 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                screen === "signup"
+                  ? "bg-white dark:bg-[#2C2C2E] text-[var(--color-text-primary)] shadow-[var(--shadow-sm)]"
+                  : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
+              }`}
+            >
+              Sign Up
+            </button>
+          </div>
+        )}
 
         <ContentWrapper key={screen}>
           {screen === "login" && (
             <LogInForm onForgotPassword={() => switchScreen("forgot")} onLoggedIn={handleLoggedIn} />
           )}
           {screen === "signup" && <SignUpForm onSuccess={handleSignUpSubmit} />}
-          {screen === "verify" && (
-            <VerifyCode
-              email={pendingEmail}
-              password={pendingSignUp?.password}
-              name={pendingSignUp?.name}
-              surname={pendingSignUp?.surname}
-              onBack={() => switchScreen("signup")}
-              onVerified={handleVerified}
-            />
+          {screen === "signup-sent" && (
+            <div className="flex flex-col items-center gap-4 text-center">
+              <p className="text-sm text-[var(--color-text-secondary)]">
+                Check your email for the confirmation link.
+              </p>
+              <p className="text-sm font-medium text-[var(--color-text-primary)]">{pendingEmail}</p>
+              <button
+                onClick={() => switchScreen("signup")}
+                className="text-sm text-[var(--color-accent)] hover:underline transition-colors"
+              >
+                Back to Sign Up
+              </button>
+            </div>
           )}
           {screen === "forgot" && (
             <ForgotPasswordForm

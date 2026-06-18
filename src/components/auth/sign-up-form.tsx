@@ -24,11 +24,24 @@ export function SignUpForm({ onSuccess }: { onSuccess: (data: SignUpData) => voi
     setLoading(true);
     const supabase = createClient();
 
-    const { error: otpErr } = await supabase.auth.signInWithOtp({ email });
+    const fullName = [name, surname].filter(Boolean).join(" ");
 
-    if (otpErr) {
-      setLoading(false);
-      setError(otpErr.message);
+    const { error: signUpErr } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: fullName ? { full_name: fullName } : undefined,
+      },
+    });
+
+    setLoading(false);
+
+    if (signUpErr) {
+      if (signUpErr.message.includes("already registered")) {
+        setError("An account with this email already exists.");
+      } else {
+        setError(signUpErr.message);
+      }
       return;
     }
 
@@ -102,7 +115,7 @@ export function SignUpForm({ onSuccess }: { onSuccess: (data: SignUpData) => voi
         disabled={loading}
         className="mt-2 w-full px-5 py-2.5 text-sm font-medium text-white bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] rounded-full transition-colors disabled:opacity-50"
       >
-        {loading ? "Sending code..." : "Create Account"}
+        {loading ? "Creating account..." : "Create Account"}
       </button>
     </form>
   );

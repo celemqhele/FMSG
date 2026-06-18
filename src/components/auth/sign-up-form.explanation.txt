@@ -1,13 +1,1 @@
-FILE: sign-up-form.tsx
-PURPOSE: Sign-up form with Name, Surname, Email, and Password fields. On submit, calls onSuccess with the email to trigger the verification code screen.
-
-IMPORTS: None
-
-EXPORTS:
-- SignUpForm — accepts onSuccess callback
-
-DEPENDENCIES: Consumed by auth-modal.tsx
-
-SIDE EFFECTS: None in Type 1 preview
-
-LAST UPDATED: 2025-06-18
+Sign-up form with name/surname/email/password fields. Calls supabase.auth.signUp with full_name metadata. Shows "already registered" error for duplicate emails. On success, parent shows confirmation message ("Check your email").
