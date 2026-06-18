@@ -2,14 +2,16 @@
 
 import type { ReactNode } from "react";
 import { ProfileDropdown } from "./profile-dropdown";
+import { SpaceVideoBackground } from "@/components/landing/space-video-background";
 
 export function DashboardLayout({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-dvh flex flex-col bg-black">
-      <header className="flex justify-end items-center px-6 py-4">
+      <SpaceVideoBackground src="/videos/space.mp4" />
+      <header className="relative z-10 flex justify-end items-center px-6 py-4">
         <ProfileDropdown />
       </header>
-      <main className="flex-1 px-6 pb-12">
+      <main className="relative z-10 flex-1 px-6 pb-12">
         {children}
       </main>
     </div>
