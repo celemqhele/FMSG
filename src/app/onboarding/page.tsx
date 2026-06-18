@@ -48,7 +48,7 @@ export default function OnboardingPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        setError(data.error || "Extraction failed.");
+        setError(data.code ? `${data.code}: ${data.error}` : data.error || "Extraction failed.");
         setStep("upload");
         return;
       }
