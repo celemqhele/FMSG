@@ -5,6 +5,7 @@ import { X } from "lucide-react";
 import { LogInForm } from "./log-in-form";
 import { SignUpForm } from "./sign-up-form";
 import { ForgotPasswordForm } from "./forgot-password-form";
+import { LoginTransition } from "@/components/ui/login-transition";
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -18,6 +19,7 @@ export function AuthModal({ isOpen, onClose, defaultTab = "signup" }: AuthModalP
   const [mounted, setMounted] = useState(false);
   const [screen, setScreen] = useState<Screen>(defaultTab);
   const [pendingEmail, setPendingEmail] = useState("");
+  const [transitionType, setTransitionType] = useState<"login" | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -47,106 +49,127 @@ export function AuthModal({ isOpen, onClose, defaultTab = "signup" }: AuthModalP
   }, [onClose]);
 
   const handleLoggedIn = useCallback(() => {
+    setTransitionType("login");
+  }, []);
+
+  const handleTransitionComplete = useCallback(() => {
     onClose();
   }, [onClose]);
 
-  if (!mounted && !isOpen) return null;
+  if (!mounted && !isOpen && !transitionType) return null;
 
   return (
-    <div
-      className={`fixed inset-0 z-[110] flex items-center justify-center transition-opacity duration-200 ${
-        isOpen ? "opacity-100" : "opacity-0"
-      }`}
-    >
+    <>
       <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-        onClick={onClose}
-      />
-
-      <div
-        className={`relative w-full max-w-md mx-4 p-6 rounded-2xl bg-white dark:bg-[#1C1C1E] border border-[var(--color-border)] shadow-[var(--shadow-lg)] transition-all duration-200 ${
-          isOpen ? "opacity-100 scale-100" : "opacity-0 scale-95"
-        }`}
-        onClick={(e) => e.stopPropagation()}
+        className={`fixed inset-0 z-[110] flex items-center justify-center transition-opacity duration-200 ${
+          isOpen ? "opacity-100" : "opacity-0"
+        } ${transitionType ? "pointer-events-none" : ""}`}
       >
-        {screen !== "signup-sent" && screen !== "forgot-sent" && (
-          <div className="flex gap-1 mb-6 p-1 rounded-lg bg-[var(--color-surface)]">
-            <button
-              onClick={() => switchScreen("login")}
-              className={`flex-1 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-                screen === "login"
-                  ? "bg-white dark:bg-[#2C2C2E] text-[var(--color-text-primary)] shadow-[var(--shadow-sm)]"
-                  : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
-              }`}
-            >
-              Log In
-            </button>
-            <button
-              onClick={() => switchScreen("signup")}
-              className={`flex-1 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-                screen === "signup"
-                  ? "bg-white dark:bg-[#2C2C2E] text-[var(--color-text-primary)] shadow-[var(--shadow-sm)]"
-                  : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
-              }`}
-            >
-              Sign Up
-            </button>
-          </div>
-        )}
+        <div
+          className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+          style={{
+            transition: "opacity 400ms cubic-bezier(0.4, 0, 0.2, 1)",
+            opacity: transitionType === "login" ? 1 : undefined,
+          }}
+          onClick={onClose}
+        />
 
-        <ContentWrapper key={screen}>
-          {screen === "login" && (
-            <LogInForm onForgotPassword={() => switchScreen("forgot")} onLoggedIn={handleLoggedIn} />
-          )}
-          {screen === "signup" && <SignUpForm onSuccess={handleSignUpSubmit} />}
-          {screen === "signup-sent" && (
-            <div className="flex flex-col items-center gap-4 text-center">
-              <p className="text-sm text-[var(--color-text-secondary)]">
-                Check your email for the confirmation link.
-              </p>
-              <p className="text-sm font-medium text-[var(--color-text-primary)]">{pendingEmail}</p>
-              <button
-                onClick={() => switchScreen("signup")}
-                className="text-sm text-[var(--color-accent)] hover:underline transition-colors"
-              >
-                Back to Sign Up
-              </button>
-            </div>
-          )}
-          {screen === "forgot" && (
-            <ForgotPasswordForm
-              onBack={() => switchScreen("login")}
-              onSent={(email) => {
-                setPendingEmail(email);
-                switchScreen("forgot-sent");
-              }}
-            />
-          )}
-          {screen === "forgot-sent" && (
-            <div className="flex flex-col items-center gap-4 text-center">
-              <p className="text-sm text-[var(--color-text-secondary)]">
-                Check your email. We sent a password reset link to
-              </p>
-              <p className="text-sm font-medium text-[var(--color-text-primary)]">{pendingEmail}</p>
+        <div
+          className={`relative w-full max-w-md mx-4 p-6 rounded-2xl bg-white dark:bg-[#1C1C1E] border border-[var(--color-border)] shadow-[var(--shadow-lg)] transition-all duration-200 ${
+            isOpen ? "opacity-100 scale-100" : "opacity-0 scale-95"
+          }`}
+          style={{
+            transition: transitionType === "login"
+              ? "transform 400ms cubic-bezier(0.4, 0, 0.2, 1), opacity 200ms cubic-bezier(0.4, 0, 0.2, 1) 200ms"
+              : undefined,
+            transform: transitionType === "login" ? "scale(1.4)" : undefined,
+            opacity: transitionType === "login" ? 0 : undefined,
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {screen !== "signup-sent" && screen !== "forgot-sent" && (
+            <div className="flex gap-1 mb-6 p-1 rounded-lg bg-[var(--color-surface)]">
               <button
                 onClick={() => switchScreen("login")}
-                className="text-sm text-[var(--color-accent)] hover:underline transition-colors"
+                className={`flex-1 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                  screen === "login"
+                    ? "bg-white dark:bg-[#2C2C2E] text-[var(--color-text-primary)] shadow-[var(--shadow-sm)]"
+                    : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
+                }`}
               >
-                Back to Log In
+                Log In
+              </button>
+              <button
+                onClick={() => switchScreen("signup")}
+                className={`flex-1 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                  screen === "signup"
+                    ? "bg-white dark:bg-[#2C2C2E] text-[var(--color-text-primary)] shadow-[var(--shadow-sm)]"
+                    : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
+                }`}
+              >
+                Sign Up
               </button>
             </div>
           )}
-        </ContentWrapper>
+
+          <ContentWrapper key={screen}>
+            {screen === "login" && (
+              <LogInForm onForgotPassword={() => switchScreen("forgot")} onLoggedIn={handleLoggedIn} />
+            )}
+            {screen === "signup" && <SignUpForm onSuccess={handleSignUpSubmit} />}
+            {screen === "signup-sent" && (
+              <div className="flex flex-col items-center gap-4 text-center">
+                <p className="text-sm text-[var(--color-text-secondary)]">
+                  Check your email for the confirmation link.
+                </p>
+                <p className="text-sm font-medium text-[var(--color-text-primary)]">{pendingEmail}</p>
+                <button
+                  onClick={() => switchScreen("signup")}
+                  className="text-sm text-[var(--color-accent)] hover:underline transition-colors"
+                >
+                  Back to Sign Up
+                </button>
+              </div>
+            )}
+            {screen === "forgot" && (
+              <ForgotPasswordForm
+                onBack={() => switchScreen("login")}
+                onSent={(email) => {
+                  setPendingEmail(email);
+                  switchScreen("forgot-sent");
+                }}
+              />
+            )}
+            {screen === "forgot-sent" && (
+              <div className="flex flex-col items-center gap-4 text-center">
+                <p className="text-sm text-[var(--color-text-secondary)]">
+                  Check your email. We sent a password reset link to
+                </p>
+                <p className="text-sm font-medium text-[var(--color-text-primary)]">{pendingEmail}</p>
+                <button
+                  onClick={() => switchScreen("login")}
+                  className="text-sm text-[var(--color-accent)] hover:underline transition-colors"
+                >
+                  Back to Log In
+                </button>
+              </div>
+            )}
+          </ContentWrapper>
+        </div>
+
+        <button
+          onClick={onClose}
+          className="fixed top-6 right-6 z-[111] p-2 text-white/60 hover:text-white transition-colors"
+          aria-label="Close modal"
+        >
+          <X size={24} />
+        </button>
       </div>
 
-      <button
-        onClick={onClose}
-        className="fixed top-6 right-6 z-[111] p-2 text-white/60 hover:text-white transition-colors"
-        aria-label="Close modal"
-      >
-        <X size={24} />
-      </button>
-    </div>
+      {transitionType && (
+        <LoginTransition type={transitionType} onComplete={handleTransitionComplete} />
+      )}
+    </>
   );
 }
 

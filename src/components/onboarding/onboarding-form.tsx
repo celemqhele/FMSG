@@ -1,7 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useRef, type ReactNode } from "react";
 import { Upload, Loader2, Plus, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -28,8 +27,11 @@ const JOB_TYPE_OPTIONS = [
   "Internship",
 ];
 
-export function OnboardingForm() {
-  const router = useRouter();
+interface OnboardingFormProps {
+  onOnboarded?: () => void;
+}
+
+export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
   const [step, setStep] = useState<Step>("upload");
   const [dragOver, setDragOver] = useState(false);
   const [error, setError] = useState("");
@@ -119,7 +121,7 @@ export function OnboardingForm() {
     if (err) {
       setError(err.message);
     } else {
-      router.push("/dashboard");
+      onOnboarded?.();
     }
   };
 

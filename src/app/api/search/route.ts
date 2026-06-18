@@ -73,9 +73,12 @@ export async function POST(request: NextRequest) {
 
     const { query } = await request.json();
     if (!query || typeof query !== "string") {
+      console.log("[SEARCH DEBUG] Step 0 — No query provided");
       await logError(supabase, user.id, "SEARCH_001", "No search query provided");
       return NextResponse.json({ error: "SEARCH_001" }, { status: 400 });
     }
+
+    console.log("[SEARCH DEBUG] Search started. Query:", query);
 
     const isAdmin = ADMIN_EMAIL && user.email === ADMIN_EMAIL;
 
@@ -87,9 +90,20 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (profileErr || !profile) {
+      console.log("[SEARCH DEBUG] Step 1 — Profile read failure:", profileErr?.message ?? "not found");
       await logError(supabase, user.id, "DB_001", "Profile read failure: " + (profileErr?.message ?? "not found"));
       return NextResponse.json({ error: "DB_001" }, { status: 404 });
     }
+
+    console.log("[SEARCH DEBUG] Step 1 — Profile loaded:", JSON.stringify({
+      job_titles: profile.job_titles,
+      job_types: profile.job_types,
+      location: profile.location,
+      cv_file_path: profile.cv_file_path,
+      search_balance: profile.search_balance,
+      banned_jobs_count: profile.banned_jobs?.length ?? 0,
+      banned_companies_count: profile.banned_companies?.length ?? 0,
+    }, null, 2));
 
     // Balance check
     if (!isAdmin) {
@@ -119,16 +133,32 @@ export async function POST(request: NextRequest) {
 
     // Step 1: SerpAPI search
     const serpQuery = [query, ...(profile.job_titles ?? [])].slice(0, 3).join(" ");
+    console.log("[SEARCH DEBUG] Step 2 — SerpAPI query:", serpQuery);
     let rawJobs: Awaited<ReturnType<typeof searchGoogleJobs>>;
     try {
       rawJobs = await searchGoogleJobs(serpQuery);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+      console.log("[SEARCH DEBUG] Step 2 — SerpAPI error:", msg);
       await logError(supabase, user.id, "SEARCH_002", msg);
       return NextResponse.json({ results: [] });
     }
 
+    console.log("[SEARCH DEBUG] Step 2 — Raw SerpAPI results count:", rawJobs.length);
+    if (rawJobs.length > 0) {
+      console.log("[SEARCH DEBUG] Step 2 — First 2 raw results:", JSON.stringify(rawJobs.slice(0, 2).map(j => ({
+        title: j.title,
+        company_name: j.company_name,
+        location: j.location,
+        job_id: j.job_id,
+        link: j.link,
+        description_length: (j.description ?? "").length,
+        via: j.via,
+      })), null, 2));
+    }
+
     if (rawJobs.length === 0) {
+      console.log("[SEARCH DEBUG] Step 2 — No results from SerpAPI, returning empty");
       return NextResponse.json({ results: [] });
     }
 
@@ -139,7 +169,9 @@ export async function POST(request: NextRequest) {
       return true;
     });
 
+    console.log("[SEARCH DEBUG] Step 3 — After banned filter:", candidates.length, "remaining out of", rawJobs.length);
     if (candidates.length === 0) {
+      console.log("[SEARCH DEBUG] Step 3 — All results filtered by banned lists");
       return NextResponse.json({ results: [] });
     }
 
@@ -160,6 +192,8 @@ export async function POST(request: NextRequest) {
         // CV not available — second pass will proceed with empty CV
       }
     }
+
+    console.log("[SEARCH DEBUG] Step 3.5 — CV text length:", cvText.length, "chars available for second pass");
 
     // Step 3: First pass — batched snippet filter
     const profileForFilter = JSON.stringify({
@@ -186,6 +220,7 @@ export async function POST(request: NextRequest) {
           `${i + idx}. ${j.description ?? `${j.title} at ${j.company_name} in ${j.location}`}\nURL: ${j.link}`
         ).join("\n\n");
 
+      console.log(`[SEARCH DEBUG] Step 4 — Batch ${Math.floor(i / batchSize) + 1}, jobs ${i} to ${i + batch.length - 1}`);
       try {
         const raw = await callAI(FIRST_PASS_SYSTEM, userText, { maxOutputTokens: 1000, temperature: 0.1 });
         const jsonStart = raw.indexOf("[");
@@ -193,12 +228,14 @@ export async function POST(request: NextRequest) {
         if (jsonStart === -1 || jsonEnd === 0) throw new Error("No JSON array in response");
         const parsed: FirstPassResult[] = JSON.parse(raw.slice(jsonStart, jsonEnd));
 
+        console.log(`[SEARCH DEBUG] Step 4 — Batch results:`, JSON.stringify(parsed, null, 2));
+
         for (const r of parsed) {
           allFirstPassResults[i + r.index] = r;
         }
       } catch (err) {
-        // Batch AI call failed — include all jobs in this batch anyway, log once
         const msg = err instanceof Error ? err.message : String(err);
+        console.log(`[SEARCH DEBUG] Step 4 — Batch ${Math.floor(i / batchSize) + 1} AI call failed:`, msg);
         await logError(supabase, user.id, "AI_003", msg);
         for (let j = 0; j < batch.length; j++) {
           allFirstPassResults[i + j] = { index: i + j, pass: true, reason: "AI unavailable" };
@@ -208,7 +245,10 @@ export async function POST(request: NextRequest) {
 
     const afterFirstPass = candidates.filter((_, idx) => allFirstPassResults[idx]?.pass !== false);
 
+    console.log("[SEARCH DEBUG] Step 5 — Jobs after first pass:", afterFirstPass.length, "out of", candidates.length);
+
     if (afterFirstPass.length === 0) {
+      console.log("[SEARCH DEBUG] Step 5 — No jobs passed first pass, returning empty");
       return NextResponse.json({ results: [] });
     }
 
@@ -229,18 +269,25 @@ export async function POST(request: NextRequest) {
 
     const outputs: JobOutput[] = [];
 
+    console.log("[SEARCH DEBUG] Step 6 — Starting second pass for", afterFirstPass.length, "jobs");
+
     for (const job of afterFirstPass) {
       let fullDesc = job.description ?? "";
+      let fetchedFullPage = false;
 
       // Fetch full page via SerpAPI
       if (job.job_id) {
         try {
           const details = await fetchJobDetails(job.job_id, serpQuery);
           fullDesc = details.description ?? fullDesc;
+          fetchedFullPage = true;
+          console.log(`[SEARCH DEBUG] Step 6 — Full page fetched for "${job.title}" at ${job.company_name}, length: ${fullDesc.length}`);
         } catch {
+          console.log(`[SEARCH DEBUG] Step 6 — SerpAPI detail fetch FAILED for "${job.title}" at ${job.company_name}`);
           await logError(supabase, user.id, "SEARCH_003", `Could not fetch details for ${job.title} at ${job.company_name}`);
-          // Fall through with snippet
         }
+      } else {
+        console.log(`[SEARCH DEBUG] Step 6 — No job_id for "${job.title}" at ${job.company_name}, using snippet`);
       }
 
       // Call AI for deep evaluation
@@ -255,9 +302,14 @@ export async function POST(request: NextRequest) {
 
         const parsed = JSON.parse(raw.slice(jsonStart, jsonEnd));
 
+        console.log(`[SEARCH DEBUG] Step 7 — Gemini second pass for "${job.title}" at ${job.company_name}:`, JSON.stringify(parsed, null, 2));
+
         if (parsed.valid !== true || (parsed.match_score ?? 0) < 40) {
+          console.log(`[SEARCH DEBUG] Step 7 — REJECTED "${job.title}": valid=${parsed.valid}, score=${parsed.match_score}, reason=${parsed.rejection_reason ?? "score < 40"}`);
           continue;
         }
+
+        console.log(`[SEARCH DEBUG] Step 7 — ACCEPTED "${job.title}": score=${parsed.match_score}`);
 
         outputs.push({
           job_title: job.title,
@@ -274,6 +326,7 @@ export async function POST(request: NextRequest) {
         });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
+        console.log(`[SEARCH DEBUG] Step 7 — AI call FAILED for "${job.title}": ${msg}`);
         await logError(supabase, user.id, "AI_001", `${job.title} at ${job.company_name}: ${msg}`);
         continue;
       }
@@ -281,6 +334,8 @@ export async function POST(request: NextRequest) {
 
     // Sort by match_score descending
     outputs.sort((a, b) => b.match_score - a.match_score);
+
+    console.log("[SEARCH DEBUG] Step 8 — Final result count:", outputs.length);
 
     // Save to job_results
     if (outputs.length > 0) {
@@ -305,15 +360,19 @@ export async function POST(request: NextRequest) {
         .select();
 
       if (saveErr) {
+        console.log("[SEARCH DEBUG] Step 8 — DB save error:", saveErr.message);
         await logError(supabase, user.id, "DB_002", "Failed to save job results: " + saveErr.message);
       }
 
+      console.log("[SEARCH DEBUG] Step 8 — Returning", (saved ?? outputs).length, "results");
       return NextResponse.json({ results: saved ?? outputs });
     }
 
+    console.log("[SEARCH DEBUG] Step 8 — No results passed all filters");
     return NextResponse.json({ results: [] });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    console.log("[SEARCH DEBUG] CATCH — Unhandled error:", msg);
     await logError(supabase, null, "SEARCH_001", "Unhandled error: " + msg);
     return NextResponse.json({ results: [] });
   }
