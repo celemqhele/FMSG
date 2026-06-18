@@ -1,5 +1,10 @@
 const SERPAPI_KEY = process.env.SERPAPI_API_KEY;
 
+export interface ApplyOption {
+  link: string;
+  title: string;
+}
+
 export interface SerpJob {
   title: string;
   company_name: string;
@@ -8,6 +13,8 @@ export interface SerpJob {
   link?: string;
   via?: string;
   job_id?: string;
+  apply_options?: ApplyOption[];
+  job_highlights?: { link?: string };
 }
 
 interface SerpParams {

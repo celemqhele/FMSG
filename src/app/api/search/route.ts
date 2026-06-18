@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { searchGoogleJobs, fetchJobDetails } from "@/lib/serpapi";
+import { searchGoogleJobs } from "@/lib/serpapi";
 import { extractTextFromPDF } from "@/lib/pdf";
 import { scoreJobMatch, isJobValid, extractSalary } from "@/lib/scorer";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const ADMIN_EMAIL = process.env.NEXT_PUBLIC_ADMIN_EMAIL;
+const JINA_API_KEY = process.env.JINA_API_KEY;
 
 function getSupabase() {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
@@ -30,16 +31,17 @@ function normalize(r: any) {
   return { ...r, full_description: r.full_spec ?? "" };
 }
 
-function buildJobUrl(job: { link?: string; job_id?: string; title: string; company_name: string; via?: string }): string {
+function buildJobUrl(job: {
+  apply_options?: { link: string; title: string }[];
+  job_highlights?: { link?: string };
+  link?: string;
+  title: string;
+  company_name: string;
+}): string {
+  if (job.apply_options?.[0]?.link) return job.apply_options[0].link;
+  if (job.job_highlights?.link) return job.job_highlights.link;
   if (job.link) return job.link;
-  const q = encodeURIComponent(`${job.title} ${job.company_name} apply`);
-  if (job.job_id) return `https://www.google.com/search?q=${q}&ibp=htl;jobs#fpstate=htl.jobs&htid=${encodeURIComponent(job.job_id)}`;
-  if (job.via) {
-    const via = job.via.toLowerCase();
-    if (via.includes("linkedin")) return `https://www.linkedin.com/jobs/search/?keywords=${encodeURIComponent(job.title)}&f_C=${encodeURIComponent(job.company_name)}`;
-    if (via.includes("indeed")) return `https://za.indeed.com/jobs?q=${encodeURIComponent(job.title)}&l=${encodeURIComponent(job.company_name)}`;
-  }
-  return `https://www.google.com/search?q=${q}`;
+  return `https://www.google.com/search?q=${encodeURIComponent(`${job.title} ${job.company_name} apply`)}`;
 }
 
 export async function POST(request: NextRequest) {
@@ -156,6 +158,9 @@ export async function POST(request: NextRequest) {
     });
 
     console.log("[SEARCH] After banned filter:", candidates.length);
+    for (let i = 0; i < Math.min(2, candidates.length); i++) {
+      console.log(`[SEARCH] Job ${i} apply_options:`, JSON.stringify(candidates[i].apply_options));
+    }
 
     if (candidates.length === 0) {
       return NextResponse.json({ results: [] });
@@ -185,19 +190,25 @@ export async function POST(request: NextRequest) {
     const outputs: JobRow[] = [];
 
     for (const job of candidates) {
-      let fullDesc = job.description ?? "";
+      const jobUrl = buildJobUrl(job);
+      let specText = job.description ?? "";
 
-      // Fetch full page
-      if (job.job_id) {
+      // Fetch full page via Jina AI reader
+      if (jobUrl) {
         try {
-          const details = await fetchJobDetails(job.job_id, activeSerpParams);
-          fullDesc = details.description ?? fullDesc;
+          const headers: Record<string, string> = {};
+          if (JINA_API_KEY) headers["Authorization"] = `Bearer ${JINA_API_KEY}`;
+          const jinaRes = await fetch(`https://r.jina.ai/${encodeURIComponent(jobUrl)}`, { headers });
+          if (jinaRes.ok) {
+            specText = await jinaRes.text();
+            console.log(`[SEARCH] Jina fetched ${specText.length} chars for "${job.title}"`);
+          }
         } catch {
-          console.log(`[SEARCH] Detail fetch failed for "${job.title}"`);
+          console.log(`[SEARCH] Jina fetch failed for "${job.title}"`);
         }
       }
 
-      const specText = fullDesc || job.description || "";
+      specText = specText || job.description || "";
 
       // Validate
       if (!isJobValid(specText, job.link)) {
@@ -225,7 +236,7 @@ export async function POST(request: NextRequest) {
         estimated_salary: result.estimated_salary,
         match_score: result.score,
         match_summary: result.match_summary,
-        job_url: buildJobUrl(job),
+        job_url: jobUrl,
         full_spec: specText,
         search_query: query,
       });
