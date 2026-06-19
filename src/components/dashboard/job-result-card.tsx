@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ExternalLink, X, FileText, Bookmark, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -36,6 +36,16 @@ export function JobResultCard({
   const [saved, setSaved] = useState(false);
   const [cvLoading, setCvLoading] = useState(false);
   const [showDomainWarning, setShowDomainWarning] = useState(false);
+  const [domainMounted, setDomainMounted] = useState(false);
+
+  useEffect(() => {
+    if (showDomainWarning) {
+      setDomainMounted(true);
+    } else {
+      const timer = setTimeout(() => setDomainMounted(false), 250);
+      return () => clearTimeout(timer);
+    }
+  }, [showDomainWarning]);
 
   const scoreLabel =
     matchScore >= 80 ? "Strong Match" :
@@ -201,14 +211,23 @@ export function JobResultCard({
       </div>
 
       {/* Domain warning modal */}
-      {showDomainWarning && (
-        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 backdrop-blur-sm transition-opacity duration-300" style={{ opacity: 1 }} onClick={() => setShowDomainWarning(false)}>
+      {domainMounted && (
+        <div
+          className={`fixed inset-0 z-[300] flex items-center justify-center transition-all duration-200 ${
+            showDomainWarning ? "opacity-100" : "opacity-0"
+          }`}
+        >
           <div
-            className="w-full max-w-sm mx-4 rounded-2xl bg-[#1C1C1E] border border-white/10 shadow-2xl p-6 transition-all duration-300"
-            style={{ opacity: 1, transform: "translateY(0) scale(1)" }}
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => setShowDomainWarning(false)}
+          />
+          <div
+            className={`relative w-full max-w-sm mx-4 p-6 rounded-2xl liquid-glass transition-all duration-200 ${
+              showDomainWarning ? "opacity-100 scale-100" : "opacity-0 scale-95"
+            }`}
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-base font-semibold text-white mb-3">Untrusted Domain</h3>
+            <h3 className="text-base font-semibold text-[var(--color-text-primary)] mb-3">Untrusted Domain</h3>
             <p className="text-sm text-[var(--color-text-secondary)] leading-relaxed">
               This job listing is from a source that has not been verified. Listings on untrusted platforms may have expired roles, inaccurate details, or lower-quality postings.
             </p>
