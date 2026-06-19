@@ -100,11 +100,20 @@ export async function POST(request: NextRequest) {
         console.log("[SEARCH] Anon profile query error:", anonErr?.message ?? "unknown");
       }
       if (!anonProfile) {
-        console.log("[SEARCH] Anon profile query also returned no row — no profile exists for user", user.id);
-        return NextResponse.json({ error: "DB_001", message: "Profile not found. Complete onboarding first." }, { status: 404 });
+        console.log("[SEARCH] No profile row exists — creating minimal profile for user", user.id);
+        const { error: insertErr } = await supabase
+          .from("profiles")
+          .insert({ id: user.id, email: user.email, search_balance: 10, cv_generation_balance: 5 });
+        if (insertErr) {
+          console.log("[SEARCH] Failed to create minimal profile:", insertErr.message);
+          return NextResponse.json({ error: "DB_002", message: "Failed to create profile. Please contact support." }, { status: 500 });
+        }
+        profile = { id: user.id, email: user.email, search_balance: 10, cv_generation_balance: 5, job_titles: [], job_types: [], location: "", cv_file_path: "", banned_jobs: [], banned_companies: [] };
+        console.log("[SEARCH] Minimal profile created on-the-fly");
+      } else {
+        profile = anonProfile;
+        console.log("[SEARCH] Profile fetched via anon fallback");
       }
-      profile = anonProfile;
-      console.log("[SEARCH] Profile fetched via anon fallback");
     }
 
     console.log("[SEARCH] Profile:", JSON.stringify({
