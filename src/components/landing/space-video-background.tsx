@@ -22,13 +22,15 @@ export function SpaceVideoBackground({
   const [hold, setHold] = useState(false);
   const holdRef = useRef(false);
   const [warp, setWarp] = useState({ x: 0, y: 0, s: 1 });
-  const [perspective, setPerspective] = useState(900);
+  const [perspective, setPerspective] = useState(() =>
+    typeof window !== "undefined" ? (window.innerWidth < 640 ? 1200 : 900) : 900
+  );
 
   const baseRate = isTransitioning || videoFast ? fastPlaybackRate : slowPlaybackRate;
   const holdBoost = hold ? 1.1 : 1;
   const targetRate = baseRate * holdBoost;
 
-  const smoothRate = useCallback(() => {
+  const smoothRate = useCallback(function smoothRate() {
     const video = videoRef.current;
     if (!video || video.readyState < 2) return;
     const current = video.playbackRate;
@@ -45,10 +47,6 @@ export function SpaceVideoBackground({
     animRef.current = requestAnimationFrame(smoothRate);
     return () => cancelAnimationFrame(animRef.current);
   }, [smoothRate]);
-
-  useEffect(() => {
-    setPerspective(window.innerWidth < 640 ? 1200 : 900);
-  }, []);
 
   useEffect(() => {
     const onDown = (e: PointerEvent) => {
@@ -82,7 +80,7 @@ export function SpaceVideoBackground({
   }, []);
 
   return (
-    <div className="fixed inset-0 overflow-hidden bg-black" style={{ zIndex: -10 }}>
+    <div className="fixed inset-0 overflow-hidden bg-black pointer-events-none" style={{ zIndex: -10 }}>
       <div
         ref={wrapperRef}
         className="absolute inset-0 will-change-transform"

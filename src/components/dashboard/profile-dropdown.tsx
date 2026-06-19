@@ -42,16 +42,6 @@ export function ProfileDropdown() {
     });
   }, []);
 
-  useEffect(() => {
-    const handleClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node) && open) {
-        closeDropdown();
-      }
-    };
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, [open]);
-
   const closeDropdown = () => {
     setItemsVisible(false);
     setAnimPhase("pill");
@@ -69,6 +59,16 @@ export function ProfileDropdown() {
       setTimeout(() => setItemsVisible(true), 150);
     }, 180);
   };
+
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node) && open) {
+        closeDropdown();
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [open]);
 
   const handleToggle = () => {
     if (animTimer.current) clearTimeout(animTimer.current);
@@ -107,10 +107,12 @@ export function ProfileDropdown() {
           animPhase === "open" && "w-56 rounded-2xl",
         ].filter(Boolean).join(" ")}
       >
-        <div
-          className="flex items-center justify-center w-10 h-10 shrink-0 cursor-pointer"
-          onClick={handleToggle}
-        >
+          <div
+            role="button"
+            tabIndex={0}
+            className="flex items-center justify-center w-10 h-10 shrink-0 cursor-pointer"
+            onClick={handleToggle}
+          >
           <span className="text-sm font-semibold text-white tracking-wide">
             {initials || <User size={16} className="text-white" />}
           </span>
