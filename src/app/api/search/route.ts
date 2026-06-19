@@ -121,10 +121,10 @@ export async function POST(request: NextRequest) {
     if (profile.banned_jobs) bannedJobs.push(...profile.banned_jobs);
     if (profile.banned_companies) bannedCompanies.push(...profile.banned_companies);
 
-    // SerpAPI search — support profile-specific data
-    let titles = profile.job_titles ?? [];
-    let profileLocation = profile.location ?? "";
-    let cvFilePath = profile.cv_file_path ?? "";
+    // Get search-specific data ONLY from the selected search_profile, never from the main profile
+    let titles: string[] = [];
+    let profileLocation = "";
+    let cvFilePath = "";
 
     if (profile_id) {
       const { data: searchProfile } = await dataClient
@@ -133,45 +133,29 @@ export async function POST(request: NextRequest) {
         .eq("id", profile_id)
         .eq("user_id", user.id)
         .maybeSingle();
-      if (searchProfile) {
-        if (searchProfile.job_titles?.length) titles = searchProfile.job_titles;
-        if (searchProfile.location) profileLocation = searchProfile.location;
-        if (searchProfile.cv_file_path) cvFilePath = searchProfile.cv_file_path;
+      if (searchProfile?.job_titles?.length) {
+        titles = searchProfile.job_titles;
+        profileLocation = searchProfile.location ?? "";
+        cvFilePath = searchProfile.cv_file_path ?? "";
+      } else {
+        console.log("[SEARCH] search_profile not found or has no job_titles for id:", profile_id);
       }
     }
 
-    function buildSerpParams(title: string) {
-      return {
-        q: `${title} ${profileLocation}`.trim(),
-        location: profileLocation,
-        hl: "en" as const,
-        gl: "za" as const,
-      };
-    }
+    // Use the frontend's query directly for SerpAPI (it's already built from the right profile)
+    const serpParams = {
+      q: query || "jobs",
+      location: profileLocation || undefined,
+      hl: "en" as const,
+      gl: "za" as const,
+    };
 
-    const randomTitle = titles.length > 0
-      ? titles[Math.floor(Math.random() * titles.length)]
-      : "";
-    const serpParams = randomTitle
-      ? buildSerpParams(randomTitle)
-      : { q: query || "jobs", hl: "en" as const, gl: "za" as const };
-
-    // Step 1: Log exact SerpAPI query and parameters
     console.log("[SEARCH] SerpAPI query params:", JSON.stringify(serpParams));
-    console.log("[SEARCH] SerpAPI random title chosen:", randomTitle);
-    console.log("[SEARCH] SerpAPI titles pool:", JSON.stringify(titles));
+    console.log("[SEARCH] SerpAPI titles for scoring:", JSON.stringify(titles));
 
     let rawJobs: Awaited<ReturnType<typeof searchGoogleJobs>>;
-    let activeSerpParams = serpParams;
     try {
       rawJobs = await searchGoogleJobs(serpParams);
-      if (rawJobs.length === 0 && titles.length > 1) {
-        const otherTitles = titles.filter((t: string) => t !== randomTitle);
-        const retryTitle = otherTitles[Math.floor(Math.random() * otherTitles.length)];
-        console.log("[SEARCH] Retry with title:", retryTitle);
-        activeSerpParams = buildSerpParams(retryTitle);
-        rawJobs = await searchGoogleJobs(activeSerpParams);
-      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.log("[SEARCH] SerpAPI error:", msg);

@@ -28,7 +28,21 @@ export function SearchPill({ onSearch, searching, activeProfileId }: SearchPillP
 
     let usedProfileId = activeProfileId;
 
-    if (usedProfileId) {
+    if (!usedProfileId) {
+      // No active profile — try to find the first search_profile for this user
+      const { data: firstSp } = await supabase
+        .from("search_profiles")
+        .select("id, job_titles, location")
+        .eq("user_id", user.id)
+        .order("created_at")
+        .limit(1)
+        .maybeSingle();
+      if (firstSp) {
+        usedProfileId = firstSp.id;
+        titles = firstSp.job_titles ?? [];
+        loc = firstSp.location ?? "";
+      }
+    } else {
       const { data: sp, error: spErr } = await supabase
         .from("search_profiles")
         .select("job_titles, location")
@@ -38,37 +52,6 @@ export function SearchPill({ onSearch, searching, activeProfileId }: SearchPillP
       if (sp) {
         titles = sp.job_titles ?? [];
         loc = sp.location ?? "";
-      }
-    }
-
-    if (titles.length === 0) {
-      // Try profiles table next
-      const { data: p, error: pErr } = await supabase
-        .from("profiles")
-        .select("job_titles, location")
-        .eq("id", user.id)
-        .maybeSingle();
-      if (pErr) console.log("[SEARCH-PILL] profiles error:", pErr.message);
-      if (p?.job_titles?.length) {
-        titles = p.job_titles;
-        loc = p.location ?? "";
-      }
-      // Also try to find any search_profile for this user if we still have no id
-      if (!usedProfileId) {
-        const { data: fallbackSp } = await supabase
-          .from("search_profiles")
-          .select("id, job_titles, location")
-          .eq("user_id", user.id)
-          .order("created_at")
-          .limit(1)
-          .maybeSingle();
-        if (fallbackSp) {
-          usedProfileId = fallbackSp.id;
-          if (!titles.length) {
-            titles = fallbackSp.job_titles ?? [];
-            loc = fallbackSp.location ?? "";
-          }
-        }
       }
     }
 
