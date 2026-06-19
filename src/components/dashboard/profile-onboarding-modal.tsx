@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Upload, X, Loader2, Trash2 } from "lucide-react";
+import "../landing/liquid-glass.css";
 
 interface ProfileOnboardingModalProps {
   profileId: string;
@@ -25,7 +26,12 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
   const [saving, setSaving] = useState(false);
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    requestAnimationFrame(() => setMounted(true));
+  }, []);
 
   useEffect(() => {
     const supabase = createClient();
@@ -160,8 +166,17 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
   };
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="w-full max-w-lg mx-4 rounded-2xl bg-[#1C1C1E] border border-white/10 shadow-2xl overflow-hidden">
+    <div
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm transition-opacity duration-500"
+      style={{ opacity: mounted ? 1 : 0 }}
+    >
+      <div
+        className="w-full max-w-lg mx-4 rounded-2xl bg-[#1C1C1E] border border-white/10 shadow-2xl overflow-hidden transition-all duration-500 ease-out"
+        style={{
+          opacity: mounted ? 1 : 0,
+          transform: mounted ? "translateY(0) scale(1)" : "translateY(16px) scale(0.96)",
+        }}
+      >
         <div className="flex items-center justify-between px-6 py-4 border-b border-white/[0.06]">
           <h2 className="text-lg font-semibold text-white">{editMode ? "Edit Search Profile" : "Set Up Search Profile"}</h2>
           <button onClick={onClose} className="text-white/40 hover:text-white transition-colors">

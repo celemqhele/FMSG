@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Plus, Check, ChevronDown } from "lucide-react";
 
@@ -14,6 +14,7 @@ interface SearchProfile {
 export function ProfileSwitcher({ activeProfileId, onSelect, onProfileCreated, refreshKey }: { activeProfileId: string | null; onSelect: (id: string) => void; onProfileCreated?: (id: string) => void; refreshKey?: number }) {
   const [profiles, setProfiles] = useState<SearchProfile[]>([]);
   const [open, setOpen] = useState(false);
+  const [dropdownMounted, setDropdownMounted] = useState(false);
 
   useEffect(() => {
     const supabase = createClient();
@@ -34,6 +35,14 @@ export function ProfileSwitcher({ activeProfileId, onSelect, onProfileCreated, r
         });
     });
   }, [activeProfileId, onSelect, refreshKey]);
+
+  useEffect(() => {
+    if (open) {
+      requestAnimationFrame(() => setDropdownMounted(true));
+    } else {
+      setDropdownMounted(false);
+    }
+  }, [open]);
 
   const active = profiles.find((p) => p.id === activeProfileId);
 
@@ -82,10 +91,17 @@ export function ProfileSwitcher({ activeProfileId, onSelect, onProfileCreated, r
         <ChevronDown size={12} />
       </button>
 
-      {open && (
+      {(open || dropdownMounted) && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute left-0 top-9 w-48 py-1.5 rounded-xl bg-[#1C1C1E] border border-white/10 shadow-xl overflow-hidden z-50">
+          <div
+            className="absolute left-0 top-9 w-48 py-1.5 rounded-xl bg-[#1C1C1E] border border-white/10 shadow-xl overflow-hidden z-50 transition-all duration-200 ease-out"
+            style={{
+              opacity: open ? 1 : 0,
+              transform: open ? "translateY(0) scale(1)" : "translateY(-4px) scale(0.96)",
+              pointerEvents: open ? "auto" : "none",
+            }}
+          >
             {profiles.map((p) => (
               <button
                 key={p.id}

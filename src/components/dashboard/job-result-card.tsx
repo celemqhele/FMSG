@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ExternalLink, X, FileText, Bookmark } from "lucide-react";
+import { ExternalLink, X, FileText, Bookmark, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 interface JobResultCardProps {
@@ -30,6 +30,7 @@ export function JobResultCard({
   const [showDeleteMenu, setShowDeleteMenu] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [cvLoading, setCvLoading] = useState(false);
 
   const scoreLabel =
     matchScore >= 80 ? "Strong Match" :
@@ -80,13 +81,14 @@ export function JobResultCard({
     const supabase = createClient();
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return;
+    setCvLoading(true);
     try {
       const res = await fetch("/api/generate-cv", {
         method: "POST",
         headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" },
         body: JSON.stringify({ job_result_id: id }),
       });
-      if (!res.ok) return;
+      if (!res.ok) { setCvLoading(false); return; }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -94,8 +96,9 @@ export function JobResultCard({
       a.download = `CV - ${jobTitle} - ${company} - FMSG.docx`;
       a.click();
       URL.revokeObjectURL(url);
+      setCvLoading(false);
     } catch {
-      // silently fail
+      setCvLoading(false);
     }
   };
 
@@ -151,10 +154,15 @@ export function JobResultCard({
       <div className="flex gap-2">
         <button
           onClick={handleGenerateCv}
-          className="flex-[2] flex items-center justify-center gap-1.5 px-4 py-2.5 text-sm font-medium text-white bg-[var(--color-accent)] rounded-lg hover:bg-[var(--color-accent-hover)] transition-colors"
+          disabled={cvLoading}
+          className="flex-[2] flex items-center justify-center gap-1.5 px-4 py-2.5 text-sm font-medium text-white bg-[var(--color-accent)] rounded-lg hover:bg-[var(--color-accent-hover)] disabled:opacity-70 transition-colors"
         >
-          <FileText size={16} />
-          Generate CV
+          {cvLoading ? (
+            <Loader2 size={16} className="animate-spin" />
+          ) : (
+            <FileText size={16} />
+          )}
+          {cvLoading ? "Downloading..." : "Generate CV"}
         </button>
         {jobUrl && (
           <a
