@@ -102,8 +102,9 @@ export default function DashboardPage() {
     });
   }, [activeTab]);
 
-  const handleSearch = useCallback(async (query: string) => {
-    console.log("[DASHBOARD] Search clicked:", { query, activeProfileId, time: new Date().toISOString() });
+  const handleSearch = useCallback(async (query: string, profileId?: string | null) => {
+    const pid = profileId ?? activeProfileId;
+    console.log("[DASHBOARD] Search clicked:", { query, activeProfileId: pid, time: new Date().toISOString() });
     setSearching(true);
     setProgress(0);
     setHasSearched(true);
@@ -130,7 +131,7 @@ export default function DashboardPage() {
           Authorization: `Bearer ${session.access_token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ query, profile_id: activeProfileId }),
+        body: JSON.stringify({ query, profile_id: pid }),
       });
 
       const data = await res.json();
@@ -171,7 +172,7 @@ export default function DashboardPage() {
       setVideoFast(false);
       setResultMessage("Something went wrong. Please try again.");
     }
-  }, [activeProfileId, setVideoFast]);
+  }, [activeProfileId, setVideoFast]); // profileId passed from SearchPill overrides context
 
   const handleDelete = useCallback((id: string) => {
     setResults((prev) => prev.filter((x) => x.id !== id));

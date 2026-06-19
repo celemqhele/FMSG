@@ -5,7 +5,7 @@ import { Search } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 interface SearchPillProps {
-  onSearch: (query: string) => void;
+  onSearch: (query: string, profileId?: string | null) => void;
   searching: boolean;
   activeProfileId?: string | null;
 }
@@ -26,11 +26,13 @@ export function SearchPill({ onSearch, searching, activeProfileId }: SearchPillP
     let titles: string[] = [];
     let loc = "";
 
-    if (activeProfileId) {
+    let usedProfileId = activeProfileId;
+
+    if (usedProfileId) {
       const { data: sp, error: spErr } = await supabase
         .from("search_profiles")
         .select("job_titles, location")
-        .eq("id", activeProfileId)
+        .eq("id", usedProfileId)
         .maybeSingle();
       if (spErr) console.log("[SEARCH-PILL] search_profiles error:", spErr.message);
       if (sp) {
@@ -40,20 +42,40 @@ export function SearchPill({ onSearch, searching, activeProfileId }: SearchPillP
     }
 
     if (titles.length === 0) {
-      const { data: profile, error: profileErr } = await supabase
+      // Try profiles table next
+      const { data: p, error: pErr } = await supabase
         .from("profiles")
         .select("job_titles, location")
         .eq("id", user.id)
         .maybeSingle();
-      if (profileErr) console.log("[SEARCH-PILL] profiles error:", profileErr.message);
-      titles = profile?.job_titles ?? [];
-      loc = profile?.location ?? "";
+      if (pErr) console.log("[SEARCH-PILL] profiles error:", pErr.message);
+      if (p?.job_titles?.length) {
+        titles = p.job_titles;
+        loc = p.location ?? "";
+      }
+      // Also try to find any search_profile for this user if we still have no id
+      if (!usedProfileId) {
+        const { data: fallbackSp } = await supabase
+          .from("search_profiles")
+          .select("id, job_titles, location")
+          .eq("user_id", user.id)
+          .order("created_at")
+          .limit(1)
+          .maybeSingle();
+        if (fallbackSp) {
+          usedProfileId = fallbackSp.id;
+          if (!titles.length) {
+            titles = fallbackSp.job_titles ?? [];
+            loc = fallbackSp.location ?? "";
+          }
+        }
+      }
     }
 
     const pick = titles[Math.floor(Math.random() * titles.length)] ?? "";
     const query = [pick, loc].filter(Boolean).join(" in ") || "jobs";
     setDisplayTitle(query || "Search for jobs");
-    onSearch(query);
+    onSearch(query, usedProfileId);
   };
 
   return (
