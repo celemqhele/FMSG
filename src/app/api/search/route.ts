@@ -281,15 +281,22 @@ export async function POST(request: NextRequest) {
       cv_text: cvText ? cvText.slice(0, 5000) : "No CV provided",
     });
 
+    // Helper: strip characters that would break JSON embedding
+    const sanitiseForJson = (s: string): string =>
+      s
+        .replace(/["\n\r\t]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+
     // Pass 1: Batch all jobs in one Gemini call for initial screening
     console.log("[SEARCH] Pass 1 — batch screening", candidates.length, "jobs via Gemini");
 
     const batchInput = candidates.map((j, i) => ({
       index: i,
-      job_title: j.title,
-      company: j.company_name,
-      location: j.location,
-      description_snippet: (j.description ?? "").slice(0, 1500),
+      job_title: sanitiseForJson(j.title),
+      company: sanitiseForJson(j.company_name),
+      location: sanitiseForJson(j.location),
+      description_snippet: sanitiseForJson((j.description ?? "").slice(0, 1500)),
       url: jobUrls.get(i) || "",
     }));
 
@@ -315,18 +322,50 @@ Return the array in the same order as the input jobs.`;
 
     let batchResults: { index: number; score: number; is_valid: boolean; reason: string; estimated_salary: string }[] = [];
 
+    let rawPass1 = "";
     try {
-      const raw = await callGemini(
+      rawPass1 = await callGemini(
         batchSystemPrompt,
         `Candidate Profile:\n${profileContext}\n\nJobs:\n${JSON.stringify(batchInput, null, 2)}`,
-        { responseMimeType: "application/json", temperature: 0.1 }
+        { responseMimeType: "application/json", temperature: 0.1, maxOutputTokens: 8192 }
       );
-      batchResults = JSON.parse(raw);
+      batchResults = JSON.parse(rawPass1);
       console.log("[SEARCH] Pass 1 batch results:", JSON.stringify(batchResults));
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.log("[SEARCH] Pass 1 Gemini error:", msg);
-      return NextResponse.json({ results: [], code: "AI_ERROR", message: "AI screening failed. Please try again." });
+      console.log("[SEARCH] Pass 1 raw response (first 3000 chars):", rawPass1.slice(0, 3000));
+      // Fallback: process each job individually instead of failing the batch
+      console.log("[SEARCH] Pass 1 batch failed — falling back to individual screening");
+      for (let i = 0; i < candidates.length; i++) {
+        const job = candidates[i];
+        if (i > 0) await sleep(6000);
+        const singlePrompt = `You are a recruiter screening a single job match.
+Determine if this job is a fit. Rules:
+- Reject if not in South Africa or the candidate's preferred location.
+- Reject expired/filled/closed positions.
+- Judge genuine fit — consider transferable skills.
+Return ONLY valid JSON (no markdown, no code fences):
+{
+  "score": number (0-100),
+  "is_valid": boolean,
+  "reason": string,
+  "estimated_salary": string
+}`;
+        try {
+          const rawSingle = await callGemini(
+            singlePrompt,
+            `Candidate Profile:\n${profileContext}\n\nJob:\n${JSON.stringify(batchInput[i], null, 2)}`,
+            { responseMimeType: "application/json", temperature: 0.1, maxOutputTokens: 1024 }
+          );
+          const parsed = JSON.parse(rawSingle);
+          batchResults.push({ index: i, ...parsed });
+        } catch {
+          // Individual fallback: keep job with low default score
+          batchResults.push({ index: i, score: 30, is_valid: false, reason: "Screening unavailable", estimated_salary: "" });
+        }
+      }
+      console.log("[SEARCH] Fallback individual screening complete:", batchResults.length, "results");
     }
 
     // Keep only jobs that pass the initial screen
