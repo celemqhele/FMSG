@@ -604,6 +604,7 @@ Return ONLY valid JSON with this exact schema (no markdown, no code fences):
       const rows = outputs.map((r) => ({
         user_id: r.user_id,
         search_id: r.search_id,
+        profile_id: profile_id ?? null,
         job_title: r.job_title,
         company: r.company,
         location: r.location,

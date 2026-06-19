@@ -218,7 +218,7 @@ export async function POST(request: NextRequest) {
     // Fetch job_result row
     const { data: jobRow, error: jobErr } = await supabase
       .from("job_results")
-      .select("job_title, company, full_spec, search_query")
+      .select("job_title, company, full_spec, search_query, profile_id")
       .eq("id", job_result_id)
       .maybeSingle();
 
@@ -229,15 +229,27 @@ export async function POST(request: NextRequest) {
     const fullSpec = (jobRow as any).full_spec ?? "";
     const jobTitle = (jobRow as any).job_title ?? "";
     const company = (jobRow as any).company ?? "";
+    const jobProfileId = (jobRow as any).profile_id;
 
-    // Fetch user's profile for cv_file_path
-    const { data: profileRow } = await supabase
-      .from("profiles")
-      .select("cv_file_path")
-      .eq("id", user.id)
-      .maybeSingle();
-
-    const cvFilePath = (profileRow as any)?.cv_file_path ?? "";
+    // Look up CV from the search_profile that was used for this search,
+    // falling back to the main profile's cv_file_path for older results
+    let cvFilePath = "";
+    if (jobProfileId) {
+      const { data: sp } = await supabase
+        .from("search_profiles")
+        .select("cv_file_path")
+        .eq("id", jobProfileId)
+        .maybeSingle();
+      cvFilePath = (sp as any)?.cv_file_path ?? "";
+    }
+    if (!cvFilePath) {
+      const { data: profileRow } = await supabase
+        .from("profiles")
+        .select("cv_file_path")
+        .eq("id", user.id)
+        .maybeSingle();
+      cvFilePath = (profileRow as any)?.cv_file_path ?? "";
+    }
 
     // Fetch and extract CV text
     let cvText = "";
