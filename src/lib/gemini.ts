@@ -70,7 +70,15 @@ export async function callGroq(systemPrompt: string, userText: string, config?: 
   return data.choices?.[0]?.message?.content ?? "";
 }
 
-async function callOpenRouter(systemPrompt: string, userText: string, config?: AIConfig): Promise<string> {
+const OPENROUTER_FALLBACK_MODELS = [
+  "deepseek/deepseek-chat-v3.1:free",
+  "meta-llama/llama-4-maverick:free",
+  "qwen/qwen3-235b-a22b:free",
+  "meta-llama/llama-3.3-70b-instruct:free",
+  "qwen/qwen3-coder:free",
+];
+
+async function callOpenRouterSingle(model: string, systemPrompt: string, userText: string, config?: AIConfig): Promise<string> {
   const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -80,7 +88,7 @@ async function callOpenRouter(systemPrompt: string, userText: string, config?: A
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "deepseek/deepseek-r1:free",
+      model,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userText },
@@ -93,11 +101,27 @@ async function callOpenRouter(systemPrompt: string, userText: string, config?: A
 
   if (!res.ok) {
     const errBody = await res.text();
-    throw new Error(`OpenRouter error (${res.status}): ${errBody.slice(0, 200)}`);
+    throw new Error(`OpenRouter error (${res.status}) on ${model}: ${errBody.slice(0, 200)}`);
   }
 
   const data = await res.json();
   return data.choices?.[0]?.message?.content ?? "";
+}
+
+async function callOpenRouter(systemPrompt: string, userText: string, config?: AIConfig): Promise<string> {
+  const lastErr: Error[] = [];
+  for (const model of OPENROUTER_FALLBACK_MODELS) {
+    try {
+      const result = await callOpenRouterSingle(model, systemPrompt, userText, config);
+      console.log(`[AI] OpenRouter model used: ${model}`);
+      return result;
+    } catch (err: any) {
+      const msg = err?.message ?? String(err);
+      console.log(`[AI] OpenRouter model ${model} failed: ${msg.slice(0, 100)}`);
+      lastErr.push(err);
+    }
+  }
+  throw new Error(`OpenRouter — all ${OPENROUTER_FALLBACK_MODELS.length} models failed. Last error: ${(lastErr.at(-1)?.message ?? "").slice(0, 200)}`);
 }
 
 /** Three-tier AI cascade: Gemini → Groq → OpenRouter. Falls back on 429/quota. */
