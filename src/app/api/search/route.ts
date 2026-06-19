@@ -46,6 +46,15 @@ function extractDomain(url: string): string | null {
   }
 }
 
+function parsePostedAt(posted?: string): number | null {
+  if (!posted) return null;
+  const val = posted.toLowerCase().replace(/^a[n]?\s+/, "1 ").replace(/^just posted$/, "0 days ago").replace(/\+/, "");
+  const num = parseInt(val.match(/\d+/)?.[0] ?? "", 10);
+  if (isNaN(num)) return null;
+  const ms = val.includes("month") ? num * 30 : val.includes("week") ? num * 7 : val.includes("year") ? num * 365 : num;
+  return Date.now() - ms * 24 * 60 * 60 * 1000;
+}
+
 function isDomainVerified(url: string, postedAt?: string): { verified: boolean; reason?: string } {
   const domain = extractDomain(url);
   if (!domain) return { verified: false, reason: "no_domain" };
@@ -105,6 +114,8 @@ interface JobRow {
   search_query: string;
   domain_verified: boolean;
   domain_unverified_reason: string;
+  posted_at: string;
+  posted_at_ms: number;
 }
 
 function normalize(r: any) {
@@ -284,9 +295,12 @@ export async function POST(request: NextRequest) {
     // Domain verification — mark each job as trusted/untrusted (never filter them out)
     for (const j of rawJobs) {
       const url = buildJobUrl(j);
-      const result = isDomainVerified(url, (j as any).posted_at);
+      const postedStr = (j as any).detected_extensions?.posted_at ?? (j as any).posted_at ?? "";
+      const result = isDomainVerified(url, postedStr);
       (j as any)._domainVerified = result.verified;
       (j as any)._domainReason = result.verified ? "" : (result.reason ?? "untrusted_domain");
+      (j as any)._postedAt = postedStr;
+      (j as any)._postedAtMs = parsePostedAt(postedStr) ?? 0;
       if (!result.verified) {
         console.log(`[SEARCH] Domain not whitelisted: ${j.title} at ${j.company_name} — ${result.reason}`);
       }
@@ -520,6 +534,8 @@ Return ONLY valid JSON with this exact schema (no markdown, no code fences):
           search_query: query,
           domain_verified: (job as any)._domainVerified ?? true,
           domain_unverified_reason: (job as any)._domainReason ?? "",
+          posted_at: (job as any)._postedAt ?? "",
+          posted_at_ms: (job as any)._postedAtMs ?? 0,
         });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -540,17 +556,19 @@ Return ONLY valid JSON with this exact schema (no markdown, no code fences):
             search_query: query,
             domain_verified: (job as any)._domainVerified ?? true,
             domain_unverified_reason: (job as any)._domainReason ?? "",
+            posted_at: (job as any)._postedAt ?? "",
+            posted_at_ms: (job as any)._postedAtMs ?? 0,
           });
         }
       }
     }
 
-    // Sort by domain (trusted first), then by score descending
+    // Sort by domain (trusted first), then by posted date (most recent first)
     outputs.sort((a, b) => {
       if (a.domain_verified !== b.domain_verified) {
         return a.domain_verified ? -1 : 1;
       }
-      return b.match_score - a.match_score;
+      return b.posted_at_ms - a.posted_at_ms;
     });
 
     console.log("[SEARCH] Final results after Gemini analysis:", outputs.length);
@@ -584,6 +602,7 @@ Return ONLY valid JSON with this exact schema (no markdown, no code fences):
         search_query: r.search_query,
         domain_verified: r.domain_verified,
         domain_unverified_reason: r.domain_unverified_reason,
+        posted_at: r.posted_at,
       }));
 
       const { data: saved, error: saveErr } = await dataClient

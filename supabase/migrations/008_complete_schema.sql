@@ -86,7 +86,8 @@ ALTER TABLE job_results
   ADD COLUMN IF NOT EXISTS search_query TEXT DEFAULT '',
   ADD COLUMN IF NOT EXISTS profile_id UUID,
   ADD COLUMN IF NOT EXISTS domain_verified BOOLEAN DEFAULT true,
-  ADD COLUMN IF NOT EXISTS domain_unverified_reason TEXT DEFAULT '';
+  ADD COLUMN IF NOT EXISTS domain_unverified_reason TEXT DEFAULT '',
+  ADD COLUMN IF NOT EXISTS posted_at TEXT DEFAULT '';
 
 ALTER TABLE job_results ENABLE ROW LEVEL SECURITY;
 
