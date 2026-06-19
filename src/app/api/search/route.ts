@@ -64,7 +64,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "SEARCH_001" }, { status: 400 });
     }
 
+    console.log("[SEARCH] ========================");
+    console.log("[SEARCH] Search started at:", new Date().toISOString());
     console.log("[SEARCH] Query:", query);
+    console.log("[SEARCH] Profile ID:", profile_id ?? "none");
 
     const isAdmin = ADMIN_EMAIL && user.email === ADMIN_EMAIL;
 
@@ -150,13 +153,14 @@ export async function POST(request: NextRequest) {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.log("[SEARCH] SerpAPI error:", msg);
-      return NextResponse.json({ results: [] });
+      return NextResponse.json({ results: [], code: "SERP_ERROR", message: "Search engine temporarily unavailable. Please try again." });
     }
 
     console.log("[SEARCH] SerpAPI results:", rawJobs.length);
 
     if (rawJobs.length === 0) {
-      return NextResponse.json({ results: [] });
+      console.log("[SEARCH] SerpAPI returned zero results — no jobs match the query");
+      return NextResponse.json({ results: [], code: "NO_RESULTS_SERP", message: "No jobs found matching your profile. Try different job titles or locations." });
     }
 
     // Filter banned
@@ -173,7 +177,8 @@ export async function POST(request: NextRequest) {
     }
 
     if (candidates.length === 0) {
-      return NextResponse.json({ results: [] });
+      console.log("[SEARCH] All results filtered by banned companies/jobs");
+      return NextResponse.json({ results: [], code: "ALL_FILTERED_BANNED", message: "All matching jobs were blocked by your banned companies or job list." });
     }
 
     // Load CV text
@@ -305,10 +310,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ results: (saved ?? outputs).map(normalize) });
     }
 
-    return NextResponse.json({ results: [] });
+    console.log("[SEARCH] All jobs scored below 40 threshold or were invalid");
+    return NextResponse.json({ results: [], code: "ALL_FILTERED_SCORE", message: "No strong matches found for your profile. Try broadening your criteria." });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.log("[SEARCH] Unhandled error:", msg);
-    return NextResponse.json({ results: [] });
+    return NextResponse.json({ results: [], code: "GENERIC_ERROR", message: "Something went wrong. Please try again." });
   }
 }

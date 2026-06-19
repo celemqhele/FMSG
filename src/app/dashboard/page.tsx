@@ -68,6 +68,7 @@ export default function DashboardPage() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [showLimitModal, setShowLimitModal] = useState<string | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
+  const [resultMessage, setResultMessage] = useState("");
 
   useEffect(() => { endTransition(); }, [endTransition]);
 
@@ -102,9 +103,11 @@ export default function DashboardPage() {
   }, [activeTab]);
 
   const handleSearch = useCallback(async (query: string) => {
+    console.log("[DASHBOARD] Search clicked:", { query, activeProfileId, time: new Date().toISOString() });
     setSearching(true);
     setProgress(0);
     setHasSearched(true);
+    setResultMessage("");
 
     const interval = setInterval(() => {
       setProgress((p) => Math.min(p + Math.random() * 15, 85));
@@ -142,6 +145,8 @@ export default function DashboardPage() {
         clearInterval(interval);
         setSearching(false);
         setProgress(0);
+        const msg = data?.message ?? "Something went wrong. Please try again.";
+        setResultMessage(msg);
         return;
       }
 
@@ -150,11 +155,15 @@ export default function DashboardPage() {
         setResults(data.results ?? []);
         setSearching(false);
         setProgress(0);
+        if ((data.results?.length ?? 0) === 0 && data.message) {
+          setResultMessage(data.message);
+        }
       }, 500);
     } catch {
       clearInterval(interval);
       setSearching(false);
       setProgress(0);
+      setResultMessage("Something went wrong. Please try again.");
     }
   }, [activeProfileId]);
 
@@ -215,7 +224,7 @@ export default function DashboardPage() {
 
             {!searching && hasSearched && results.length === 0 && (
               <div className="text-center py-20">
-                <p className="text-[var(--color-text-secondary)] text-sm">No matching jobs found. Try updating your profile or search again.</p>
+                <p className="text-[var(--color-text-secondary)] text-sm">{resultMessage || "No matching jobs found. Try updating your profile or search again."}</p>
               </div>
             )}
 
