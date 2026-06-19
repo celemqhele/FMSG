@@ -82,6 +82,7 @@ export async function callAIWithFallback(
     console.log(`[AI] Gemini error on "${stepName}": ${msg}`);
 
     const is429orQuota = msg.includes("429") || msg.includes("quota");
+    console.log(`[AI] is429=${is429orQuota}, hasGroqKey=${!!GROQ_API_KEY}`);
     if (is429orQuota && GROQ_API_KEY) {
       console.log(`[AI] Falling back to Groq for: ${stepName}`);
       try {
