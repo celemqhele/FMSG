@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "start:no-deprecation": "node --no-deprecation node_modules/.bin/next start"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.0",

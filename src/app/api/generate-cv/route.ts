@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { callGemini } from "@/lib/gemini";
+import { callAIWithFallback } from "@/lib/gemini";
 import { extractTextFromPDF } from "@/lib/pdf";
 import {
   Document,
@@ -253,7 +253,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Gemini call
+    // AI call (Gemini → Groq fallback)
     const prompt = `Reconstruct this CV to be the strongest possible match for the job spec below.
 Do not invent achievements or numbers. Mirror the job's tone and key terms.
 Use UK/SA English. Plain text only, no tables or symbols.
@@ -276,9 +276,14 @@ ${cvText.slice(0, 10000)}`;
 
     let content = "";
     try {
-      content = await callGemini(prompt, "Generate the tailored CV JSON.", { responseMimeType: "application/json", temperature: 0.1 });
-    } catch {
-      return NextResponse.json({ error: "AI generation failed." }, { status: 502 });
+      content = await callAIWithFallback(prompt, "Generate the tailored CV JSON.", "CV generation", { responseMimeType: "application/json", temperature: 0.1 });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("AI error:", msg);
+      if (msg.includes("503")) {
+        return NextResponse.json({ error: "Service temporarily unavailable. Please try again in 30 minutes.", code: "AI_OVERLOADED" }, { status: 503 });
+      }
+      return NextResponse.json({ error: "AI generation failed. Please try again." }, { status: 502 });
     }
 
     if (!content) {

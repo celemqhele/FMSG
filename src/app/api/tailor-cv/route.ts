@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { callGemini } from "@/lib/gemini";
+import { callAIWithFallback } from "@/lib/gemini";
 import { extractTextFromPDF } from "@/lib/pdf";
 import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } from "docx";
 
@@ -87,11 +87,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Failed to read CV content." }, { status: 500 });
     }
 
-    // Send to Gemini
+    // Send to AI (Gemini → Groq fallback)
     const input = `CV: ${cvText}\n\nJob Title: ${job_title ?? "N/A"}\nCompany: ${company ?? "N/A"}\n\nJob Description: ${job_description}`;
     let result: string;
     try {
-      result = await callGemini(TAILOR_PROMPT, input, { responseMimeType: "application/json" });
+      result = await callAIWithFallback(TAILOR_PROMPT, input, "CV tailoring", { responseMimeType: "application/json" });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       return NextResponse.json({ error: `AI tailoring failed. ${msg}` }, { status: 502 });

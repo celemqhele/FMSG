@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { searchGoogleJobs } from "@/lib/serpapi";
 import { extractTextFromPDF } from "@/lib/pdf";
-import { callGemini } from "@/lib/gemini";
+import { callAIWithFallback, callGemini } from "@/lib/gemini";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -442,9 +442,10 @@ Return the array in the same order as the input jobs.`;
 
     let rawPass1 = "";
     try {
-      rawPass1 = await callGemini(
+      rawPass1 = await callAIWithFallback(
         batchSystemPrompt,
         `Candidate Profile:\n${profileContext}\n\nJobs:\n${JSON.stringify(batchInput, null, 2)}`,
+        "search pass 1 batch",
         { responseMimeType: "application/json", temperature: 0.1, maxOutputTokens: 8192 }
       );
       batchResults = JSON.parse(rawPass1);
@@ -531,9 +532,10 @@ Return ONLY valid JSON with this exact schema (no markdown, no code fences):
 }`;
 
       try {
-        const raw = await callGemini(
+        const raw = await callAIWithFallback(
           deepSystemPrompt,
           `Candidate Profile:\n${profileContext}\n\nFull Job Specification:\n${fullSpec.slice(0, 8000)}\n\nJob Title: ${job.title}\nCompany: ${job.company_name}\nLocation: ${job.location}`,
+          `search pass 2: ${job.title} at ${job.company_name}`,
           { responseMimeType: "application/json", temperature: 0.1 }
         );
         const deepResult = JSON.parse(raw);

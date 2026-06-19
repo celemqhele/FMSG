@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { callGemini } from "@/lib/gemini";
+import { callAIWithFallback } from "@/lib/gemini";
 import { extractTextFromPDF } from "@/lib/pdf";
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
@@ -91,13 +91,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Failed to store file.", code: "STORAGE_ERROR" }, { status: 500 });
     }
 
-    // Send to Gemini
+    // Send to AI (Gemini → Groq fallback)
     let content: string | null = null;
     try {
-      content = await callGemini(SYSTEM_PROMPT, text, { responseMimeType: "application/json" });
+      content = await callAIWithFallback(SYSTEM_PROMPT, text, "CV extraction", { responseMimeType: "application/json" });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.error("Gemini error:", msg);
+      console.error("AI error:", msg);
+      if (msg.includes("503")) {
+        return NextResponse.json({ error: "Service temporarily unavailable. Please try again in 30 minutes.", code: "AI_OVERLOADED" }, { status: 503 });
+      }
       return NextResponse.json({ error: `AI extraction failed. ${msg}`, code: "AI_ERROR" }, { status: 502 });
     }
 

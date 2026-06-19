@@ -12,7 +12,7 @@ export interface AIConfig {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-export async function callGemini(systemPrompt: string, userText: string, config?: AIConfig): Promise<string> {
+async function callGemini(systemPrompt: string, userText: string, config?: AIConfig): Promise<string> {
   const generationConfig: Record<string, unknown> = {
     temperature: config?.temperature ?? 0.1,
     maxOutputTokens: config?.maxOutputTokens ?? 4096,
@@ -70,49 +70,51 @@ async function groqGenerate(systemPrompt: string, userText: string, config?: AIC
   return data.choices?.[0]?.message?.content ?? "";
 }
 
-async function attemptWithRetry(
-  provider: "gemini" | "groq",
+const RETRYABLE_STATUSES = new Set([429, 500, 502, 503]);
+
+/** Shared AI call with Gemini → Groq fallback.
+ *  Retries on 429/500/502/503, falls back to Groq on persistent failure.
+ *  stepName is logged so we can identify which step is hitting quota hardest. */
+export async function callAIWithFallback(
   systemPrompt: string,
   userText: string,
+  stepName: string,
   config?: AIConfig
 ): Promise<string> {
-  const fn = provider === "gemini" ? callGemini : groqGenerate;
-  const maxRetries = 3;
-
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+  // Try Gemini with retries
+  for (let attempt = 0; attempt <= 2; attempt++) {
     try {
-      return await fn(systemPrompt, userText, config);
+      return await callGemini(systemPrompt, userText, config);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       const statusMatch = msg.match(/error \((\d+)\)/);
       const status = statusMatch ? parseInt(statusMatch[1], 10) : 0;
 
-      if (status === 429 && attempt < maxRetries) {
-        const delay = Math.pow(2, attempt) * 1000;
+      if (attempt < 2 && RETRYABLE_STATUSES.has(status)) {
+        const delay = (Math.pow(2, attempt) + Math.random()) * 1000;
+        console.log(`[AI] Gemini ${status} on "${stepName}", retry ${attempt + 1} in ${Math.round(delay)}ms`);
         await sleep(delay);
         continue;
       }
-      throw err;
+
+      console.log(`[AI] Gemini error on "${stepName}": ${msg}`);
+      break;
     }
   }
-  throw new Error("Retries exhausted");
+
+  // Fall back to Groq
+  if (GROQ_API_KEY) {
+    console.log(`[AI] Falling back to Groq for: ${stepName}`);
+    try {
+      return await groqGenerate(systemPrompt, userText, config);
+    } catch (groqErr) {
+      const groqMsg = groqErr instanceof Error ? groqErr.message : String(groqErr);
+      console.log(`[AI] Groq also failed on "${stepName}": ${groqMsg}`);
+    }
+  }
+
+  throw new Error(`Gemini error: All attempts failed for "${stepName}"`);
 }
 
-export async function callAI(
-  systemPrompt: string,
-  userText: string,
-  config?: AIConfig
-): Promise<string> {
-  try {
-    return await attemptWithRetry("gemini", systemPrompt, userText, config);
-  } catch (geminiErr) {
-    if (GROQ_API_KEY) {
-      try {
-        return await attemptWithRetry("groq", systemPrompt, userText, config);
-      } catch {
-        throw geminiErr;
-      }
-    }
-    throw geminiErr;
-  }
-}
+// Export for direct calls where fallback is handled externally (e.g. search Pass 2 per-job calls)
+export { callGemini };
