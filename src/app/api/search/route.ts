@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { searchGoogleJobs } from "@/lib/serpapi";
 import { extractTextFromPDF } from "@/lib/pdf";
-import { callAIWithFallback, callGemini } from "@/lib/gemini";
+import { callAIWithFallback } from "@/lib/gemini";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -472,9 +472,10 @@ Return ONLY valid JSON (no markdown, no code fences):
   "estimated_salary": string
 }`;
         try {
-          const rawSingle = await callGemini(
+          const rawSingle = await callAIWithFallback(
             singlePrompt,
             `Candidate Profile:\n${profileContext}\n\nJob:\n${JSON.stringify(batchInput[i], null, 2)}`,
+            `search pass 1 individual: ${batchInput[i].job_title}`,
             { responseMimeType: "application/json", temperature: 0.1, maxOutputTokens: 1024 }
           );
           const parsed = JSON.parse(rawSingle);
