@@ -6,18 +6,17 @@ import { Settings, LogOut, User, Sparkles } from "lucide-react";
 import { useTransition } from "@/components/providers/transition-provider";
 import { createClient } from "@/lib/supabase/client";
 
-type Phase = "closed" | "pill" | "open";
-
 export function ProfileDropdown() {
   const router = useRouter();
   const { startTransition } = useTransition();
-  const [phase, setPhase] = useState<Phase>("closed");
+  const [open, setOpen] = useState(false);
+  const [animPhase, setAnimPhase] = useState<"closed" | "pill" | "open">("closed");
   const [itemsVisible, setItemsVisible] = useState(false);
   const [name, setName] = useState("");
   const [initials, setInitials] = useState("");
   const [email, setEmail] = useState("");
   const ref = useRef<HTMLDivElement>(null);
-  const closeTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const animTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   useEffect(() => {
     const supabase = createClient();
@@ -45,35 +44,46 @@ export function ProfileDropdown() {
 
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        handleClose();
+      if (ref.current && !ref.current.contains(e.target as Node) && open) {
+        closeDropdown();
       }
     };
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
-  }, []);
+  }, [open]);
+
+  const closeDropdown = () => {
+    setItemsVisible(false);
+    setAnimPhase("pill");
+    animTimer.current = setTimeout(() => {
+      setAnimPhase("closed");
+      setOpen(false);
+    }, 180);
+  };
+
+  const openDropdown = () => {
+    setOpen(true);
+    setAnimPhase("pill");
+    animTimer.current = setTimeout(() => {
+      setAnimPhase("open");
+      setTimeout(() => setItemsVisible(true), 150);
+    }, 180);
+  };
 
   const handleToggle = () => {
-    if (closeTimer.current) clearTimeout(closeTimer.current);
-    if (phase === "closed") {
-      setPhase("pill");
-      setTimeout(() => {
-        setPhase("open");
-        setTimeout(() => setItemsVisible(true), 150);
-      }, 180);
+    if (animTimer.current) clearTimeout(animTimer.current);
+    if (open) {
+      closeDropdown();
     } else {
-      handleClose();
+      openDropdown();
     }
   };
 
-  const handleClose = () => {
-    setItemsVisible(false);
-    setPhase("pill");
-    closeTimer.current = setTimeout(() => setPhase("closed"), 180);
-  };
-
   const handleNav = (path: string) => {
+    if (animTimer.current) clearTimeout(animTimer.current);
     setItemsVisible(false);
+    setAnimPhase("closed");
+    setOpen(false);
     startTransition();
     router.push(path);
   };
@@ -92,15 +102,14 @@ export function ProfileDropdown() {
           "absolute right-0 top-0 overflow-hidden z-50",
           "bg-[#1C1C1E] border border-white/10 shadow-xl",
           "transition-all duration-[180ms] ease-out",
-          phase === "closed" && "w-10 h-10 rounded-full cursor-pointer",
-          phase === "pill" && "w-56 h-10 rounded-full",
-          phase === "open" && "w-56 rounded-2xl cursor-default",
+          animPhase === "closed" && "w-10 h-10 rounded-full",
+          animPhase === "pill" && "w-56 h-10 rounded-full",
+          animPhase === "open" && "w-56 rounded-2xl",
         ].filter(Boolean).join(" ")}
-        onClick={phase === "closed" ? handleToggle : undefined}
       >
         <div
           className="flex items-center justify-center w-10 h-10 shrink-0 cursor-pointer"
-          onClick={phase !== "closed" ? handleToggle : undefined}
+          onClick={handleToggle}
         >
           <span className="text-sm font-semibold text-white tracking-wide">
             {initials || <User size={16} className="text-white" />}
