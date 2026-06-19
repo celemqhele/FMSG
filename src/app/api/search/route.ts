@@ -142,9 +142,13 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Use the frontend's query directly for SerpAPI (it's already built from the right profile)
+    // Use the frontend's query directly for SerpAPI
+    if (!query || query === "jobs") {
+      console.log("[SEARCH] No meaningful query — cannot search");
+      return NextResponse.json({ results: [], code: "NO_QUERY", message: "Add job titles to your search profile first." });
+    }
     const serpParams = {
-      q: query || "jobs",
+      q: query,
       location: profileLocation || undefined,
       hl: "en" as const,
       gl: "za" as const,

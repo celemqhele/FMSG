@@ -56,8 +56,12 @@ export function SearchPill({ onSearch, searching, activeProfileId }: SearchPillP
     }
 
     const pick = titles[Math.floor(Math.random() * titles.length)] ?? "";
-    const query = [pick, loc].filter(Boolean).join(" in ") || "jobs";
-    setDisplayTitle(query || "Search for jobs");
+    if (!pick) {
+      console.log("[SEARCH-PILL] No job titles found — cannot search");
+      return;
+    }
+    const query = [pick, loc].filter(Boolean).join(" in ");
+    setDisplayTitle(query);
     onSearch(query, usedProfileId);
   };
 
