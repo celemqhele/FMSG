@@ -1,12 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { Search } from "lucide-react";
+import { Search, Crosshair } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useActiveProfile } from "@/components/dashboard/dashboard-layout";
 
 interface SearchPillProps {
-  onSearch: (query: string, profileId?: string | null) => void;
+  onSearch: (query: string, profileId?: string | null, pfMode?: boolean) => void;
   searching: boolean;
 }
 
@@ -14,6 +14,7 @@ export function SearchPill({ onSearch, searching }: SearchPillProps) {
   const { activeProfileId } = useActiveProfile();
   const [displayTitle, setDisplayTitle] = useState("Search for jobs");
   const [bouncing, setBouncing] = useState(false);
+  const [pfMode, setPfMode] = useState(false);
 
   const handleSearch = async () => {
     if (searching) return;
@@ -30,7 +31,6 @@ export function SearchPill({ onSearch, searching }: SearchPillProps) {
     let usedProfileId = activeProfileId;
 
     if (!usedProfileId) {
-      // No active profile — try to find the first search_profile for this user
       const { data: firstSp } = await supabase
         .from("search_profiles")
         .select("id, job_titles, location")
@@ -63,13 +63,21 @@ export function SearchPill({ onSearch, searching }: SearchPillProps) {
     }
     const query = [pick, loc].filter(Boolean).join(" in ");
     setDisplayTitle(query);
-    onSearch(query, usedProfileId);
+    onSearch(query, usedProfileId, pfMode);
   };
 
   return (
     <div className={`w-full max-w-2xl mx-auto flex items-center h-14 rounded-full bg-white/10 border border-white/20 backdrop-blur-xl overflow-hidden transition-transform duration-200 ${bouncing ? "scale-[1.02]" : "scale-100"}`}>
-      <span className="flex-1 text-white/40 text-sm px-4 truncate select-none">
-        {displayTitle}
+      <button
+        onClick={() => setPfMode(!pfMode)}
+        className={`ml-2 w-10 h-10 rounded-full flex items-center justify-center transition-colors ${pfMode ? "bg-[var(--color-accent)] text-white" : "text-white/40 hover:text-white/70 hover:bg-white/10"}`}
+        title={pfMode ? "Persistent Finder active — searches multiple rounds across all titles" : "Click to enable Persistent Finder"}
+      >
+        <Crosshair size={16} />
+      </button>
+
+      <span className="flex-1 text-white/40 text-sm px-3 truncate select-none">
+        {pfMode ? "Persistent Finder — scanning all titles" : displayTitle}
       </span>
 
       <button
@@ -78,7 +86,7 @@ export function SearchPill({ onSearch, searching }: SearchPillProps) {
         className="flex items-center gap-2 px-6 h-10 mr-2 rounded-full bg-[var(--color-accent)] text-white text-sm font-medium hover:bg-[var(--color-accent-hover)] transition-colors disabled:opacity-50"
       >
         <Search size={16} />
-        Search
+        {searching ? (pfMode ? "Finding..." : "Searching...") : "Search"}
       </button>
     </div>
   );

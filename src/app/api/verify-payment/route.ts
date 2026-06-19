@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { PLAN_LIMITS, PAYSTACK_PLAN_CODES } from "@/lib/plan-limits";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -8,13 +9,6 @@ const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
 function getSupabase() {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 }
-
-const PLAN_LIMITS: Record<string, { searches: number; cv_gens: number }> = {
-  Free: { searches: 3, cv_gens: 1 },
-  Seeker: { searches: 25, cv_gens: 5 },
-  Hunter: { searches: 70, cv_gens: 15 },
-  Pro: { searches: 200, cv_gens: -1 },
-};
 
 export async function POST(request: NextRequest) {
   const supabase = getSupabase();
@@ -34,7 +28,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Missing fields" }, { status: 400 });
   }
 
-  // Verify with Paystack
   if (!PAYSTACK_SECRET_KEY) {
     return NextResponse.json({ error: "Paystack not configured" }, { status: 500 });
   }
@@ -54,6 +47,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Payment not successful" }, { status: 402 });
     }
 
+    const txData = paystackData.data;
+    const authorizationCode = txData.authorization?.authorization_code ?? "";
+    const customerCode = txData.customer?.customer_code ?? "";
+    const email = txData.customer?.email ?? "";
+    const paystackSubId = txData.subscription?.subscription_code ?? "";
+
     // Calculate expiry
     const now = new Date();
     const expiryDate = new Date(now);
@@ -63,24 +62,65 @@ export async function POST(request: NextRequest) {
       expiryDate.setMonth(expiryDate.getMonth() + 1);
     }
 
+    const limits = PLAN_LIMITS[plan] ?? { searches: 3, cv_gens: 1, pf_balance: 0 };
+
     // Insert subscription record
     const { error: subErr } = await supabase.from("subscriptions").insert({
       user_id: user.id,
       plan,
       billing_cycle,
       paystack_reference: reference,
-      amount: paystackData.data.amount,
+      paystack_subscription_id: paystackSubId,
+      amount: txData.amount,
+      authorization_code: authorizationCode,
+      customer_code: customerCode,
+      email,
       start_date: now.toISOString(),
       expiry_date: expiryDate.toISOString(),
+      next_payment_date: txData.subscription?.next_payment_date ?? null,
       status: "active",
     });
 
     if (subErr) {
+      console.error("[VERIFY] Subscription insert error:", subErr.message);
       return NextResponse.json({ error: "Failed to record subscription" }, { status: 500 });
     }
 
+    // Try to create a Paystack subscription if we have authorization but no sub yet
+    if (!paystackSubId && authorizationCode && customerCode) {
+      const planCode = PAYSTACK_PLAN_CODES[`${plan}_${billing_cycle}`];
+      if (planCode) {
+        try {
+          const subRes = await fetch("https://api.paystack.co/subscription", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              customer: customerCode,
+              plan: planCode,
+              authorization: authorizationCode,
+              start_date: now.toISOString(),
+            }),
+          });
+          const subData = await subRes.json();
+          if (subData.status && subData.data?.subscription_code) {
+            await supabase
+              .from("subscriptions")
+              .update({
+                paystack_subscription_id: subData.data.subscription_code,
+                next_payment_date: subData.data.next_payment_date ?? null,
+              })
+              .eq("paystack_reference", reference);
+          }
+        } catch (subErr) {
+          console.error("[VERIFY] Failed to create subscription:", subErr);
+        }
+      }
+    }
+
     // Update profile
-    const limits = PLAN_LIMITS[plan] ?? { searches: 3, cv_gens: 1 };
     const { error: profileErr } = await supabase
       .from("profiles")
       .update({
@@ -88,6 +128,7 @@ export async function POST(request: NextRequest) {
         plan_expiry: expiryDate.toISOString(),
         search_balance: limits.searches,
         cv_generation_balance: limits.cv_gens,
+        persistent_finder_balance: limits.pf_balance,
       })
       .eq("id", user.id);
 

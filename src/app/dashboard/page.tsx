@@ -105,16 +105,19 @@ export default function DashboardPage() {
     });
   }, [activeTab]);
 
-  const handleSearch = useCallback(async (query: string, profileId?: string | null) => {
-    console.log("[DASHBOARD] Search clicked:", { query, profileId, time: new Date().toISOString() });
+  const [pfActive, setPfActive] = useState(false);
+
+  const handleSearch = useCallback(async (query: string, profileId?: string | null, pfMode?: boolean) => {
+    console.log("[DASHBOARD] Search clicked:", { query, profileId, pfMode, time: new Date().toISOString() });
     setSearching(true);
     setProgress(0);
     setHasSearched(true);
     setResultMessage("");
     setVideoFast(true);
+    setPfActive(!!pfMode);
 
     const interval = setInterval(() => {
-      setProgress((p) => Math.min(p + Math.random() * 15, 85));
+      setProgress((p) => Math.min(p + Math.random() * 15, pfMode ? 90 : 85));
     }, 1000);
 
     const supabase = createClient();
@@ -133,7 +136,7 @@ export default function DashboardPage() {
           Authorization: `Bearer ${session.access_token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ query, profile_id: profileId }),
+        body: JSON.stringify({ query, profile_id: profileId, pf_mode: pfMode }),
       });
 
       const data = await res.json();
@@ -144,6 +147,17 @@ export default function DashboardPage() {
         setSearching(false);
         setProgress(0);
         setVideoFast(false);
+        setPfActive(false);
+        return;
+      }
+
+      if (res.status === 403 && data.code === "LIMIT_003") {
+        setShowLimitModal("LIMIT_003");
+        clearInterval(interval);
+        setSearching(false);
+        setProgress(0);
+        setVideoFast(false);
+        setPfActive(false);
         return;
       }
 
@@ -163,8 +177,11 @@ export default function DashboardPage() {
         setSearching(false);
         setProgress(0);
         setVideoFast(false);
+        setPfActive(false);
         if ((data.results?.length ?? 0) === 0 && data.message) {
           setResultMessage(data.message);
+        } else if (data.pf_mode && data.pf_rounds) {
+          setResultMessage(`Persistent Finder completed — ${data.results?.length ?? 0} results across ${data.pf_rounds} rounds`);
         }
       }, 500);
     } catch {
@@ -290,11 +307,15 @@ export default function DashboardPage() {
             <p className="text-[var(--color-text-primary)] font-semibold">
               {showLimitModal === "LIMIT_001"
                 ? "No searches remaining"
+                : showLimitModal === "LIMIT_003"
+                ? "No Persistent Finder rounds remaining"
                 : "No CV generations remaining"}
             </p>
             <p className="text-sm text-[var(--color-text-secondary)]">
               {showLimitModal === "LIMIT_001"
                 ? "You've used all your free searches. Upgrade your plan to continue searching."
+                : showLimitModal === "LIMIT_003"
+                ? "You've used all your Persistent Finder rounds. Upgrade your plan to get more."
                 : "You've used all your free CV generations. Upgrade your plan to generate more."}
             </p>
             <button

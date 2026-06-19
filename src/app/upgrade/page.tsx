@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard/dashboard-layout";
 import { LiquidGlassCard } from "@/components/landing/liquid-glass-card";
@@ -8,6 +8,7 @@ import { Loader2, Check } from "lucide-react";
 import { PageTransitionWrapper } from "@/components/ui/page-transition-wrapper";
 import { useTransition } from "@/components/providers/transition-provider";
 import { createClient } from "@/lib/supabase/client";
+import { PLAN_PRICES, PLAN_LIMITS } from "@/lib/plan-limits";
 
 interface Tier {
   name: string;
@@ -15,23 +16,19 @@ interface Tier {
   annualPrice: string;
   searches: number;
   cvGens: number;
+  pfBalance: number;
   features: string[];
   popular: boolean;
 }
 
 const tiers: Tier[] = [
-  { name: "Free", monthlyPrice: "R0", annualPrice: "R0", searches: 3, cvGens: 1, features: ["3 job searches per month", "1 tailored CV per month", "Basic match scoring"], popular: false },
-  { name: "Seeker", monthlyPrice: "R79", annualPrice: "R790", searches: 25, cvGens: 5, features: ["25 job searches per month", "5 tailored CVs per month", "Full match scoring", "Banned company filtering"], popular: false },
-  { name: "Hunter", monthlyPrice: "R149", annualPrice: "R1,490", searches: 70, cvGens: 15, features: ["70 job searches per month", "15 tailored CVs per month", "Priority AI processing", "Advanced filtering"], popular: true },
-  { name: "Pro", monthlyPrice: "R249", annualPrice: "R2,490", searches: 200, cvGens: -1, features: ["200 job searches per month", "Unlimited tailored CVs", "Fastest AI processing", "All features unlocked"], popular: false },
+  { name: "Free", monthlyPrice: "R0", annualPrice: "R0", searches: 3, cvGens: 1, pfBalance: 0, features: ["3 job searches per month", "1 tailored CV per month", "Basic match scoring"], popular: false },
+  { name: "Seeker", monthlyPrice: "R79", annualPrice: "R790", searches: 25, cvGens: 5, pfBalance: 5, features: ["25 job searches per month", "5 tailored CVs per month", "Full match scoring", "Banned company filtering", "5 Persistent Finder rounds"], popular: false },
+  { name: "Hunter", monthlyPrice: "R149", annualPrice: "R1,490", searches: 70, cvGens: 15, pfBalance: 15, features: ["70 job searches per month", "15 tailored CVs per month", "Priority AI processing", "Advanced filtering", "15 Persistent Finder rounds"], popular: true },
+  { name: "Pro", monthlyPrice: "R249", annualPrice: "R2,490", searches: 200, cvGens: -1, pfBalance: 50, features: ["200 job searches per month", "Unlimited tailored CVs", "Fastest AI processing", "All features unlocked", "50 Persistent Finder rounds"], popular: false },
 ];
 
 const PAYSTACK_PUBLIC_KEY = process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY;
-const PLAN_PRICES: Record<string, { monthly: number; annual: number }> = {
-  Seeker: { monthly: 7900, annual: 79000 },
-  Hunter: { monthly: 14900, annual: 149000 },
-  Pro: { monthly: 24900, annual: 249000 },
-};
 
 export default function UpgradePage() {
   const router = useRouter();
@@ -86,7 +83,7 @@ export default function UpgradePage() {
       return;
     }
 
-    const amount = annual ? PLAN_PRICES[tier.name].annual : PLAN_PRICES[tier.name].monthly;
+    const amount = (PLAN_PRICES[tier.name] ?? { monthly: 0, annual: 0 })[annual ? "annual" : "monthly"];
     setProcessing(tier.name);
 
     try {
@@ -173,6 +170,7 @@ export default function UpgradePage() {
                   {tier.searches === -1 ? "Unlimited searches" : `${tier.searches} searches/mo`}
                   {" / "}
                   {tier.cvGens === -1 ? "Unlimited CVs" : `${tier.cvGens} CVs/mo`}
+                  {tier.pfBalance > 0 && ` / ${tier.pfBalance} PF rounds`}
                 </div>
                 <ul className="mt-6 flex-1 flex flex-col gap-3">
                   {tier.features.map((f) => (

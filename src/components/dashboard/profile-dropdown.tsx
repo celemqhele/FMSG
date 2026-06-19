@@ -5,12 +5,14 @@ import { useRouter } from "next/navigation";
 import { Settings, LogOut, User, Sparkles } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useTransition } from "@/components/providers/transition-provider";
+import { SettingsModal } from "./settings-modal";
 
 export function ProfileDropdown() {
   const { startTransition } = useTransition();
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [phase, setPhase] = useState<"closed" | "pill" | "full">("closed");
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [name, setName] = useState("");
   const [initials, setInitials] = useState("");
   const [email, setEmail] = useState("");
@@ -126,7 +128,7 @@ export function ProfileDropdown() {
                 My Profile
               </button>
               <button
-                onClick={() => handleNav("/settings")}
+                onClick={() => { closeMenu(); setTimeout(() => setSettingsOpen(true), 160); }}
                 className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-[var(--color-text-primary)] hover:bg-white/[0.04] transition-colors"
               >
                 <Settings size={15} className="opacity-60" />
@@ -155,6 +157,8 @@ export function ProfileDropdown() {
           </div>
         </>
       )}
+
+      <SettingsModal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>
   );
 }
