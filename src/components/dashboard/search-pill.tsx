@@ -27,11 +27,12 @@ export function SearchPill({ onSearch, searching, activeProfileId }: SearchPillP
     let loc = "";
 
     if (activeProfileId) {
-      const { data: sp } = await supabase
+      const { data: sp, error: spErr } = await supabase
         .from("search_profiles")
         .select("job_titles, location")
         .eq("id", activeProfileId)
-        .single();
+        .maybeSingle();
+      if (spErr) console.log("[SEARCH-PILL] search_profiles error:", spErr.message);
       if (sp) {
         titles = sp.job_titles ?? [];
         loc = sp.location ?? "";
@@ -39,11 +40,12 @@ export function SearchPill({ onSearch, searching, activeProfileId }: SearchPillP
     }
 
     if (titles.length === 0) {
-      const { data: profile } = await supabase
+      const { data: profile, error: profileErr } = await supabase
         .from("profiles")
         .select("job_titles, location")
         .eq("id", user.id)
-        .single();
+        .maybeSingle();
+      if (profileErr) console.log("[SEARCH-PILL] profiles error:", profileErr.message);
       titles = profile?.job_titles ?? [];
       loc = profile?.location ?? "";
     }
