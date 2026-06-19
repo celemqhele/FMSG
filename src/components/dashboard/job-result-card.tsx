@@ -114,14 +114,26 @@ export function JobResultCard({
         headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" },
         body: JSON.stringify({ job_result_id: id }),
       });
-      if (!res.ok) { setCvLoading(false); return; }
+      if (!res.ok) {
+        setCvLoading(false);
+        const data = await res.json().catch(() => ({}));
+        if (data.code === "LIMIT_002") {
+          window.dispatchEvent(new CustomEvent("show-limit-modal", { detail: "LIMIT_002" }));
+        }
+        return;
+      }
       const blob = await res.blob();
+      if (!blob.type.includes("openxmlformats") && !blob.type.includes("octet-stream")) {
+        setCvLoading(false);
+        return;
+      }
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
       a.download = `CV - ${jobTitle} - ${company} - FMSG.docx`;
       a.click();
       URL.revokeObjectURL(url);
+      window.dispatchEvent(new Event("refresh-balances"));
       setCvLoading(false);
     } catch {
       setCvLoading(false);

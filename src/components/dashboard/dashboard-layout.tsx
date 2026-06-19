@@ -6,6 +6,7 @@ import { SpaceVideoBackground } from "@/components/landing/space-video-backgroun
 import { ProfileSwitcher } from "./profile-switcher";
 import { ProfileDropdown } from "./profile-dropdown";
 import { ProfileOnboardingModal } from "./profile-onboarding-modal";
+import { BalanceChips } from "./balance-chips";
 import { useTransition } from "@/components/providers/transition-provider";
 import "../landing/liquid-glass.css";
 
@@ -68,7 +69,10 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
               </button>
             )}
           </div>
-          <ProfileDropdown />
+          <div className="flex items-center gap-2">
+            <BalanceChips />
+            <ProfileDropdown />
+          </div>
         </div>
       </header>
       <main className="relative z-10 flex-1 px-6 pb-12 pt-24">

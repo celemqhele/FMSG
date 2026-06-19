@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useEffect, useCallback, startTransition } from "react";
+import { useState, useEffect, useCallback, useMemo, startTransition } from "react";
 import { useRouter } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard/dashboard-layout";
 import { SearchPill } from "@/components/dashboard/search-pill";
 import { JobResultCard } from "@/components/dashboard/job-result-card";
 import { DashboardTabs, type TabId } from "@/components/dashboard/dashboard-tabs";
+import { FilterSortBar, type FilterState, type SortMode } from "@/components/dashboard/filter-sort-bar";
 import { SavedJobs } from "@/components/dashboard/saved-jobs";
 import { BlockedList } from "@/components/dashboard/blocked-list";
 import { RejectedJobs } from "@/components/dashboard/rejected-jobs";
@@ -25,6 +26,7 @@ interface JobResult {
   full_description: string;
   domain_verified?: boolean;
   domain_unverified_reason?: string;
+  created_at?: string;
 }
 
 interface HistoryResult {
@@ -83,6 +85,13 @@ export default function DashboardPage() {
       }
       setAuthChecked(true);
     });
+
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail === "LIMIT_002") setShowLimitModal("LIMIT_002");
+    };
+    window.addEventListener("show-limit-modal", handler);
+    return () => window.removeEventListener("show-limit-modal", handler);
   }, [router]);
 
   useEffect(() => {
@@ -106,6 +115,38 @@ export default function DashboardPage() {
   }, [activeTab]);
 
   const [pfActive, setPfActive] = useState(false);
+
+  // Filter + sort state
+  const [filterState, setFilterState] = useState<FilterState>({
+    trusted: true, untrusted: true, scoreHigh: true, scoreMid: true, scoreLow: true,
+  });
+  const [sortMode, setSortMode] = useState<SortMode>("score");
+
+  const filteredResults = useMemo(() => {
+    let filtered = results.filter((r) => {
+      if (!filterState.trusted && r.domain_verified) return false;
+      if (!filterState.untrusted && !r.domain_verified) return false;
+      const s = r.match_score;
+      if (!filterState.scoreHigh && s >= 80) return false;
+      if (!filterState.scoreMid && s >= 40 && s < 80) return false;
+      if (!filterState.scoreLow && s < 40) return false;
+      return true;
+    });
+
+    filtered.sort((a, b) => {
+      switch (sortMode) {
+        case "date_newest":
+          return new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime();
+        case "date_oldest":
+          return new Date(a.created_at ?? 0).getTime() - new Date(b.created_at ?? 0).getTime();
+        case "score":
+        default:
+          return (b.match_score ?? 0) - (a.match_score ?? 0);
+      }
+    });
+
+    return filtered;
+  }, [results, filterState, sortMode]);
 
   const handleSearch = useCallback(async (query: string, profileId?: string | null, pfMode?: boolean) => {
     console.log("[DASHBOARD] Search clicked:", { query, profileId, pfMode, time: new Date().toISOString() });
@@ -209,6 +250,17 @@ export default function DashboardPage() {
           <>
             <SearchPill onSearch={handleSearch} searching={searching} />
 
+            {!searching && hasSearched && results.length > 0 && (
+              <div className="flex items-center justify-center">
+                <FilterSortBar
+                  filter={filterState}
+                  sort={sortMode}
+                  onFilterChange={setFilterState}
+                  onSortChange={setSortMode}
+                />
+              </div>
+            )}
+
             {searching && (
               <div className="space-y-2">
                 <div className="h-1.5 rounded-full bg-[var(--color-border)] overflow-hidden">
@@ -231,7 +283,7 @@ export default function DashboardPage() {
 
             {!searching && results.length > 0 && (
               <div className="space-y-4">
-                {results.map((r) => (
+                {filteredResults.map((r) => (
                     <JobResultCard
                       key={r.id}
                       id={r.id}
@@ -307,16 +359,20 @@ export default function DashboardPage() {
             <p className="text-[var(--color-text-primary)] font-semibold">
               {showLimitModal === "LIMIT_001"
                 ? "No searches remaining"
+                : showLimitModal === "LIMIT_002"
+                ? "No CV generations remaining"
                 : showLimitModal === "LIMIT_003"
                 ? "No Persistent Finder rounds remaining"
-                : "No CV generations remaining"}
+                : "No remaining credits"}
             </p>
             <p className="text-sm text-[var(--color-text-secondary)]">
               {showLimitModal === "LIMIT_001"
                 ? "You've used all your free searches. Upgrade your plan to continue searching."
+                : showLimitModal === "LIMIT_002"
+                ? "You've used all your CV generations. Upgrade your plan to generate more."
                 : showLimitModal === "LIMIT_003"
                 ? "You've used all your Persistent Finder rounds. Upgrade your plan to get more."
-                : "You've used all your free CV generations. Upgrade your plan to generate more."}
+                : "You've run out of credits. Upgrade your plan."}
             </p>
             <button
               onClick={() => { setShowLimitModal(null); router.push("/upgrade"); }}

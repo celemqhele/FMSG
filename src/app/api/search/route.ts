@@ -584,7 +584,7 @@ export async function POST(request: NextRequest) {
           posted_at: r.posted_at,
         }));
 
-        const { data: saved } = await dataClient.from("job_results").insert(rows).select("id, job_title, company, location, estimated_salary, match_score, match_summary, job_url, full_spec");
+        const { data: saved } = await dataClient.from("job_results").insert(rows).select("id, job_title, company, location, estimated_salary, match_score, match_summary, job_url, full_spec, domain_verified, domain_unverified_reason, posted_at, created_at");
         return NextResponse.json({ results: (saved ?? outputs).map(normalize) });
       }
 
@@ -741,7 +741,7 @@ export async function POST(request: NextRequest) {
         posted_at: r.posted_at,
       }));
 
-      const { data: saved } = await dataClient.from("job_results").insert(rows).select("id, job_title, company, location, estimated_salary, match_score, match_summary, job_url, full_spec");
+      const { data: saved } = await dataClient.from("job_results").insert(rows).select("id, job_title, company, location, estimated_salary, match_score, match_summary, job_url, full_spec, domain_verified, domain_unverified_reason, posted_at, created_at");
       return NextResponse.json({ results: (saved ?? allResults).map(normalize), pf_mode: true, pf_rounds: pfRound });
     }
 

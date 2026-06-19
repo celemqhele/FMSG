@@ -206,7 +206,7 @@ export async function POST(request: NextRequest) {
         .maybeSingle();
       const balance = (profile as any)?.cv_generation_balance ?? 0;
       if (balance <= 0) {
-        return NextResponse.json({ code: "LIMIT_001", message: "No CV generation credits remaining." }, { status: 403 });
+        return NextResponse.json({ code: "LIMIT_002", message: "No CV generation credits remaining." }, { status: 403 });
       }
     }
 
@@ -266,29 +266,26 @@ export async function POST(request: NextRequest) {
     }
 
     // AI call (Gemini → Groq fallback)
-    const prompt = `Reconstruct this CV to be the strongest possible match for the job spec below.
+    const systemPrompt = `You are a professional CV writer. Reconstruct the candidate's CV to be the strongest possible match for the job spec provided.
 Do not invent achievements or numbers. Mirror the job's tone and key terms.
 Use UK/SA English. Plain text only, no tables or symbols.
 Target ATS compatibility 85%+.
 
-Return JSON only:
+Return ONLY valid JSON with this exact schema (no markdown, no code fences):
 {
-  "summary": "",
-  "skills": [{ "category": "", "items": "" }],
-  "experience": [{ "title": "", "company": "", "dates": "", "bullets": [""] }],
-  "achievements": [""],
-  "education": [{ "qualification": "", "institution": "", "year": "" }]
+  "summary": "professional summary tailored to the job",
+  "skills": [{ "category": "skill category", "items": "comma-separated skills" }],
+  "experience": [{ "title": "job title", "company": "company name", "dates": "date range", "bullets": ["achievement bullet"] }],
+  "achievements": ["key achievement"],
+  "education": [{ "qualification": "degree/diploma", "institution": "school name", "year": "year" }]
 }
 
-JOB SPEC:
-${fullSpec.slice(0, 10000)}
-
-CANDIDATE CV:
-${cvText.slice(0, 10000)}`;
+Use the job spec to identify what skills and experience to emphasise. Use the CV for facts only — do not invent.`;
+    const userText = `JOB SPEC:\n${fullSpec.slice(0, 10000)}\n\nCANDIDATE CV:\n${cvText.slice(0, 10000)}`;
 
     let content = "";
     try {
-      content = await callAIWithFallback(prompt, "Generate the tailored CV JSON.", "CV generation", { responseMimeType: "application/json", temperature: 0.1 });
+      content = await callAIWithFallback(systemPrompt, userText, "CV generation", { responseMimeType: "application/json", temperature: 0.1 });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error("AI error:", msg);
