@@ -37,8 +37,6 @@ const BLACKLISTED_DOMAINS = [
   'jobleads.it',
 ];
 
-const ALL_TRUSTED_DOMAINS = [...HIGH_TRUST_DOMAINS, ...STANDARD_TRUST_DOMAINS];
-
 function extractDomain(url: string): string | null {
   try {
     const u = new URL(url);
@@ -244,14 +242,8 @@ export async function POST(request: NextRequest) {
 
     const sanitisedLocation = sanitiseLocation(profileLocation);
 
-    // Approach 1: Restrict SerpAPI query to trusted domains via site: syntax
-    // Test if google_jobs engine respects this — if results disappear or drop sharply,
-    // remove the domainRestriction and rely solely on post-fetch filtering (Approach 2).
-    const domainRestriction = ALL_TRUSTED_DOMAINS.map((d) => `site:${d}`).join(" OR ");
-    const restrictedQuery = `${query} (${domainRestriction})`;
-
-    const buildSerpParams = (location?: string, useDomainRestriction = true) => ({
-      q: useDomainRestriction ? restrictedQuery : query,
+    const buildSerpParams = (location?: string) => ({
+      q: query,
       location: location,
       hl: "en" as const,
       gl: "za" as const,
@@ -282,6 +274,11 @@ export async function POST(request: NextRequest) {
       } else {
         return NextResponse.json({ results: [], code: "SERP_ERROR", message: "Search engine temporarily unavailable. Please try again." });
       }
+    }
+
+    if (!rawJobs || rawJobs.length === 0) {
+      console.log("[SEARCH] SerpAPI returned no results");
+      return NextResponse.json({ results: [], code: "NO_RESULTS_SERP", message: "No job listings found for your search. Try different keywords or location." });
     }
 
     // Domain verification — mark each job as trusted/untrusted (never filter them out)
