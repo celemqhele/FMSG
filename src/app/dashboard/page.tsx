@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, startTransition } from "react";
 import { useRouter } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard/dashboard-layout";
 import { SearchPill } from "@/components/dashboard/search-pill";
@@ -83,7 +83,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (activeTab !== "history") return;
-    setHistoryLoading(true);
+    startTransition(() => setHistoryLoading(true));
     const supabase = createClient();
     supabase.auth.getSession().then(({ data }: { data: { session: any } }) => {
       if (!data.session) { setHistoryLoading(false); return; }
@@ -156,7 +156,7 @@ export default function DashboardPage() {
       setSearching(false);
       setProgress(0);
     }
-  }, []);
+  }, [activeProfileId]);
 
   const handleDelete = useCallback((id: string) => {
     setResults((prev) => prev.filter((x) => x.id !== id));
@@ -274,7 +274,7 @@ export default function DashboardPage() {
                 : "You've used all your free CV generations. Upgrade your plan to generate more."}
             </p>
             <button
-              onClick={() => setShowLimitModal(null)}
+              onClick={() => { setShowLimitModal(null); router.push("/upgrade"); }}
               className="px-5 py-2.5 text-sm font-medium text-white bg-[var(--color-accent)] rounded-full hover:bg-[var(--color-accent-hover)] transition-colors"
             >
               Upgrade Plan

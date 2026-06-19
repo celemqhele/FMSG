@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, type ReactNode } from "react";
+import { useState, useEffect, useCallback, startTransition, type ReactNode } from "react";
 import { X } from "lucide-react";
 import { LogInForm } from "./log-in-form";
 import { SignUpForm } from "./sign-up-form";
@@ -24,8 +24,10 @@ export function AuthModal({ isOpen, onClose, defaultTab = "signup" }: AuthModalP
 
   useEffect(() => {
     if (isOpen) {
-      setMounted(true);
-      setScreen(defaultTab);
+      startTransition(() => {
+        setMounted(true);
+        setScreen(defaultTab);
+      });
     } else {
       const timer = setTimeout(() => setMounted(false), 250);
       return () => clearTimeout(timer);
@@ -168,7 +170,7 @@ export function AuthModal({ isOpen, onClose, defaultTab = "signup" }: AuthModalP
       </div>
 
       {transitionType && (
-        <LoginTransition type="login" redirectTo={transitionType === "signup" ? "/onboarding" : undefined} onComplete={handleTransitionComplete} />
+        <LoginTransition type={transitionType === "signup" ? "onboarding" : "login"} redirectTo={transitionType === "signup" ? "/onboarding" : undefined} onComplete={handleTransitionComplete} />
       )}
     </>
   );

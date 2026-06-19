@@ -17,19 +17,12 @@ export function AuthHandler() {
       } else if (event === "SIGNED_OUT") {
         localStorage.removeItem("logged_in");
       }
-
-      if (event !== "SIGNED_IN" || !session) return;
-      if (pathname.startsWith("/auth/")) return;
-
-      setTimeout(() => {
-        router.push("/dashboard");
-      }, 2000);
     });
 
     return () => {
       subscription.unsubscribe();
     };
-  }, [router, pathname]);
+  }, []);
 
   return null;
 }

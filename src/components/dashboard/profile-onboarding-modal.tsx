@@ -35,28 +35,36 @@ export function ProfileOnboardingModal({ profileId, onClose }: ProfileOnboarding
     setError("");
     setStep("extracting");
 
+    const supabase = createClient();
     const formData = new FormData();
     formData.append("file", f);
 
-    fetch("/api/extract-cv", { method: "POST", body: formData })
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.error) {
-          setError(data.error);
-          setStep("upload");
-          return;
-        }
-        const titles = Array.isArray(data.job_titles) && data.job_titles.length > 0
-          ? data.job_titles
-          : [""];
-        setJobTitles(titles);
-        setLocation(data.preferred_location ?? "");
-        setStep("form");
+    supabase.auth.getSession().then(({ data }: { data: { session: { access_token: string } | null } }) => {
+      const session = data?.session;
+      fetch("/api/extract-cv", {
+        method: "POST",
+        headers: session ? { Authorization: `Bearer ${session.access_token}` } : {},
+        body: formData,
       })
-      .catch(() => {
-        setError("Failed to extract CV. Please try again.");
-        setStep("upload");
-      });
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.error) {
+            setError(data.error);
+            setStep("upload");
+            return;
+          }
+          const titles = Array.isArray(data.job_titles) && data.job_titles.length > 0
+            ? data.job_titles
+            : [""];
+          setJobTitles(titles);
+          setLocation(data.preferred_location ?? "");
+          setStep("form");
+        })
+        .catch(() => {
+          setError("Failed to extract CV. Please try again.");
+          setStep("upload");
+        });
+    });
   };
 
   const handleTitleChange = (i: number, v: string) => {

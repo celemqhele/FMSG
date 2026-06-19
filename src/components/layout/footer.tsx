@@ -27,7 +27,7 @@ export function Footer() {
           </span>
         </div>
         <p className="text-sm text-white/50">
-          &copy; 2025 Find Me Some Jobs
+          &copy; {new Date().getFullYear()} Find Me Some Jobs
         </p>
       </div>
     </footer>

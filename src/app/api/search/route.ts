@@ -95,17 +95,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    if (!isAdmin) {
-      try {
-        await supabase
-          .from("profiles")
-          .update({ search_balance: (profile.search_balance ?? 10) - 1 })
-          .eq("id", user.id);
-      } catch {
-        // Best effort
-      }
-    }
-
     // Banned lists
     const bannedJobs: string[] = [];
     const bannedCompanies: string[] = [];
@@ -269,6 +258,18 @@ export async function POST(request: NextRequest) {
     outputs.sort((a, b) => b.match_score - a.match_score);
 
     console.log("[SEARCH] Final results:", outputs.length);
+
+    // Deduct balance only after successful search
+    if (!isAdmin) {
+      try {
+        await supabase
+          .from("profiles")
+          .update({ search_balance: (profile.search_balance ?? 3) - 1 })
+          .eq("id", user.id);
+      } catch {
+        // Best effort
+      }
+    }
 
     // Save to job_results
     if (outputs.length > 0) {

@@ -22,6 +22,14 @@ Use empty arrays and empty strings for missing data. Never invent information.`;
 
 export async function POST(request: NextRequest) {
   try {
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+
+    const authHeader = request.headers.get("Authorization")?.replace("Bearer ", "");
+    const { data: { user }, error: authErr } = await supabase.auth.getUser(authHeader);
+    if (authErr || !user) {
+      return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+    }
+
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
 
@@ -62,9 +70,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Could not extract any text from the file." }, { status: 400 });
     }
 
-    // Upload raw PDF to Supabase Storage
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
-    const storagePath = `cv-files/${crypto.randomUUID()}/${file.name}`;
+    // Upload raw PDF to Supabase Storage using user's auth UID for RLS compatibility
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const storagePath = `${user.id}/${safeName}`;
     const { error: uploadErr } = await supabase.storage
       .from("cv-files")
       .upload(storagePath, buffer, { contentType: "application/pdf", upsert: true });

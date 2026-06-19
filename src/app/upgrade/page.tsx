@@ -171,8 +171,10 @@ export default function UpgradePage() {
                     <><Loader2 size={14} className="animate-spin" /> Processing...</>
                   ) : isCurrent ? (
                     "Current Plan"
+                  ) : tier.name === "Free" ? (
+                    "Free"
                   ) : (
-                    tier.name === "Free" ? "Current Plan" : `Upgrade to ${tier.name}`
+                    `Upgrade to ${tier.name}`
                   )}
                 </button>
               </div>

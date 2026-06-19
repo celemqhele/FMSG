@@ -53,10 +53,16 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
   const handleFile = async (file: File) => {
     setError("");
     setStep("extracting");
+    const supabase = createClient();
+    const { data: { session } } = await supabase.auth.getSession();
     const formData = new FormData();
     formData.append("file", file);
     try {
-      const res = await fetch("/api/extract-cv", { method: "POST", body: formData });
+      const res = await fetch("/api/extract-cv", {
+        method: "POST",
+        headers: session ? { Authorization: `Bearer ${session.access_token}` } : {},
+        body: formData,
+      });
       const data = await res.json();
       if (!res.ok) {
         setError(data.code ? `${data.code}: ${data.error}` : data.error || "Extraction failed.");
