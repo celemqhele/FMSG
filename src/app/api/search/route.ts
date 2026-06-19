@@ -2,12 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { searchGoogleJobs } from "@/lib/serpapi";
 import { extractTextFromPDF } from "@/lib/pdf";
-import { scoreJobMatch, isJobValid, extractSalary, isDomainVerified } from "@/lib/scorer";
+import { callGemini } from "@/lib/gemini";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const ADMIN_EMAIL = process.env.NEXT_PUBLIC_ADMIN_EMAIL;
 const JINA_API_KEY = process.env.JINA_API_KEY;
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 function getSupabase() {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
@@ -216,24 +218,15 @@ export async function POST(request: NextRequest) {
 
     console.log("[SEARCH] CV text length:", cvText.length);
 
-    // Score each job
-    const outputs: JobRow[] = [];
+    // Fetch full specs via Jina AI for all candidates, store in a parallel map
+    const jobUrls = new Map<number, string>();
+    const jobFullSpecs = new Map<number, string>();
 
-    for (const job of candidates) {
+    for (let i = 0; i < candidates.length; i++) {
+      const job = candidates[i];
       const jobUrl = buildJobUrl(job);
-
-      // Step 3: Log isDomainVerified result for each job
-      let domain: string;
-      try { domain = new URL(jobUrl).hostname; } catch { domain = "invalid-url"; }
-      const domainOk = isDomainVerified(jobUrl);
-      console.log(`[SEARCH] Domain check for "${job.title}": domain=${domain} verified=${domainOk}`);
-      if (!domainOk) {
-        continue;
-      }
-
+      jobUrls.set(i, jobUrl);
       let specText = job.description ?? "";
-
-      // Fetch full page via Jina AI reader
       if (jobUrl) {
         try {
           const headers: Record<string, string> = {};
@@ -247,59 +240,161 @@ export async function POST(request: NextRequest) {
           console.log(`[SEARCH] Jina fetch failed for "${job.title}"`);
         }
       }
+      jobFullSpecs.set(i, specText || job.description || "");
+    }
 
-      specText = specText || job.description || "";
+    // Build profile context for Gemini
+    const profileContext = JSON.stringify({
+      job_titles: titles,
+      location: profileLocation || null,
+      cv_text: cvText ? cvText.slice(0, 5000) : "No CV provided",
+    });
 
-      // Step 4: Log isJobValid result and reason
-      const specTrimmed = (specText ?? "").trim();
-      const validLength = specTrimmed.length >= 300;
-      const expiredPattern = /position filled|no longer accepting|closed|expired|this job is no longer/i;
-      const isExpired = expiredPattern.test(specTrimmed);
-      const jobValid = isJobValid(specTrimmed, job.link);
+    // Pass 1: Batch all jobs in one Gemini call for initial screening
+    console.log("[SEARCH] Pass 1 — batch screening", candidates.length, "jobs via Gemini");
 
-      let invalidReason = "";
-      if (!jobValid) {
-        if (!validLength) invalidReason = "description too short (< 300 chars)";
-        else if (isExpired) invalidReason = "contains expired/closed keywords";
-        else invalidReason = "unknown validation failure";
+    const batchInput = candidates.map((j, i) => ({
+      index: i,
+      job_title: j.title,
+      company: j.company_name,
+      location: j.location,
+      description_snippet: (j.description ?? "").slice(0, 1500),
+      url: jobUrls.get(i) || "",
+    }));
+
+    const batchSystemPrompt = `You are a recruiter screening job matches for a candidate. 
+Your task: evaluate each job against the candidate's profile and CV.
+
+Rules:
+- Reject jobs not in South Africa or the candidate's preferred location.
+- Reject expired, filled, or closed positions.
+- Judge genuine fit — read the CV and job description carefully. Consider transferable skills, relevant experience, and realistic qualification. A candidate CAN be a fit even if their job title doesn't exactly match the job title.
+- Return ONLY a JSON array of objects. No markdown, no explanation, no code fences.
+
+Each object in the array must have this exact schema:
+{
+  "index": number,
+  "score": number (0-100, where 70+ is strong match, 40-69 is possible, below 40 is poor),
+  "is_valid": boolean,
+  "reason": string (brief explanation of fit or rejection),
+  "estimated_salary": string (extracted salary if found, otherwise "")
+}
+
+Return the array in the same order as the input jobs.`;
+
+    let batchResults: { index: number; score: number; is_valid: boolean; reason: string; estimated_salary: string }[] = [];
+
+    try {
+      const raw = await callGemini(
+        batchSystemPrompt,
+        `Candidate Profile:\n${profileContext}\n\nJobs:\n${JSON.stringify(batchInput, null, 2)}`,
+        { responseMimeType: "application/json", temperature: 0.1 }
+      );
+      batchResults = JSON.parse(raw);
+      console.log("[SEARCH] Pass 1 batch results:", JSON.stringify(batchResults));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.log("[SEARCH] Pass 1 Gemini error:", msg);
+      return NextResponse.json({ results: [], code: "AI_ERROR", message: "AI screening failed. Please try again." });
+    }
+
+    // Keep only jobs that pass the initial screen
+    const screenedIndices = new Set<number>();
+    for (const r of batchResults) {
+      if (r.is_valid && r.score >= 40) {
+        screenedIndices.add(r.index);
       }
-      console.log(`[SEARCH] Validity check for "${job.title}": valid=${jobValid} desc_length=${specTrimmed.length} is_expired=${isExpired}${invalidReason ? " reason=" + invalidReason : ""}`);
-      if (!jobValid) {
-        continue;
+    }
+
+    const screened = candidates.filter((_, i) => screenedIndices.has(i));
+    console.log("[SEARCH] Pass 1 survivors:", screened.length);
+
+    // Pass 2: Sequential deep analysis with 6s delay
+    const outputs: JobRow[] = [];
+
+    for (let i = 0; i < screened.length; i++) {
+      const job = screened[i];
+      const originalIndex = candidates.indexOf(job);
+      const batchResult = batchResults.find((r) => r.index === originalIndex);
+      const jobUrl = jobUrls.get(originalIndex) || buildJobUrl(job);
+      const fullSpec = jobFullSpecs.get(originalIndex) || job.description || "";
+
+      if (i > 0) await sleep(6000);
+
+      console.log(`[SEARCH] Pass 2 — deep analysis #${i}: "${job.title}"`);
+
+      const deepSystemPrompt = `You are a senior recruiter doing a deep-fit analysis. 
+You have the candidate's full CV text and profile. You have a full job specification.
+Determine whether this candidate is a genuine match for this role.
+
+Rules:
+- The job MUST be in South Africa or the candidate's preferred location. Reject if not.
+- Reject if the position is expired, filled, or no longer accepting applications.
+- Judge like a human recruiter: consider transferable skills, relevant experience, career trajectory, and realistic qualification. Pivot cases ARE valid — a candidate CAN be right for a role even if their past job titles don't match.
+- Do NOT use keyword matching. Reason about the candidate's actual experience vs what the job requires.
+- In match_summary, explain your reasoning in plain language — reference specifics from the CV and job spec.
+
+Return ONLY valid JSON with this exact schema (no markdown, no code fences):
+{
+  "score": number (0-100),
+  "match_summary": string (detailed reasoning referencing CV and job spec),
+  "estimated_salary": string (extracted salary or ""),
+  "is_valid": boolean
+}`;
+
+      try {
+        const raw = await callGemini(
+          deepSystemPrompt,
+          `Candidate Profile:\n${profileContext}\n\nFull Job Specification:\n${fullSpec.slice(0, 8000)}\n\nJob Title: ${job.title}\nCompany: ${job.company_name}\nLocation: ${job.location}`,
+          { responseMimeType: "application/json", temperature: 0.1 }
+        );
+        const deepResult = JSON.parse(raw);
+        console.log(`[SEARCH] Pass 2 result for "${job.title}":`, JSON.stringify(deepResult));
+
+        if (!deepResult.is_valid || deepResult.score < 40) {
+          console.log(`[SEARCH] Pass 2 — filtered out: "${job.title}" (score=${deepResult.score})`);
+          continue;
+        }
+
+        outputs.push({
+          user_id: user.id,
+          search_id: searchId,
+          job_title: job.title,
+          company: job.company_name,
+          location: job.location,
+          estimated_salary: deepResult.estimated_salary || batchResult?.estimated_salary || "",
+          match_score: deepResult.score,
+          match_summary: deepResult.match_summary || batchResult?.reason || "",
+          job_url: jobUrl,
+          full_spec: fullSpec,
+          search_query: query,
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.log(`[SEARCH] Pass 2 Gemini error for "${job.title}":`, msg);
+        // Fallback: use pass 1 result
+        if (batchResult && batchResult.is_valid && batchResult.score >= 40) {
+          outputs.push({
+            user_id: user.id,
+            search_id: searchId,
+            job_title: job.title,
+            company: job.company_name,
+            location: job.location,
+            estimated_salary: batchResult.estimated_salary || "",
+            match_score: batchResult.score,
+            match_summary: batchResult.reason || "",
+            job_url: jobUrl,
+            full_spec: fullSpec,
+            search_query: query,
+          });
+        }
       }
-
-      // Step 5: Log scoreJobMatch breakdown
-      const result = scoreJobMatch(cvText, job.description ?? "", specText, {
-        job_titles: titles,
-        location: profileLocation ?? "",
-      });
-      console.log(`[SEARCH] Score for "${job.title}": score=${result.score} summary="${result.match_summary}" salary="${result.estimated_salary}"`);
-
-      if (result.score < 40) {
-        console.log(`[SEARCH] Score ${result.score} < 40 threshold — filtered out`);
-        continue;
-      }
-
-      outputs.push({
-        user_id: user.id,
-        search_id: searchId,
-        job_title: job.title,
-        company: job.company_name,
-        location: job.location,
-        estimated_salary: result.estimated_salary,
-        match_score: result.score,
-        match_summary: result.match_summary,
-        job_url: jobUrl,
-        full_spec: specText,
-        search_query: query,
-      });
     }
 
     // Sort by score descending
     outputs.sort((a, b) => b.match_score - a.match_score);
 
-    // Step 6: Log final count after score threshold
-    console.log("[SEARCH] Jobs passed score >= 40:", outputs.length);
+    console.log("[SEARCH] Final results after Gemini analysis:", outputs.length);
 
     // Deduct balance only after successful search
     if (!isAdmin) {
@@ -346,10 +441,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ results: (saved ?? outputs).map(normalize) });
     }
 
-    console.log("[SEARCH] All jobs scored below 40 threshold or were invalid");
-    // Step 7: Log zero returned
+    console.log("[SEARCH] All jobs filtered out by Gemini analysis");
     console.log("[SEARCH] Final count returned to frontend: 0");
-    return NextResponse.json({ results: [], code: "ALL_FILTERED_SCORE", message: "No strong matches found for your profile. Try broadening your criteria." });
+    return NextResponse.json({ results: [], code: "ALL_FILTERED_AI", message: "No strong matches found for your profile. Try broadening your criteria." });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.log("[SEARCH] Unhandled error:", msg);
