@@ -1,11 +1,11 @@
 "use client";
 
 import { useState, createContext, useContext, type ReactNode } from "react";
-import { ProfileDropdown } from "./profile-dropdown";
-import { ProfileSwitcher } from "./profile-switcher";
-import { ProfileOnboardingModal } from "./profile-onboarding-modal";
 import { SpaceVideoBackground } from "@/components/landing/space-video-background";
-import { useTransition } from "@/components/providers/transition-provider";
+import { ProfileSwitcher } from "./profile-switcher";
+import { ProfileDropdown } from "./profile-dropdown";
+import { ProfileOnboardingModal } from "./profile-onboarding-modal";
+import "../landing/liquid-glass.css";
 
 const ProfileContext = createContext<{ activeProfileId: string | null; setActiveProfileId: (id: string) => void }>({
   activeProfileId: null,
@@ -17,7 +17,6 @@ export const useActiveProfile = () => useContext(ProfileContext);
 export function DashboardLayout({ children }: { children: ReactNode }) {
   const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
   const [onboardingProfileId, setOnboardingProfileId] = useState<string | null>(null);
-  const { startTransition } = useTransition();
 
   const handleProfileCreated = (id: string) => {
     setOnboardingProfileId(id);
@@ -25,24 +24,23 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
 
   const handleOnboardingClose = () => {
     setOnboardingProfileId(null);
-    startTransition();
   };
 
   return (
     <ProfileContext.Provider value={{ activeProfileId, setActiveProfileId }}>
-      <div className="min-h-dvh flex flex-col text-[var(--color-text-primary)]">
-        <SpaceVideoBackground src="/videos/space.mp4" />
-        <header className="relative z-10 flex items-center justify-between gap-3 px-4 md:px-6 py-4">
+      <SpaceVideoBackground src="/videos/space.mp4" />
+      <header className="fixed top-4 left-1/2 -translate-x-1/2 z-50 w-[calc(100%-2rem)] max-w-5xl">
+        <div className="liquid-glass-surface flex items-center justify-between px-4 py-2 rounded-2xl">
           <div className="flex items-center gap-3">
-            <span className="flex items-center h-10 text-lg font-bold tracking-tight text-white/80 md:text-white/60 select-none">FMSG</span>
+            <span className="text-base font-semibold text-white select-none">FMSG</span>
             <ProfileSwitcher activeProfileId={activeProfileId} onSelect={setActiveProfileId} onProfileCreated={handleProfileCreated} />
           </div>
           <ProfileDropdown />
-        </header>
-      <main className="relative z-10 flex-1 px-6 pb-12">
+        </div>
+      </header>
+      <main className="relative z-10 flex-1 px-6 pb-12 pt-24">
         {children}
       </main>
-    </div>
 
       {onboardingProfileId && (
         <ProfileOnboardingModal profileId={onboardingProfileId} onClose={handleOnboardingClose} />

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Plus, Check, ChevronDown } from "lucide-react";
 
@@ -14,7 +14,6 @@ interface SearchProfile {
 export function ProfileSwitcher({ activeProfileId, onSelect, onProfileCreated }: { activeProfileId: string | null; onSelect: (id: string) => void; onProfileCreated?: (id: string) => void }) {
   const [profiles, setProfiles] = useState<SearchProfile[]>([]);
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const supabase = createClient();
@@ -35,16 +34,6 @@ export function ProfileSwitcher({ activeProfileId, onSelect, onProfileCreated }:
         });
     });
   }, [activeProfileId, onSelect]);
-
-  useEffect(() => {
-    const handleClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, []);
 
   const active = profiles.find((p) => p.id === activeProfileId);
 
@@ -75,7 +64,7 @@ export function ProfileSwitcher({ activeProfileId, onSelect, onProfileCreated }:
     return (
       <button
         onClick={handleCreate}
-        className="flex items-center gap-1.5 px-3 h-10 text-xs font-medium text-white/60 hover:text-white rounded-full border border-white/10 hover:border-white/20 transition-colors"
+        className="flex items-center gap-1.5 px-3 h-8 text-xs font-medium text-white/60 hover:text-white rounded-full border border-white/10 hover:border-white/20 transition-colors"
       >
         <Plus size={14} />
         New Profile
@@ -84,36 +73,39 @@ export function ProfileSwitcher({ activeProfileId, onSelect, onProfileCreated }:
   }
 
   return (
-    <div ref={ref} className="relative">
+    <div className="relative">
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-1.5 px-3 h-10 text-xs font-medium text-white/80 hover:text-white rounded-full border border-white/10 hover:border-white/20 transition-colors"
+        className="flex items-center gap-1.5 px-3 h-8 text-xs font-medium text-white/80 hover:text-white rounded-full border border-white/10 hover:border-white/20 transition-colors"
       >
         <span className="max-w-[120px] truncate">{active?.name ?? "Profile"}</span>
         <ChevronDown size={12} />
       </button>
 
       {open && (
-        <div className="absolute left-0 top-9 w-48 py-1.5 rounded-xl bg-[#1C1C1E] border border-white/10 shadow-xl overflow-hidden z-50">
-          {profiles.map((p) => (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 top-9 w-48 py-1.5 rounded-xl bg-[#1C1C1E] border border-white/10 shadow-xl overflow-hidden z-50">
+            {profiles.map((p) => (
+              <button
+                key={p.id}
+                onClick={() => { onSelect(p.id); setOpen(false); }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-xs text-white/80 hover:bg-white/5 transition-colors"
+              >
+                <span className="flex-1 text-left truncate">{p.name}</span>
+                {p.id === activeProfileId && <Check size={12} className="text-[var(--color-accent)] shrink-0" />}
+              </button>
+            ))}
+            <div className="h-px bg-white/10 mx-2 my-1" />
             <button
-              key={p.id}
-              onClick={() => { onSelect(p.id); setOpen(false); }}
-              className="w-full flex items-center gap-2 px-3 py-2 text-xs text-white/80 hover:bg-white/5 transition-colors"
+              onClick={handleCreate}
+              className="w-full flex items-center gap-2 px-3 py-2 text-xs text-white/60 hover:text-white hover:bg-white/5 transition-colors"
             >
-              <span className="flex-1 text-left truncate">{p.name}</span>
-              {p.id === activeProfileId && <Check size={12} className="text-[var(--color-accent)] shrink-0" />}
+              <Plus size={12} />
+              New Profile
             </button>
-          ))}
-          <div className="h-px bg-white/10 mx-2 my-1" />
-          <button
-            onClick={handleCreate}
-            className="w-full flex items-center gap-2 px-3 py-2 text-xs text-white/60 hover:text-white hover:bg-white/5 transition-colors"
-          >
-            <Plus size={12} />
-            New Profile
-          </button>
-        </div>
+          </div>
+        </>
       )}
     </div>
   );
