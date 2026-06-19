@@ -10,7 +10,6 @@ import { SavedJobs } from "@/components/dashboard/saved-jobs";
 import { BlockedList } from "@/components/dashboard/blocked-list";
 import { PageTransitionWrapper } from "@/components/ui/page-transition-wrapper";
 import { useTransition } from "@/components/providers/transition-provider";
-import { useActiveProfile } from "@/components/dashboard/dashboard-layout";
 import { createClient } from "@/lib/supabase/client";
 
 interface JobResult {
@@ -58,7 +57,6 @@ function SkeletonCard({ style }: { style?: React.CSSProperties }) {
 export default function DashboardPage() {
   const router = useRouter();
   const { endTransition, setVideoFast } = useTransition();
-  const { activeProfileId } = useActiveProfile();
   const [activeTab, setActiveTab] = useState<TabId>("search");
   const [searching, setSearching] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -103,8 +101,7 @@ export default function DashboardPage() {
   }, [activeTab]);
 
   const handleSearch = useCallback(async (query: string, profileId?: string | null) => {
-    const pid = profileId ?? activeProfileId;
-    console.log("[DASHBOARD] Search clicked:", { query, activeProfileId: pid, time: new Date().toISOString() });
+    console.log("[DASHBOARD] Search clicked:", { query, profileId, time: new Date().toISOString() });
     setSearching(true);
     setProgress(0);
     setHasSearched(true);
@@ -131,7 +128,7 @@ export default function DashboardPage() {
           Authorization: `Bearer ${session.access_token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ query, profile_id: pid }),
+        body: JSON.stringify({ query, profile_id: profileId }),
       });
 
       const data = await res.json();
@@ -172,7 +169,7 @@ export default function DashboardPage() {
       setVideoFast(false);
       setResultMessage("Something went wrong. Please try again.");
     }
-  }, [activeProfileId, setVideoFast]); // profileId passed from SearchPill overrides context
+  }, [setVideoFast]); // profileId passed from SearchPill is always the active profile
 
   const handleDelete = useCallback((id: string) => {
     setResults((prev) => prev.filter((x) => x.id !== id));
@@ -188,7 +185,7 @@ export default function DashboardPage() {
 
         {activeTab === "search" && (
           <>
-            <SearchPill onSearch={handleSearch} searching={searching} activeProfileId={activeProfileId} />
+            <SearchPill onSearch={handleSearch} searching={searching} />
 
             {searching && (
               <div className="space-y-2">

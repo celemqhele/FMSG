@@ -3,14 +3,15 @@
 import { useState } from "react";
 import { Search } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { useActiveProfile } from "@/components/dashboard/dashboard-layout";
 
 interface SearchPillProps {
   onSearch: (query: string, profileId?: string | null) => void;
   searching: boolean;
-  activeProfileId?: string | null;
 }
 
-export function SearchPill({ onSearch, searching, activeProfileId }: SearchPillProps) {
+export function SearchPill({ onSearch, searching }: SearchPillProps) {
+  const { activeProfileId } = useActiveProfile();
   const [displayTitle, setDisplayTitle] = useState("Search for jobs");
   const [bouncing, setBouncing] = useState(false);
 
