@@ -342,8 +342,8 @@ async function searchRound(
     cv_text: cvText ? cvText.slice(0, 5000) : "No CV provided",
   });
 
-  const sanitiseForJson = (s: string): string =>
-    s.replace(/["\n\r\t]/g, " ").replace(/\s+/g, " ").trim();
+  const sanitiseForJson = (s: string | undefined | null): string =>
+    (s ?? "").replace(/["\n\r\t]/g, " ").replace(/\s+/g, " ").trim();
 
   // Pass 1 batch
   const batchInput = rawJobs.map((j, i) => ({
