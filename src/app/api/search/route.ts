@@ -71,15 +71,34 @@ export async function POST(request: NextRequest) {
 
     const isAdmin = ADMIN_EMAIL && user.email === ADMIN_EMAIL;
 
-    // Get profile
-    const { data: profile, error: profileErr } = await supabase
+    // Get profile — try service role first, fallback to anon with user's token
+    let profile: any;
+    let profileErr: any;
+    ({ data: profile, error: profileErr } = await supabase
       .from("profiles")
       .select("*")
       .eq("id", user.id)
-      .single();
+      .single());
 
     if (profileErr || !profile) {
-      return NextResponse.json({ error: "DB_001" }, { status: 404 });
+      console.log("[SEARCH] Service-role profile query failed:", profileErr?.message ?? "no profile row");
+      // Fallback: use anon client with the user's JWT
+      const anonClient = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      );
+      anonClient.auth.setSession({ access_token: authHeader, refresh_token: "" });
+      const { data: anonProfile, error: anonErr } = await anonClient
+        .from("profiles")
+        .select("*")
+        .eq("id", user.id)
+        .single();
+      if (anonErr || !anonProfile) {
+        console.log("[SEARCH] Anon profile query also failed:", anonErr?.message ?? "no profile row");
+        return NextResponse.json({ error: "DB_001" }, { status: 404 });
+      }
+      profile = anonProfile;
+      console.log("[SEARCH] Profile fetched via anon fallback");
     }
 
     console.log("[SEARCH] Profile:", JSON.stringify({
