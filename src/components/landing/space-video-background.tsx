@@ -12,7 +12,7 @@ interface SpaceVideoBackgroundProps {
 export function SpaceVideoBackground({
   src,
   slowPlaybackRate = 0.5,
-  fastPlaybackRate = 2,
+  fastPlaybackRate = 4,
 }: SpaceVideoBackgroundProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);

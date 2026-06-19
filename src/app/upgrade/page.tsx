@@ -4,6 +4,8 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard/dashboard-layout";
 import { Loader2, Check } from "lucide-react";
+import { PageTransitionWrapper } from "@/components/ui/page-transition-wrapper";
+import { useTransition } from "@/components/providers/transition-provider";
 import { createClient } from "@/lib/supabase/client";
 
 interface Tier {
@@ -39,12 +41,15 @@ const PLAN_LIMITS: Record<string, { searches: number; cvGens: number }> = {
 
 export default function UpgradePage() {
   const router = useRouter();
+  const { endTransition } = useTransition();
   const supabase = createClient();
   const [annual, setAnnual] = useState(false);
   const [processing, setProcessing] = useState<string | null>(null);
   const [successToast, setSuccessToast] = useState(false);
   const [currentPlan, setCurrentPlan] = useState("free");
   const paystackLoaded = useRef(false);
+
+  useEffect(() => { endTransition(); }, [endTransition]);
 
   useEffect(() => {
     supabase.auth.getUser().then((res: { data: { user: { id: string } | null } }) => {
@@ -116,6 +121,7 @@ export default function UpgradePage() {
 
   return (
     <DashboardLayout>
+      <PageTransitionWrapper>
       <div className="max-w-6xl mx-auto pt-8 pb-24">
         <div className="text-center mb-10">
           <h1 className="text-3xl font-bold text-[var(--color-text-primary)]">Upgrade Your Plan</h1>
@@ -180,6 +186,7 @@ export default function UpgradePage() {
           Payment successful! Redirecting to dashboard...
         </div>
       )}
+      </PageTransitionWrapper>
     </DashboardLayout>
   );
 }

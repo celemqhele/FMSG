@@ -3,8 +3,12 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { useTransition } from "@/components/providers/transition-provider";
 
 export default function UpdatePasswordPage() {
+  const { endTransition } = useTransition();
+
+  useEffect(() => { endTransition(); }, [endTransition]);
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);

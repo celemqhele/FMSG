@@ -6,6 +6,8 @@ import { DashboardLayout } from "@/components/dashboard/dashboard-layout";
 import { SearchPill } from "@/components/dashboard/search-pill";
 import { JobResultCard } from "@/components/dashboard/job-result-card";
 import { SearchHistory } from "@/components/dashboard/search-history";
+import { PageTransitionWrapper } from "@/components/ui/page-transition-wrapper";
+import { useTransition } from "@/components/providers/transition-provider";
 import { createClient } from "@/lib/supabase/client";
 
 interface JobResult {
@@ -40,6 +42,7 @@ function SkeletonCard() {
 
 export default function DashboardPage() {
   const router = useRouter();
+  const { endTransition } = useTransition();
   const [searching, setSearching] = useState(false);
   const [progress, setProgress] = useState(0);
   const [results, setResults] = useState<JobResult[]>([]);
@@ -47,6 +50,8 @@ export default function DashboardPage() {
   const [showHistory, setShowHistory] = useState(false);
   const [showLimitModal, setShowLimitModal] = useState<string | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
+
+  useEffect(() => { endTransition(); }, [endTransition]);
 
   useEffect(() => {
     const supabase = createClient();
@@ -123,6 +128,7 @@ export default function DashboardPage() {
 
   return (
     <DashboardLayout>
+      <PageTransitionWrapper>
       <div className="max-w-4xl mx-auto pt-8 space-y-8">
         <SearchPill onSearch={handleSearch} onToggleHistory={() => setShowHistory(true)} searching={searching} />
 
@@ -203,6 +209,7 @@ export default function DashboardPage() {
       )}
 
       <SearchHistory open={showHistory} onClose={() => setShowHistory(false)} />
+      </PageTransitionWrapper>
     </DashboardLayout>
   );
 }

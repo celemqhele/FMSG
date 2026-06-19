@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard/dashboard-layout";
 import { ArrowLeft, Loader2, Upload, X } from "lucide-react";
+import { PageTransitionWrapper } from "@/components/ui/page-transition-wrapper";
+import { useTransition } from "@/components/providers/transition-provider";
 import { createClient } from "@/lib/supabase/client";
 import "@/components/landing/liquid-glass.css";
 
@@ -11,7 +13,10 @@ const JOB_TYPE_OPTIONS = ["Full-time", "Part-time", "Remote", "Contract"];
 
 export default function ProfilePage() {
   const router = useRouter();
+  const { startTransition, endTransition } = useTransition();
   const supabase = createClient();
+
+  useEffect(() => { endTransition(); }, [endTransition]);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
@@ -146,9 +151,10 @@ export default function ProfilePage() {
 
   return (
     <DashboardLayout>
+      <PageTransitionWrapper>
       <div className="max-w-2xl mx-auto pt-8 pb-24 space-y-8">
         <div className="flex items-center gap-4">
-          <button onClick={() => router.push("/dashboard")} className="p-2 text-white/60 hover:text-white transition-colors">
+          <button onClick={() => { startTransition(); router.push("/dashboard"); }} className="p-2 text-white/60 hover:text-white transition-colors">
             <ArrowLeft size={20} />
           </button>
           <h1 className="text-2xl font-bold text-white">My Profile</h1>
@@ -304,6 +310,7 @@ export default function ProfilePage() {
           </div>
         )}
       </div>
+      </PageTransitionWrapper>
     </DashboardLayout>
   );
 }

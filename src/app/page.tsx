@@ -17,6 +17,8 @@ export default function HomePage() {
   const [authTab, setAuthTab] = useState<"login" | "signup">("signup");
   const { startTransition, endTransition } = useTransition();
 
+  useEffect(() => { endTransition(); }, [endTransition]);
+
   useEffect(() => {
     if (authOpen) {
       startTransition();

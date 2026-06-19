@@ -6,11 +6,15 @@ import { OnboardingForm } from "@/components/onboarding/onboarding-form";
 import { SpaceVideoBackground } from "@/components/landing/space-video-background";
 import { PageTransitionWrapper } from "@/components/ui/page-transition-wrapper";
 import { LoginTransition } from "@/components/ui/login-transition";
+import { useTransition } from "@/components/providers/transition-provider";
 import { createClient } from "@/lib/supabase/client";
 
 export default function OnboardingPage() {
   const router = useRouter();
+  const { endTransition } = useTransition();
   const [transitionType, setTransitionType] = useState<"onboarding" | null>(null);
+
+  useEffect(() => { endTransition(); }, [endTransition]);
 
   useEffect(() => {
     const supabase = createClient();

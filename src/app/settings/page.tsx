@@ -5,13 +5,18 @@ import { useRouter } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard/dashboard-layout";
 import { ArrowLeft, Loader2, Check, ExternalLink } from "lucide-react";
 import { useTheme } from "@/components/providers/theme-provider";
+import { PageTransitionWrapper } from "@/components/ui/page-transition-wrapper";
+import { useTransition } from "@/components/providers/transition-provider";
 import { createClient } from "@/lib/supabase/client";
 import "@/components/landing/liquid-glass.css";
 
 export default function SettingsPage() {
   const router = useRouter();
+  const { startTransition, endTransition } = useTransition();
   const { theme, setTheme } = useTheme();
   const supabase = createClient();
+
+  useEffect(() => { endTransition(); }, [endTransition]);
 
   // Password
   const [currentPassword, setCurrentPassword] = useState("");
@@ -71,9 +76,10 @@ export default function SettingsPage() {
 
   return (
     <DashboardLayout>
+      <PageTransitionWrapper>
       <div className="max-w-2xl mx-auto pt-8 pb-24 space-y-8">
         <div className="flex items-center gap-4">
-          <button onClick={() => router.push("/dashboard")} className="p-2 text-white/60 hover:text-white transition-colors">
+          <button onClick={() => { startTransition(); router.push("/dashboard"); }} className="p-2 text-white/60 hover:text-white transition-colors">
             <ArrowLeft size={20} />
           </button>
           <h1 className="text-2xl font-bold text-white">Settings</h1>
@@ -162,12 +168,13 @@ export default function SettingsPage() {
               <span className="text-sm font-medium text-[var(--color-text-primary)]">{cvBalance === -1 ? "Unlimited" : cvBalance}</span>
             </div>
           </div>
-          <button onClick={() => router.push("/upgrade")} className="inline-flex items-center gap-1.5 px-5 py-2.5 text-sm font-medium text-white bg-[var(--color-accent)] rounded-full hover:bg-[var(--color-accent-hover)] transition-colors">
+          <button onClick={() => { startTransition(); router.push("/upgrade"); }} className="inline-flex items-center gap-1.5 px-5 py-2.5 text-sm font-medium text-white bg-[var(--color-accent)] rounded-full hover:bg-[var(--color-accent-hover)] transition-colors">
             Upgrade Plan
             <ExternalLink size={14} />
           </button>
         </div>
       </div>
+      </PageTransitionWrapper>
     </DashboardLayout>
   );
 }

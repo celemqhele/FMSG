@@ -3,10 +3,12 @@
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Settings, ArrowUpCircle, LogOut, User } from "lucide-react";
+import { useTransition } from "@/components/providers/transition-provider";
 import { createClient } from "@/lib/supabase/client";
 
 export function ProfileDropdown() {
   const router = useRouter();
+  const { startTransition } = useTransition();
   const [open, setOpen] = useState(false);
   const [initials, setInitials] = useState("");
   const ref = useRef<HTMLDivElement>(null);
@@ -61,21 +63,21 @@ export function ProfileDropdown() {
       {open && (
         <div className="absolute right-0 top-12 w-52 py-1.5 rounded-2xl liquid-glass border shadow-lg overflow-hidden z-50">
           <button
-            onClick={() => { setOpen(false); router.push("/profile"); }}
+            onClick={() => { setOpen(false); startTransition(); router.push("/profile"); }}
             className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-[var(--color-text-primary)] hover:bg-white/5 dark:hover:bg-white/5 transition-colors"
           >
             <User size={16} />
             My Profile
           </button>
           <button
-            onClick={() => { setOpen(false); router.push("/settings"); }}
+            onClick={() => { setOpen(false); startTransition(); router.push("/settings"); }}
             className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-[var(--color-text-primary)] hover:bg-white/5 dark:hover:bg-white/5 transition-colors"
           >
             <Settings size={16} />
             Settings
           </button>
           <button
-            onClick={() => { setOpen(false); router.push("/upgrade"); }}
+            onClick={() => { setOpen(false); startTransition(); router.push("/upgrade"); }}
             className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-[var(--color-text-primary)] hover:bg-white/5 dark:hover:bg-white/5 transition-colors"
           >
             <ArrowUpCircle size={16} />

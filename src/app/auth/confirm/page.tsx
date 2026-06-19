@@ -4,8 +4,13 @@ import { Suspense, useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { SpaceVideoBackground } from "@/components/landing/space-video-background";
+import { PageTransitionWrapper } from "@/components/ui/page-transition-wrapper";
+import { useTransition } from "@/components/providers/transition-provider";
 
 function ConfirmContent() {
+  const { endTransition } = useTransition();
+
+  useEffect(() => { endTransition(); }, [endTransition]);
   const router = useRouter();
   const searchParams = useSearchParams();
   const [loading, setLoading] = useState(false);
@@ -41,6 +46,7 @@ function ConfirmContent() {
   };
 
   return (
+    <PageTransitionWrapper>
     <div className="relative z-10 flex items-center justify-center min-h-dvh px-6">
       <div className="liquid-glass-card w-full max-w-sm text-center space-y-6 p-8">
         <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
@@ -65,6 +71,7 @@ function ConfirmContent() {
         </button>
       </div>
     </div>
+    </PageTransitionWrapper>
   );
 }
 
