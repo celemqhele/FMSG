@@ -56,6 +56,39 @@ function parsePostedAt(posted?: string): number | null {
   return Date.now() - ms * 24 * 60 * 60 * 1000;
 }
 
+const EXPIRED_PATTERNS = [
+  "no longer accepting applications",
+  "no longer accepting",
+  "this position has been filled",
+  "position has been filled",
+  "job has been closed",
+  "this job has been closed",
+  "this job posting has been closed",
+  "is no longer available",
+  "position is no longer available",
+  "this position is no longer",
+  "we are no longer accepting",
+  "application deadline has passed",
+  "deadline has passed",
+  "this posting is expired",
+  "job expired",
+  "this job is expired",
+  "position is closed",
+  "this position is closed",
+  "this job posting is expired",
+  "job posting is no longer active",
+  "position has been cancelled",
+  "has been cancelled",
+  "no longer hiring for this",
+  "not currently accepting applications",
+  "is no longer accepting new applications",
+];
+
+function isExpired(text: string): boolean {
+  const lower = text.toLowerCase();
+  return EXPIRED_PATTERNS.some((p) => lower.includes(p));
+}
+
 function isDomainVerified(url: string, postedAt?: string): { verified: boolean; reason?: string } {
   const domain = extractDomain(url);
   if (!domain) return { verified: false, reason: "no_domain" };
@@ -344,6 +377,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ results: [], code: "ALL_FILTERED_BANNED", message: "All matching jobs were blocked by your banned companies or job list." });
     }
 
+    // Pre-Jina expired check — filter out jobs whose snippet already signals expiry
+    candidates = candidates.filter((j) => {
+      if (j.description && isExpired(j.description)) {
+        console.log(`[SEARCH] Expired listing (snippet): ${j.title} at ${j.company_name}`);
+        return false;
+      }
+      return true;
+    });
+    console.log("[SEARCH] After expired snippet check:", candidates.length);
+
+    if (candidates.length === 0) {
+      console.log("[SEARCH] All results filtered by expired snippet check");
+      return NextResponse.json({ results: [], code: "NO_RESULTS_EXPIRED", message: "No active job listings found for your search. Try different keywords." });
+    }
+
     // Load CV text
     let cvText = "";
     if (cvFilePath) {
@@ -365,8 +413,8 @@ export async function POST(request: NextRequest) {
     console.log("[SEARCH] CV text length:", cvText.length);
 
     // Fetch full specs via Jina AI for all candidates, store in a parallel map
-    const jobUrls = new Map<number, string>();
-    const jobFullSpecs = new Map<number, string>();
+    let jobUrls = new Map<number, string>();
+    let jobFullSpecs = new Map<number, string>();
 
     for (let i = 0; i < candidates.length; i++) {
       const job = candidates[i];
@@ -387,6 +435,30 @@ export async function POST(request: NextRequest) {
         }
       }
       jobFullSpecs.set(i, specText || job.description || "");
+      if (specText && isExpired(specText)) {
+        console.log(`[SEARCH] Expired listing (Jina spec): ${job.title} at ${job.company_name}`);
+        (job as any)._expired = true;
+      }
+    }
+
+    // Remove expired jobs found during Jina fetch
+    const origJobUrls = jobUrls;
+    const origJobFullSpecs = jobFullSpecs;
+    candidates = candidates.filter((j) => !(j as any)._expired);
+    console.log("[SEARCH] After expired full-page check:", candidates.length);
+
+    if (candidates.length === 0) {
+      console.log("[SEARCH] All results filtered by expired full-page check");
+      return NextResponse.json({ results: [], code: "NO_RESULTS_EXPIRED", message: "No active job listings found for your search. Try different keywords." });
+    }
+
+    // Rebuild maps to match new candidate indices
+    jobUrls = new Map(candidates.map((j, i) => [i, buildJobUrl(j)] as const));
+    jobFullSpecs = new Map<number, string>();
+    for (let i = 0; i < candidates.length; i++) {
+      const url = jobUrls.get(i) ?? "";
+      const origEntry = [...origJobFullSpecs.entries()].find(([origIdx]) => origJobUrls.get(origIdx) === url);
+      jobFullSpecs.set(i, origEntry?.[1] ?? candidates[i].description ?? "");
     }
 
     // Build profile context for Gemini
