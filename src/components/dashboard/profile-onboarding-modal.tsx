@@ -19,6 +19,7 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
   const [name, setName] = useState("");
   const [jobTitles, setJobTitles] = useState<string[]>([""]);
   const [location, setLocation] = useState("");
+  const [jobTypes, setJobTypes] = useState<string[]>([]);
   const [cvFilePath, setCvFilePath] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -30,13 +31,14 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
     const supabase = createClient();
     supabase
       .from("search_profiles")
-      .select("name, job_titles, location, cv_file_path")
+      .select("name, job_titles, job_types, location, cv_file_path")
       .eq("id", profileId)
       .maybeSingle()
       .then(({ data }: { data: any }) => {
         if (data) {
           setName(data.name ?? "");
           setJobTitles(data.job_titles?.length ? data.job_titles : [""]);
+          setJobTypes(data.job_types ?? []);
           setLocation(data.location ?? "");
           setCvFilePath(data.cv_file_path ?? "");
         }
@@ -117,7 +119,12 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
     setError("");
 
     const supabase = createClient();
-    const updateData: Record<string, any> = { job_titles: filtered, location: location.trim() };
+    // Strip non-geographic terms from location (SerpAPI rejects "Remote / UK-based")
+    const cleanedLocation = location
+      .replace(/\b(Remote|Hybrid|On-site|Online|Work from home|WFH|Flexible|Anywhere)\b/gi, "")
+      .replace(/[\s,;/-]+/g, " ")
+      .trim();
+    const updateData: Record<string, any> = { job_titles: filtered, location: cleanedLocation, job_types: jobTypes };
     if (name.trim()) updateData.name = name.trim();
     if (cvFilePath.trim()) updateData.cv_file_path = cvFilePath.trim();
 
@@ -242,9 +249,34 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
                 <input
                   value={location}
                   onChange={(e) => setLocation(e.target.value)}
-                  placeholder="e.g. Johannesburg, Remote"
+                  placeholder="e.g. Johannesburg, Cape Town"
                   className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-white placeholder-white/30 focus:outline-none focus:border-[var(--color-accent)] transition-colors"
                 />
+                <p className="mt-1 text-xs text-white/30">City or country only. Select work type below.</p>
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-white/80 mb-1.5 block">Work Type</label>
+                <div className="flex gap-2">
+                  {["On-site", "Hybrid", "Remote"].map((type) => (
+                    <button
+                      key={type}
+                      type="button"
+                      onClick={() =>
+                        setJobTypes((prev) =>
+                          prev.includes(type) ? prev.filter((t) => t !== type) : [...prev, type]
+                        )
+                      }
+                      className={`px-4 py-2 rounded-lg text-sm border transition-colors ${
+                        jobTypes.includes(type)
+                          ? "bg-[var(--color-accent)]/20 border-[var(--color-accent)] text-white"
+                          : "bg-white/5 border-white/10 text-white/50 hover:border-white/20"
+                      }`}
+                    >
+                      {type}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <button

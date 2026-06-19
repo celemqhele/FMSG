@@ -149,12 +149,30 @@ export async function POST(request: NextRequest) {
       console.log("[SEARCH] No meaningful query — cannot search");
       return NextResponse.json({ results: [], code: "NO_QUERY", message: "Add job titles to your search profile first." });
     }
-    const serpParams = {
+
+    // Sanitise location: SerpAPI's Google Jobs endpoint only accepts real geographic
+    // locations (city, country). Strip non-geographic descriptors like "Remote" and
+    // fall back to the country implied by gl (za).
+    function sanitiseLocation(raw: string): string | undefined {
+      if (!raw) return undefined;
+      // Remove "Remote", "Hybrid", "On-site", "Online" and similar non-geographic tokens
+      const stripped = raw.replace(/\b(Remote|Hybrid|On-site|Online|Work from home|WFH|Flexible|Anywhere)\b/gi, "").trim();
+      // Clean up separators left behind (e.g. "Remote / UK-based" -> " / UK-based" -> "UK-based")
+      const cleaned = stripped.replace(/^[\s,;/-]+|[\s,;/-]+$/g, "").replace(/[\s,;/-]+/g, " ");
+      if (!cleaned || cleaned.length < 2) return undefined;
+      return cleaned;
+    }
+
+    const sanitisedLocation = sanitiseLocation(profileLocation);
+
+    const buildSerpParams = (location?: string) => ({
       q: query,
-      location: profileLocation || undefined,
+      location: location,
       hl: "en" as const,
       gl: "za" as const,
-    };
+    });
+
+    const serpParams = buildSerpParams(sanitisedLocation);
 
     console.log("[SEARCH] SerpAPI query params:", JSON.stringify(serpParams));
     console.log("[SEARCH] SerpAPI titles for scoring:", JSON.stringify(titles));
@@ -165,7 +183,20 @@ export async function POST(request: NextRequest) {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.log("[SEARCH] SerpAPI error:", msg);
-      return NextResponse.json({ results: [], code: "SERP_ERROR", message: "Search engine temporarily unavailable. Please try again." });
+      // If SerpAPI rejected the location (400 error), retry without location
+      if (msg.includes("(400)")) {
+        console.log("[SEARCH] SerpAPI rejected location — retrying with gl-only (no location param)");
+        console.log("[SEARCH] Rejected location value was:", JSON.stringify(sanitisedLocation));
+        try {
+          rawJobs = await searchGoogleJobs(buildSerpParams(undefined));
+        } catch (retryErr) {
+          const retryMsg = retryErr instanceof Error ? retryErr.message : String(retryErr);
+          console.log("[SEARCH] SerpAPI retry also failed:", retryMsg);
+          return NextResponse.json({ results: [], code: "SERP_ERROR", message: "Search engine temporarily unavailable. Please try again." });
+        }
+      } else {
+        return NextResponse.json({ results: [], code: "SERP_ERROR", message: "Search engine temporarily unavailable. Please try again." });
+      }
     }
 
     // Step 2: Log raw count + full title + company + snippet of ALL results
