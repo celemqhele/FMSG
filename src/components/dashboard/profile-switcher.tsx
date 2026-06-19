@@ -52,11 +52,16 @@ export function ProfileSwitcher({ activeProfileId, onSelect }: { activeProfileId
     const supabase = createClient();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("search_profiles")
       .insert({ user_id: user.id, name: `Profile ${profiles.length + 1}` })
       .select("id, name, job_titles, location")
       .single();
+    if (error) {
+      alert(error.message);
+      setOpen(false);
+      return;
+    }
     if (data) {
       const newProfile = data as SearchProfile;
       setProfiles((prev) => [...prev, newProfile]);

@@ -112,9 +112,8 @@ export default function ProfilePage() {
     setCvUploading(true);
     const userId = await getUserId();
     if (!userId) { setCvUploading(false); return; }
-    const userPrefix = userId.substring(0, 6);
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-    const filePath = `${userPrefix}/${safeName}`;
+    const filePath = `${userId}/${safeName}`;
 
     if (cvFilePath) {
       await supabase.storage.from("cv-files").remove([cvFilePath]);
