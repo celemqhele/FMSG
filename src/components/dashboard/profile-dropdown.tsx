@@ -6,7 +6,7 @@ import { Settings, LogOut, User, Sparkles } from "lucide-react";
 import { useTransition } from "@/components/providers/transition-provider";
 import { createClient } from "@/lib/supabase/client";
 
-type Phase = "closed" | "open";
+type Phase = "closed" | "pill" | "open";
 
 export function ProfileDropdown() {
   const router = useRouter();
@@ -56,8 +56,11 @@ export function ProfileDropdown() {
   const handleToggle = () => {
     if (closeTimer.current) clearTimeout(closeTimer.current);
     if (phase === "closed") {
-      setPhase("open");
-      setTimeout(() => setItemsVisible(true), 200);
+      setPhase("pill");
+      setTimeout(() => {
+        setPhase("open");
+        setTimeout(() => setItemsVisible(true), 150);
+      }, 180);
     } else {
       handleClose();
     }
@@ -65,11 +68,12 @@ export function ProfileDropdown() {
 
   const handleClose = () => {
     setItemsVisible(false);
-    closeTimer.current = setTimeout(() => setPhase("closed"), 200);
+    setPhase("pill");
+    closeTimer.current = setTimeout(() => setPhase("closed"), 180);
   };
 
   const handleNav = (path: string) => {
-    handleClose();
+    setItemsVisible(false);
     startTransition();
     router.push(path);
   };
@@ -83,19 +87,17 @@ export function ProfileDropdown() {
 
   return (
     <div ref={ref} className="relative h-10">
-      {/* The morphing container: circle → pill → menu */}
       <div
-        className={`
-          absolute right-0 top-0
-          overflow-hidden
-          z-50
-          transition-all duration-300 ease-out
-          ${phase === "closed" ? "w-10 h-10 rounded-full cursor-pointer" : "w-56 rounded-2xl cursor-default"}
-          bg-[#1C1C1E] border border-white/10 shadow-xl
-        `}
+        className={[
+          "absolute right-0 top-0 overflow-hidden z-50",
+          "bg-[#1C1C1E] border border-white/10 shadow-xl",
+          "transition-all duration-[180ms] ease-out",
+          phase === "closed" && "w-10 h-10 rounded-full cursor-pointer",
+          phase === "pill" && "w-56 h-10 rounded-full",
+          phase === "open" && "w-56 rounded-2xl cursor-default",
+        ].filter(Boolean).join(" ")}
         onClick={phase === "closed" ? handleToggle : undefined}
       >
-        {/* Trigger circle — always visible, clicks toggle menu */}
         <div
           className="flex items-center justify-center w-10 h-10 shrink-0 cursor-pointer"
           onClick={phase !== "closed" ? handleToggle : undefined}
@@ -105,12 +107,11 @@ export function ProfileDropdown() {
           </span>
         </div>
 
-        {/* Dropdown content — expands downward */}
         <div
-          className={`
-            transition-all duration-200 ease-out overflow-hidden
-            ${itemsVisible ? "max-h-96 opacity-100" : "max-h-0 opacity-0"}
-          `}
+          className={[
+            "transition-all duration-150 ease-out overflow-hidden",
+            itemsVisible ? "max-h-96 opacity-100" : "max-h-0 opacity-0",
+          ].join(" ")}
         >
           <div className="px-4 py-3 border-t border-white/[0.06]">
             <p className="text-sm font-medium text-[var(--color-text-primary)] truncate leading-tight">{name}</p>
