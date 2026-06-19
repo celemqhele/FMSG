@@ -11,6 +11,84 @@ const JINA_API_KEY = process.env.JINA_API_KEY;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// --- Domain trust tiers ---
+
+// Tier 1 — Pay-per-day model, high trust, fresher listings
+const HIGH_TRUST_DOMAINS = [
+  'linkedin.com',
+  'indeed.co.za',
+  'indeed.com',
+];
+
+// Tier 2 — Flat-fee model, standard trust, requires stricter staleness checking
+const STANDARD_TRUST_DOMAINS = [
+  'careers24.com',
+  'pnet.co.za',
+];
+
+// Explicitly blacklisted — known predatory practices, never return these
+const BLACKLISTED_DOMAINS = [
+  'jobleads.com',
+  'jobleads.co.za',
+  'jobleads.co.uk',
+  'jobleads.sg',
+  'jobleads.ae',
+  'jobleads.fr',
+  'jobleads.it',
+];
+
+const ALL_TRUSTED_DOMAINS = [...HIGH_TRUST_DOMAINS, ...STANDARD_TRUST_DOMAINS];
+
+function extractDomain(url: string): string | null {
+  try {
+    const u = new URL(url);
+    return u.hostname.replace(/^www\./, "").toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+function isDomainVerified(url: string, postedAt?: string): { verified: boolean; reason?: string } {
+  const domain = extractDomain(url);
+  if (!domain) return { verified: false, reason: "no_domain" };
+
+  // Blacklist check first — immediate reject
+  if (BLACKLISTED_DOMAINS.some((d) => domain === d || domain.endsWith(`.${d}`))) {
+    console.log(`[SEARCH] Domain blacklisted: ${domain} (${url})`);
+    return { verified: false, reason: "blacklisted_domain" };
+  }
+
+  // High-trust domains — 45 day staleness threshold
+  if (HIGH_TRUST_DOMAINS.some((d) => domain === d || domain.endsWith(`.${d}`))) {
+    if (postedAt) {
+      const posted = new Date(postedAt).getTime();
+      const cutoff = Date.now() - 45 * 24 * 60 * 60 * 1000;
+      if (isNaN(posted) || posted < cutoff) {
+        console.log(`[SEARCH] High-trust domain stale (>45d): ${domain} posted ${postedAt}`);
+        return { verified: false, reason: "stale_high_trust" };
+      }
+    }
+    return { verified: true };
+  }
+
+  // Standard-trust domains — 21 day staleness threshold
+  if (STANDARD_TRUST_DOMAINS.some((d) => domain === d || domain.endsWith(`.${d}`))) {
+    if (postedAt) {
+      const posted = new Date(postedAt).getTime();
+      const cutoff = Date.now() - 21 * 24 * 60 * 60 * 1000;
+      if (isNaN(posted) || posted < cutoff) {
+        console.log(`[SEARCH] Standard-trust domain stale (>21d): ${domain} posted ${postedAt}`);
+        return { verified: false, reason: "stale_standard_trust" };
+      }
+    }
+    return { verified: true };
+  }
+
+  // Not in any trusted list
+  console.log(`[SEARCH] Domain not whitelisted: ${domain} (${url})`);
+  return { verified: false, reason: "untrusted_domain" };
+}
+
 function getSupabase() {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 }
@@ -165,8 +243,14 @@ export async function POST(request: NextRequest) {
 
     const sanitisedLocation = sanitiseLocation(profileLocation);
 
-    const buildSerpParams = (location?: string) => ({
-      q: query,
+    // Approach 1: Restrict SerpAPI query to trusted domains via site: syntax
+    // Test if google_jobs engine respects this — if results disappear or drop sharply,
+    // remove the domainRestriction and rely solely on post-fetch filtering (Approach 2).
+    const domainRestriction = ALL_TRUSTED_DOMAINS.map((d) => `site:${d}`).join(" OR ");
+    const restrictedQuery = `${query} (${domainRestriction})`;
+
+    const buildSerpParams = (location?: string, useDomainRestriction = true) => ({
+      q: useDomainRestriction ? restrictedQuery : query,
       location: location,
       hl: "en" as const,
       gl: "za" as const,
@@ -199,20 +283,57 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Step 2: Log raw count + full title + company + snippet of ALL results
-    console.log("[SEARCH] SerpAPI raw count:", rawJobs.length);
-    rawJobs.forEach((job, idx) => {
-      const snippet = (job.description ?? "").slice(0, 200);
-      console.log(`[SEARCH] Raw job #${idx}: title="${job.title}" company="${job.company_name}" location="${job.location}" description_snippet="${snippet}"`);
+    // Approach 2: Domain filter — applied immediately after raw results, before any
+    // expensive operations (Jina fetch, Gemini scoring). This is the cheapest filter
+    // and eliminates ineligible sources first.
+    let candidates = rawJobs.filter((j) => {
+      const url = buildJobUrl(j);
+      const domainResult = isDomainVerified(url, (j as any).posted_at);
+      if (!domainResult.verified) {
+        console.log(`[SEARCH] Domain filtered: ${j.title} at ${j.company_name} — ${domainResult.reason}`);
+        return false;
+      }
+      return true;
     });
 
-    if (rawJobs.length === 0) {
-      console.log("[SEARCH] SerpAPI returned zero results — no jobs match the query");
-      return NextResponse.json({ results: [], code: "NO_RESULTS_SERP", message: "No jobs found matching your profile. Try different job titles or locations." });
+    console.log("[SEARCH] SerpAPI raw count:", rawJobs.length);
+    console.log("[SEARCH] After domain filter:", candidates.length);
+
+    if (candidates.length === 0) {
+      console.log("[SEARCH] All results filtered by domain whitelist/blacklist");
+      // If domain restriction was aggressive and eliminated everything, retry without it
+      if (serpParams.q !== query) {
+        console.log("[SEARCH] Domain restriction eliminated all results — retrying without site: filter");
+        try {
+          rawJobs = await searchGoogleJobs(buildSerpParams(sanitisedLocation, false));
+        } catch {
+          return NextResponse.json({ results: [], code: "NO_RESULTS_SERP", message: "No jobs found matching your profile." });
+        }
+        candidates = rawJobs.filter((j) => {
+          const url = buildJobUrl(j);
+          // Still apply domain verification, just without the site: restriction
+          const domainResult = isDomainVerified(url, (j as any).posted_at);
+          if (!domainResult.verified) return false;
+          return true;
+        });
+        console.log("[SEARCH] After retry without domain restriction:", candidates.length);
+      }
+      if (candidates.length === 0) {
+        return NextResponse.json({ results: [], code: "NO_RESULTS_SERP", message: "No jobs found from trusted sources matching your profile." });
+      }
     }
 
-    // Filter banned
-    const candidates = rawJobs.filter((j) => {
+    // Log all candidates after domain filter
+    candidates.forEach((job, idx) => {
+      const snippet = (job.description ?? "").slice(0, 200);
+      console.log(`[SEARCH] Candidate #${idx}: title="${job.title}" company="${job.company_name}" location="${job.location}" snippet="${snippet}"`);
+    });
+    for (let i = 0; i < Math.min(2, candidates.length); i++) {
+      console.log(`[SEARCH] Job ${i} apply_options:`, JSON.stringify(candidates[i].apply_options));
+    }
+
+    // Filter banned (user-level, after domain filter)
+    candidates = candidates.filter((j) => {
       const url = buildJobUrl(j);
       if (url && bannedJobs.includes(url)) return false;
       if (bannedCompanies.includes(j.company_name)) return false;
@@ -220,9 +341,6 @@ export async function POST(request: NextRequest) {
     });
 
     console.log("[SEARCH] After banned filter:", candidates.length);
-    for (let i = 0; i < Math.min(2, candidates.length); i++) {
-      console.log(`[SEARCH] Job ${i} apply_options:`, JSON.stringify(candidates[i].apply_options));
-    }
 
     if (candidates.length === 0) {
       console.log("[SEARCH] All results filtered by banned companies/jobs");

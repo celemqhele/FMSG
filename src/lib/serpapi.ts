@@ -13,6 +13,7 @@ export interface SerpJob {
   link?: string;
   via?: string;
   job_id?: string;
+  posted_at?: string;
   apply_options?: ApplyOption[];
   job_highlights?: { link?: string };
 }
