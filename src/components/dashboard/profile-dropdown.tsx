@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Settings, ArrowUpCircle, LogOut, User } from "lucide-react";
+import { Settings, ArrowUpCircle, LogOut, User, Sparkles } from "lucide-react";
 import { useTransition } from "@/components/providers/transition-provider";
 import { createClient } from "@/lib/supabase/client";
 
@@ -10,7 +10,9 @@ export function ProfileDropdown() {
   const router = useRouter();
   const { startTransition } = useTransition();
   const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
   const [initials, setInitials] = useState("");
+  const [email, setEmail] = useState("");
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -18,14 +20,19 @@ export function ProfileDropdown() {
     supabase.auth.getUser().then((res: any) => {
       const user = res.data?.user;
       if (user) {
+        setEmail(user.email ?? "");
         supabase
           .from("profiles")
           .select("name, surname")
           .eq("id", user.id)
           .single()
           .then((pRes: any) => {
-            if (pRes.data?.name && pRes.data?.surname) {
+            const fullName = [pRes.data?.name, pRes.data?.surname].filter(Boolean).join(" ");
+            if (fullName) {
+              setName(fullName);
               setInitials((pRes.data.name[0] + pRes.data.surname[0]).toUpperCase());
+            } else {
+              setName(user.email?.split("@")[0] ?? "User");
             }
           });
       }
@@ -53,46 +60,59 @@ export function ProfileDropdown() {
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen(!open)}
-        className="w-9 h-9 rounded-full bg-[var(--color-accent)] flex items-center justify-center hover:opacity-90 transition-opacity"
+        className="w-10 h-10 rounded-full bg-[var(--color-accent)] ring-1 ring-white/10 hover:ring-white/25 flex items-center justify-center transition-all duration-200"
       >
-        <span className="text-xs font-semibold text-white">
-          {initials || <User size={14} className="text-white" />}
+        <span className="text-sm font-semibold text-white tracking-wide">
+          {initials || <User size={16} className="text-white" />}
         </span>
       </button>
 
-      {open && (
-        <div className="absolute right-0 top-12 w-52 py-1.5 rounded-2xl liquid-glass border shadow-lg overflow-hidden z-50">
+      <div
+        className={`absolute right-0 top-12 w-56 py-2 rounded-2xl liquid-glass border shadow-xl z-50 transition-all duration-200 origin-top-right ${
+          open ? "opacity-100 scale-100 pointer-events-auto" : "opacity-0 scale-95 pointer-events-none"
+        }`}
+      >
+        <div className="px-4 py-3 border-b border-white/[0.06]">
+          <p className="text-sm font-medium text-[var(--color-text-primary)] truncate leading-tight">{name}</p>
+          <p className="text-xs text-[var(--color-text-secondary)] truncate mt-0.5">{email}</p>
+        </div>
+
+        <div className="py-1">
           <button
             onClick={() => { setOpen(false); startTransition(); router.push("/profile"); }}
-            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-[var(--color-text-primary)] hover:bg-white/5 dark:hover:bg-white/5 transition-colors"
+            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-[var(--color-text-primary)] hover:bg-white/[0.04] transition-colors"
           >
-            <User size={16} />
+            <User size={15} className="opacity-60" />
             My Profile
           </button>
           <button
             onClick={() => { setOpen(false); startTransition(); router.push("/settings"); }}
-            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-[var(--color-text-primary)] hover:bg-white/5 dark:hover:bg-white/5 transition-colors"
+            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-[var(--color-text-primary)] hover:bg-white/[0.04] transition-colors"
           >
-            <Settings size={16} />
+            <Settings size={15} className="opacity-60" />
             Settings
           </button>
           <button
             onClick={() => { setOpen(false); startTransition(); router.push("/upgrade"); }}
-            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-[var(--color-text-primary)] hover:bg-white/5 dark:hover:bg-white/5 transition-colors"
+            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-[var(--color-text-primary)] hover:bg-white/[0.04] transition-colors"
           >
-            <ArrowUpCircle size={16} />
+            <Sparkles size={15} className="opacity-60" />
             Upgrade Plan
           </button>
-          <div className="h-px bg-[var(--color-border)] mx-2 my-1" />
+        </div>
+
+        <div className="h-px bg-white/[0.06] mx-3" />
+
+        <div className="py-1">
           <button
             onClick={handleLogout}
-            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-[var(--color-error)] hover:bg-white/5 dark:hover:bg-white/5 transition-colors"
+            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-[var(--color-error)] hover:bg-white/[0.04] transition-colors"
           >
-            <LogOut size={16} />
+            <LogOut size={15} className="opacity-70" />
             Logout
           </button>
         </div>
-      )}
+      </div>
     </div>
   );
 }

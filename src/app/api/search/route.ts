@@ -28,7 +28,7 @@ interface JobRow {
 }
 
 function normalize(r: any) {
-  return { ...r, full_description: r.full_spec ?? "" };
+  return { id: r.id ?? crypto.randomUUID(), ...r, full_description: r.full_spec ?? "" };
 }
 
 function buildJobUrl(job: {
@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { query } = await request.json();
+    const { query, profile_id } = await request.json();
     if (!query || typeof query !== "string") {
       return NextResponse.json({ error: "SEARCH_001" }, { status: 400 });
     }
@@ -112,9 +112,24 @@ export async function POST(request: NextRequest) {
     if (profile.banned_jobs) bannedJobs.push(...profile.banned_jobs);
     if (profile.banned_companies) bannedCompanies.push(...profile.banned_companies);
 
-    // SerpAPI search
-    const titles = profile.job_titles ?? [];
-    const profileLocation = profile.location ?? "";
+    // SerpAPI search — support profile-specific data
+    let titles = profile.job_titles ?? [];
+    let profileLocation = profile.location ?? "";
+    let cvFilePath = profile.cv_file_path ?? "";
+
+    if (profile_id) {
+      const { data: searchProfile } = await supabase
+        .from("search_profiles")
+        .select("job_titles, location, cv_file_path")
+        .eq("id", profile_id)
+        .eq("user_id", user.id)
+        .single();
+      if (searchProfile) {
+        if (searchProfile.job_titles?.length) titles = searchProfile.job_titles;
+        if (searchProfile.location) profileLocation = searchProfile.location;
+        if (searchProfile.cv_file_path) cvFilePath = searchProfile.cv_file_path;
+      }
+    }
 
     function buildSerpParams(title: string) {
       return {
@@ -169,12 +184,12 @@ export async function POST(request: NextRequest) {
 
     // Load CV text
     let cvText = "";
-    if (profile.cv_file_path) {
+    if (cvFilePath) {
       try {
         const { data: fileData } = await supabase
           .storage
           .from("cv-files")
-          .download(profile.cv_file_path);
+          .download(cvFilePath);
 
         if (fileData) {
           const buffer = Buffer.from(await fileData.arrayBuffer());
@@ -226,8 +241,8 @@ export async function POST(request: NextRequest) {
 
       // Score
       const result = scoreJobMatch(cvText, job.description ?? "", specText, {
-        job_titles: profile.job_titles ?? [],
-        location: profile.location ?? "",
+        job_titles: titles,
+        location: profileLocation ?? "",
       });
 
       if (result.score < 40) {

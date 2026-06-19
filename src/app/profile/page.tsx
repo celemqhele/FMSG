@@ -113,14 +113,15 @@ export default function ProfilePage() {
     const userId = await getUserId();
     if (!userId) { setCvUploading(false); return; }
     const userPrefix = userId.substring(0, 6);
-    const filePath = `${userPrefix}/${file.name}`;
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const filePath = `${userPrefix}/${safeName}`;
 
     if (cvFilePath) {
       await supabase.storage.from("cv-files").remove([cvFilePath]);
     }
 
     const { error: uploadErr } = await supabase.storage.from("cv-files").upload(filePath, file, { upsert: true });
-    if (uploadErr) { alert("Upload failed."); setCvUploading(false); return; }
+    if (uploadErr) { console.error("[CV UPLOAD]", uploadErr); alert(`Upload failed: ${uploadErr.message}`); setCvUploading(false); return; }
 
     await supabase.from("profiles").update({ cv_file_path: filePath }).eq("id", userId);
     setCvFilePath(filePath);

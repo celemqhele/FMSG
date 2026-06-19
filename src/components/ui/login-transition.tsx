@@ -4,10 +4,11 @@ import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 interface LoginTransitionProps {
   type: "login" | "onboarding";
+  redirectTo?: string;
   onComplete?: () => void;
 }
 
-export function LoginTransition({ type, onComplete }: LoginTransitionProps) {
+export function LoginTransition({ type, redirectTo, onComplete }: LoginTransitionProps) {
   const router = useRouter();
   const [phase, setPhase] = useState(0);
   const cleanupRef = useRef(false);
@@ -22,12 +23,12 @@ export function LoginTransition({ type, onComplete }: LoginTransitionProps) {
       setPhase(1);
       // 200ms — modal content fades
       timers.push(setTimeout(() => setPhase(2), 200));
-      // 400ms — navigate to dashboard + overlay fully black
+      // 400ms — navigate + overlay fully black
       timers.push(setTimeout(() => {
         setPhase(3);
-        router.push("/dashboard");
+        router.push(redirectTo ?? "/dashboard");
       }, 400));
-      // 1000ms — overlay fades out revealing dashboard underneath
+      // 1000ms — overlay fades out revealing destination underneath
       timers.push(setTimeout(() => setPhase(4), 1000));
       // 1700ms — complete, cleanup
       timers.push(setTimeout(() => {
@@ -37,7 +38,7 @@ export function LoginTransition({ type, onComplete }: LoginTransitionProps) {
     } else {
       // Onboarding: start at fully black overlay + navigate immediately
       setPhase(3);
-      router.push("/dashboard");
+      router.push(redirectTo ?? "/dashboard");
       // 600ms — overlay fades out revealing dashboard
       timers.push(setTimeout(() => setPhase(4), 600));
       // 1300ms — complete, cleanup
@@ -48,7 +49,7 @@ export function LoginTransition({ type, onComplete }: LoginTransitionProps) {
     }
 
     return () => timers.forEach(clearTimeout);
-  }, [type, router, onComplete]);
+  }, [type, redirectTo, router, onComplete]);
 
   if (phase === 0) return null;
 

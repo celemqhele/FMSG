@@ -5,9 +5,12 @@ import { useRouter } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard/dashboard-layout";
 import { SearchPill } from "@/components/dashboard/search-pill";
 import { JobResultCard } from "@/components/dashboard/job-result-card";
-import { SearchHistory } from "@/components/dashboard/search-history";
+import { DashboardTabs, type TabId } from "@/components/dashboard/dashboard-tabs";
+import { SavedJobs } from "@/components/dashboard/saved-jobs";
+import { BlockedList } from "@/components/dashboard/blocked-list";
 import { PageTransitionWrapper } from "@/components/ui/page-transition-wrapper";
 import { useTransition } from "@/components/providers/transition-provider";
+import { useActiveProfile } from "@/components/dashboard/dashboard-layout";
 import { createClient } from "@/lib/supabase/client";
 
 interface JobResult {
@@ -20,6 +23,18 @@ interface JobResult {
   match_summary: string;
   job_url: string;
   full_description: string;
+}
+
+interface HistoryResult {
+  id: string;
+  job_title: string;
+  company: string;
+  location: string;
+  estimated_salary: string;
+  match_score: number;
+  match_summary: string;
+  job_url: string;
+  full_spec: string;
 }
 
 function SkeletonCard() {
@@ -43,11 +58,14 @@ function SkeletonCard() {
 export default function DashboardPage() {
   const router = useRouter();
   const { endTransition } = useTransition();
+  const { activeProfileId } = useActiveProfile();
+  const [activeTab, setActiveTab] = useState<TabId>("search");
   const [searching, setSearching] = useState(false);
   const [progress, setProgress] = useState(0);
   const [results, setResults] = useState<JobResult[]>([]);
   const [hasSearched, setHasSearched] = useState(false);
-  const [showHistory, setShowHistory] = useState(false);
+  const [historyResults, setHistoryResults] = useState<HistoryResult[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [showLimitModal, setShowLimitModal] = useState<string | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
 
@@ -62,6 +80,26 @@ export default function DashboardPage() {
       setAuthChecked(true);
     });
   }, [router]);
+
+  useEffect(() => {
+    if (activeTab !== "history") return;
+    setHistoryLoading(true);
+    const supabase = createClient();
+    supabase.auth.getSession().then(({ data }: { data: { session: any } }) => {
+      if (!data.session) { setHistoryLoading(false); return; }
+      const session = data.session;
+      supabase
+        .from("job_results")
+        .select("*")
+        .eq("user_id", session.user.id)
+        .eq("is_deleted", false)
+        .order("created_at", { ascending: false })
+        .then(({ data }: { data: any }) => {
+          setHistoryResults((data ?? []) as HistoryResult[]);
+          setHistoryLoading(false);
+        });
+    });
+  }, [activeTab]);
 
   const handleSearch = useCallback(async (query: string) => {
     setSearching(true);
@@ -87,7 +125,7 @@ export default function DashboardPage() {
           Authorization: `Bearer ${session.access_token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ query }),
+        body: JSON.stringify({ query, profile_id: activeProfileId }),
       });
 
       const data = await res.json();
@@ -129,59 +167,96 @@ export default function DashboardPage() {
   return (
     <DashboardLayout>
       <PageTransitionWrapper>
-      <div className="max-w-4xl mx-auto pt-8 space-y-8">
-        <SearchPill onSearch={handleSearch} onToggleHistory={() => setShowHistory(true)} searching={searching} />
+      <div className="max-w-4xl mx-auto pt-8 space-y-6">
+        <DashboardTabs active={activeTab} onChange={setActiveTab} />
 
-        {searching && (
-          <div className="space-y-2">
-            <div className="h-1.5 rounded-full bg-[var(--color-border)] overflow-hidden">
-              <div
-                className="h-full rounded-full bg-[var(--color-accent)] transition-all duration-500"
-                style={{ width: `${progress}%` }}
-              />
+        {activeTab === "search" && (
+          <>
+            <SearchPill onSearch={handleSearch} searching={searching} />
+
+            {searching && (
+              <div className="space-y-2">
+                <div className="h-1.5 rounded-full bg-[var(--color-border)] overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-[var(--color-accent)] transition-all duration-500"
+                    style={{ width: `${progress}%` }}
+                  />
+                </div>
+                <p className="text-xs text-[var(--color-text-secondary)] text-center">Usually takes 30 seconds</p>
+              </div>
+            )}
+
+            {searching && (
+              <div className="space-y-4">
+                <SkeletonCard />
+                <SkeletonCard />
+                <SkeletonCard />
+              </div>
+            )}
+
+            {!searching && results.length > 0 && (
+              <div className="space-y-4">
+                {results.map((r) => (
+                  <JobResultCard
+                    key={r.id}
+                    id={r.id}
+                    jobTitle={r.job_title}
+                    company={r.company}
+                    location={r.location}
+                    salary={r.estimated_salary}
+                    matchScore={r.match_score}
+                    jobUrl={r.job_url}
+                    fullDescription={r.full_description}
+                    onDelete={handleDelete}
+                  />
+                ))}
+              </div>
+            )}
+
+            {!searching && hasSearched && results.length === 0 && (
+              <div className="text-center py-20">
+                <p className="text-[var(--color-text-secondary)] text-sm">No matching jobs found. Try updating your profile or search again.</p>
+              </div>
+            )}
+
+            {!searching && !hasSearched && results.length === 0 && (
+              <div className="text-center py-20">
+                <p className="text-[var(--color-text-secondary)] text-sm">Search for jobs to get started</p>
+              </div>
+            )}
+          </>
+        )}
+
+        {activeTab === "history" && (
+          historyLoading ? (
+            <p className="text-sm text-[var(--color-text-secondary)] text-center py-8">Loading...</p>
+          ) : historyResults.length === 0 ? (
+            <div className="text-center py-20">
+              <p className="text-[var(--color-text-secondary)] text-sm">No search history yet.</p>
             </div>
-            <p className="text-xs text-[var(--color-text-secondary)] text-center">Usually takes 30 seconds</p>
-          </div>
+          ) : (
+            <div className="space-y-4">
+              {historyResults.map((r) => (
+                <JobResultCard
+                  key={r.id}
+                  id={r.id}
+                  jobTitle={r.job_title}
+                  company={r.company}
+                  location={r.location}
+                  salary={r.estimated_salary}
+                  matchScore={r.match_score}
+                  jobUrl={r.job_url}
+                  fullDescription={r.full_spec}
+                  onDelete={(id) => setHistoryResults((prev) => prev.filter((x) => x.id !== id))}
+                />
+              ))}
+            </div>
+          )
         )}
 
-        {searching && (
-          <div className="space-y-4">
-            <SkeletonCard />
-            <SkeletonCard />
-            <SkeletonCard />
-          </div>
-        )}
+        {activeTab === "blocked" && <BlockedList />}
 
-        {!searching && results.length > 0 && (
-          <div className="space-y-4">
-            {results.map((r) => (
-              <JobResultCard
-                key={r.id}
-                id={r.id}
-                jobTitle={r.job_title}
-                company={r.company}
-                location={r.location}
-                salary={r.estimated_salary}
-                matchScore={r.match_score}
-                jobUrl={r.job_url}
-                fullDescription={r.full_description}
-                onDelete={handleDelete}
-              />
-            ))}
-          </div>
-        )}
-
-        {!searching && hasSearched && results.length === 0 && (
-          <div className="text-center py-20">
-            <p className="text-[var(--color-text-secondary)] text-sm">No matching jobs found. Try updating your profile or search again.</p>
-          </div>
-        )}
-
-        {!searching && !hasSearched && results.length === 0 && (
-          <div className="text-center py-20">
-            <p className="text-[var(--color-text-secondary)] text-sm">Search for jobs to get started</p>
-          </div>
-        )}
+        {activeTab === "saved" && <SavedJobs />}
       </div>
 
       {showLimitModal && (
@@ -207,8 +282,6 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
-
-      <SearchHistory open={showHistory} onClose={() => setShowHistory(false)} />
       </PageTransitionWrapper>
     </DashboardLayout>
   );

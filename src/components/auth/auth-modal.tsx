@@ -20,7 +20,7 @@ export function AuthModal({ isOpen, onClose, defaultTab = "signup" }: AuthModalP
   const [mounted, setMounted] = useState(false);
   const [screen, setScreen] = useState<Screen>(defaultTab);
   const [pendingEmail, setPendingEmail] = useState("");
-  const [transitionType, setTransitionType] = useState<"login" | null>(null);
+  const [transitionType, setTransitionType] = useState<"login" | "signup" | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -38,7 +38,7 @@ export function AuthModal({ isOpen, onClose, defaultTab = "signup" }: AuthModalP
 
   const handleSignUpSubmit = useCallback(({ email, autoConfirmed }: { email: string; autoConfirmed: boolean }) => {
     if (autoConfirmed) {
-      setTransitionType("login");
+      setTransitionType("signup");
     } else {
       setPendingEmail(email);
       setScreen("signup-sent");
@@ -94,7 +94,7 @@ export function AuthModal({ isOpen, onClose, defaultTab = "signup" }: AuthModalP
                 onClick={() => switchScreen("login")}
                 className={`flex-1 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
                   screen === "login"
-                    ? "bg-white dark:bg-[#2C2C2E] text-[var(--color-text-primary)] shadow-[var(--shadow-sm)]"
+                    ? "bg-white dark:bg-[#2C2C2E] text-[#1C1C1E] dark:text-white shadow-[var(--shadow-sm)]"
                     : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
                 }`}
               >
@@ -104,7 +104,7 @@ export function AuthModal({ isOpen, onClose, defaultTab = "signup" }: AuthModalP
                 onClick={() => switchScreen("signup")}
                 className={`flex-1 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
                   screen === "signup"
-                    ? "bg-white dark:bg-[#2C2C2E] text-[var(--color-text-primary)] shadow-[var(--shadow-sm)]"
+                    ? "bg-white dark:bg-[#2C2C2E] text-[#1C1C1E] dark:text-white shadow-[var(--shadow-sm)]"
                     : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
                 }`}
               >
@@ -168,7 +168,7 @@ export function AuthModal({ isOpen, onClose, defaultTab = "signup" }: AuthModalP
       </div>
 
       {transitionType && (
-        <LoginTransition type={transitionType} onComplete={handleTransitionComplete} />
+        <LoginTransition type="login" redirectTo={transitionType === "signup" ? "/onboarding" : undefined} onComplete={handleTransitionComplete} />
       )}
     </>
   );
