@@ -71,40 +71,29 @@ export async function POST(request: NextRequest) {
 
     const isAdmin = ADMIN_EMAIL && user.email === ADMIN_EMAIL;
 
-    // Get profile — try service role first, fallback to anon with user's token
+    // Create an authenticated anon client for all data queries (service-role key may not match this instance)
+    const dataClient = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    );
+    await dataClient.auth.setSession({ access_token: authHeader, refresh_token: "" });
+
+    // Get profile
     console.log("[SEARCH] Profile query user_id:", user.id);
     let profile: any;
     let profileErr: any;
-    ({ data: profile, error: profileErr } = await supabase
+    ({ data: profile, error: profileErr } = await dataClient
       .from("profiles")
       .select("*")
       .eq("id", user.id)
       .maybeSingle());
 
     if (profileErr) {
-      console.log("[SEARCH] Service-role profile query error:", profileErr?.message ?? "unknown");
+      console.log("[SEARCH] Profile query error:", profileErr?.message ?? "unknown");
     }
     if (!profile) {
-      console.log("[SEARCH] Service-role profile query returned no row — trying anon fallback");
-      const anonClient = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-      );
-      await anonClient.auth.setSession({ access_token: authHeader, refresh_token: "" });
-      const { data: anonProfile, error: anonErr } = await anonClient
-        .from("profiles")
-        .select("*")
-        .eq("id", user.id)
-        .maybeSingle();
-      if (anonErr) {
-        console.log("[SEARCH] Anon profile query error:", anonErr?.message ?? "unknown");
-      }
-      if (!anonProfile) {
-        console.log("[SEARCH] No profile row exists for user", user.id);
-        return NextResponse.json({ error: "PROFILE_NOT_FOUND", message: "Please set up your profile before searching." }, { status: 404 });
-      }
-      profile = anonProfile;
-      console.log("[SEARCH] Profile fetched via anon fallback");
+      console.log("[SEARCH] No profile row exists for user", user.id);
+      return NextResponse.json({ error: "PROFILE_NOT_FOUND", message: "Please set up your profile before searching." }, { status: 404 });
     }
 
     console.log("[SEARCH] Profile:", JSON.stringify({
@@ -135,7 +124,7 @@ export async function POST(request: NextRequest) {
     let cvFilePath = profile.cv_file_path ?? "";
 
     if (profile_id) {
-      const { data: searchProfile } = await supabase
+      const { data: searchProfile } = await dataClient
         .from("search_profiles")
         .select("job_titles, location, cv_file_path")
         .eq("id", profile_id)
@@ -220,7 +209,7 @@ export async function POST(request: NextRequest) {
     let cvText = "";
     if (cvFilePath) {
       try {
-        const { data: fileData } = await supabase
+        const { data: fileData } = await dataClient
           .storage
           .from("cv-files")
           .download(cvFilePath);
@@ -324,7 +313,7 @@ export async function POST(request: NextRequest) {
     // Deduct balance only after successful search
     if (!isAdmin) {
       try {
-        await supabase
+        await dataClient
           .from("profiles")
           .update({ search_balance: (profile.search_balance ?? 3) - 1 })
           .eq("id", user.id);
@@ -349,7 +338,7 @@ export async function POST(request: NextRequest) {
         search_query: r.search_query,
       }));
 
-      const { data: saved, error: saveErr } = await supabase
+      const { data: saved, error: saveErr } = await dataClient
         .from("job_results")
         .insert(rows)
         .select("id, job_title, company, location, estimated_salary, match_score, match_summary, job_url, full_spec");
