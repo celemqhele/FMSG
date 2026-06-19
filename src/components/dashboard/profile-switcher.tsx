@@ -69,9 +69,9 @@ export function ProfileSwitcher({ activeProfileId, onSelect }: { activeProfileId
     return (
       <button
         onClick={handleCreate}
-        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white/60 hover:text-white rounded-full border border-white/10 hover:border-white/20 transition-colors"
+        className="flex items-center gap-1.5 px-3 h-10 text-xs font-medium text-white/60 hover:text-white rounded-full border border-white/10 hover:border-white/20 transition-colors"
       >
-        <Plus size={12} />
+        <Plus size={14} />
         New Profile
       </button>
     );
@@ -81,7 +81,7 @@ export function ProfileSwitcher({ activeProfileId, onSelect }: { activeProfileId
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white/80 hover:text-white rounded-full border border-white/10 hover:border-white/20 transition-colors"
+        className="flex items-center gap-1.5 px-3 h-10 text-xs font-medium text-white/80 hover:text-white rounded-full border border-white/10 hover:border-white/20 transition-colors"
       >
         <span className="max-w-[120px] truncate">{active?.name ?? "Profile"}</span>
         <ChevronDown size={12} />

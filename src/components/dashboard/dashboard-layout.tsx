@@ -21,7 +21,7 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
         <SpaceVideoBackground src="/videos/space.mp4" />
         <header className="relative z-10 flex items-center justify-between gap-3 px-4 md:px-6 py-4">
           <div className="flex items-center gap-3">
-            <span className="text-lg font-bold tracking-tight text-white/80 md:text-white/60 select-none">FMSG</span>
+            <span className="flex items-center h-10 text-lg font-bold tracking-tight text-white/80 md:text-white/60 select-none">FMSG</span>
             <ProfileSwitcher activeProfileId={activeProfileId} onSelect={setActiveProfileId} />
           </div>
           <ProfileDropdown />
