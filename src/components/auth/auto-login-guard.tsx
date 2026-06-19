@@ -44,7 +44,7 @@ export function AutoLoginGuard() {
   }, [guardState, pathname]);
 
   if (guardState === "loading") {
-    return <div className="fixed inset-0 bg-black z-[200]" />;
+    return null;
   }
 
   if (guardState === "transition") {
