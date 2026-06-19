@@ -8,6 +8,7 @@ import { JobResultCard } from "@/components/dashboard/job-result-card";
 import { DashboardTabs, type TabId } from "@/components/dashboard/dashboard-tabs";
 import { SavedJobs } from "@/components/dashboard/saved-jobs";
 import { BlockedList } from "@/components/dashboard/blocked-list";
+import { RejectedJobs } from "@/components/dashboard/rejected-jobs";
 import { PageTransitionWrapper } from "@/components/ui/page-transition-wrapper";
 import { useTransition } from "@/components/providers/transition-provider";
 import { createClient } from "@/lib/supabase/client";
@@ -270,6 +271,8 @@ export default function DashboardPage() {
         {activeTab === "blocked" && <BlockedList />}
 
         {activeTab === "saved" && <SavedJobs />}
+
+        {activeTab === "rejected" && <RejectedJobs />}
       </div>
 
       {showLimitModal && (

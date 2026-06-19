@@ -210,6 +210,42 @@ BEGIN
 END $$;
 
 -- ============================================================
+-- 7. REJECTED JOBS TABLE
+-- ============================================================
+CREATE TABLE IF NOT EXISTS rejected_jobs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  search_id UUID,
+  search_query TEXT DEFAULT '',
+  job_title TEXT NOT NULL,
+  company TEXT NOT NULL,
+  location TEXT DEFAULT '',
+  snippet TEXT DEFAULT '',
+  job_url TEXT DEFAULT '',
+  reason TEXT DEFAULT '',
+  passed_domain_filter BOOLEAN DEFAULT false,
+  passed_banned_filter BOOLEAN DEFAULT false,
+  passed_pass1 BOOLEAN DEFAULT false,
+  passed_pass2 BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE rejected_jobs ENABLE ROW LEVEL SECURITY;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'rejected_jobs' AND policyname = 'Users can read own rejected jobs') THEN
+    CREATE POLICY "Users can read own rejected jobs" ON rejected_jobs FOR SELECT USING (auth.uid() = user_id);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'rejected_jobs' AND policyname = 'Users can insert own rejected jobs') THEN
+    CREATE POLICY "Users can insert own rejected jobs" ON rejected_jobs FOR INSERT WITH CHECK (auth.uid() = user_id);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'rejected_jobs' AND policyname = 'Users can delete own rejected jobs') THEN
+    CREATE POLICY "Users can delete own rejected jobs" ON rejected_jobs FOR DELETE USING (auth.uid() = user_id);
+  END IF;
+END $$;
+
+-- ============================================================
 -- STORAGE BUCKET (safe to run in SQL editor)
 -- ============================================================
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)

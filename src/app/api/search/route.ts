@@ -127,6 +127,21 @@ function buildJobUrl(job: {
 export async function POST(request: NextRequest) {
   const supabase = getSupabase();
   const searchId = crypto.randomUUID();
+  const rejectedJobs: {
+    user_id: string;
+    search_id: string;
+    search_query: string;
+    job_title: string;
+    company: string;
+    location: string;
+    snippet: string;
+    job_url: string;
+    reason: string;
+    passed_domain_filter: boolean;
+    passed_banned_filter: boolean;
+    passed_pass1: boolean;
+    passed_pass2: boolean;
+  }[] = [];
 
   try {
     const authHeader = request.headers.get("Authorization")?.replace("Bearer ", "");
@@ -286,15 +301,31 @@ export async function POST(request: NextRequest) {
     // Approach 2: Domain filter — applied immediately after raw results, before any
     // expensive operations (Jina fetch, Gemini scoring). This is the cheapest filter
     // and eliminates ineligible sources first.
-    let candidates = rawJobs.filter((j) => {
+    let candidates: typeof rawJobs = [];
+    for (const j of rawJobs) {
       const url = buildJobUrl(j);
       const domainResult = isDomainVerified(url, (j as any).posted_at);
-      if (!domainResult.verified) {
+      if (domainResult.verified) {
+        candidates.push(j);
+      } else {
+        rejectedJobs.push({
+          user_id: user.id,
+          search_id: searchId,
+          search_query: query,
+          job_title: j.title,
+          company: j.company_name,
+          location: j.location ?? "",
+          snippet: (j.description ?? "").slice(0, 500),
+          job_url: url,
+          reason: domainResult.reason ?? "untrusted_domain",
+          passed_domain_filter: false,
+          passed_banned_filter: false,
+          passed_pass1: false,
+          passed_pass2: false,
+        });
         console.log(`[SEARCH] Domain filtered: ${j.title} at ${j.company_name} — ${domainResult.reason}`);
-        return false;
       }
-      return true;
-    });
+    }
 
     console.log("[SEARCH] SerpAPI raw count:", rawJobs.length);
     console.log("[SEARCH] After domain filter:", candidates.length);
@@ -309,13 +340,30 @@ export async function POST(request: NextRequest) {
         } catch {
           return NextResponse.json({ results: [], code: "NO_RESULTS_SERP", message: "No jobs found matching your profile." });
         }
-        candidates = rawJobs.filter((j) => {
+        candidates = [];
+        for (const j of rawJobs) {
           const url = buildJobUrl(j);
-          // Still apply domain verification, just without the site: restriction
           const domainResult = isDomainVerified(url, (j as any).posted_at);
-          if (!domainResult.verified) return false;
-          return true;
-        });
+          if (domainResult.verified) {
+            candidates.push(j);
+          } else {
+            rejectedJobs.push({
+              user_id: user.id,
+              search_id: searchId,
+              search_query: query,
+              job_title: j.title,
+              company: j.company_name,
+              location: j.location ?? "",
+              snippet: (j.description ?? "").slice(0, 500),
+              job_url: url,
+              reason: domainResult.reason ?? "untrusted_domain",
+              passed_domain_filter: false,
+              passed_banned_filter: false,
+              passed_pass1: false,
+              passed_pass2: false,
+            });
+          }
+        }
         console.log("[SEARCH] After retry without domain restriction:", candidates.length);
       }
       if (candidates.length === 0) {
@@ -333,12 +381,31 @@ export async function POST(request: NextRequest) {
     }
 
     // Filter banned (user-level, after domain filter)
-    candidates = candidates.filter((j) => {
+    const afterBanned: typeof candidates = [];
+    for (const j of candidates) {
       const url = buildJobUrl(j);
-      if (url && bannedJobs.includes(url)) return false;
-      if (bannedCompanies.includes(j.company_name)) return false;
-      return true;
-    });
+      const isBanned = (url && bannedJobs.includes(url)) || bannedCompanies.includes(j.company_name);
+      if (isBanned) {
+        rejectedJobs.push({
+          user_id: user.id,
+          search_id: searchId,
+          search_query: query,
+          job_title: j.title,
+          company: j.company_name,
+          location: j.location ?? "",
+          snippet: (j.description ?? "").slice(0, 500),
+          job_url: url,
+          reason: bannedCompanies.includes(j.company_name) ? "banned_company" : "banned_job",
+          passed_domain_filter: true,
+          passed_banned_filter: false,
+          passed_pass1: false,
+          passed_pass2: false,
+        });
+      } else {
+        afterBanned.push(j);
+      }
+    }
+    candidates = afterBanned;
 
     console.log("[SEARCH] After banned filter:", candidates.length);
 
@@ -488,11 +555,30 @@ Return ONLY valid JSON (no markdown, no code fences):
       console.log("[SEARCH] Fallback individual screening complete:", batchResults.length, "results");
     }
 
-    // Keep only jobs that pass the initial screen
+    // Keep only jobs that pass the initial screen; collect rejected
     const screenedIndices = new Set<number>();
     for (const r of batchResults) {
       if (r.is_valid && r.score >= 40) {
         screenedIndices.add(r.index);
+      } else {
+        const j = candidates[r.index];
+        if (j) {
+          rejectedJobs.push({
+            user_id: user.id,
+            search_id: searchId,
+            search_query: query,
+            job_title: j.title,
+            company: j.company_name,
+            location: j.location ?? "",
+            snippet: (j.description ?? "").slice(0, 500),
+            job_url: jobUrls.get(r.index) || buildJobUrl(j),
+            reason: r.reason || `Pass 1 rejected (score=${r.score})`,
+            passed_domain_filter: true,
+            passed_banned_filter: true,
+            passed_pass1: false,
+            passed_pass2: false,
+          });
+        }
       }
     }
 
@@ -544,6 +630,21 @@ Return ONLY valid JSON with this exact schema (no markdown, no code fences):
 
         if (!deepResult.is_valid || deepResult.score < 40) {
           console.log(`[SEARCH] Pass 2 — filtered out: "${job.title}" (score=${deepResult.score})`);
+          rejectedJobs.push({
+            user_id: user.id,
+            search_id: searchId,
+            search_query: query,
+            job_title: job.title,
+            company: job.company_name,
+            location: job.location ?? "",
+            snippet: (job.description ?? "").slice(0, 500),
+            job_url: jobUrl,
+            reason: deepResult.match_summary?.slice(0, 300) || `Pass 2 rejected (score=${deepResult.score})`,
+            passed_domain_filter: true,
+            passed_banned_filter: true,
+            passed_pass1: true,
+            passed_pass2: false,
+          });
           continue;
         }
 
@@ -597,6 +698,13 @@ Return ONLY valid JSON with this exact schema (no markdown, no code fences):
       } catch {
         // Best effort
       }
+    }
+
+    // Save rejected jobs (fire-and-forget — never blocks the response)
+    if (rejectedJobs.length > 0) {
+      (async () => {
+        try { await dataClient.from("rejected_jobs").insert(rejectedJobs); } catch {}
+      })();
     }
 
     // Save to job_results

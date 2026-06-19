@@ -1,14 +1,15 @@
 "use client";
 
-import { Search, History, Ban, Bookmark } from "lucide-react";
+import { Search, History, Ban, Bookmark, XCircle } from "lucide-react";
 
-export type TabId = "search" | "history" | "blocked" | "saved";
+export type TabId = "search" | "history" | "blocked" | "saved" | "rejected";
 
 const tabs: { id: TabId; label: string; icon: typeof Search }[] = [
   { id: "search", label: "Search", icon: Search },
   { id: "history", label: "History", icon: History },
-  { id: "blocked", label: "Blocked", icon: Ban },
   { id: "saved", label: "Saved", icon: Bookmark },
+  { id: "rejected", label: "Rejected", icon: XCircle },
+  { id: "blocked", label: "Blocked", icon: Ban },
 ];
 
 export function DashboardTabs({ active, onChange }: { active: TabId; onChange: (tab: TabId) => void }) {
