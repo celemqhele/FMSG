@@ -28,6 +28,7 @@ const STANDARD_TRUST_DOMAINS = [
 
 // Explicitly blacklisted — known predatory practices, never return these
 const BLACKLISTED_DOMAINS = [
+  'bebee.com',
   'jobleads.com',
   'jobleads.co.za',
   'jobleads.co.uk',
@@ -305,6 +306,15 @@ export async function POST(request: NextRequest) {
         console.log(`[SEARCH] Domain not whitelisted: ${j.title} at ${j.company_name} — ${result.reason}`);
       }
     }
+
+    // Hard-remove blacklisted domains (pay-to-apply sites, scams, etc.)
+    rawJobs = rawJobs.filter((j) => {
+      const url = buildJobUrl(j);
+      const domain = extractDomain(url);
+      const blacklisted = BLACKLISTED_DOMAINS.some((d) => domain === d || domain?.endsWith(`.${d}`));
+      if (blacklisted) console.log(`[SEARCH] Blacklisted domain removed: ${j.title} at ${j.company_name} (${domain})`);
+      return !blacklisted;
+    });
 
     let candidates = rawJobs;
 
