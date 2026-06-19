@@ -3,35 +3,23 @@
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { XCircle } from "lucide-react";
+import { JobResultCard } from "./job-result-card";
 
-interface RejectedJob {
+interface DeletedJob {
   id: string;
   job_title: string;
   company: string;
   location: string;
-  snippet: string;
-  reason: string;
+  estimated_salary: string;
+  match_score: number;
   job_url: string;
-  passed_domain_filter: boolean;
-  passed_banned_filter: boolean;
-  passed_pass1: boolean;
-  passed_pass2: boolean;
-  search_query: string;
-  created_at: string;
+  full_spec: string;
+  domain_verified?: boolean;
+  domain_unverified_reason?: string;
 }
 
-const stageLabel: Record<string, string> = {
-  no_domain: "No domain found",
-  blacklisted_domain: "Blocked source",
-  stale_high_trust: "Listing too old",
-  stale_standard_trust: "Listing too old",
-  untrusted_domain: "Untrusted source",
-  banned_company: "Blocked company",
-  banned_job: "Blocked job",
-};
-
 export function RejectedJobs() {
-  const [jobs, setJobs] = useState<RejectedJob[]>([]);
+  const [jobs, setJobs] = useState<DeletedJob[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -40,12 +28,13 @@ export function RejectedJobs() {
       const session = data?.session;
       if (!session) { setLoading(false); return; }
       supabase
-        .from("rejected_jobs")
+        .from("job_results")
         .select("*")
         .eq("user_id", session.user.id)
+        .eq("is_deleted", true)
         .order("created_at", { ascending: false })
         .then(({ data }: { data: any }) => {
-          setJobs((data ?? []) as RejectedJob[]);
+          setJobs((data ?? []) as DeletedJob[]);
           setLoading(false);
         });
     });
@@ -65,29 +54,23 @@ export function RejectedJobs() {
   }
 
   return (
-    <div className="space-y-3">
-      {jobs.map((j) => {
-        const stage = stageLabel[j.reason] || j.reason;
-        return (
-          <div key={j.id} className="liquid-glass rounded-xl p-4">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-[var(--color-text-primary)] truncate">{j.job_title}</p>
-                <p className="text-xs text-[var(--color-text-secondary)]">
-                  {j.company}
-                  {j.location && <> &bull; {j.location}</>}
-                </p>
-                {j.snippet && (
-                  <p className="text-xs text-[var(--color-text-secondary)]/60 mt-1.5 line-clamp-2">{j.snippet}</p>
-                )}
-              </div>
-              <span className="shrink-0 text-xs font-medium px-2.5 py-1 rounded-full bg-red-500/10 text-red-400 border border-red-500/20 whitespace-nowrap">
-                {stage}
-              </span>
-            </div>
-          </div>
-        );
-      })}
+    <div className="space-y-4">
+      {jobs.map((j) => (
+        <JobResultCard
+          key={j.id}
+          id={j.id}
+          jobTitle={j.job_title}
+          company={j.company}
+          location={j.location}
+          salary={j.estimated_salary}
+          matchScore={j.match_score}
+          jobUrl={j.job_url}
+          fullDescription={j.full_spec}
+          domainVerified={j.domain_verified ?? true}
+          domainUnverifiedReason={j.domain_unverified_reason ?? ""}
+          onDelete={(id) => setJobs((prev) => prev.filter((x) => x.id !== id))}
+        />
+      ))}
     </div>
   );
 }

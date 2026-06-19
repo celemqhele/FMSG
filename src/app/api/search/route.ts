@@ -105,6 +105,8 @@ interface JobRow {
   job_url: string;
   full_spec: string;
   search_query: string;
+  domain_verified: boolean;
+  domain_unverified_reason: string;
 }
 
 function normalize(r: any) {
@@ -127,22 +129,6 @@ function buildJobUrl(job: {
 export async function POST(request: NextRequest) {
   const supabase = getSupabase();
   const searchId = crypto.randomUUID();
-  const rejectedJobs: {
-    user_id: string;
-    search_id: string;
-    search_query: string;
-    job_title: string;
-    company: string;
-    location: string;
-    snippet: string;
-    job_url: string;
-    reason: string;
-    passed_domain_filter: boolean;
-    passed_banned_filter: boolean;
-    passed_pass1: boolean;
-    passed_pass2: boolean;
-  }[] = [];
-
   try {
     const authHeader = request.headers.get("Authorization")?.replace("Bearer ", "");
     if (!authHeader) {
@@ -298,78 +284,20 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Approach 2: Domain filter — applied immediately after raw results, before any
-    // expensive operations (Jina fetch, Gemini scoring). This is the cheapest filter
-    // and eliminates ineligible sources first.
-    let candidates: typeof rawJobs = [];
+    // Domain verification — mark each job as trusted/untrusted (never filter them out)
     for (const j of rawJobs) {
       const url = buildJobUrl(j);
-      const domainResult = isDomainVerified(url, (j as any).posted_at);
-      if (domainResult.verified) {
-        candidates.push(j);
-      } else {
-        rejectedJobs.push({
-          user_id: user.id,
-          search_id: searchId,
-          search_query: query,
-          job_title: j.title,
-          company: j.company_name,
-          location: j.location ?? "",
-          snippet: (j.description ?? "").slice(0, 500),
-          job_url: url,
-          reason: domainResult.reason ?? "untrusted_domain",
-          passed_domain_filter: false,
-          passed_banned_filter: false,
-          passed_pass1: false,
-          passed_pass2: false,
-        });
-        console.log(`[SEARCH] Domain filtered: ${j.title} at ${j.company_name} — ${domainResult.reason}`);
+      const result = isDomainVerified(url, (j as any).posted_at);
+      (j as any)._domainVerified = result.verified;
+      (j as any)._domainReason = result.verified ? "" : (result.reason ?? "untrusted_domain");
+      if (!result.verified) {
+        console.log(`[SEARCH] Domain not whitelisted: ${j.title} at ${j.company_name} — ${result.reason}`);
       }
     }
+
+    let candidates = rawJobs;
 
     console.log("[SEARCH] SerpAPI raw count:", rawJobs.length);
-    console.log("[SEARCH] After domain filter:", candidates.length);
-
-    if (candidates.length === 0) {
-      console.log("[SEARCH] All results filtered by domain whitelist/blacklist");
-      // If domain restriction was aggressive and eliminated everything, retry without it
-      if (serpParams.q !== query) {
-        console.log("[SEARCH] Domain restriction eliminated all results — retrying without site: filter");
-        try {
-          rawJobs = await searchGoogleJobs(buildSerpParams(sanitisedLocation, false));
-        } catch {
-          return NextResponse.json({ results: [], code: "NO_RESULTS_SERP", message: "No jobs found matching your profile." });
-        }
-        candidates = [];
-        for (const j of rawJobs) {
-          const url = buildJobUrl(j);
-          const domainResult = isDomainVerified(url, (j as any).posted_at);
-          if (domainResult.verified) {
-            candidates.push(j);
-          } else {
-            rejectedJobs.push({
-              user_id: user.id,
-              search_id: searchId,
-              search_query: query,
-              job_title: j.title,
-              company: j.company_name,
-              location: j.location ?? "",
-              snippet: (j.description ?? "").slice(0, 500),
-              job_url: url,
-              reason: domainResult.reason ?? "untrusted_domain",
-              passed_domain_filter: false,
-              passed_banned_filter: false,
-              passed_pass1: false,
-              passed_pass2: false,
-            });
-          }
-        }
-        console.log("[SEARCH] After retry without domain restriction:", candidates.length);
-      }
-      if (candidates.length === 0) {
-        return NextResponse.json({ results: [], code: "NO_RESULTS_SERP", message: "No jobs found from trusted sources matching your profile." });
-      }
-    }
 
     // Log all candidates after domain filter
     candidates.forEach((job, idx) => {
@@ -381,31 +309,12 @@ export async function POST(request: NextRequest) {
     }
 
     // Filter banned (user-level, after domain filter)
-    const afterBanned: typeof candidates = [];
-    for (const j of candidates) {
+    candidates = candidates.filter((j) => {
       const url = buildJobUrl(j);
-      const isBanned = (url && bannedJobs.includes(url)) || bannedCompanies.includes(j.company_name);
-      if (isBanned) {
-        rejectedJobs.push({
-          user_id: user.id,
-          search_id: searchId,
-          search_query: query,
-          job_title: j.title,
-          company: j.company_name,
-          location: j.location ?? "",
-          snippet: (j.description ?? "").slice(0, 500),
-          job_url: url,
-          reason: bannedCompanies.includes(j.company_name) ? "banned_company" : "banned_job",
-          passed_domain_filter: true,
-          passed_banned_filter: false,
-          passed_pass1: false,
-          passed_pass2: false,
-        });
-      } else {
-        afterBanned.push(j);
-      }
-    }
-    candidates = afterBanned;
+      if (url && bannedJobs.includes(url)) return false;
+      if (bannedCompanies.includes(j.company_name)) return false;
+      return true;
+    });
 
     console.log("[SEARCH] After banned filter:", candidates.length);
 
@@ -555,36 +464,8 @@ Return ONLY valid JSON (no markdown, no code fences):
       console.log("[SEARCH] Fallback individual screening complete:", batchResults.length, "results");
     }
 
-    // Keep only jobs that pass the initial screen; collect rejected
-    const screenedIndices = new Set<number>();
-    for (const r of batchResults) {
-      if (r.is_valid && r.score >= 40) {
-        screenedIndices.add(r.index);
-      } else {
-        const j = candidates[r.index];
-        if (j) {
-          rejectedJobs.push({
-            user_id: user.id,
-            search_id: searchId,
-            search_query: query,
-            job_title: j.title,
-            company: j.company_name,
-            location: j.location ?? "",
-            snippet: (j.description ?? "").slice(0, 500),
-            job_url: jobUrls.get(r.index) || buildJobUrl(j),
-            reason: r.reason || `Pass 1 rejected (score=${r.score})`,
-            passed_domain_filter: true,
-            passed_banned_filter: true,
-            passed_pass1: false,
-            passed_pass2: false,
-          });
-        }
-      }
-    }
-
-    const screened = candidates.filter((_, i) => screenedIndices.has(i));
-    console.log("[SEARCH] Pass 1 survivors:", screened.length);
-
+    // Keep all jobs — Pass 1 is informational only, never filters
+    const screened = candidates;
     // Pass 2: Sequential deep analysis with 6s delay
     const outputs: JobRow[] = [];
 
@@ -628,26 +509,6 @@ Return ONLY valid JSON with this exact schema (no markdown, no code fences):
         const deepResult = JSON.parse(raw);
         console.log(`[SEARCH] Pass 2 result for "${job.title}":`, JSON.stringify(deepResult));
 
-        if (!deepResult.is_valid || deepResult.score < 40) {
-          console.log(`[SEARCH] Pass 2 — filtered out: "${job.title}" (score=${deepResult.score})`);
-          rejectedJobs.push({
-            user_id: user.id,
-            search_id: searchId,
-            search_query: query,
-            job_title: job.title,
-            company: job.company_name,
-            location: job.location ?? "",
-            snippet: (job.description ?? "").slice(0, 500),
-            job_url: jobUrl,
-            reason: deepResult.match_summary?.slice(0, 300) || `Pass 2 rejected (score=${deepResult.score})`,
-            passed_domain_filter: true,
-            passed_banned_filter: true,
-            passed_pass1: true,
-            passed_pass2: false,
-          });
-          continue;
-        }
-
         outputs.push({
           user_id: user.id,
           search_id: searchId,
@@ -660,6 +521,8 @@ Return ONLY valid JSON with this exact schema (no markdown, no code fences):
           job_url: jobUrl,
           full_spec: fullSpec,
           search_query: query,
+          domain_verified: (job as any)._domainVerified ?? true,
+          domain_unverified_reason: (job as any)._domainReason ?? "",
         });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -678,6 +541,8 @@ Return ONLY valid JSON with this exact schema (no markdown, no code fences):
             job_url: jobUrl,
             full_spec: fullSpec,
             search_query: query,
+            domain_verified: (job as any)._domainVerified ?? true,
+            domain_unverified_reason: (job as any)._domainReason ?? "",
           });
         }
       }
@@ -700,13 +565,6 @@ Return ONLY valid JSON with this exact schema (no markdown, no code fences):
       }
     }
 
-    // Save rejected jobs (fire-and-forget — never blocks the response)
-    if (rejectedJobs.length > 0) {
-      (async () => {
-        try { await dataClient.from("rejected_jobs").insert(rejectedJobs); } catch {}
-      })();
-    }
-
     // Save to job_results
     if (outputs.length > 0) {
       const rows = outputs.map((r) => ({
@@ -722,6 +580,8 @@ Return ONLY valid JSON with this exact schema (no markdown, no code fences):
         job_url: r.job_url,
         full_spec: r.full_spec,
         search_query: r.search_query,
+        domain_verified: r.domain_verified,
+        domain_unverified_reason: r.domain_unverified_reason,
       }));
 
       const { data: saved, error: saveErr } = await dataClient

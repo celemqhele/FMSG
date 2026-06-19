@@ -23,6 +23,8 @@ interface JobResult {
   match_summary: string;
   job_url: string;
   full_description: string;
+  domain_verified?: boolean;
+  domain_unverified_reason?: string;
 }
 
 interface HistoryResult {
@@ -35,6 +37,8 @@ interface HistoryResult {
   match_summary: string;
   job_url: string;
   full_spec: string;
+  domain_verified?: boolean;
+  domain_unverified_reason?: string;
 }
 
 function SkeletonCard({ style }: { style?: React.CSSProperties }) {
@@ -211,18 +215,20 @@ export default function DashboardPage() {
             {!searching && results.length > 0 && (
               <div className="space-y-4">
                 {results.map((r) => (
-                  <JobResultCard
-                    key={r.id}
-                    id={r.id}
-                    jobTitle={r.job_title}
-                    company={r.company}
-                    location={r.location}
-                    salary={r.estimated_salary}
-                    matchScore={r.match_score}
-                    jobUrl={r.job_url}
-                    fullDescription={r.full_description}
-                    onDelete={handleDelete}
-                  />
+                    <JobResultCard
+                      key={r.id}
+                      id={r.id}
+                      jobTitle={r.job_title}
+                      company={r.company}
+                      location={r.location}
+                      salary={r.estimated_salary}
+                      matchScore={r.match_score}
+                      jobUrl={r.job_url}
+                      fullDescription={r.full_description}
+                      domainVerified={r.domain_verified ?? true}
+                      domainUnverifiedReason={r.domain_unverified_reason ?? ""}
+                      onDelete={handleDelete}
+                    />
                 ))}
               </div>
             )}
@@ -261,6 +267,8 @@ export default function DashboardPage() {
                   matchScore={r.match_score}
                   jobUrl={r.job_url}
                   fullDescription={r.full_spec}
+                  domainVerified={r.domain_verified ?? true}
+                  domainUnverifiedReason={r.domain_unverified_reason ?? ""}
                   onDelete={(id) => setHistoryResults((prev) => prev.filter((x) => x.id !== id))}
                 />
               ))}

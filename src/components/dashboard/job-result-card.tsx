@@ -13,6 +13,8 @@ interface JobResultCardProps {
   matchScore: number;
   jobUrl: string;
   fullDescription: string;
+  domainVerified?: boolean;
+  domainUnverifiedReason?: string;
   onDelete: (id: string) => void;
 }
 
@@ -25,12 +27,15 @@ export function JobResultCard({
   matchScore,
   jobUrl,
   fullDescription,
+  domainVerified = true,
+  domainUnverifiedReason = "",
   onDelete,
 }: JobResultCardProps) {
   const [showDeleteMenu, setShowDeleteMenu] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [saved, setSaved] = useState(false);
   const [cvLoading, setCvLoading] = useState(false);
+  const [showDomainWarning, setShowDomainWarning] = useState(false);
 
   const scoreLabel =
     matchScore >= 80 ? "Strong Match" :
@@ -108,11 +113,21 @@ export function JobResultCard({
         deleting ? "opacity-0 scale-95" : "opacity-100 scale-100"
       }`}
     >
-      {/* Top row: score badge left, delete (X) right */}
+      {/* Top row: score badge + domain badge left, delete (X) right */}
       <div className="flex justify-between items-start mb-3.5">
-        <span className={`text-xs font-medium px-3 py-1 rounded-full ${scoreBg}`}>
-          {scoreLabel} {matchScore}%
-        </span>
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className={`text-xs font-medium px-3 py-1 rounded-full ${scoreBg}`}>
+            {scoreLabel} {matchScore}%
+          </span>
+          {!domainVerified && (
+            <button
+              onClick={() => setShowDomainWarning(true)}
+              className="text-xs font-medium px-3 py-1 rounded-full bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400 border border-yellow-500/30 hover:bg-yellow-200 dark:hover:bg-yellow-500/30 transition-colors"
+            >
+              Untrusted Domain
+            </button>
+          )}
+        </div>
         <div className="relative">
           <button
             onClick={() => setShowDeleteMenu(!showDeleteMenu)}
@@ -184,6 +199,33 @@ export function JobResultCard({
           <Bookmark size={16} fill={saved ? "currentColor" : "none"} />
         </button>
       </div>
+
+      {/* Domain warning modal */}
+      {showDomainWarning && (
+        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 backdrop-blur-sm transition-opacity duration-300" style={{ opacity: 1 }} onClick={() => setShowDomainWarning(false)}>
+          <div
+            className="w-full max-w-sm mx-4 rounded-2xl bg-[#1C1C1E] border border-white/10 shadow-2xl p-6 transition-all duration-300"
+            style={{ opacity: 1, transform: "translateY(0) scale(1)" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-base font-semibold text-white mb-3">Untrusted Domain</h3>
+            <p className="text-sm text-[var(--color-text-secondary)] leading-relaxed">
+              This job listing is from a source that has not been verified. Listings on untrusted platforms may have expired roles, inaccurate details, or lower-quality postings.
+            </p>
+            {domainUnverifiedReason && (
+              <p className="text-xs text-[var(--color-text-secondary)]/60 mt-2">
+                Reason: {domainUnverifiedReason}
+              </p>
+            )}
+            <button
+              onClick={() => setShowDomainWarning(false)}
+              className="mt-4 w-full py-2.5 rounded-xl bg-[var(--color-accent)] text-white text-sm font-medium hover:bg-[var(--color-accent-hover)] transition-colors"
+            >
+              Got it
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
