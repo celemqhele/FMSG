@@ -7,6 +7,7 @@ import { callAIWithFallback } from "@/lib/gemini";
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const JINA_API_KEY = process.env.JINA_API_KEY;
+const ADMIN_EMAIL = process.env.NEXT_PUBLIC_ADMIN_EMAIL;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -521,7 +522,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "PROFILE_NOT_FOUND", message: "Please set up your profile before searching." }, { status: 404 });
     }
 
-    const isAdmin = profile.is_admin ?? false;
+    const isAdmin = (profile.is_admin ?? false) || (ADMIN_EMAIL && user.email === ADMIN_EMAIL);
 
     // Balance check
     if (!isAdmin) {

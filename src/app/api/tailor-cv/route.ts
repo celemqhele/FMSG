@@ -40,8 +40,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Job description required." }, { status: 400 });
     }
 
-    const isAdmin = ADMIN_EMAIL && user.email === ADMIN_EMAIL;
-
     // Get profile for CV file path
     const { data: profile } = await supabase
       .from("profiles")
@@ -52,6 +50,8 @@ export async function POST(request: NextRequest) {
     if (!profile || !profile.cv_file_path) {
       return NextResponse.json({ error: "No CV found. Upload one first." }, { status: 400 });
     }
+
+    const isAdmin = ((profile as any)?.is_admin ?? false) || (ADMIN_EMAIL && user.email === ADMIN_EMAIL);
 
     // Balance check
     if (!isAdmin) {

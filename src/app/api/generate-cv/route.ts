@@ -19,6 +19,7 @@ import {
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const ADMIN_EMAIL = process.env.NEXT_PUBLIC_ADMIN_EMAIL;
 
 function getSupabase() {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
@@ -199,7 +200,7 @@ export async function POST(request: NextRequest) {
       .select("cv_generation_balance, is_admin")
       .eq("id", user.id)
       .maybeSingle();
-    const isAdmin = (profile as any)?.is_admin ?? false;
+    const isAdmin = ((profile as any)?.is_admin ?? false) || (ADMIN_EMAIL && user.email === ADMIN_EMAIL);
 
     // Balance check (skip if admin)
     if (!isAdmin) {
