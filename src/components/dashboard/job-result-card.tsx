@@ -37,6 +37,8 @@ export function JobResultCard({
   const [cvLoading, setCvLoading] = useState(false);
   const [showDomainWarning, setShowDomainWarning] = useState(false);
   const [domainMounted, setDomainMounted] = useState(false);
+  const [showTrustedInfo, setShowTrustedInfo] = useState(false);
+  const [trustedMounted, setTrustedMounted] = useState(false);
 
   useEffect(() => {
     if (showDomainWarning) {
@@ -46,6 +48,15 @@ export function JobResultCard({
       return () => clearTimeout(timer);
     }
   }, [showDomainWarning]);
+
+  useEffect(() => {
+    if (showTrustedInfo) {
+      setTrustedMounted(true);
+    } else {
+      const timer = setTimeout(() => setTrustedMounted(false), 250);
+      return () => clearTimeout(timer);
+    }
+  }, [showTrustedInfo]);
 
   const scoreLabel =
     matchScore >= 80 ? "Strong Match" :
@@ -129,6 +140,14 @@ export function JobResultCard({
           <span className={`text-xs font-medium px-3 py-1 rounded-full ${scoreBg}`}>
             {scoreLabel} {matchScore}%
           </span>
+          {domainVerified && (
+            <button
+              onClick={() => setShowTrustedInfo(true)}
+              className="text-xs font-medium px-3 py-1 rounded-full bg-green-100 dark:bg-green-500/20 text-green-700 dark:text-green-400 border border-green-500/30 hover:bg-green-200 dark:hover:bg-green-500/30 transition-colors"
+            >
+              Trusted Domain
+            </button>
+          )}
           {!domainVerified && (
             <button
               onClick={() => setShowDomainWarning(true)}
@@ -209,6 +228,37 @@ export function JobResultCard({
           <Bookmark size={16} fill={saved ? "currentColor" : "none"} />
         </button>
       </div>
+
+      {/* Trusted domain info modal */}
+      {trustedMounted && (
+        <div
+          className={`fixed inset-0 z-[300] flex items-center justify-center transition-all duration-200 ${
+            showTrustedInfo ? "opacity-100" : "opacity-0"
+          }`}
+        >
+          <div
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => setShowTrustedInfo(false)}
+          />
+          <div
+            className={`relative w-full max-w-sm mx-4 p-6 rounded-2xl liquid-glass transition-all duration-200 ${
+              showTrustedInfo ? "opacity-100 scale-100" : "opacity-0 scale-95"
+            }`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-base font-semibold text-[var(--color-text-primary)] mb-3">Trusted Domain</h3>
+            <p className="text-sm text-[var(--color-text-secondary)] leading-relaxed">
+              This job listing is from a verified source. We periodically check these platforms and confirm they reliably host active, genuine listings.
+            </p>
+            <button
+              onClick={() => setShowTrustedInfo(false)}
+              className="mt-4 w-full py-2.5 rounded-xl bg-[var(--color-accent)] text-white text-sm font-medium hover:bg-[var(--color-accent-hover)] transition-colors"
+            >
+              Got it
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Domain warning modal */}
       {domainMounted && (

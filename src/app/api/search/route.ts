@@ -545,8 +545,13 @@ Return ONLY valid JSON with this exact schema (no markdown, no code fences):
       }
     }
 
-    // Sort by score descending
-    outputs.sort((a, b) => b.match_score - a.match_score);
+    // Sort by domain (trusted first), then by score descending
+    outputs.sort((a, b) => {
+      if (a.domain_verified !== b.domain_verified) {
+        return a.domain_verified ? -1 : 1;
+      }
+      return b.match_score - a.match_score;
+    });
 
     console.log("[SEARCH] Final results after Gemini analysis:", outputs.length);
 
