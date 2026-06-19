@@ -139,6 +139,11 @@ export async function POST(request: NextRequest) {
       ? buildSerpParams(randomTitle)
       : { q: query || "jobs", hl: "en" as const, gl: "za" as const };
 
+    // Step 1: Log exact SerpAPI query and parameters
+    console.log("[SEARCH] SerpAPI query params:", JSON.stringify(serpParams));
+    console.log("[SEARCH] SerpAPI random title chosen:", randomTitle);
+    console.log("[SEARCH] SerpAPI titles pool:", JSON.stringify(titles));
+
     let rawJobs: Awaited<ReturnType<typeof searchGoogleJobs>>;
     let activeSerpParams = serpParams;
     try {
@@ -156,7 +161,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ results: [], code: "SERP_ERROR", message: "Search engine temporarily unavailable. Please try again." });
     }
 
-    console.log("[SEARCH] SerpAPI results:", rawJobs.length);
+    // Step 2: Log raw count + full title + company + snippet of ALL results
+    console.log("[SEARCH] SerpAPI raw count:", rawJobs.length);
+    rawJobs.forEach((job, idx) => {
+      const snippet = (job.description ?? "").slice(0, 200);
+      console.log(`[SEARCH] Raw job #${idx}: title="${job.title}" company="${job.company_name}" location="${job.location}" description_snippet="${snippet}"`);
+    });
 
     if (rawJobs.length === 0) {
       console.log("[SEARCH] SerpAPI returned zero results — no jobs match the query");
@@ -207,9 +217,12 @@ export async function POST(request: NextRequest) {
     for (const job of candidates) {
       const jobUrl = buildJobUrl(job);
 
-      // Domain verification
-      if (!isDomainVerified(jobUrl)) {
-        console.log(`[SEARCH] Domain not verified for "${job.title}" — URL: ${jobUrl}`);
+      // Step 3: Log isDomainVerified result for each job
+      let domain: string;
+      try { domain = new URL(jobUrl).hostname; } catch { domain = "invalid-url"; }
+      const domainOk = isDomainVerified(jobUrl);
+      console.log(`[SEARCH] Domain check for "${job.title}": domain=${domain} verified=${domainOk}`);
+      if (!domainOk) {
         continue;
       }
 
@@ -232,20 +245,33 @@ export async function POST(request: NextRequest) {
 
       specText = specText || job.description || "";
 
-      // Validate
-      if (!isJobValid(specText, job.link)) {
-        console.log(`[SEARCH] Invalid job: "${job.title}" at ${job.company_name}`);
+      // Step 4: Log isJobValid result and reason
+      const specTrimmed = (specText ?? "").trim();
+      const validLength = specTrimmed.length >= 300;
+      const expiredPattern = /position filled|no longer accepting|closed|expired|this job is no longer/i;
+      const isExpired = expiredPattern.test(specTrimmed);
+      const jobValid = isJobValid(specTrimmed, job.link);
+
+      let invalidReason = "";
+      if (!jobValid) {
+        if (!validLength) invalidReason = "description too short (< 300 chars)";
+        else if (isExpired) invalidReason = "contains expired/closed keywords";
+        else invalidReason = "unknown validation failure";
+      }
+      console.log(`[SEARCH] Validity check for "${job.title}": valid=${jobValid} desc_length=${specTrimmed.length} is_expired=${isExpired}${invalidReason ? " reason=" + invalidReason : ""}`);
+      if (!jobValid) {
         continue;
       }
 
-      // Score
+      // Step 5: Log scoreJobMatch breakdown
       const result = scoreJobMatch(cvText, job.description ?? "", specText, {
         job_titles: titles,
         location: profileLocation ?? "",
       });
+      console.log(`[SEARCH] Score for "${job.title}": score=${result.score} summary="${result.match_summary}" salary="${result.estimated_salary}"`);
 
       if (result.score < 40) {
-        console.log(`[SEARCH] Score ${result.score} < 40 for "${job.title}"`);
+        console.log(`[SEARCH] Score ${result.score} < 40 threshold — filtered out`);
         continue;
       }
 
@@ -267,7 +293,8 @@ export async function POST(request: NextRequest) {
     // Sort by score descending
     outputs.sort((a, b) => b.match_score - a.match_score);
 
-    console.log("[SEARCH] Final results:", outputs.length);
+    // Step 6: Log final count after score threshold
+    console.log("[SEARCH] Jobs passed score >= 40:", outputs.length);
 
     // Deduct balance only after successful search
     if (!isAdmin) {
@@ -304,13 +331,19 @@ export async function POST(request: NextRequest) {
 
       if (saveErr) {
         console.log("[SEARCH] DB save error:", saveErr.message);
+        // Step 7: Log final count returned (fallback — return from memory)
+        console.log("[SEARCH] Final count returned to frontend (from memory):", outputs.length);
         return NextResponse.json({ results: outputs.map(normalize) });
       }
 
+      // Step 7: Log final count returned (from DB)
+      console.log("[SEARCH] Final count returned to frontend (from DB):", (saved ?? outputs).length);
       return NextResponse.json({ results: (saved ?? outputs).map(normalize) });
     }
 
     console.log("[SEARCH] All jobs scored below 40 threshold or were invalid");
+    // Step 7: Log zero returned
+    console.log("[SEARCH] Final count returned to frontend: 0");
     return NextResponse.json({ results: [], code: "ALL_FILTERED_SCORE", message: "No strong matches found for your profile. Try broadening your criteria." });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
