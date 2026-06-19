@@ -19,6 +19,7 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
   const [name, setName] = useState("");
   const [jobTitles, setJobTitles] = useState<string[]>([""]);
   const [location, setLocation] = useState("");
+  const [cvFilePath, setCvFilePath] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [loadingProfile, setLoadingProfile] = useState(true);
@@ -29,14 +30,15 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
     const supabase = createClient();
     supabase
       .from("search_profiles")
-      .select("name, job_titles, location")
+      .select("name, job_titles, location, cv_file_path")
       .eq("id", profileId)
-      .single()
+      .maybeSingle()
       .then(({ data }: { data: any }) => {
         if (data) {
           setName(data.name ?? "");
           setJobTitles(data.job_titles?.length ? data.job_titles : [""]);
           setLocation(data.location ?? "");
+          setCvFilePath(data.cv_file_path ?? "");
         }
         setLoadingProfile(false);
       });
@@ -82,6 +84,7 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
             : [""];
           setJobTitles(titles);
           setLocation(data.preferred_location ?? "");
+          if (data.cv_file_path) setCvFilePath(data.cv_file_path);
           setStep("form");
         })
         .catch(() => {
@@ -116,6 +119,7 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
     const supabase = createClient();
     const updateData: Record<string, any> = { job_titles: filtered, location: location.trim() };
     if (name.trim()) updateData.name = name.trim();
+    if (cvFilePath.trim()) updateData.cv_file_path = cvFilePath.trim();
 
     const { error: updateErr } = await supabase
       .from("search_profiles")
