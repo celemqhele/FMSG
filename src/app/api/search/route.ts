@@ -23,6 +23,24 @@ const STANDARD_TRUST_DOMAINS = [
   'pnet.co.za',
 ];
 
+const SHORT_SPEC_THRESHOLD = 500;
+
+const RECRUITMENT_KEYWORDS = [
+  'recruitment', 'recruiter', 'staffing', 'talent ', 'talent-',
+  'placement', 'personnel', 'employment agency', 'manpower',
+  'recruit', 'staffing solutions',
+];
+
+const BLOCKED_ATS_TRACKERS = [
+  '#J-18808-Ljbffr',
+];
+
+const RECRUITMENT_SPEC_PATTERNS = [
+  /is seeking\s+(a|an)\s+/i,
+  /are looking for\s+(a|an)\s+/i,
+  /on behalf of\s+(a|an\s+)?(client|company|organisation|organization)/i,
+];
+
 const BLACKLISTED_DOMAINS = [
   'bebee.com',
   'jobleads.com',
@@ -283,6 +301,36 @@ async function searchRound(
     newJobFullSpecs.set(i, origEntry?.[1] ?? rawJobs[i].description ?? "");
   }
   jobFullSpecs = newJobFullSpecs;
+
+  // Recruitment agency + short spec filter
+  {
+    const filtered: typeof rawJobs = [];
+    const filteredSpecs = new Map<number, string>();
+    const filteredUrls = new Map<number, string>();
+    rawJobs.forEach((j, i) => {
+      const spec = jobFullSpecs.get(i) ?? "";
+      if (BLOCKED_ATS_TRACKERS.some(t => spec.includes(t))) return;
+      if (spec.length >= SHORT_SPEC_THRESHOLD) {
+        const newIdx = filtered.length;
+        filtered.push(j);
+        filteredSpecs.set(newIdx, spec);
+        filteredUrls.set(newIdx, buildJobUrl(j));
+        return;
+      }
+      const companyLower = (j.company_name ?? "").toLowerCase();
+      const isRecruitmentAgency = RECRUITMENT_KEYWORDS.some(kw => companyLower.includes(kw))
+        || RECRUITMENT_SPEC_PATTERNS.some(p => p.test(spec.slice(0, 500)));
+      if (!isRecruitmentAgency) {
+        const newIdx = filtered.length;
+        filtered.push(j);
+        filteredSpecs.set(newIdx, spec);
+        filteredUrls.set(newIdx, buildJobUrl(j));
+      }
+    });
+    rawJobs = filtered;
+    jobFullSpecs = filteredSpecs;
+    jobUrls = filteredUrls;
+  }
 
   if (rawJobs.length === 0) return { results: [], queryUsed: query };
 
