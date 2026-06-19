@@ -72,17 +72,20 @@ export async function POST(request: NextRequest) {
     const isAdmin = ADMIN_EMAIL && user.email === ADMIN_EMAIL;
 
     // Get profile — try service role first, fallback to anon with user's token
+    console.log("[SEARCH] Profile query user_id:", user.id);
     let profile: any;
     let profileErr: any;
     ({ data: profile, error: profileErr } = await supabase
       .from("profiles")
       .select("*")
       .eq("id", user.id)
-      .single());
+      .maybeSingle());
 
-    if (profileErr || !profile) {
-      console.log("[SEARCH] Service-role profile query failed:", profileErr?.message ?? "no profile row");
-      // Fallback: use anon client with the user's JWT
+    if (profileErr) {
+      console.log("[SEARCH] Service-role profile query error:", profileErr?.message ?? "unknown");
+    }
+    if (!profile) {
+      console.log("[SEARCH] Service-role profile query returned no row — trying anon fallback");
       const anonClient = createClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -92,10 +95,13 @@ export async function POST(request: NextRequest) {
         .from("profiles")
         .select("*")
         .eq("id", user.id)
-        .single();
-      if (anonErr || !anonProfile) {
-        console.log("[SEARCH] Anon profile query also failed:", anonErr?.message ?? "no profile row");
-        return NextResponse.json({ error: "DB_001" }, { status: 404 });
+        .maybeSingle();
+      if (anonErr) {
+        console.log("[SEARCH] Anon profile query error:", anonErr?.message ?? "unknown");
+      }
+      if (!anonProfile) {
+        console.log("[SEARCH] Anon profile query also returned no row — no profile exists for user", user.id);
+        return NextResponse.json({ error: "DB_001", message: "Profile not found. Complete onboarding first." }, { status: 404 });
       }
       profile = anonProfile;
       console.log("[SEARCH] Profile fetched via anon fallback");
@@ -134,7 +140,7 @@ export async function POST(request: NextRequest) {
         .select("job_titles, location, cv_file_path")
         .eq("id", profile_id)
         .eq("user_id", user.id)
-        .single();
+        .maybeSingle();
       if (searchProfile) {
         if (searchProfile.job_titles?.length) titles = searchProfile.job_titles;
         if (searchProfile.location) profileLocation = searchProfile.location;
