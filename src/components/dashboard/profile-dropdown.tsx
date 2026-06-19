@@ -4,8 +4,10 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Settings, LogOut, User, Sparkles } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { useTransition } from "@/components/providers/transition-provider";
 
 export function ProfileDropdown() {
+  const { startTransition } = useTransition();
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
@@ -45,6 +47,7 @@ export function ProfileDropdown() {
 
   const handleNav = (path: string) => {
     setOpen(false);
+    startTransition();
     router.push(path);
   };
 

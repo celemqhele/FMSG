@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard/dashboard-layout";
+import { LiquidGlassCard } from "@/components/landing/liquid-glass-card";
 import { Loader2, Check } from "lucide-react";
 import { PageTransitionWrapper } from "@/components/ui/page-transition-wrapper";
 import { useTransition } from "@/components/providers/transition-provider";
@@ -32,13 +33,6 @@ const PLAN_PRICES: Record<string, { monthly: number; annual: number }> = {
   Pro: { monthly: 24900, annual: 249000 },
 };
 
-const PLAN_LIMITS: Record<string, { searches: number; cvGens: number }> = {
-  Free: { searches: 3, cvGens: 1 },
-  Seeker: { searches: 25, cvGens: 5 },
-  Hunter: { searches: 70, cvGens: 15 },
-  Pro: { searches: 200, cvGens: -1 },
-};
-
 export default function UpgradePage() {
   const router = useRouter();
   const { endTransition } = useTransition();
@@ -47,7 +41,7 @@ export default function UpgradePage() {
   const [processing, setProcessing] = useState<string | null>(null);
   const [successToast, setSuccessToast] = useState(false);
   const [currentPlan, setCurrentPlan] = useState("free");
-  const paystackLoaded = useRef(false);
+  const [paystackReady, setPaystackReady] = useState(false);
 
   useEffect(() => { endTransition(); }, [endTransition]);
 
@@ -62,34 +56,46 @@ export default function UpgradePage() {
   }, [router, supabase]);
 
   useEffect(() => {
-    if (!(window as any).PaystackPop && !paystackLoaded.current) {
-      paystackLoaded.current = true;
-      const script = document.createElement("script");
-      script.src = "https://js.paystack.co/v1/inline.js";
-      script.async = true;
-      document.body.appendChild(script);
+    if (typeof window !== "undefined" && (window as any).PaystackPop) {
+      setPaystackReady(true);
+      return;
     }
+    const script = document.createElement("script");
+    script.src = "https://js.paystack.co/v1/inline.js";
+    script.async = true;
+    script.onload = () => setPaystackReady(true);
+    document.body.appendChild(script);
   }, []);
 
-  const handleUpgrade = (tier: Tier) => {
+  const handleUpgrade = async (tier: Tier) => {
+    console.log("Upgrade clicked", { plan: tier.name, billingCycle: annual ? "annual" : "monthly" });
+
     if (tier.name === "Free") return;
     if (tier.name.toLowerCase() === currentPlan) return;
-    if (!PAYSTACK_PUBLIC_KEY) { alert("Paystack not configured."); return; }
 
-    const amount = annual ? PLAN_PRICES[tier.name].annual : PLAN_PRICES[tier.name].monthly;
+    if (!PAYSTACK_PUBLIC_KEY) {
+      console.log("Missing NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY");
+      alert("Paystack not configured.");
+      return;
+    }
 
-    if (!(window as any).PaystackPop) {
+    console.log("typeof PaystackPop:", typeof (window as any).PaystackPop);
+
+    if (!paystackReady || !(window as any).PaystackPop) {
       alert("Payment system loading. Please try again.");
       return;
     }
 
+    const amount = annual ? PLAN_PRICES[tier.name].annual : PLAN_PRICES[tier.name].monthly;
     setProcessing(tier.name);
 
-    // Get user email synchronously from cached session
-    supabase.auth.getSession().then((sRes: any) => {
+    try {
+      const sRes = await supabase.auth.getSession();
       const session = sRes.data.session;
       const email = session?.user?.email;
       if (!email) { setProcessing(null); return; }
+
+      console.log("Initializing Paystack popup", { email, amount, key: PAYSTACK_PUBLIC_KEY ? "present" : "missing" });
 
       const handler = (window as any).PaystackPop.setup({
         key: PAYSTACK_PUBLIC_KEY,
@@ -99,24 +105,38 @@ export default function UpgradePage() {
         ref: "FMSG-" + Date.now(),
         metadata: { plan: tier.name, billing_cycle: annual ? "annual" : "monthly" },
         callback: async (response: { reference: string }) => {
-          // Verify server-side
-          const verifyRes = await fetch("/api/verify-payment", {
-            method: "POST",
-            headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" },
-            body: JSON.stringify({ reference: response.reference, plan: tier.name, billing_cycle: annual ? "annual" : "monthly" }),
-          });
-          setProcessing(null);
-          if (verifyRes.ok) {
-            setSuccessToast(true);
-            setTimeout(() => { setSuccessToast(false); router.push("/dashboard"); }, 2000);
-          } else {
+          console.log("Paystack callback fired", response);
+          try {
+            const verifyRes = await fetch("/api/verify-payment", {
+              method: "POST",
+              headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" },
+              body: JSON.stringify({ reference: response.reference, plan: tier.name, billing_cycle: annual ? "annual" : "monthly" }),
+            });
+            if (verifyRes.ok) {
+              setProcessing(null);
+              setSuccessToast(true);
+              setTimeout(() => { setSuccessToast(false); router.push("/dashboard"); }, 2000);
+            } else {
+              setProcessing(null);
+              alert("Payment verification failed. Please contact support.");
+            }
+          } catch {
+            setProcessing(null);
             alert("Payment verification failed. Please contact support.");
           }
         },
-        onClose: () => setProcessing(null),
+        onClose: () => {
+          console.log("Paystack popup closed by user");
+          setProcessing(null);
+        },
       });
+
       handler.openIframe();
-    });
+      console.log("openIframe called");
+    } catch (err) {
+      console.error("Paystack error:", err);
+      setProcessing(null);
+    }
   };
 
   return (
@@ -124,11 +144,11 @@ export default function UpgradePage() {
       <PageTransitionWrapper>
       <div className="max-w-6xl mx-auto pt-8 pb-24">
         <div className="text-center mb-10">
-          <h1 className="text-3xl font-bold text-[var(--color-text-primary)]">Upgrade Your Plan</h1>
-          <p className="mt-2 text-sm text-[var(--color-text-secondary)]">Choose the plan that fits your job search needs</p>
-          <div className="mt-6 inline-flex items-center gap-1 p-1 rounded-full bg-[var(--color-bg)] border border-[var(--color-border)]">
-            <button onClick={() => setAnnual(false)} className={`px-4 py-2 text-sm font-medium rounded-full transition-colors ${!annual ? "bg-[var(--color-accent)] text-white" : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"}`}>Monthly</button>
-            <button onClick={() => setAnnual(true)} className={`px-4 py-2 text-sm font-medium rounded-full transition-colors ${annual ? "bg-[var(--color-accent)] text-white" : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"}`}>Annual <span className="text-green-500">Save 2 months</span></button>
+          <h1 className="text-3xl font-bold text-white">Upgrade Your Plan</h1>
+          <p className="mt-2 text-sm text-white/50">Choose the plan that fits your job search needs</p>
+          <div className="mt-6 inline-flex items-center gap-1 p-1 rounded-full bg-white/10 border border-white/10">
+            <button onClick={() => setAnnual(false)} className={`px-4 py-2 text-sm font-medium rounded-full transition-colors ${!annual ? "bg-white/15 text-white shadow-[var(--shadow-sm)]" : "text-white/60 hover:text-white"}`}>Monthly</button>
+            <button onClick={() => setAnnual(true)} className={`px-4 py-2 text-sm font-medium rounded-full transition-colors ${annual ? "bg-white/15 text-white shadow-[var(--shadow-sm)]" : "text-white/60 hover:text-white"}`}>Annual <span className="text-[var(--color-success)]">Save 2 months</span></button>
           </div>
         </div>
 
@@ -136,24 +156,28 @@ export default function UpgradePage() {
           {tiers.map((tier) => {
             const isCurrent = tier.name.toLowerCase() === currentPlan;
             return (
-              <div key={tier.name} className={`relative bg-white dark:bg-[#1C1C1E] shadow-md rounded-xl p-6 flex flex-col ${tier.popular ? "ring-2 ring-[var(--color-accent)]" : ""}`}>
+              <LiquidGlassCard
+                key={tier.name}
+                variant="surface"
+                className={`relative flex flex-col p-6 ${tier.popular ? "border-[var(--color-accent)]" : ""}`}
+              >
                 {tier.popular && (
                   <span className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 text-xs font-semibold text-white bg-[var(--color-accent)] rounded-full z-10">Most popular</span>
                 )}
-                <h3 className="text-lg font-semibold text-[var(--color-text-primary)]">{tier.name}</h3>
+                <h3 className="text-lg font-semibold text-white">{tier.name}</h3>
                 <div className="mt-4">
-                  <span className="text-3xl font-bold text-[var(--color-text-primary)]">{annual ? tier.annualPrice : tier.monthlyPrice}</span>
-                  <span className="ml-1 text-sm text-[var(--color-text-secondary)]">/{annual ? "year" : "month"}</span>
+                  <span className="text-3xl font-bold text-white">{annual ? tier.annualPrice : tier.monthlyPrice}</span>
+                  <span className="ml-1 text-sm text-white/50">/{annual ? "year" : "month"}</span>
                 </div>
-                <div className="mt-1 text-sm text-[var(--color-text-secondary)]">
+                <div className="mt-2 text-sm text-white/50">
                   {tier.searches === -1 ? "Unlimited searches" : `${tier.searches} searches/mo`}
                   {" / "}
                   {tier.cvGens === -1 ? "Unlimited CVs" : `${tier.cvGens} CVs/mo`}
                 </div>
                 <ul className="mt-6 flex-1 flex flex-col gap-3">
                   {tier.features.map((f) => (
-                    <li key={f} className="flex items-start gap-2 text-sm text-[var(--color-text-secondary)]">
-                      <Check size={16} className="mt-0.5 text-green-500 shrink-0" />
+                    <li key={f} className="flex items-start gap-2 text-sm text-white/60">
+                      <Check size={16} className="mt-0.5 text-[var(--color-success)] shrink-0" />
                       {f}
                     </li>
                   ))}
@@ -163,7 +187,7 @@ export default function UpgradePage() {
                   disabled={isCurrent || processing === tier.name}
                   className={`mt-8 w-full px-5 py-2.5 text-sm font-medium rounded-full transition-colors flex items-center justify-center gap-2 ${
                     tier.name === "Free"
-                      ? "border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:bg-white/5 dark:hover:bg-white/5"
+                      ? "border border-white/20 text-white hover:bg-white/10"
                       : "text-white bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] disabled:opacity-50"
                   }`}
                 >
@@ -174,10 +198,10 @@ export default function UpgradePage() {
                   ) : tier.name === "Free" ? (
                     "Free"
                   ) : (
-                    `Upgrade to ${tier.name}`
+                    `Subscribe to ${tier.name}`
                   )}
                 </button>
-              </div>
+              </LiquidGlassCard>
             );
           })}
         </div>

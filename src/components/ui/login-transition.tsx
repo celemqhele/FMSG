@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, startTransition } from "react";
 import { useRouter } from "next/navigation";
+
 interface LoginTransitionProps {
   type: "login" | "onboarding";
   redirectTo?: string;
@@ -11,41 +12,24 @@ interface LoginTransitionProps {
 export function LoginTransition({ type, redirectTo, onComplete }: LoginTransitionProps) {
   const router = useRouter();
   const [phase, setPhase] = useState(0);
-  const cleanupRef = useRef(false);
 
   useEffect(() => {
-    if (cleanupRef.current) return;
-
     const timers: ReturnType<typeof setTimeout>[] = [];
 
     if (type === "login") {
-      // 0ms — modal scaling started by AuthModal
-      setPhase(1);
-      // 200ms — modal content fades
+      startTransition(() => setPhase(1));
       timers.push(setTimeout(() => setPhase(2), 200));
-      // 400ms — navigate + overlay fully black
       timers.push(setTimeout(() => {
         setPhase(3);
         router.push(redirectTo ?? "/dashboard");
       }, 400));
-      // 1000ms — overlay fades out revealing destination underneath
       timers.push(setTimeout(() => setPhase(4), 1000));
-      // 1700ms — complete, cleanup
-      timers.push(setTimeout(() => {
-        cleanupRef.current = true;
-        onComplete?.();
-      }, 1700));
+      timers.push(setTimeout(() => onComplete?.(), 1700));
     } else {
-      // Onboarding: start at fully black overlay + navigate immediately
-      setPhase(3);
+      startTransition(() => setPhase(3));
       router.push(redirectTo ?? "/dashboard");
-      // 600ms — overlay fades out revealing dashboard
       timers.push(setTimeout(() => setPhase(4), 600));
-      // 1300ms — complete, cleanup
-      timers.push(setTimeout(() => {
-        cleanupRef.current = true;
-        onComplete?.();
-      }, 1300));
+      timers.push(setTimeout(() => onComplete?.(), 1300));
     }
 
     return () => timers.forEach(clearTimeout);
@@ -55,7 +39,6 @@ export function LoginTransition({ type, redirectTo, onComplete }: LoginTransitio
 
   return (
     <div className="fixed inset-0 z-[200]">
-      {/* Black overlay */}
       <div
         className="absolute inset-0 bg-black transition-opacity duration-600"
         style={{
@@ -64,8 +47,6 @@ export function LoginTransition({ type, redirectTo, onComplete }: LoginTransitio
           transition: phase >= 3 ? "opacity 600ms cubic-bezier(0.4, 0, 0.2, 1)" : "opacity 400ms cubic-bezier(0.4, 0, 0.2, 1)",
         }}
       />
-
-      {/* Dashboard renders behind overlay — phase 4 reveals it */}
     </div>
   );
 }

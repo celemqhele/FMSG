@@ -32,7 +32,7 @@ export function ForgotPasswordForm({ onBack, onSent }: ForgotPasswordFormProps) 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
       <p className="text-sm text-[var(--color-text-secondary)] text-center">
-        Enter your email and we'll send you a reset link.
+        Enter your email and we&apos;ll send you a reset link.
       </p>
       {error && <p className="text-sm text-red-400 text-center">{error}</p>}
       <div>

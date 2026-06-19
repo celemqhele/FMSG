@@ -11,7 +11,7 @@ interface SearchProfile {
   location: string;
 }
 
-export function ProfileSwitcher({ activeProfileId, onSelect, onProfileCreated }: { activeProfileId: string | null; onSelect: (id: string) => void; onProfileCreated?: (id: string) => void }) {
+export function ProfileSwitcher({ activeProfileId, onSelect, onProfileCreated, refreshKey }: { activeProfileId: string | null; onSelect: (id: string) => void; onProfileCreated?: (id: string) => void; refreshKey?: number }) {
   const [profiles, setProfiles] = useState<SearchProfile[]>([]);
   const [open, setOpen] = useState(false);
 
@@ -33,7 +33,7 @@ export function ProfileSwitcher({ activeProfileId, onSelect, onProfileCreated }:
           }
         });
     });
-  }, [activeProfileId, onSelect]);
+  }, [activeProfileId, onSelect, refreshKey]);
 
   const active = profiles.find((p) => p.id === activeProfileId);
 

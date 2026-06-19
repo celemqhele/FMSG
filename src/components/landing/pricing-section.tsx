@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { Check } from "lucide-react";
 import { LiquidGlassCard } from "./liquid-glass-card";
 import { useTransition } from "@/components/providers/transition-provider";
@@ -115,11 +115,22 @@ function SwipePricingCarousel({ annual }: { annual: boolean }) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState(0);
+  const [trackWidth, setTrackWidth] = useState(1);
   const startX = useRef(0);
   const trackRef = useRef<HTMLDivElement>(null);
   const videoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { setVideoFast } = useTransition();
   const animatingRef = useRef(false);
+
+  useEffect(() => {
+    const el = trackRef.current;
+    if (!el) return;
+    const update = () => setTrackWidth(el.clientWidth);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   const goTo = useCallback((index: number) => {
     if (videoTimerRef.current) clearTimeout(videoTimerRef.current);
@@ -151,7 +162,7 @@ function SwipePricingCarousel({ annual }: { annual: boolean }) {
   const handleTouchEnd = useCallback(() => {
     if (!isDragging) return;
     setIsDragging(false);
-    const cardWidth = trackRef.current?.clientWidth ?? 1;
+    const cardWidth = trackWidth;
     const threshold = cardWidth * 0.25;
     if (dragOffset < -threshold && currentIndex < tiers.length - 1) {
       goTo(currentIndex + 1);
@@ -160,9 +171,9 @@ function SwipePricingCarousel({ annual }: { annual: boolean }) {
     } else {
       goTo(currentIndex);
     }
-  }, [isDragging, dragOffset, currentIndex, goTo]);
+  }, [isDragging, dragOffset, currentIndex, goTo, trackWidth]);
 
-  const percent = -currentIndex * 100 + (isDragging ? (dragOffset / (trackRef.current?.clientWidth ?? 1)) * 100 : 0);
+  const percent = -currentIndex * 100 + (isDragging ? (dragOffset / trackWidth) * 100 : 0);
 
   return (
     <div>

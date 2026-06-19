@@ -9,22 +9,23 @@ interface ProfileOnboardingModalProps {
   onClose: () => void;
   onDelete?: (id: string) => void;
   editMode?: boolean;
+  showUploadStep?: boolean;
+  onSaved?: () => void;
 }
 
-export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode }: ProfileOnboardingModalProps) {
-  const [step, setStep] = useState<"upload" | "extracting" | "form">(editMode ? "form" : "upload");
+export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode, showUploadStep, onSaved }: ProfileOnboardingModalProps) {
+  const [step, setStep] = useState<"upload" | "extracting" | "form">(showUploadStep ? "upload" : "form");
   const [file, setFile] = useState<File | null>(null);
   const [name, setName] = useState("");
   const [jobTitles, setJobTitles] = useState<string[]>([""]);
   const [location, setLocation] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
-  const [loadingProfile, setLoadingProfile] = useState(editMode ?? false);
+  const [loadingProfile, setLoadingProfile] = useState(true);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (!editMode) return;
     const supabase = createClient();
     supabase
       .from("search_profiles")
@@ -39,7 +40,7 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode 
         }
         setLoadingProfile(false);
       });
-  }, [editMode, profileId]);
+  }, [profileId]);
 
   if (loadingProfile) return null;
 
@@ -127,6 +128,7 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode 
       return;
     }
 
+    onSaved?.();
     onClose();
   };
 
@@ -194,17 +196,15 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode 
 
           {step === "form" && (
             <div className="flex flex-col gap-4">
-              {editMode && (
-                <div>
-                  <label className="text-sm font-medium text-white/80 mb-1.5 block">Profile Name</label>
-                  <input
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="e.g. Software Engineer Profile"
-                    className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-white placeholder-white/30 focus:outline-none focus:border-[var(--color-accent)] transition-colors"
-                  />
-                </div>
-              )}
+              <div>
+                <label className="text-sm font-medium text-white/80 mb-1.5 block">Profile Name</label>
+                <input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g. Software Engineer Profile"
+                  className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-white placeholder-white/30 focus:outline-none focus:border-[var(--color-accent)] transition-colors"
+                />
+              </div>
 
               <div>
                 <label className="text-sm font-medium text-white/80 mb-1.5 block">Job Titles</label>
