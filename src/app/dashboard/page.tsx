@@ -172,7 +172,7 @@ export default function DashboardPage() {
 
         {activeTab === "search" && (
           <>
-            <SearchPill onSearch={handleSearch} searching={searching} />
+            <SearchPill onSearch={handleSearch} searching={searching} activeProfileId={activeProfileId} />
 
             {searching && (
               <div className="space-y-2">

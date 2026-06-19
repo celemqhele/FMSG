@@ -129,8 +129,11 @@ export async function POST(request: NextRequest) {
       };
     }
 
-    const serpParams = titles.length > 0
-      ? buildSerpParams(titles[0])
+    const randomTitle = titles.length > 0
+      ? titles[Math.floor(Math.random() * titles.length)]
+      : "";
+    const serpParams = randomTitle
+      ? buildSerpParams(randomTitle)
       : { q: query || "jobs", hl: "en" as const, gl: "za" as const };
 
     let rawJobs: Awaited<ReturnType<typeof searchGoogleJobs>>;
@@ -138,8 +141,10 @@ export async function POST(request: NextRequest) {
     try {
       rawJobs = await searchGoogleJobs(serpParams);
       if (rawJobs.length === 0 && titles.length > 1) {
-        console.log("[SEARCH] Retry with second title:", titles[1]);
-        activeSerpParams = buildSerpParams(titles[1]);
+        const otherTitles = titles.filter((t: string) => t !== randomTitle);
+        const retryTitle = otherTitles[Math.floor(Math.random() * otherTitles.length)];
+        console.log("[SEARCH] Retry with title:", retryTitle);
+        activeSerpParams = buildSerpParams(retryTitle);
         rawJobs = await searchGoogleJobs(activeSerpParams);
       }
     } catch (err) {

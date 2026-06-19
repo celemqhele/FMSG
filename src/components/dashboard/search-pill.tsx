@@ -1,36 +1,61 @@
 "use client";
 
+import { useState } from "react";
 import { Search } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 interface SearchPillProps {
   onSearch: (query: string) => void;
   searching: boolean;
+  activeProfileId?: string | null;
 }
 
-export function SearchPill({ onSearch, searching }: SearchPillProps) {
+export function SearchPill({ onSearch, searching, activeProfileId }: SearchPillProps) {
+  const [displayTitle, setDisplayTitle] = useState("Search for jobs");
+
   const handleSearch = async () => {
     if (searching) return;
+
     const supabase = createClient();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("job_titles, location")
-      .eq("id", user.id)
-      .single();
 
-    const titles = (profile?.job_titles ?? []).slice(0, 3).join(" ");
-    const loc = profile?.location ?? "";
-    const query = [titles, loc].filter(Boolean).join(" in ") || "jobs";
+    let titles: string[] = [];
+    let loc = "";
+
+    if (activeProfileId) {
+      const { data: sp } = await supabase
+        .from("search_profiles")
+        .select("job_titles, location")
+        .eq("id", activeProfileId)
+        .single();
+      if (sp) {
+        titles = sp.job_titles ?? [];
+        loc = sp.location ?? "";
+      }
+    }
+
+    if (titles.length === 0) {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("job_titles, location")
+        .eq("id", user.id)
+        .single();
+      titles = profile?.job_titles ?? [];
+      loc = profile?.location ?? "";
+    }
+
+    const pick = titles[Math.floor(Math.random() * titles.length)] ?? "";
+    const query = [pick, loc].filter(Boolean).join(" in ") || "jobs";
+    setDisplayTitle(query || "Search for jobs");
     onSearch(query);
   };
 
   return (
     <div className="w-full max-w-2xl mx-auto">
       <div className="flex items-center h-14 rounded-full bg-white/10 border border-white/20 backdrop-blur-xl overflow-hidden">
-        <span className="flex-1 text-white/40 text-sm px-4 select-none">
-          Search for jobs
+        <span className="flex-1 text-white/40 text-sm px-4 truncate select-none">
+          {displayTitle}
         </span>
 
         <button
