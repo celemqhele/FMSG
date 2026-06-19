@@ -12,9 +12,12 @@ interface SearchPillProps {
 
 export function SearchPill({ onSearch, searching, activeProfileId }: SearchPillProps) {
   const [displayTitle, setDisplayTitle] = useState("Search for jobs");
+  const [bouncing, setBouncing] = useState(false);
 
   const handleSearch = async () => {
     if (searching) return;
+    setBouncing(true);
+    setTimeout(() => setBouncing(false), 400);
 
     const supabase = createClient();
     const { data: { user } } = await supabase.auth.getUser();
@@ -52,8 +55,7 @@ export function SearchPill({ onSearch, searching, activeProfileId }: SearchPillP
   };
 
   return (
-    <div className="w-full max-w-2xl mx-auto">
-      <div className="flex items-center h-14 rounded-full bg-white/10 border border-white/20 backdrop-blur-xl overflow-hidden">
+    <div className={`w-full max-w-2xl mx-auto transition-transform duration-200 ${bouncing ? "scale-[1.02]" : "scale-100"}`}>
         <span className="flex-1 text-white/40 text-sm px-4 truncate select-none">
           {displayTitle}
         </span>

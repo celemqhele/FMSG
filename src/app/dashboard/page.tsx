@@ -37,9 +37,9 @@ interface HistoryResult {
   full_spec: string;
 }
 
-function SkeletonCard() {
+function SkeletonCard({ style }: { style?: React.CSSProperties }) {
   return (
-    <div className="liquid-glass rounded-xl p-6 animate-pulse">
+    <div className="liquid-glass rounded-xl p-6 animate-pulse opacity-0" style={style}>
       <div className="flex justify-between items-start mb-4">
         <div className="h-5 w-32 rounded-full bg-white/10" />
         <div className="h-4 w-4 rounded bg-white/10" />
@@ -57,7 +57,7 @@ function SkeletonCard() {
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { endTransition } = useTransition();
+  const { endTransition, setVideoFast } = useTransition();
   const { activeProfileId } = useActiveProfile();
   const [activeTab, setActiveTab] = useState<TabId>("search");
   const [searching, setSearching] = useState(false);
@@ -108,6 +108,7 @@ export default function DashboardPage() {
     setProgress(0);
     setHasSearched(true);
     setResultMessage("");
+    setVideoFast(true);
 
     const interval = setInterval(() => {
       setProgress((p) => Math.min(p + Math.random() * 15, 85));
@@ -118,6 +119,7 @@ export default function DashboardPage() {
     if (!session) {
       clearInterval(interval);
       setSearching(false);
+      setVideoFast(false);
       return;
     }
 
@@ -138,6 +140,7 @@ export default function DashboardPage() {
         clearInterval(interval);
         setSearching(false);
         setProgress(0);
+        setVideoFast(false);
         return;
       }
 
@@ -145,6 +148,7 @@ export default function DashboardPage() {
         clearInterval(interval);
         setSearching(false);
         setProgress(0);
+        setVideoFast(false);
         const msg = data?.message ?? "Something went wrong. Please try again.";
         setResultMessage(msg);
         return;
@@ -155,6 +159,7 @@ export default function DashboardPage() {
         setResults(data.results ?? []);
         setSearching(false);
         setProgress(0);
+        setVideoFast(false);
         if ((data.results?.length ?? 0) === 0 && data.message) {
           setResultMessage(data.message);
         }
@@ -163,9 +168,10 @@ export default function DashboardPage() {
       clearInterval(interval);
       setSearching(false);
       setProgress(0);
+      setVideoFast(false);
       setResultMessage("Something went wrong. Please try again.");
     }
-  }, [activeProfileId]);
+  }, [activeProfileId, setVideoFast]);
 
   const handleDelete = useCallback((id: string) => {
     setResults((prev) => prev.filter((x) => x.id !== id));
@@ -196,10 +202,10 @@ export default function DashboardPage() {
             )}
 
             {searching && (
-              <div className="space-y-4">
+              <div className="space-y-4 [&>*]:animate-[enter_0.35s_ease-out_forwards]">
                 <SkeletonCard />
-                <SkeletonCard />
-                <SkeletonCard />
+                <SkeletonCard style={{ animationDelay: "0.1s" }} />
+                <SkeletonCard style={{ animationDelay: "0.2s" }} />
               </div>
             )}
 

@@ -52,7 +52,7 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
 
   return (
     <ProfileContext.Provider value={{ activeProfileId, setActiveProfileId }}>
-      <SpaceVideoBackground src="/videos/space.mp4" />
+      <SpaceVideoBackground src="/videos/space.mp4" fastPlaybackRate={8} />
       <header className="fixed top-4 left-1/2 -translate-x-1/2 z-50 w-[calc(100%-2rem)] max-w-5xl">
         <div className="liquid-glass-surface flex items-center justify-between px-4 py-2 rounded-2xl">
           <div className="flex items-center gap-2">
