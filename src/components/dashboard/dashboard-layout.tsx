@@ -3,7 +3,9 @@
 import { useState, createContext, useContext, type ReactNode } from "react";
 import { ProfileDropdown } from "./profile-dropdown";
 import { ProfileSwitcher } from "./profile-switcher";
+import { ProfileOnboardingModal } from "./profile-onboarding-modal";
 import { SpaceVideoBackground } from "@/components/landing/space-video-background";
+import { useTransition } from "@/components/providers/transition-provider";
 
 const ProfileContext = createContext<{ activeProfileId: string | null; setActiveProfileId: (id: string) => void }>({
   activeProfileId: null,
@@ -14,6 +16,17 @@ export const useActiveProfile = () => useContext(ProfileContext);
 
 export function DashboardLayout({ children }: { children: ReactNode }) {
   const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
+  const [onboardingProfileId, setOnboardingProfileId] = useState<string | null>(null);
+  const { startTransition } = useTransition();
+
+  const handleProfileCreated = (id: string) => {
+    setOnboardingProfileId(id);
+  };
+
+  const handleOnboardingClose = () => {
+    setOnboardingProfileId(null);
+    startTransition();
+  };
 
   return (
     <ProfileContext.Provider value={{ activeProfileId, setActiveProfileId }}>
@@ -22,7 +35,7 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
         <header className="relative z-10 flex items-center justify-between gap-3 px-4 md:px-6 py-4">
           <div className="flex items-center gap-3">
             <span className="flex items-center h-10 text-lg font-bold tracking-tight text-white/80 md:text-white/60 select-none">FMSG</span>
-            <ProfileSwitcher activeProfileId={activeProfileId} onSelect={setActiveProfileId} />
+            <ProfileSwitcher activeProfileId={activeProfileId} onSelect={setActiveProfileId} onProfileCreated={handleProfileCreated} />
           </div>
           <ProfileDropdown />
         </header>
@@ -30,6 +43,10 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
         {children}
       </main>
     </div>
+
+      {onboardingProfileId && (
+        <ProfileOnboardingModal profileId={onboardingProfileId} onClose={handleOnboardingClose} />
+      )}
     </ProfileContext.Provider>
   );
 }
