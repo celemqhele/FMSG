@@ -15,20 +15,12 @@ export function SpaceVideoBackground({
   fastPlaybackRate = 4,
 }: SpaceVideoBackgroundProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const wrapperRef = useRef<HTMLDivElement>(null);
   const animRef = useRef<number>(0);
   const { isTransitioning, videoFast } = useTransition();
   const [ready, setReady] = useState(false);
-  const [hold, setHold] = useState(false);
-  const holdRef = useRef(false);
-  const [warp, setWarp] = useState({ x: 0, y: 0, s: 1 });
-  const [perspective, setPerspective] = useState(() =>
-    typeof window !== "undefined" ? (window.innerWidth < 640 ? 1200 : 900) : 900
-  );
 
   const baseRate = isTransitioning || videoFast ? fastPlaybackRate : slowPlaybackRate;
-  const holdBoost = hold ? 1.1 : 1;
-  const targetRate = baseRate * holdBoost;
+  const targetRate = baseRate;
 
   const smoothRate = useCallback(function smoothRate() {
     const video = videoRef.current;
@@ -48,47 +40,9 @@ export function SpaceVideoBackground({
     return () => cancelAnimationFrame(animRef.current);
   }, [smoothRate]);
 
-  useEffect(() => {
-    const onDown = (e: PointerEvent) => {
-      const t = e.target as HTMLElement;
-      if (t.closest("button,a,input,textarea,select,[role=button]")) return;
-      holdRef.current = true;
-      setHold(true);
-      const cx = window.innerWidth / 2;
-      const cy = window.innerHeight / 2;
-      const factor = window.innerWidth < 640 ? 1.5 : 3;
-      setWarp({
-        x: ((e.clientX - cx) / cx) * factor,
-        y: -((e.clientY - cy) / cy) * factor,
-        s: 1.02,
-      });
-    };
-    const onUp = () => {
-      holdRef.current = false;
-      setHold(false);
-      setWarp({ x: 0, y: 0, s: 1 });
-    };
-
-    document.addEventListener("pointerdown", onDown);
-    document.addEventListener("pointerup", onUp);
-    document.addEventListener("pointerleave", onUp);
-    return () => {
-      document.removeEventListener("pointerdown", onDown);
-      document.removeEventListener("pointerup", onUp);
-      document.removeEventListener("pointerleave", onUp);
-    };
-  }, []);
-
   return (
     <div className="fixed inset-0 overflow-hidden bg-black pointer-events-none" style={{ zIndex: -10 }}>
-      <div
-        ref={wrapperRef}
-        className="absolute inset-0 will-change-transform"
-        style={{
-          transform: `perspective(${perspective}px) rotateX(${warp.y}deg) rotateY(${warp.x}deg) scale(${warp.s})`,
-          transition: hold ? "none" : "transform 350ms cubic-bezier(0.34, 1.56, 0.64, 1)",
-        }}
-      >
+      <div className="absolute inset-0">
         <video
           ref={videoRef}
           className={`absolute inset-0 w-full h-full object-cover object-[55%_50%] md:object-center transition-opacity duration-1000 ${ready ? "opacity-100" : "opacity-0"}`}
