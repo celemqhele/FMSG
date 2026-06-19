@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, startTransition } from "react";
 import { useRouter } from "next/navigation";
+import { X } from "lucide-react";
 import { DashboardLayout } from "@/components/dashboard/dashboard-layout";
 import { SearchPill } from "@/components/dashboard/search-pill";
 import { JobResultCard } from "@/components/dashboard/job-result-card";
@@ -72,6 +73,7 @@ export default function DashboardPage() {
   const [historyResults, setHistoryResults] = useState<HistoryResult[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [showLimitModal, setShowLimitModal] = useState<string | null>(null);
+  const [limitModalMounted, setLimitModalMounted] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
   const [resultMessage, setResultMessage] = useState("");
 
@@ -93,6 +95,14 @@ export default function DashboardPage() {
     window.addEventListener("show-limit-modal", handler);
     return () => window.removeEventListener("show-limit-modal", handler);
   }, [router]);
+
+  useEffect(() => {
+    if (showLimitModal) {
+      requestAnimationFrame(() => setLimitModalMounted(true));
+    } else {
+      setLimitModalMounted(false);
+    }
+  }, [showLimitModal]);
 
   useEffect(() => {
     if (activeTab !== "history") return;
@@ -353,10 +363,19 @@ export default function DashboardPage() {
       </div>
 
       {showLimitModal && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center transition-opacity duration-300" style={{ opacity: limitModalMounted ? 1 : 0 }}>
           <div className="absolute inset-0 bg-black/60" onClick={() => setShowLimitModal(null)} />
-          <div className="relative liquid-glass border rounded-2xl p-6 max-w-sm mx-4 text-center space-y-4">
-            <p className="text-[var(--color-text-primary)] font-semibold">
+          <div
+            className="relative liquid-glass border rounded-2xl p-6 max-w-sm mx-4 text-center space-y-4 transition-all duration-300 ease-out"
+            style={{ opacity: limitModalMounted ? 1 : 0, transform: limitModalMounted ? "translateY(0) scale(1)" : "translateY(8px) scale(0.97)" }}
+          >
+            <button
+              onClick={() => setShowLimitModal(null)}
+              className="absolute top-3 right-3 p-1 text-white/40 hover:text-white transition-colors"
+            >
+              <X size={18} />
+            </button>
+            <p className="text-[var(--color-error)] font-semibold">
               {showLimitModal === "LIMIT_001"
                 ? "No searches remaining"
                 : showLimitModal === "LIMIT_002"

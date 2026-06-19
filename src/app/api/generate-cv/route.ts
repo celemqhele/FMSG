@@ -19,7 +19,6 @@ import {
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const ADMIN_EMAIL = process.env.NEXT_PUBLIC_ADMIN_EMAIL;
 
 function getSupabase() {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
@@ -195,15 +194,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const isAdmin = ADMIN_EMAIL && user.email === ADMIN_EMAIL;
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("cv_generation_balance, is_admin")
+      .eq("id", user.id)
+      .maybeSingle();
+    const isAdmin = (profile as any)?.is_admin ?? false;
 
-    // Auth + balance check (skip if admin)
+    // Balance check (skip if admin)
     if (!isAdmin) {
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("cv_generation_balance")
-        .eq("id", user.id)
-        .maybeSingle();
       const balance = (profile as any)?.cv_generation_balance ?? 0;
       if (balance <= 0) {
         return NextResponse.json({ code: "LIMIT_002", message: "No CV generation credits remaining." }, { status: 403 });
