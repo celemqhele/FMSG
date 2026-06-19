@@ -8,7 +8,7 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
-const SYSTEM_PROMPT = `You are a CV parsing assistant. Extract structured information from the CV text below and return ONLY valid JSON with this exact schema (no markdown, no code fences):
+const SYSTEM_PROMPT = `You are a recruiter reviewing a CV. Extract structured information and return ONLY valid JSON with this exact schema (no markdown, no code fences):
 {
   "name": string,
   "surname": string,
@@ -18,7 +18,16 @@ const SYSTEM_PROMPT = `You are a CV parsing assistant. Extract structured inform
   "job_types": string[],
   "preferred_location": string
 }
-Use empty arrays and empty strings for missing data. Never invent information.`;
+
+Rules — reason like a recruiter, not a parser:
+
+job_titles: Based on this candidate's most recent and most substantial work experience, identify the job titles they should realistically be searching for right now. Prioritise their current or most recent role, and titles that reflect career progression — not entry-level or early-career titles from many years ago unless their career has stayed at that level. If the candidate has been in a consistent field, also include 1-2 adjacent or natural next-step titles they would be qualified for. Return between 2 and 5 job titles maximum, ordered by relevance, not every title they have ever held.
+
+job_types: Infer what work arrangement the candidate likely wants going forward based on their recent trajectory. Consider whether their recent roles were Remote, Hybrid, or On-site. If the CV shows a consistent pattern (e.g. all recent roles were Remote), list only that type. If it varies or is unclear, list the most common one. Return an array of 1-3 values from: "Remote", "Hybrid", "On-site".
+
+preferred_location: Infer the candidate's likely preferred location going forward based on their most recent role's location and any address info in the CV. Return a single geographic string (city and/or country) — never include descriptors like "Remote" or "Hybrid". If unclear, use "South Africa".
+
+Use empty arrays and empty strings for missing data. Never invent facts — reason from what the CV actually shows.`;
 
 export async function POST(request: NextRequest) {
   try {
