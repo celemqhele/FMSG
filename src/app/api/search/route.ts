@@ -74,9 +74,12 @@ export async function POST(request: NextRequest) {
     // Create an authenticated anon client for all data queries (service-role key may not match this instance)
     const dataClient = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        global: { headers: { Authorization: `Bearer ${authHeader}` } },
+        auth: { persistSession: false },
+      }
     );
-    await dataClient.auth.setSession({ access_token: authHeader, refresh_token: "" });
 
     // Get profile
     console.log("[SEARCH] Profile query user_id:", user.id);
