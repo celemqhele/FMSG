@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { searchGoogleJobs } from "@/lib/serpapi";
 import { extractTextFromPDF } from "@/lib/pdf";
-import { callAIWithFallback } from "@/lib/gemini";
+import { callAIWithFallback, lastAITier } from "@/lib/gemini";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -652,6 +652,7 @@ export async function POST(request: NextRequest) {
     let remainingTitles = [...titles];
     let aiVariations: string[] = [];
     let pfRound = 0;
+    let pfAborted = false;
 
     // Shuffle titles
     for (let i = remainingTitles.length - 1; i > 0; i--) {
@@ -728,11 +729,25 @@ export async function POST(request: NextRequest) {
 
       console.log(`[PF] Round ${pfRound}/${MAX_ROUNDS} (Phase ${phase}, threshold ${threshold}): "${fullQuery}"`);
 
-      const { results: roundResults } = await searchRound(
-        fullQuery, profileLocation, titles, cvText,
-        user, profile, authHeader, dataClient, searchId,
-        bannedJobs, bannedCompanies, pfRound
-      );
+      // Slow down when on the last available AI tier
+      if (lastAITier === "openrouter") {
+        console.log("[PF] On OpenRouter tier — using 12s delay between rounds");
+        await sleep(12000);
+      }
+
+      let roundResults: JobRow[];
+      try {
+        const result = await searchRound(
+          fullQuery, profileLocation, titles, cvText,
+          user, profile, authHeader, dataClient, searchId,
+          bannedJobs, bannedCompanies, pfRound
+        );
+        roundResults = result.results;
+      } catch {
+        console.log(`[PF] Round ${pfRound} failed — all AI tiers exhausted, stopping early`);
+        pfAborted = true;
+        break;
+      }
 
       // Deduplicate
       for (const r of roundResults) {
@@ -791,10 +806,21 @@ export async function POST(request: NextRequest) {
       }));
 
       const { data: saved } = await dataClient.from("job_results").insert(rows).select("id, job_title, company, location, estimated_salary, match_score, match_summary, job_url, full_spec, domain_verified, domain_unverified_reason, posted_at, created_at");
-      return NextResponse.json({ results: (saved ?? allResults).map(normalize), pf_mode: true, pf_rounds: pfRound });
+      const pfMessage = pfAborted
+        ? `Search stopped early due to high demand — showing ${allResults.length} result${allResults.length === 1 ? "" : "s"} found so far`
+        : undefined;
+      return NextResponse.json({
+        results: (saved ?? allResults).map(normalize),
+        pf_mode: true,
+        pf_rounds: pfRound,
+        ...(pfMessage ? { message: pfMessage } : {}),
+      });
     }
 
-    return NextResponse.json({ results: [], code: "PF_NO_RESULTS", message: "Persistent Finder completed but found no matches. Try different profile keywords." });
+    const noResultsMessage = pfAborted
+      ? "Search stopped early due to high demand — no results were found. Try again later."
+      : "Persistent Finder completed but found no matches. Try different profile keywords.";
+    return NextResponse.json({ results: [], code: "PF_NO_RESULTS", message: noResultsMessage });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.log("[SEARCH] Unhandled error:", msg);

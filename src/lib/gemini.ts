@@ -10,6 +10,8 @@ export interface AIConfig {
   responseMimeType?: string;
 }
 
+export let lastAITier: "gemini" | "groq" | "openrouter" = "gemini";
+
 async function callGemini(systemPrompt: string, userText: string, config?: AIConfig): Promise<string> {
   const generationConfig: Record<string, unknown> = {
     temperature: config?.temperature ?? 0.1,
@@ -68,31 +70,78 @@ export async function callGroq(systemPrompt: string, userText: string, config?: 
   return data.choices?.[0]?.message?.content ?? "";
 }
 
-/** Shared AI call: try Gemini once, fall back to Groq on 429/quota. */
+async function callOpenRouter(systemPrompt: string, userText: string, config?: AIConfig): Promise<string> {
+  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+      "HTTP-Referer": "https://findmesomejobs.co.za",
+      "X-Title": "Find Me Some Jobs",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "deepseek/deepseek-r1:free",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userText },
+      ],
+      max_tokens: config?.maxOutputTokens ?? 4096,
+      temperature: config?.temperature ?? 0.1,
+      response_format: { type: "json_object" },
+    }),
+  });
+
+  if (!res.ok) {
+    const errBody = await res.text();
+    throw new Error(`OpenRouter error (${res.status}): ${errBody.slice(0, 200)}`);
+  }
+
+  const data = await res.json();
+  return data.choices?.[0]?.message?.content ?? "";
+}
+
+/** Three-tier AI cascade: Gemini → Groq → OpenRouter. Falls back on 429/quota. */
 export async function callAIWithFallback(
   systemPrompt: string,
   userText: string,
   stepName: string,
   config?: AIConfig
 ): Promise<string> {
+  // Tier 1: Gemini
   try {
-    return await callGemini(systemPrompt, userText, config);
+    const result = await callGemini(systemPrompt, userText, config);
+    lastAITier = "gemini";
+    console.log("AI handled by: Gemini");
+    return result;
   } catch (err: any) {
     const msg = err?.message ?? String(err);
     console.log(`[AI] Gemini error on "${stepName}": ${msg}`);
+    if (!msg.includes("429") && !msg.includes("quota")) throw err;
+  }
 
-    const is429orQuota = msg.includes("429") || msg.includes("quota");
-    console.log(`[AI] is429=${is429orQuota}, hasGroqKey=${!!GROQ_API_KEY}`);
-    if (is429orQuota && GROQ_API_KEY) {
-      console.log(`[AI] Falling back to Groq for: ${stepName}`);
-      try {
-        return await callGroq(systemPrompt, userText, config);
-      } catch (groqErr: any) {
-        const groqMsg = groqErr?.message ?? String(groqErr);
-        console.log(`[AI] Groq also failed on "${stepName}": ${groqMsg}`);
-      }
+  // Tier 2: Groq
+  if (GROQ_API_KEY) {
+    try {
+      const result = await callGroq(systemPrompt, userText, config);
+      lastAITier = "groq";
+      console.log("AI handled by: Groq");
+      return result;
+    } catch (err: any) {
+      const msg = err?.message ?? String(err);
+      console.log(`[AI] Groq error on "${stepName}": ${msg}`);
+      if (!msg.includes("429") && !msg.includes("quota")) throw err;
     }
+  }
 
+  // Tier 3: OpenRouter
+  try {
+    const result = await callOpenRouter(systemPrompt, userText, config);
+    lastAITier = "openrouter";
+    console.log("AI handled by: OpenRouter");
+    return result;
+  } catch (err: any) {
+    const msg = err?.message ?? String(err);
+    console.log(`[AI] OpenRouter error on "${stepName}": ${msg}`);
     throw err;
   }
 }
