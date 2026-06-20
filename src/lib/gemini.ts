@@ -71,11 +71,10 @@ export async function callGroq(systemPrompt: string, userText: string, config?: 
 }
 
 const OPENROUTER_FALLBACK_MODELS = [
-  "deepseek/deepseek-chat-v3.1:free",
-  "meta-llama/llama-4-maverick:free",
-  "qwen/qwen3-235b-a22b:free",
-  "meta-llama/llama-3.3-70b-instruct:free",
-  "qwen/qwen3-coder:free",
+  "openai/gpt-oss-120b:free",
+  "nvidia/nemotron-3-super-120b-a12b:free",
+  "google/gemma-4-31b-it:free",
+  "openai/gpt-oss-20b:free",
 ];
 
 async function callOpenRouterSingle(model: string, systemPrompt: string, userText: string, config?: AIConfig): Promise<string> {
