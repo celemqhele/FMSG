@@ -176,6 +176,16 @@ function buildJobUrl(job: {
   return `https://www.google.com/search?q=${encodeURIComponent(`${job.title} ${job.company_name} apply`)}`;
 }
 
+/** JSON response_format wraps arrays in objects. Unwrap by finding the first array value. */
+function unwrapArray(val: unknown): unknown[] {
+  if (Array.isArray(val)) return val;
+  if (val && typeof val === "object") {
+    const found = Object.values(val as Record<string, unknown>).find(v => Array.isArray(v));
+    if (found) return found as unknown[];
+  }
+  return [];
+}
+
 async function searchRound(
   query: string,
   profileLocation: string,
@@ -376,8 +386,14 @@ Each object: { "index": number, "score": number (0-100), "is_valid": boolean, "r
       `search pass 1${pfRound ? ` (PF round ${pfRound})` : ""}`,
       { responseMimeType: "application/json", temperature: 0.1, maxOutputTokens: 8192 }
     );
-    batchResults = JSON.parse(rawPass1);
-    console.log(`[PF] Pass 1 batch succeeded via ${lastAITier}`);
+    const parsedPass1 = JSON.parse(rawPass1);
+    const unwrappedPass1 = unwrapArray(parsedPass1);
+    if (!Array.isArray(unwrappedPass1) || unwrappedPass1.length === 0) {
+      console.log(`[PF] Pass 1 batch returned empty/unexpected format, falling back to individual`);
+      throw new Error("batch empty");
+    }
+    batchResults = unwrappedPass1 as { index: number; score: number; is_valid: boolean; reason: string; estimated_salary: string }[];
+    console.log(`[PF] Pass 1 batch succeeded via ${lastAITier} (${batchResults.length} results)`);
   } catch {
     console.log(`[PF] Pass 1 batch failed, falling back to individual (${rawJobs.length} jobs)`);
     for (let i = 0; i < rawJobs.length; i++) {
@@ -688,8 +704,9 @@ export async function POST(request: NextRequest) {
                 "PF title variation gen",
                 { responseMimeType: "application/json", temperature: 0.7 }
               );
-              aiVariations = JSON.parse(variationResult);
-              if (!Array.isArray(aiVariations) || aiVariations.length === 0) {
+              const parsedTitles = JSON.parse(variationResult);
+              aiVariations = unwrapArray(parsedTitles) as string[];
+              if (aiVariations.length === 0) {
                 aiVariations = titles.slice(0, 4); // fallback
               }
             } catch {
@@ -716,8 +733,9 @@ export async function POST(request: NextRequest) {
               "PF title variation gen",
               { responseMimeType: "application/json", temperature: 0.7 }
             );
-            aiVariations = JSON.parse(variationResult);
-            if (!Array.isArray(aiVariations) || aiVariations.length === 0) {
+            const parsedTitles = JSON.parse(variationResult);
+            aiVariations = unwrapArray(parsedTitles) as string[];
+            if (aiVariations.length === 0) {
               aiVariations = titles.slice(0, 4);
             }
           } catch {

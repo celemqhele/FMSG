@@ -78,6 +78,19 @@ const OPENROUTER_FALLBACK_MODELS = [
 ];
 
 async function callOpenRouterSingle(model: string, systemPrompt: string, userText: string, apiKey: string, config?: AIConfig): Promise<string> {
+  const body: Record<string, unknown> = {
+    model,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userText },
+    ],
+    max_tokens: config?.maxOutputTokens ?? 4096,
+    temperature: config?.temperature ?? 0.1,
+  };
+  // response_format: { type: "json_object" } forces ALL output into an object {},
+  // which breaks prompts that expect arrays. Omit it here — the system prompt
+  // already instructs the model to return valid JSON.
+
   const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -86,16 +99,7 @@ async function callOpenRouterSingle(model: string, systemPrompt: string, userTex
       "X-Title": "Find Me Some Jobs",
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userText },
-      ],
-      max_tokens: config?.maxOutputTokens ?? 4096,
-      temperature: config?.temperature ?? 0.1,
-      response_format: { type: "json_object" },
-    }),
+    body: JSON.stringify(body),
   });
 
   if (!res.ok) {
