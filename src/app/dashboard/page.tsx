@@ -260,7 +260,7 @@ export default function DashboardPage() {
           <>
             <SearchPill onSearch={handleSearch} searching={searching} />
 
-            {!searching && hasSearched && (
+            {hasSearched && (
               <div className="flex items-center justify-center">
                 <FilterSortBar
                   filter={filterState}
