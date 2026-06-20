@@ -8,6 +8,7 @@ import { SearchPill } from "@/components/dashboard/search-pill";
 import { JobResultCard } from "@/components/dashboard/job-result-card";
 import { PFPurchaseModal } from "@/components/dashboard/pf-purchase-modal";
 import { DashboardTabs, type TabId } from "@/components/dashboard/dashboard-tabs";
+import { BalanceChips } from "@/components/dashboard/balance-chips";
 import { FilterSortBar, type FilterState, type SortMode } from "@/components/dashboard/filter-sort-bar";
 import { SavedJobs } from "@/components/dashboard/saved-jobs";
 import { BlockedList } from "@/components/dashboard/blocked-list";
@@ -261,6 +262,9 @@ export default function DashboardPage() {
         {activeTab === "search" && (
           <>
             <SearchPill onSearch={handleSearch} searching={searching} />
+            <div className="flex flex-wrap justify-center gap-1.5">
+              <BalanceChips />
+            </div>
 
             {hasSearched && (
               <div className="flex items-center justify-center">

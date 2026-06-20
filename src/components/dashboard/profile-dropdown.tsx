@@ -86,8 +86,8 @@ export function ProfileDropdown() {
         onClick={handleToggle}
         className="flex items-center gap-2 rounded-full border border-white/20 text-xs font-semibold text-white hover:bg-white/20 transition-all duration-300 overflow-hidden"
         style={{
-          width: phase === "closed" ? "2rem" : "auto",
-          height: "2rem",
+          width: phase === "closed" ? "2.75rem" : "auto",
+          height: "2.75rem",
           paddingLeft: phase === "closed" ? "0" : "0.75rem",
           paddingRight: phase === "closed" ? "0" : "0.75rem",
           background: phase !== "closed" ? "rgba(255,255,255,0.10)" : "rgba(255,255,255,0.10)",
