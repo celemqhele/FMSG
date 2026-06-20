@@ -191,6 +191,7 @@ async function searchRound(
   pfRound?: number
 ): Promise<{ results: JobRow[]; queryUsed: string }> {
   console.log(`[PF] Round query: "${query}" (location: "${profileLocation}")`);
+  console.log(`[PF] lastAITier before searchRound: ${lastAITier}`);
 
   function sanitiseLocation(raw: string): string | undefined {
     if (!raw) return undefined;
@@ -368,6 +369,7 @@ Each object: { "index": number, "score": number (0-100), "is_valid": boolean, "r
 
   let rawPass1 = "";
   try {
+    console.log(`[PF] Starting Pass 1 batch (${rawJobs.length} jobs)`);
     rawPass1 = await callAIWithFallback(
       batchSystemPrompt,
       `Candidate Profile:\n${profileContext}\n\nJobs:\n${JSON.stringify(batchInput, null, 2)}`,
@@ -375,7 +377,9 @@ Each object: { "index": number, "score": number (0-100), "is_valid": boolean, "r
       { responseMimeType: "application/json", temperature: 0.1, maxOutputTokens: 8192 }
     );
     batchResults = JSON.parse(rawPass1);
+    console.log(`[PF] Pass 1 batch succeeded via ${lastAITier}`);
   } catch {
+    console.log(`[PF] Pass 1 batch failed, falling back to individual (${rawJobs.length} jobs)`);
     for (let i = 0; i < rawJobs.length; i++) {
       const job = rawJobs[i];
       if (i > 0) await sleep(6000);
@@ -398,6 +402,7 @@ Return ONLY valid JSON (no markdown, no code fences):
   }
 
   // Pass 2
+  console.log(`[PF] Starting Pass 2 deep analysis (${rawJobs.length} jobs)`);
   const outputs: JobRow[] = [];
   for (let i = 0; i < rawJobs.length; i++) {
     const job = rawJobs[i];
@@ -450,7 +455,9 @@ Return ONLY valid JSON with this exact schema (no markdown, no code fences):
         posted_at: (job as any)._postedAt ?? "",
         posted_at_ms: (job as any)._postedAtMs ?? 0,
       });
-    } catch {
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      console.log(`[AI] Pass 2 failed for "${job.title}" at ${job.company_name}: ${errMsg.slice(0, 150)}`);
       if (batchResult && batchResult.is_valid && batchResult.score >= 40) {
         outputs.push({
           user_id: user.id,
@@ -587,6 +594,7 @@ export async function POST(request: NextRequest) {
 
     if (!pf_mode) {
       // === NORMAL SINGLE SEARCH ===
+      console.log(`[SEARCH] Non-PF mode, picking random title`);
       const pick = titles[Math.floor(Math.random() * titles.length)] ?? "";
       const searchQuery = [pick, profileLocation].filter(Boolean).join(" in ");
       
@@ -743,8 +751,9 @@ export async function POST(request: NextRequest) {
           bannedJobs, bannedCompanies, pfRound
         );
         roundResults = result.results;
-      } catch {
-        console.log(`[PF] Round ${pfRound} failed — all AI tiers exhausted, stopping early`);
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        console.log(`[PF] Round ${pfRound} failed — error: ${errMsg}`);
         pfAborted = true;
         break;
       }

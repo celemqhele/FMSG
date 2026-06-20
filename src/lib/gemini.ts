@@ -77,11 +77,11 @@ const OPENROUTER_FALLBACK_MODELS = [
   "openai/gpt-oss-20b:free",
 ];
 
-async function callOpenRouterSingle(model: string, systemPrompt: string, userText: string, config?: AIConfig): Promise<string> {
+async function callOpenRouterSingle(model: string, systemPrompt: string, userText: string, apiKey: string, config?: AIConfig): Promise<string> {
   const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+      Authorization: `Bearer ${apiKey}`,
       "HTTP-Referer": "https://findmesomejobs.co.za",
       "X-Title": "Find Me Some Jobs",
       "Content-Type": "application/json",
@@ -108,19 +108,28 @@ async function callOpenRouterSingle(model: string, systemPrompt: string, userTex
 }
 
 async function callOpenRouter(systemPrompt: string, userText: string, config?: AIConfig): Promise<string> {
+  const keys = [
+    process.env.OPENROUTER_API_KEY,
+    process.env.OPENROUTER_KEY_2,
+  ].filter((k): k is string => !!k);
+
   const lastErr: Error[] = [];
-  for (const model of OPENROUTER_FALLBACK_MODELS) {
-    try {
-      const result = await callOpenRouterSingle(model, systemPrompt, userText, config);
-      console.log(`[AI] OpenRouter model used: ${model}`);
-      return result;
-    } catch (err: any) {
-      const msg = err?.message ?? String(err);
-      console.log(`[AI] OpenRouter model ${model} failed: ${msg.slice(0, 100)}`);
-      lastErr.push(err);
+  for (const apiKey of keys) {
+    for (const model of OPENROUTER_FALLBACK_MODELS) {
+      try {
+        const keyLabel = apiKey === keys[0] ? "primary" : "fallback";
+        const result = await callOpenRouterSingle(model, systemPrompt, userText, apiKey, config);
+        console.log(`[AI] OpenRouter model used: ${model} (${keyLabel} key)`);
+        return result;
+      } catch (err: any) {
+        const msg = err?.message ?? String(err);
+        console.log(`[AI] OpenRouter model ${model} failed: ${msg.slice(0, 100)}`);
+        lastErr.push(err);
+      }
     }
+    console.log(`[AI] OpenRouter key exhausted — trying next key`);
   }
-  throw new Error(`OpenRouter — all ${OPENROUTER_FALLBACK_MODELS.length} models failed. Last error: ${(lastErr.at(-1)?.message ?? "").slice(0, 200)}`);
+  throw new Error(`OpenRouter — all ${OPENROUTER_FALLBACK_MODELS.length} models failed with all keys. Last error: ${(lastErr.at(-1)?.message ?? "").slice(0, 200)}`);
 }
 
 /** Three-tier AI cascade: Gemini → Groq → OpenRouter. Falls back on 429/quota. */
