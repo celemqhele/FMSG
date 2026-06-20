@@ -8,7 +8,8 @@ import { Loader2, Check } from "lucide-react";
 import { PageTransitionWrapper } from "@/components/ui/page-transition-wrapper";
 import { useTransition } from "@/components/providers/transition-provider";
 import { createClient } from "@/lib/supabase/client";
-import { PLAN_PRICES, PLAN_LIMITS } from "@/lib/plan-limits";
+import { PLAN_PRICES, PLAN_LIMITS, calculatePFPrice, PF_DEFAULT_BY_TIER } from "@/lib/plan-limits";
+import { PFStepper } from "@/components/pricing/pf-stepper";
 
 interface Tier {
   name: string;
@@ -22,10 +23,10 @@ interface Tier {
 }
 
 const tiers: Tier[] = [
-  { name: "Free", monthlyPrice: "R0", annualPrice: "R0", searches: 3, cvGens: 1, pfBalance: 0, features: ["3 job searches per month", "1 tailored CV per month", "Basic match scoring"], popular: false },
-  { name: "Seeker", monthlyPrice: "R79", annualPrice: "R790", searches: 25, cvGens: 5, pfBalance: 5, features: ["25 job searches per month", "5 tailored CVs per month", "Full match scoring", "Banned company filtering", "5 Persistent Finder rounds"], popular: false },
-  { name: "Hunter", monthlyPrice: "R149", annualPrice: "R1,490", searches: 70, cvGens: 15, pfBalance: 15, features: ["70 job searches per month", "15 tailored CVs per month", "Priority AI processing", "Advanced filtering", "15 Persistent Finder rounds"], popular: true },
-  { name: "Pro", monthlyPrice: "R249", annualPrice: "R2,490", searches: 200, cvGens: -1, pfBalance: 50, features: ["200 job searches per month", "Unlimited tailored CVs", "Fastest AI processing", "All features unlocked", "50 Persistent Finder rounds"], popular: false },
+  { name: "Free", monthlyPrice: "R0", annualPrice: "R0", searches: 1, cvGens: 0, pfBalance: 0, features: ["1 job search per month", "Basic match scoring"], popular: false },
+  { name: "Seeker", monthlyPrice: "R99", annualPrice: "R990", searches: 10, cvGens: 5, pfBalance: 5, features: ["10 job searches per month", "5 tailored CVs per month", "Full match scoring", "Banned company filtering", "5 Persistent Finder rounds"], popular: false },
+  { name: "Hunter", monthlyPrice: "R199", annualPrice: "R1,990", searches: 25, cvGens: 12, pfBalance: 15, features: ["25 job searches per month", "12 tailored CVs per month", "Priority AI processing", "Advanced filtering", "15 Persistent Finder rounds"], popular: true },
+  { name: "Pro", monthlyPrice: "R349", annualPrice: "R3,490", searches: 60, cvGens: 25, pfBalance: 50, features: ["60 job searches per month", "25 tailored CVs per month", "Fastest AI processing", "All features unlocked", "50 Persistent Finder rounds"], popular: false },
 ];
 
 const PAYSTACK_PUBLIC_KEY = process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY;
@@ -39,6 +40,7 @@ export default function UpgradePage() {
   const [successToast, setSuccessToast] = useState(false);
   const [currentPlan, setCurrentPlan] = useState("free");
   const [paystackReady, setPaystackReady] = useState(false);
+  const [pfCounts, setPfCounts] = useState<Record<string, number>>({});
 
   useEffect(() => { endTransition(); }, [endTransition]);
 
@@ -83,7 +85,11 @@ export default function UpgradePage() {
       return;
     }
 
-    const amount = (PLAN_PRICES[tier.name] ?? { monthly: 0, annual: 0 })[annual ? "annual" : "monthly"];
+    const baseKobo = (PLAN_PRICES[tier.name] ?? { monthly: 0, annual: 0 })[annual ? "annual" : "monthly"];
+    const pfCount = pfCounts[tier.name] ?? PF_DEFAULT_BY_TIER[tier.name] ?? 0;
+    const pfPriceZar = calculatePFPrice(pfCount);
+    const pfKobo = pfCount * pfPriceZar * 100 * (annual ? 12 : 1);
+    const amount = baseKobo + pfKobo;
     setProcessing(tier.name);
 
     try {
@@ -100,7 +106,7 @@ export default function UpgradePage() {
         amount,
         currency: "ZAR",
         ref: "FMSG-" + Date.now(),
-        metadata: { plan: tier.name, billing_cycle: annual ? "annual" : "monthly" },
+        metadata: { plan: tier.name, billing_cycle: annual ? "annual" : "monthly", pf_count: pfCount },
         callback: async (response: { reference: string }) => {
           console.log("Paystack callback fired", response);
           try {
@@ -152,6 +158,14 @@ export default function UpgradePage() {
         <div className="grid gap-6 md:grid-cols-4 md:gap-4">
           {tiers.map((tier) => {
             const isCurrent = tier.name.toLowerCase() === currentPlan;
+            const pfCount = pfCounts[tier.name] ?? PF_DEFAULT_BY_TIER[tier.name] ?? 0;
+            const pricePerRun = calculatePFPrice(pfCount);
+            const pfTotal = pfCount * pricePerRun * (annual ? 12 : 1);
+            const basePrice = annual ? tier.annualPrice : tier.monthlyPrice;
+            const baseKobo = (PLAN_PRICES[tier.name] ?? { monthly: 0, annual: 0 })[annual ? "annual" : "monthly"];
+            const grandTotalKobo = baseKobo + pfTotal * 100;
+            const grandTotal = (grandTotalKobo / 100).toLocaleString("en-ZA", { style: "currency", currency: "ZAR", minimumFractionDigits: 0 });
+
             return (
               <LiquidGlassCard
                 key={tier.name}
@@ -163,16 +177,32 @@ export default function UpgradePage() {
                 )}
                 <h3 className="text-lg font-semibold text-white">{tier.name}</h3>
                 <div className="mt-4">
-                  <span className="text-3xl font-bold text-white">{annual ? tier.annualPrice : tier.monthlyPrice}</span>
+                  <span className="text-3xl font-bold text-white">{tier.name === "Free" ? "R0" : grandTotal}</span>
                   <span className="ml-1 text-sm text-white/50">/{annual ? "year" : "month"}</span>
                 </div>
-                <div className="mt-2 text-sm text-white/50">
-                  {tier.searches === -1 ? "Unlimited searches" : `${tier.searches} searches/mo`}
-                  {" / "}
-                  {tier.cvGens === -1 ? "Unlimited CVs" : `${tier.cvGens} CVs/mo`}
-                  {tier.pfBalance > 0 && ` / ${tier.pfBalance} PF rounds`}
+                <div className="mt-1 flex items-center gap-1.5 text-xs text-white/40">
+                  <span>{basePrice}/{annual ? "yr" : "mo"}</span>
+                  {pfCount > 0 && (
+                    <>
+                      <span>+</span>
+                      <span>R{(pfTotal).toLocaleString("en-ZA", { minimumFractionDigits: 0 })} PF</span>
+                    </>
+                  )}
                 </div>
-                <ul className="mt-6 flex-1 flex flex-col gap-3">
+                <div className="mt-2 text-sm text-white/50">
+                  {tier.searches} searches / {tier.cvGens} CVs
+                </div>
+                {tier.name !== "Free" && (
+                  <div className="mt-3">
+                    <PFStepper
+                      planName={tier.name}
+                      value={pfCount}
+                      onChange={(v) => setPfCounts((prev) => ({ ...prev, [tier.name]: v }))}
+                      annual={annual}
+                    />
+                  </div>
+                )}
+                <ul className="mt-3 flex-1 flex flex-col gap-3">
                   {tier.features.map((f) => (
                     <li key={f} className="flex items-start gap-2 text-sm text-white/60">
                       <Check size={16} className="mt-0.5 text-[var(--color-success)] shrink-0" />
@@ -183,7 +213,7 @@ export default function UpgradePage() {
                 <button
                   onClick={() => handleUpgrade(tier)}
                   disabled={isCurrent || processing === tier.name}
-                  className={`mt-8 w-full px-5 py-2.5 text-sm font-medium rounded-full transition-colors flex items-center justify-center gap-2 ${
+                  className={`mt-4 w-full px-5 py-2.5 text-sm font-medium rounded-full transition-colors flex items-center justify-center gap-2 ${
                     tier.name === "Free"
                       ? "border border-white/20 text-white hover:bg-white/10"
                       : "text-white bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] disabled:opacity-50"

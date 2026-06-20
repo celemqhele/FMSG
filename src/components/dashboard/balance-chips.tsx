@@ -11,9 +11,9 @@ interface Balances {
 }
 
 const MAX_BALANCES: Record<string, number> = {
-  search: 25,
-  cv: 5,
-  pf: 15,
+  search: 60,
+  cv: 25,
+  pf: 50,
 };
 
 export function BalanceChips() {

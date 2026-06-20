@@ -3,7 +3,8 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard/dashboard-layout";
-import { ArrowLeft, Loader2, Check, ExternalLink } from "lucide-react";
+import { ArrowLeft, Loader2, Check, ExternalLink, Crosshair } from "lucide-react";
+import { PFPurchaseModal } from "@/components/dashboard/pf-purchase-modal";
 import { useTheme } from "@/components/providers/theme-provider";
 import { PageTransitionWrapper } from "@/components/ui/page-transition-wrapper";
 import { useTransition } from "@/components/providers/transition-provider";
@@ -29,20 +30,22 @@ export default function SettingsPage() {
   const [plan, setPlan] = useState("free");
   const [searchBalance, setSearchBalance] = useState(0);
   const [cvBalance, setCvBalance] = useState(0);
+  const [pfBalance, setPfBalance] = useState(0);
+  const [pfModalOpen, setPfModalOpen] = useState(false);
 
   useEffect(() => {
-    supabase.auth.getUser().then((res: { data: { user: { id: string } | null } }) => {
-      const u = res.data.user;
-      if (!u) { router.push("/"); return; }
-      supabase.from("profiles").select("plan, search_balance, cv_generation_balance").eq("id", u.id).single().then((res: { data: any }) => {
-        const d = res.data;
-        if (d) {
-          setPlan(d.plan ?? "free");
-          setSearchBalance(d.search_balance ?? 0);
-          setCvBalance(d.cv_generation_balance ?? 0);
-        }
-      });
-    });
+    const loadProfile = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { router.push("/"); return; }
+      const { data } = await supabase.from("profiles").select("plan, search_balance, cv_generation_balance, persistent_finder_balance").eq("id", user.id).single();
+      if (data) {
+        setPlan(data.plan ?? "free");
+        setSearchBalance(data.search_balance ?? 0);
+        setCvBalance(data.cv_generation_balance ?? 0);
+        setPfBalance(data.persistent_finder_balance ?? 0);
+      }
+    };
+    loadProfile();
   }, [router, supabase]);
 
   const handlePasswordChange = async () => {
@@ -167,13 +170,25 @@ export default function SettingsPage() {
               <span className="text-sm text-[var(--color-text-secondary)]">CV generations remaining</span>
               <span className="text-sm font-medium text-[var(--color-text-primary)]">{cvBalance === -1 ? "Unlimited" : cvBalance}</span>
             </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-[var(--color-text-secondary)]">Persistent Finder balance</span>
+              <span className="text-sm font-medium text-[var(--color-text-primary)]">{pfBalance}</span>
+            </div>
           </div>
-          <button onClick={() => { startTransition(); router.push("/upgrade"); }} className="inline-flex items-center gap-1.5 px-5 py-2.5 text-sm font-medium text-white bg-[var(--color-accent)] rounded-full hover:bg-[var(--color-accent-hover)] transition-colors">
-            Upgrade Plan
-            <ExternalLink size={14} />
-          </button>
+          <div className="flex flex-wrap gap-3">
+            <button onClick={() => { startTransition(); router.push("/upgrade"); }} className="inline-flex items-center gap-1.5 px-5 py-2.5 text-sm font-medium text-white bg-[var(--color-accent)] rounded-full hover:bg-[var(--color-accent-hover)] transition-colors">
+              Upgrade Plan
+              <ExternalLink size={14} />
+            </button>
+            <button onClick={() => setPfModalOpen(true)} className="inline-flex items-center gap-1.5 px-5 py-2.5 text-sm font-medium text-white bg-white/10 border border-white/20 rounded-full hover:bg-white/20 transition-colors">
+              <Crosshair size={14} />
+              Buy PF Credits
+            </button>
+          </div>
         </div>
       </div>
+
+      <PFPurchaseModal isOpen={pfModalOpen} onClose={() => setPfModalOpen(false)} />
       </PageTransitionWrapper>
     </DashboardLayout>
   );

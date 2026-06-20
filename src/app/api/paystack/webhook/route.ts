@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
             newExpiry.setMonth(newExpiry.getMonth() + 1);
           }
 
-          const limits = PLAN_LIMITS[existingSub.plan] ?? { searches: 3, cv_gens: 1, pf_balance: 0 };
+          const limits = PLAN_LIMITS[existingSub.plan] ?? { searches: 1, cv_gens: 0, pf_balance: 0 };
 
           // Insert payment record
           await supabase.from("subscriptions").insert({
@@ -118,7 +118,7 @@ export async function POST(request: NextRequest) {
               expiryDate.setMonth(expiryDate.getMonth() + 1);
             }
 
-            const limits = PLAN_LIMITS[plan] ?? { searches: 3, cv_gens: 1, pf_balance: 0 };
+            const limits = PLAN_LIMITS[plan] ?? { searches: 1, cv_gens: 0, pf_balance: 0 };
 
             await supabase.from("subscriptions").insert({
               user_id: user.id,

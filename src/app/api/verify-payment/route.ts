@@ -23,7 +23,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { reference, plan, billing_cycle } = await request.json();
+  const body = await request.json();
+  const { reference, plan, billing_cycle } = body;
   if (!reference || !plan || !billing_cycle) {
     return NextResponse.json({ error: "Missing fields" }, { status: 400 });
   }
@@ -62,7 +63,7 @@ export async function POST(request: NextRequest) {
       expiryDate.setMonth(expiryDate.getMonth() + 1);
     }
 
-    const limits = PLAN_LIMITS[plan] ?? { searches: 3, cv_gens: 1, pf_balance: 0 };
+    const limits = PLAN_LIMITS[plan] ?? { searches: 1, cv_gens: 0, pf_balance: 0 };
 
     // Insert subscription record
     const { error: subErr } = await supabase.from("subscriptions").insert({
@@ -120,6 +121,9 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Determine pf_balance — metadata.pf_count replaces base (user's choice)
+    const pfCount = txData.metadata?.pf_count ?? limits.pf_balance;
+
     // Update profile
     const { error: profileErr } = await supabase
       .from("profiles")
@@ -128,7 +132,7 @@ export async function POST(request: NextRequest) {
         plan_expiry: expiryDate.toISOString(),
         search_balance: limits.searches,
         cv_generation_balance: limits.cv_gens,
-        persistent_finder_balance: limits.pf_balance,
+        persistent_finder_balance: pfCount,
       })
       .eq("id", user.id);
 

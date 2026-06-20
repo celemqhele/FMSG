@@ -11,7 +11,8 @@ import { LiquidGlassCard } from "@/components/landing/liquid-glass-card";
 import { PageTransitionWrapper } from "@/components/ui/page-transition-wrapper";
 import { useTransition } from "@/components/providers/transition-provider";
 import { createClient } from "@/lib/supabase/client";
-import { PLAN_PRICES, PLAN_LIMITS } from "@/lib/plan-limits";
+import { PLAN_PRICES, PLAN_LIMITS, calculatePFPrice, PF_DEFAULT_BY_TIER } from "@/lib/plan-limits";
+import { PFStepper } from "@/components/pricing/pf-stepper";
 import "@/components/landing/liquid-glass.css";
 
 interface Tier {
@@ -26,10 +27,10 @@ interface Tier {
 }
 
 const tiers: Tier[] = [
-  { name: "Free", monthlyPrice: "R0", annualPrice: "R0", searches: 3, cvGens: 1, pfBalance: 0, features: ["3 job searches per month", "1 tailored CV per month", "Basic match scoring"], popular: false },
-  { name: "Seeker", monthlyPrice: "R79", annualPrice: "R790", searches: 25, cvGens: 5, pfBalance: 5, features: ["25 job searches per month", "5 tailored CVs per month", "Full match scoring", "Banned company filtering", "5 Persistent Finder rounds"], popular: false },
-  { name: "Hunter", monthlyPrice: "R149", annualPrice: "R1,490", searches: 70, cvGens: 15, pfBalance: 15, features: ["70 job searches per month", "15 tailored CVs per month", "Priority AI processing", "Advanced filtering", "15 Persistent Finder rounds"], popular: true },
-  { name: "Pro", monthlyPrice: "R249", annualPrice: "R2,490", searches: 200, cvGens: -1, pfBalance: 50, features: ["200 job searches per month", "Unlimited tailored CVs", "Fastest AI processing", "All features unlocked", "50 Persistent Finder rounds"], popular: false },
+  { name: "Free", monthlyPrice: "R0", annualPrice: "R0", searches: 1, cvGens: 0, pfBalance: 0, features: ["1 job search per month", "Basic match scoring"], popular: false },
+  { name: "Seeker", monthlyPrice: "R99", annualPrice: "R990", searches: 10, cvGens: 5, pfBalance: 5, features: ["10 job searches per month", "5 tailored CVs per month", "Full match scoring", "Banned company filtering", "5 Persistent Finder rounds"], popular: false },
+  { name: "Hunter", monthlyPrice: "R199", annualPrice: "R1,990", searches: 25, cvGens: 12, pfBalance: 15, features: ["25 job searches per month", "12 tailored CVs per month", "Priority AI processing", "Advanced filtering", "15 Persistent Finder rounds"], popular: true },
+  { name: "Pro", monthlyPrice: "R349", annualPrice: "R3,490", searches: 60, cvGens: 25, pfBalance: 50, features: ["60 job searches per month", "25 tailored CVs per month", "Fastest AI processing", "All features unlocked", "50 Persistent Finder rounds"], popular: false },
 ];
 
 const PAYSTACK_PUBLIC_KEY = process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY;
@@ -47,6 +48,7 @@ export default function PricingPage() {
   const [loggedIn, setLoggedIn] = useState(false);
   const [pendingPlan, setPendingPlan] = useState<{ name: string; cycle: string } | null>(null);
   const [successToast, setSuccessToast] = useState(false);
+  const [pfCounts, setPfCounts] = useState<Record<string, number>>({});
 
   useEffect(() => { endTransition(); }, [endTransition]);
 
@@ -103,7 +105,11 @@ export default function PricingPage() {
       return;
     }
 
-    const amount = cycle === "annual" ? PLAN_PRICES[planName].annual : PLAN_PRICES[planName].monthly;
+    const baseKobo = cycle === "annual" ? PLAN_PRICES[planName].annual : PLAN_PRICES[planName].monthly;
+    const pfCount = pfCounts[planName] ?? PF_DEFAULT_BY_TIER[planName] ?? 0;
+    const pfPriceZar = calculatePFPrice(pfCount);
+    const pfKobo = pfCount * pfPriceZar * 100 * (cycle === "annual" ? 12 : 1);
+    const amount = baseKobo + pfKobo;
     const sRes = await supabase.auth.getSession();
     const session = sRes.data.session;
     const email = session?.user?.email;
@@ -115,8 +121,8 @@ export default function PricingPage() {
       amount,
       currency: "ZAR",
       ref: "FMSG-" + Date.now(),
-      plan: "", // will be set by backend based on plan+cycle
-      metadata: { plan: planName, billing_cycle: cycle },
+      plan: "",
+      metadata: { plan: planName, billing_cycle: cycle, pf_count: pfCount },
       callback: async (response: { reference: string }) => {
         try {
           const verifyRes = await fetch("/api/verify-payment", {
@@ -185,8 +191,22 @@ export default function PricingPage() {
               </div>
             </div>
 
+            <div className="mb-8 liquid-glass rounded-xl p-5 text-center">
+              <p className="text-sm font-semibold text-white">Persistent Finder — from R45/run</p>
+              <p className="mt-1 text-xs text-white/50">Multi-round AI search that finds jobs other engines miss. Set the number of search rounds below.</p>
+            </div>
+
             <div className="grid gap-6 md:grid-cols-4 md:gap-4">
-              {tiers.map((tier) => (
+              {tiers.map((tier) => {
+                const pfCount = pfCounts[tier.name] ?? PF_DEFAULT_BY_TIER[tier.name] ?? 0;
+                const pricePerRun = calculatePFPrice(pfCount);
+                const pfTotal = pfCount * pricePerRun * (annual ? 12 : 1);
+                const basePrice = annual ? tier.annualPrice : tier.monthlyPrice;
+                const baseKobo = annual ? PLAN_PRICES[tier.name]?.annual : PLAN_PRICES[tier.name]?.monthly;
+                const grandTotalKobo = baseKobo + pfTotal * 100;
+                const grandTotal = (grandTotalKobo / 100).toLocaleString("en-ZA", { style: "currency", currency: "ZAR", minimumFractionDigits: 0 });
+
+                return (
                 <LiquidGlassCard
                   key={tier.name}
                   variant="surface"
@@ -197,16 +217,32 @@ export default function PricingPage() {
                   )}
                   <h3 className="text-lg font-semibold text-white">{tier.name}</h3>
                   <div className="mt-4">
-                    <span className="text-3xl font-bold text-white">{annual ? tier.annualPrice : tier.monthlyPrice}</span>
+                    <span className="text-3xl font-bold text-white">{tier.name === "Free" ? "R0" : grandTotal}</span>
                     <span className="ml-1 text-sm text-white/50">/{annual ? "year" : "month"}</span>
                   </div>
-                  <div className="mt-2 text-sm text-white/50">
-                    {tier.searches === -1 ? "Unlimited searches" : `${tier.searches} searches/mo`}
-                    {" / "}
-                    {tier.cvGens === -1 ? "Unlimited CVs" : `${tier.cvGens} CVs/mo`}
-                    {tier.pfBalance > 0 && ` / ${tier.pfBalance} PF rounds`}
+                  <div className="mt-1 flex items-center gap-1.5 text-xs text-white/40">
+                    <span>{basePrice}/{annual ? "yr" : "mo"}</span>
+                    {pfCount > 0 && (
+                      <>
+                        <span>+</span>
+                        <span>R{(pfTotal).toLocaleString("en-ZA", { minimumFractionDigits: 0 })} PF</span>
+                      </>
+                    )}
                   </div>
-                  <ul className="mt-6 flex-1 flex flex-col gap-3">
+                  <div className="mt-2 text-sm text-white/50">
+                    {tier.searches} searches / {tier.cvGens} CVs{/* / {tier.pfBalance} PF runs */}
+                  </div>
+                  {tier.name !== "Free" && (
+                    <div className="mt-3">
+                      <PFStepper
+                        planName={tier.name}
+                        value={pfCount}
+                        onChange={(v) => setPfCounts((prev) => ({ ...prev, [tier.name]: v }))}
+                        annual={annual}
+                      />
+                    </div>
+                  )}
+                  <ul className="mt-3 flex-1 flex flex-col gap-3">
                     {tier.features.map((f) => (
                       <li key={f} className="flex items-start gap-2 text-sm text-white/60">
                         <Check size={16} className="mt-0.5 text-[var(--color-success)] shrink-0" />
@@ -217,7 +253,7 @@ export default function PricingPage() {
                   <button
                     onClick={() => handleSubscribe(tier)}
                     disabled={processing === tier.name}
-                    className={`mt-8 w-full px-5 py-2.5 text-sm font-medium rounded-full transition-colors flex items-center justify-center gap-2 ${
+                    className={`mt-4 w-full px-5 py-2.5 text-sm font-medium rounded-full transition-colors flex items-center justify-center gap-2 ${
                       tier.name === "Free"
                         ? "border border-white/20 text-white hover:bg-white/10"
                         : "text-white bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] disabled:opacity-50"
@@ -232,7 +268,8 @@ export default function PricingPage() {
                     )}
                   </button>
                 </LiquidGlassCard>
-              ))}
+                );
+              })}
             </div>
           </div>
         </main>

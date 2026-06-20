@@ -316,6 +316,13 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
         </div>
       </section>
 
+      {/* Pro tip */}
+      <div className="liquid-glass rounded-xl p-4 text-center">
+        <p className="text-xs text-white/60">
+          <span className="text-[var(--color-accent)] font-medium">Pro tip:</span> After onboarding, try Persistent Finder — it searches multiple rounds of AI-generated title variations to find jobs other engines miss.
+        </p>
+      </div>
+
       {/* Salary — always manual */}
       <section className="space-y-4">
         <h2 className="text-lg font-semibold text-white">Salary Expectations</h2>

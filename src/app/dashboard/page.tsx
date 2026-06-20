@@ -6,6 +6,7 @@ import { X } from "lucide-react";
 import { DashboardLayout } from "@/components/dashboard/dashboard-layout";
 import { SearchPill } from "@/components/dashboard/search-pill";
 import { JobResultCard } from "@/components/dashboard/job-result-card";
+import { PFPurchaseModal } from "@/components/dashboard/pf-purchase-modal";
 import { DashboardTabs, type TabId } from "@/components/dashboard/dashboard-tabs";
 import { FilterSortBar, type FilterState, type SortMode } from "@/components/dashboard/filter-sort-bar";
 import { SavedJobs } from "@/components/dashboard/saved-jobs";
@@ -74,6 +75,7 @@ export default function DashboardPage() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [showLimitModal, setShowLimitModal] = useState<string | null>(null);
   const [limitModalMounted, setLimitModalMounted] = useState(false);
+  const [pfModalOpen, setPfModalOpen] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
   const [resultMessage, setResultMessage] = useState("");
 
@@ -390,18 +392,30 @@ export default function DashboardPage() {
                 : showLimitModal === "LIMIT_002"
                 ? "You've used all your CV generations. Upgrade your plan to generate more."
                 : showLimitModal === "LIMIT_003"
-                ? "You've used all your Persistent Finder rounds. Upgrade your plan to get more."
+                ? "You've used all your Persistent Finder rounds. Upgrade your plan or buy more PF credits."
                 : "You've run out of credits. Upgrade your plan."}
             </p>
-            <button
-              onClick={() => { setShowLimitModal(null); router.push("/upgrade"); }}
-              className="px-5 py-2.5 text-sm font-medium text-white bg-[var(--color-accent)] rounded-full hover:bg-[var(--color-accent-hover)] transition-colors"
-            >
-              Upgrade Plan
-            </button>
+            <div className="flex flex-wrap justify-center gap-3">
+              <button
+                onClick={() => { setShowLimitModal(null); router.push("/upgrade"); }}
+                className="px-5 py-2.5 text-sm font-medium text-white bg-[var(--color-accent)] rounded-full hover:bg-[var(--color-accent-hover)] transition-colors"
+              >
+                Upgrade Plan
+              </button>
+              {showLimitModal === "LIMIT_003" && (
+                <button
+                  onClick={() => { setShowLimitModal(null); setPfModalOpen(true); }}
+                  className="px-5 py-2.5 text-sm font-medium text-white bg-white/10 border border-white/20 rounded-full hover:bg-white/20 transition-colors"
+                >
+                  Buy PF Credits
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}
+
+      <PFPurchaseModal isOpen={pfModalOpen} onClose={() => setPfModalOpen(false)} />
       </PageTransitionWrapper>
     </DashboardLayout>
   );
