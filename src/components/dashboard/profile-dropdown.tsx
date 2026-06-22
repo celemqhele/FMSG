@@ -82,81 +82,90 @@ export function ProfileDropdown() {
 
   return (
     <div className="relative flex flex-col items-end">
-      <button
-        onClick={handleToggle}
-        className="flex items-center gap-2 rounded-full border border-white/20 text-xs font-semibold text-white hover:bg-white/20 transition-all duration-300 overflow-hidden"
+      {phase !== "closed" && <div className="fixed inset-0 z-40" onClick={closeMenu} />}
+
+      <div
+        className="flex flex-col overflow-hidden transition-all duration-300 ease-out border border-white/20 z-50"
         style={{
-          width: phase === "closed" ? "2.75rem" : "auto",
-          height: "2.75rem",
-          paddingLeft: phase === "closed" ? "0" : "0.75rem",
-          paddingRight: phase === "closed" ? "0" : "0.75rem",
-          background: phase !== "closed" ? "rgba(255,255,255,0.10)" : "rgba(255,255,255,0.10)",
+          width: phase === "closed" ? "2.75rem" : "14rem",
+          height: phase === "full" ? "auto" : "2.75rem",
+          borderRadius: phase === "full" ? "1rem" : "9999px",
+          background: "rgba(28,28,30,0.95)",
         }}
       >
-        <span className="shrink-0">{initials || <User size={14} className="text-white" />}</span>
-        {phase !== "closed" && (
-          <span className="text-xs text-white/80 truncate max-w-[100px] animate-in fade-in duration-200">
-            {name}
-          </span>
-        )}
-      </button>
+        {/* Top row */}
+        <div
+          className="flex items-center gap-2 px-3 h-[2.75rem] cursor-pointer select-none transition-all duration-300"
+          style={{ justifyContent: phase === "closed" ? "center" : "flex-start" }}
+          onClick={handleToggle}
+        >
+          <span className="shrink-0 text-xs font-semibold text-white">{initials || <User size={14} className="text-white" />}</span>
+          {phase !== "closed" && (
+            <span className="text-xs text-white/80 truncate max-w-[100px] animate-in fade-in duration-200">
+              {name}
+            </span>
+          )}
+        </div>
 
-      {phase !== "closed" && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={closeMenu} />
-          <div
-            className="absolute right-0 top-10 w-56 rounded-2xl bg-[#1C1C1E] border border-white/10 shadow-xl overflow-hidden z-50 transition-all duration-200 ease-out"
-            style={{
-              opacity: phase === "full" ? 1 : 0,
-              transform: phase === "full" ? "translateY(0) scale(1)" : "translateY(-4px) scale(0.96)",
-              pointerEvents: phase === "full" ? "auto" : "none",
-            }}
-          >
-            <div className="px-4 py-3">
-              <p className="text-sm font-medium text-[var(--color-text-primary)] truncate leading-tight">{name}</p>
-              <p className="text-xs text-[var(--color-text-secondary)] truncate mt-0.5">{email}</p>
-            </div>
-
-            <div className="h-px bg-white/[0.06]" />
-
+        {/* Expandable menu */}
+        <div
+          className="grid transition-all duration-300 ease-out"
+          style={{ gridTemplateRows: phase === "full" ? "1fr" : "0fr" }}
+        >
+          <div className="overflow-hidden">
+            <div className="h-px bg-white/10 mx-3" />
             <div className="py-1">
               <button
                 onClick={() => handleNav("/profile")}
-                className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-[var(--color-text-primary)] hover:bg-white/[0.04] transition-colors"
+                className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-white hover:bg-white/5 transition-all duration-300"
+                style={{
+                  opacity: phase === "full" ? 1 : 0,
+                  transform: phase === "full" ? "translateY(0)" : "translateY(-4px)",
+                }}
               >
                 <User size={15} className="opacity-60" />
                 My Profile
               </button>
               <button
                 onClick={() => { closeMenu(); setTimeout(() => setSettingsOpen(true), 160); }}
-                className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-[var(--color-text-primary)] hover:bg-white/[0.04] transition-colors"
+                className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-white hover:bg-white/5 transition-all duration-300"
+                style={{
+                  opacity: phase === "full" ? 1 : 0,
+                  transform: phase === "full" ? "translateY(0)" : "translateY(-4px)",
+                }}
               >
                 <Settings size={15} className="opacity-60" />
                 Settings
               </button>
               <button
                 onClick={() => handleNav("/upgrade")}
-                className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-[var(--color-text-primary)] hover:bg-white/[0.04] transition-colors"
+                className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-white hover:bg-white/5 transition-all duration-300"
+                style={{
+                  opacity: phase === "full" ? 1 : 0,
+                  transform: phase === "full" ? "translateY(0)" : "translateY(-4px)",
+                }}
               >
                 <Sparkles size={15} className="opacity-60" />
                 Upgrade Plan
               </button>
             </div>
-
-            <div className="h-px bg-white/[0.06] mx-3" />
-
+            <div className="h-px bg-white/10 mx-3" />
             <div className="py-1">
               <button
                 onClick={handleLogout}
-                className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-[var(--color-error)] hover:bg-white/[0.04] transition-colors"
+                className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-400 hover:bg-white/5 transition-all duration-300"
+                style={{
+                  opacity: phase === "full" ? 1 : 0,
+                  transform: phase === "full" ? "translateY(0)" : "translateY(-4px)",
+                }}
               >
                 <LogOut size={15} className="opacity-70" />
                 Logout
               </button>
             </div>
           </div>
-        </>
-      )}
+        </div>
+      </div>
 
       <SettingsModal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>
