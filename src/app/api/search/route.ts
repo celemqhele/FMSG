@@ -773,8 +773,10 @@ export async function POST(request: NextRequest) {
         try {
           if (!pf_mode) {
             // === NORMAL SINGLE SEARCH ===
-            const pick = titles[Math.floor(Math.random() * titles.length)] ?? "";
-            const searchQuery = [pick, profileLocation].filter(Boolean).join(" in ");
+            const shuffled = [...titles].sort(() => Math.random() - 0.5);
+            const selected = shuffled.slice(0, 3);
+            const orQuery = selected.map(t => t.includes(" ") ? `"${t}"` : t).join(" OR ");
+            const searchQuery = [orQuery, profileLocation].filter(Boolean).join(" in ");
 
             if (!searchQuery || searchQuery === "jobs") {
               writer.send({ type: "error", code: "NO_QUERY", message: "Add job titles to your search profile first.", progress: 0 });
