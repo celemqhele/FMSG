@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { ExternalLink, X, FileText, Bookmark, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -278,7 +279,7 @@ export function JobResultCard({
       </div>
 
       {/* Trusted domain info modal */}
-      {trustedMounted && (
+      {trustedMounted && createPortal(
         <div
           className={`fixed inset-0 z-[300] flex items-center justify-center transition-all duration-200 ${
             showTrustedInfo ? "opacity-100" : "opacity-0"
@@ -305,11 +306,12 @@ export function JobResultCard({
               Got it
             </button>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Domain warning modal */}
-      {domainMounted && (
+      {domainMounted && createPortal(
         <div
           className={`fixed inset-0 z-[300] flex items-center justify-center transition-all duration-200 ${
             showDomainWarning ? "opacity-100" : "opacity-0"
@@ -341,11 +343,12 @@ export function JobResultCard({
               Got it
             </button>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Verdict popup */}
-      {verdictMounted && (
+      {verdictMounted && createPortal(
         <div
           className={`fixed inset-0 z-[300] flex items-center justify-center transition-all duration-200 ${
             showVerdict ? "opacity-100" : "opacity-0"
@@ -411,7 +414,8 @@ export function JobResultCard({
               Close
             </button>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
