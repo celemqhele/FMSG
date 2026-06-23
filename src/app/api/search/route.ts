@@ -863,36 +863,36 @@ export async function POST(request: NextRequest) {
             return;
           }
 
-          // === PERSISTENT FINDER MODE (combined OR) ===
-          const MAX_ROUNDS = 2;
+          // === PERSISTENT FINDER MODE (adaptive OR) ===
+          const MAX_ROUNDS = 8;
           const STOP_THRESHOLD = 80;
           const STOP_COUNT = 5;
 
           let allResults: JobRow[] = [];
           const pfFilteredCounts = { history: 0, saved: 0, rejected: 0, blocked: 0 };
           const seenUrls = new Set<string>([...dedupSets.history, ...dedupSets.saved, ...dedupSets.blocked]);
+          let activeTitles = [...titles];
+          const usedTitles = new Set(titles);
+          const usedQueries = new Set<string>();
           let pfRound = 0;
           let pfAborted = false;
 
-          const baseQuery = buildOrQuery(titles);
-          const pfQueries: string[] = [baseQuery];
-
-          try {
-            const variationPrompt = `You are a job search strategist. Generate 1 alternative job search query based on the candidate's profile and original titles. The query should use OR syntax to cover all roles broadly. Return ONLY a JSON array with one string. No explanation.`;
-            const variationResult = await callAIWithFallback(
-              variationPrompt,
-              `Original job titles: ${JSON.stringify(titles)}\\nCandidate location: ${profileLocation}\\nCV summary: ${(cvText || "No CV").slice(0, 1000)}`,
-              "PF OR variation gen",
-              { responseMimeType: "application/json", temperature: 0.7 }
-            );
-            const parsed = JSON.parse(variationResult);
-            const alt = unwrapArray(parsed) as string[];
-            if (alt.length > 0 && alt[0] !== baseQuery) pfQueries.push(alt[0]);
-          } catch {}
-
-          for (let round = 0; round < Math.min(MAX_ROUNDS, pfQueries.length); round++) {
-            const fullQuery = [pfQueries[round], profileLocation].filter(Boolean).join(" in ");
+          for (let round = 0; round < MAX_ROUNDS; round++) {
             pfRound = round + 1;
+
+            if (activeTitles.length === 0) {
+              console.log(`[PF] Round ${pfRound}/${MAX_ROUNDS}: no titles to search — stopping`);
+              break;
+            }
+
+            const orQuery = buildOrQuery(activeTitles);
+            const fullQuery = [orQuery, profileLocation].filter(Boolean).join(" in ");
+
+            if (usedQueries.has(fullQuery)) {
+              console.log(`[PF] Round ${pfRound}/${MAX_ROUNDS}: skipping duplicate query "${fullQuery}"`);
+              continue;
+            }
+            usedQueries.add(fullQuery);
 
             console.log(`[PF] Round ${pfRound}/${MAX_ROUNDS}: "${fullQuery}"`);
             sendStatus({ type: "pf_round", round: pfRound, max: MAX_ROUNDS, query: fullQuery, progress: Math.min((pfRound / MAX_ROUNDS) * 90, 90) });
@@ -909,6 +909,7 @@ export async function POST(request: NextRequest) {
                 bannedJobs, bannedCompanies, pfRound, sendStatus,
                 dedupSets
               );
+
               pfFilteredCounts.history += result.filteredCounts.history;
               pfFilteredCounts.saved += result.filteredCounts.saved;
               pfFilteredCounts.rejected += result.filteredCounts.rejected;
@@ -921,12 +922,43 @@ export async function POST(request: NextRequest) {
                 }
               }
 
-              console.log(`[PF] Round ${pfRound} results: ${result.results.length} (total unique: ${allResults.length})`);
+              console.log(`[PF] Round ${pfRound}: ${result.results.length} valid, ${result.filteredCounts.blocked} blocked (total unique: ${allResults.length})`);
 
               const highScoreCount = allResults.filter((r) => r.match_score >= STOP_THRESHOLD).length;
               if (highScoreCount >= STOP_COUNT) {
-                console.log(`[PF] Stopping early — ${highScoreCount} jobs with score >= ${STOP_THRESHOLD} (round ${pfRound})`);
+                console.log(`[PF] Stopping early — ${highScoreCount} jobs >= ${STOP_THRESHOLD} (round ${pfRound})`);
                 break;
+              }
+
+              // Generate new title variations based on round feedback
+              const variationPrompt = `You are a job search strategist. The candidate's original job titles are: ${JSON.stringify(titles)}.
+The following titles were just searched and didn't return enough valid results: ${JSON.stringify(activeTitles)}.
+Previous titles already tried: ${JSON.stringify([...usedTitles])}.
+Round feedback: ${result.results.length} valid jobs found, ${result.filteredCounts.blocked} blocked by user preferences.
+Banned companies: ${bannedCompanies.join(", ") || "none"}.
+
+Generate 3-4 NEW job title variations that are related BUT DIFFERENT from the ones already tried. Suggest alternative phrasings, adjacent roles, or more specific titles. Avoid titles likely to hit blocked companies or similar dead ends.
+Return ONLY a JSON array of strings. No explanation.`;
+
+              try {
+                const variationResult = await callAIWithFallback(
+                  variationPrompt,
+                  `Candidate original titles: ${JSON.stringify(titles)}\nLocation: ${profileLocation}\nCV summary: ${(cvText || "No CV").slice(0, 500)}`,
+                  `PF round ${pfRound} title variation`,
+                  { responseMimeType: "application/json", temperature: 0.7 }
+                );
+                const parsed = JSON.parse(variationResult);
+                const newTitles = unwrapArray(parsed) as string[];
+                const freshTitles = newTitles.filter(t => !usedTitles.has(t));
+                if (freshTitles.length > 0) {
+                  activeTitles = freshTitles;
+                  freshTitles.forEach(t => usedTitles.add(t));
+                  console.log(`[PF] New titles for round ${pfRound + 1}: ${activeTitles.join(", ")}`);
+                } else {
+                  console.log(`[PF] AI returned only already-tried titles — keeping current`);
+                }
+              } catch {
+                console.log(`[PF] AI title generation failed — keeping current titles`);
               }
             } catch (err) {
               const errMsg = err instanceof Error ? err.message : String(err);
