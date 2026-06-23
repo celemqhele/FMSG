@@ -18,12 +18,11 @@ const HIGH_TRUST_DOMAINS = [
   'linkedin.com',
   'indeed.co.za',
   'indeed.com',
-];
-
-const STANDARD_TRUST_DOMAINS = [
   'careers24.com',
   'pnet.co.za',
 ];
+
+const STANDARD_TRUST_DOMAINS: string[] = [];
 
 const SHORT_SPEC_THRESHOLD = 500;
 
@@ -276,7 +275,11 @@ async function searchRound(
     const postedStr = (j as any).detected_extensions?.posted_at ?? (j as any).posted_at ?? "";
     const result = isDomainVerified(url, postedStr);
     (j as any)._domainVerified = result.verified;
-    (j as any)._domainReason = result.verified ? "" : (result.reason ?? "untrusted_domain");
+    (j as any)._domainReason = result.verified
+      ? ""
+      : result.reason === "untrusted_domain"
+        ? `untrusted_domain: ${extractDomain(url)}`
+        : result.reason;
     (j as any)._postedAt = postedStr;
     (j as any)._postedAtMs = parsePostedAt(postedStr) ?? 0;
   }
