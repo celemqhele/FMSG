@@ -27,13 +27,14 @@ export function SearchPill({ onSearch, searching }: SearchPillProps) {
 
     let titles: string[] = [];
     let loc = "";
+    let ind = "";
 
     let usedProfileId = activeProfileId;
 
     if (!usedProfileId) {
       const { data: firstSp } = await supabase
         .from("search_profiles")
-        .select("id, job_titles, location")
+        .select("id, job_titles, location, industry")
         .eq("user_id", user.id)
         .order("created_at")
         .limit(1)
@@ -42,17 +43,19 @@ export function SearchPill({ onSearch, searching }: SearchPillProps) {
         usedProfileId = firstSp.id;
         titles = firstSp.job_titles ?? [];
         loc = firstSp.location ?? "";
+        ind = firstSp.industry ?? "";
       }
     } else {
       const { data: sp, error: spErr } = await supabase
         .from("search_profiles")
-        .select("job_titles, location")
+        .select("job_titles, location, industry")
         .eq("id", usedProfileId)
         .maybeSingle();
       if (spErr) console.log("[SEARCH-PILL] search_profiles error:", spErr.message);
       if (sp) {
         titles = sp.job_titles ?? [];
         loc = sp.location ?? "";
+        ind = sp.industry ?? "";
       }
     }
 
@@ -61,7 +64,7 @@ export function SearchPill({ onSearch, searching }: SearchPillProps) {
       console.log("[SEARCH-PILL] No job titles found — cannot search");
       return;
     }
-    const query = [pick, loc].filter(Boolean).join(" in ");
+    const query = [pick, ind, loc].filter(Boolean).join(" ");
     setDisplayTitle(query);
     onSearch(query, usedProfileId, pfMode);
   };

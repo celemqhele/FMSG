@@ -11,6 +11,8 @@ interface JobResultCardProps {
   location: string;
   salary: string;
   matchScore: number;
+  matchSummary?: string;
+  verdictBullets?: { industry: string; function: string; competition: string } | null;
   jobUrl: string;
   fullDescription: string;
   domainVerified?: boolean;
@@ -26,6 +28,8 @@ export function JobResultCard({
   location,
   salary,
   matchScore,
+  matchSummary = "",
+  verdictBullets,
   jobUrl,
   fullDescription,
   domainVerified = true,
@@ -41,6 +45,8 @@ export function JobResultCard({
   const [domainMounted, setDomainMounted] = useState(false);
   const [showTrustedInfo, setShowTrustedInfo] = useState(false);
   const [trustedMounted, setTrustedMounted] = useState(false);
+  const [showVerdict, setShowVerdict] = useState(false);
+  const [verdictMounted, setVerdictMounted] = useState(false);
 
   useEffect(() => {
     if (showDomainWarning) {
@@ -59,6 +65,15 @@ export function JobResultCard({
       return () => clearTimeout(timer);
     }
   }, [showTrustedInfo]);
+
+  useEffect(() => {
+    if (showVerdict) {
+      setVerdictMounted(true);
+    } else {
+      const timer = setTimeout(() => setVerdictMounted(false), 250);
+      return () => clearTimeout(timer);
+    }
+  }, [showVerdict]);
 
   const scoreLabel =
     matchScore >= 80 ? "Strong Match" :
@@ -162,9 +177,12 @@ export function JobResultCard({
       {/* Top row: score badge + domain badge left, delete (X) right */}
       <div className="flex justify-between items-start mb-3.5">
         <div className="flex items-center gap-2 flex-wrap">
-          <span className={`text-xs font-medium px-3 py-1 rounded-full ${scoreBg}`}>
+          <button
+            onClick={() => setShowVerdict(true)}
+            className={`text-xs font-medium px-3 py-1 rounded-full ${scoreBg} cursor-pointer hover:opacity-80 transition-opacity`}
+          >
             {scoreLabel} {matchScore}%
-          </span>
+          </button>
           {domainVerified && (
             <button
               onClick={() => setShowTrustedInfo(true)}
@@ -321,6 +339,76 @@ export function JobResultCard({
               className="mt-4 w-full py-2.5 rounded-xl bg-[var(--color-accent)] text-white text-sm font-medium hover:bg-[var(--color-accent-hover)] transition-colors"
             >
               Got it
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Verdict popup */}
+      {verdictMounted && (
+        <div
+          className={`fixed inset-0 z-[300] flex items-center justify-center transition-all duration-200 ${
+            showVerdict ? "opacity-100" : "opacity-0"
+          }`}
+        >
+          <div
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => setShowVerdict(false)}
+          />
+          <div
+            className={`relative w-full max-w-sm mx-4 p-6 rounded-2xl liquid-glass transition-all duration-200 ${
+              showVerdict ? "opacity-100 scale-100" : "opacity-0 scale-95"
+            }`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <span className={`text-sm font-semibold px-3 py-1 rounded-full ${scoreBg}`}>
+                {scoreLabel} {matchScore}%
+              </span>
+              <button
+                onClick={() => setShowVerdict(false)}
+                className="text-white/40 hover:text-white transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {matchSummary && (
+              <p className="text-sm text-[var(--color-text-secondary)] leading-relaxed mb-4">
+                {matchSummary}
+              </p>
+            )}
+
+            {verdictBullets && (
+              <div className="space-y-2.5">
+                <div className="flex items-start gap-2.5">
+                  <span className="text-xs text-[var(--color-accent)] mt-0.5 shrink-0">Industry</span>
+                  <p className="text-xs text-[var(--color-text-secondary)]/80 leading-relaxed">{verdictBullets.industry}</p>
+                </div>
+                <div className="flex items-start gap-2.5">
+                  <span className="text-xs text-[var(--color-accent)] mt-0.5 shrink-0">Function</span>
+                  <p className="text-xs text-[var(--color-text-secondary)]/80 leading-relaxed">{verdictBullets.function}</p>
+                </div>
+                <div className="flex items-start gap-2.5">
+                  <span className="text-xs text-[var(--color-accent)] mt-0.5 shrink-0">Competition</span>
+                  <p className="text-xs text-[var(--color-text-secondary)]/80 leading-relaxed">{verdictBullets.competition}</p>
+                </div>
+              </div>
+            )}
+
+            {suggestedCvName && (
+              <div className="mt-4 pt-3 border-t border-white/[0.06]">
+                <p className="text-xs text-[var(--color-text-secondary)]/60">
+                  Suggested CV: <span className="text-white/80 font-medium">{suggestedCvName}</span>
+                </p>
+              </div>
+            )}
+
+            <button
+              onClick={() => setShowVerdict(false)}
+              className="mt-4 w-full py-2.5 rounded-xl bg-[var(--color-accent)] text-white text-sm font-medium hover:bg-[var(--color-accent-hover)] transition-colors"
+            >
+              Close
             </button>
           </div>
         </div>

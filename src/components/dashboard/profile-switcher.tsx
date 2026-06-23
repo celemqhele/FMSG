@@ -9,6 +9,7 @@ interface SearchProfile {
   name: string;
   job_titles: string[];
   location: string;
+  industry?: string;
 }
 
 export function ProfileSwitcher({ activeProfileId, onSelect, onProfileCreated, refreshKey }: { activeProfileId: string | null; onSelect: (id: string) => void; onProfileCreated?: (id: string) => void; refreshKey?: number }) {
@@ -23,7 +24,7 @@ export function ProfileSwitcher({ activeProfileId, onSelect, onProfileCreated, r
       if (!user) return;
       supabase
         .from("search_profiles")
-        .select("id, name, job_titles, location")
+        .select("id, name, job_titles, location, industry")
         .eq("user_id", user.id)
         .order("created_at")
         .then(({ data: rows }: { data: any }) => {

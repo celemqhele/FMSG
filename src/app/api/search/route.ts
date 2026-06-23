@@ -172,6 +172,7 @@ interface JobRow {
   estimated_salary: string;
   match_score: number;
   match_summary: string;
+  verdict_bullets: { industry: string; function: string; competition: string } | null;
   job_url: string;
   full_spec: string;
   search_query: string;
@@ -242,6 +243,7 @@ Return ONLY a JSON array of strings with no duplicates. No explanation.`,
 async function searchRound(
   query: string,
   profileLocation: string,
+  profileIndustry: string,
   titles: string[],
   cvTexts: { name: string; text: string }[],
   user: any,
@@ -453,6 +455,7 @@ async function searchRound(
   const profileContext = JSON.stringify({
     job_titles: titles,
     location: profileLocation || null,
+    industry: profileIndustry || null,
     cv_texts: cvTexts.length > 0
       ? cvTexts.map(cv => ({ name: cv.name, text: cv.text }))
       : [{ name: "No CV", text: "No CV provided" }],
@@ -474,19 +477,25 @@ async function searchRound(
   const blacklistInfo = `BLACKLISTED_DOMAINS: ${BLACKLISTED_DOMAINS.join(", ")}`;
   const bannedInfo = bannedCompanies.length > 0 ? `\nUSER-BANNED COMPANIES: ${bannedCompanies.join(", ")}` : "";
 
-  const batchSystemPrompt = `You are a recruiter screening job matches for a candidate. 
-Evaluate each job against the candidate's profile and CV.
-Rules:
-- Reject jobs not in South Africa or the candidate's preferred location.
-- Reject expired, filled, or closed positions.
-- Reject jobs from blacklisted domains or user-banned companies listed below.
-- Judge genuine fit — read the CV and job description carefully.
-- Return ONLY a JSON array of objects. No markdown, no explanation, no code fences.
-Each object: { "index": number, "score": number (0-100), "is_valid": boolean, "reason": string, "estimated_salary": string }
+  const batchSystemPrompt = `You are a Recruitment Auditor AI screening job matches. Score each job against the candidate's profile and CV.
+
+SCORING:
+- 0–30: Total mismatch in industry, sector, or core capabilities.
+- 31–59: Some transferable skills but significant gaps in industry nuance or scale.
+- 60–74: Good foundation but lacks a critical requirement direct competitors will have.
+- 75–100: Exceptional match — direct industry alignment, matching functional scale.
+
+RULES:
+- Judge transferable skills and career trajectory, not keywords.
+- If the candidate's industry differs from the job's industry, reduce the score.
+- Reference specifics from the CV and job description.
+
+Return ONLY a JSON array of objects. No markdown, no explanation, no code fences.
+Each object: { "index": number, "score": number (0-100), "reason": string, "estimated_salary": string }
 
 ${blacklistInfo}${bannedInfo}`;
 
-  let batchResults: { index: number; score: number; is_valid: boolean; reason: string; estimated_salary: string }[] = [];
+  let batchResults: { index: number; score: number; reason: string; estimated_salary: string }[] = [];
 
   let rawPass1 = "";
   try {
@@ -503,7 +512,7 @@ ${blacklistInfo}${bannedInfo}`;
       console.log(`[PF] Pass 1 batch returned empty/unexpected format, falling back to individual`);
       throw new Error("batch empty");
     }
-    batchResults = unwrappedPass1 as { index: number; score: number; is_valid: boolean; reason: string; estimated_salary: string }[];
+    batchResults = unwrappedPass1 as { index: number; score: number; reason: string; estimated_salary: string }[];
     console.log(`[PF] Pass 1 batch succeeded via ${lastAITier} (${batchResults.length} results)`);
   } catch {
     console.log(`[PF] Pass 1 batch failed, falling back to individual (${rawJobs.length} jobs)`);
@@ -512,14 +521,20 @@ ${blacklistInfo}${bannedInfo}`;
       const progress = Math.min(20 + ((i + 1) / rawJobs.length) * 35, 55);
       onStatus?.({ type: "screening_job", current: i + 1, total: rawJobs.length, progress });
       if (i > 0) await sleep(6000);
-      const singlePrompt = `You are a recruiter screening a single job match.
-Rules:
-- Reject jobs not in South Africa or the candidate's preferred location.
-- Reject expired, filled, or closed positions.
-- Reject jobs from blacklisted domains or user-banned companies listed below.
-${blacklistInfo}${bannedInfo}
+      const singlePrompt = `You are a Recruitment Auditor AI scoring a single job match.
+
+SCORING:
+- 0–30: Total mismatch in industry, sector, or core capabilities.
+- 31–59: Some transferable skills but significant gaps.
+- 60–74: Good foundation but lacks a critical requirement.
+- 75–100: Exceptional match — direct alignment.
+
+RULES:
+- Judge transferable skills, not keywords.
+- If the candidate's industry differs from the job's industry, reduce score.
+
 Return ONLY valid JSON (no markdown, no code fences):
-{ "score": number (0-100), "is_valid": boolean, "reason": string, "estimated_salary": string }`;
+{ "score": number (0-100), "reason": string, "estimated_salary": string }`;
       try {
         const rawSingle = await callAIWithFallback(
           singlePrompt,
@@ -530,7 +545,7 @@ Return ONLY valid JSON (no markdown, no code fences):
         const parsed = JSON.parse(rawSingle);
         batchResults.push({ index: i, ...parsed });
       } catch {
-        batchResults.push({ index: i, score: 30, is_valid: false, reason: "Screening unavailable", estimated_salary: "" });
+        batchResults.push({ index: i, score: 30, reason: "Screening unavailable", estimated_salary: "" });
       }
     }
   }
@@ -549,27 +564,36 @@ Return ONLY valid JSON (no markdown, no code fences):
 
     if (i > 0) await sleep(6000);
 
-    const deepSystemPrompt = `You are a senior recruiter doing a deep-fit analysis.
-You have the candidate's full CVs and profile. You have a full job specification.
-The candidate has provided multiple CV variations with names.
-Rules:
-- The job MUST be in South Africa or the candidate's preferred location. Reject if not.
-- Reject if the position is expired, filled, or no longer accepting applications.
-- Reject jobs from blacklisted domains or user-banned companies listed below.
-- Judge like a human recruiter. Consider transferable skills and career trajectory.
-- Do NOT use keyword matching.
-- In match_summary, reference specifics from the CV and job spec.
+    const deepSystemPrompt = `You are a strict Recruitment Auditor AI. Evaluate the candidate's CVs against the job description.
+
+40% COMPETITOR BENCHMARK:
+Assume 40% of applicants are perfect direct matches who tick every requirement. Only score highly if the candidate can stand out against this competition.
+
+SCORING:
+- 0–30: Total mismatch in industry, sector, or core capabilities.
+- 31–59: Some transferable skills but significant gaps in industry nuance or scale.
+- 60–74: Good foundation but lacks a critical requirement direct competitors will have.
+- 75–100: Exceptional match — direct industry alignment, matching functional scale, clear competitive advantage.
+
+RULES:
+- Judge transferable skills and career trajectory, not keywords.
+- If the candidate's industry differs from the job's industry, reduce the score.
+- Reference specifics from the CV and job spec.
 - Choose the CV variation that best matches this role and return its name in suggested_cv_name.
 
 ${blacklistInfo}${bannedInfo}
 
-Return ONLY valid JSON with this exact schema (no markdown, no code fences):
+Return ONLY valid JSON (no markdown, no code fences). Exact schema:
 {
   "score": number (0-100),
-  "match_summary": string,
   "estimated_salary": string,
-  "is_valid": boolean,
-  "suggested_cv_name": string
+  "suggested_cv_name": string,
+  "match_summary": string,
+  "bullet_points": {
+    "industry": string,
+    "function": string,
+    "competition": string
+  }
 }`;
 
     try {
@@ -581,10 +605,6 @@ Return ONLY valid JSON with this exact schema (no markdown, no code fences):
       );
       const deepResult = JSON.parse(raw);
 
-      if (deepResult.is_valid === false) {
-        aiRejectedJobs.push({ job, reason: deepResult.match_summary || "AI rejected", stage: "pass2" });
-        continue;
-      }
       outputs.push({
         user_id: user.id,
         search_id: searchId,
@@ -594,6 +614,7 @@ Return ONLY valid JSON with this exact schema (no markdown, no code fences):
         estimated_salary: deepResult.estimated_salary || batchResult?.estimated_salary || "",
         match_score: deepResult.score,
         match_summary: deepResult.match_summary || batchResult?.reason || "",
+        verdict_bullets: deepResult.bullet_points || null,
         job_url: jobUrl,
         full_spec: fullSpec,
         search_query: query,
@@ -606,29 +627,25 @@ Return ONLY valid JSON with this exact schema (no markdown, no code fences):
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       console.log(`[AI] Pass 2 failed for "${job.title}" at ${job.company_name}: ${errMsg.slice(0, 150)}`);
-      const pass1Failed = !batchResult || !batchResult.is_valid || batchResult.score < 40;
-      if (pass1Failed) {
-        aiRejectedJobs.push({ job, reason: "Pass 2 failed, Pass 1 insufficient", stage: "pass2_fallback" });
-      } else {
-        outputs.push({
-          user_id: user.id,
-          search_id: searchId,
-          job_title: job.title,
-          company: job.company_name,
-          location: job.location,
-          estimated_salary: batchResult.estimated_salary || "",
-          match_score: batchResult.score,
-          match_summary: batchResult.reason || "",
-          job_url: jobUrl,
-          full_spec: fullSpec,
-          search_query: query,
-          domain_verified: (job as any)._domainVerified ?? true,
-          domain_unverified_reason: (job as any)._domainReason ?? "",
-          posted_at: (job as any)._postedAt ?? "",
-          posted_at_ms: (job as any)._postedAtMs ?? 0,
-          suggested_cv: "",
-        });
-      }
+      outputs.push({
+        user_id: user.id,
+        search_id: searchId,
+        job_title: job.title,
+        company: job.company_name,
+        location: job.location,
+        estimated_salary: batchResult?.estimated_salary || "",
+        match_score: batchResult?.score ?? 30,
+        match_summary: batchResult?.reason || "Analysis unavailable",
+        verdict_bullets: null,
+        job_url: jobUrl,
+        full_spec: fullSpec,
+        search_query: query,
+        domain_verified: (job as any)._domainVerified ?? true,
+        domain_unverified_reason: (job as any)._domainReason ?? "",
+        posted_at: (job as any)._postedAt ?? "",
+        posted_at_ms: (job as any)._postedAtMs ?? 0,
+        suggested_cv: "",
+      });
     }
   }
 
@@ -739,18 +756,20 @@ export async function POST(request: NextRequest) {
     // Get search profile data
     let titles: string[] = [];
     let profileLocation = "";
+    let profileIndustry = "";
     let cvVariations: { name: string; file_path: string }[] = [];
 
     if (profile_id) {
       const { data: searchProfile } = await dataClient
         .from("search_profiles")
-        .select("job_titles, location, cv_variations")
+        .select("job_titles, location, industry, cv_variations")
         .eq("id", profile_id)
         .eq("user_id", user.id)
         .maybeSingle();
       if (searchProfile?.job_titles?.length) {
         titles = searchProfile.job_titles;
         profileLocation = searchProfile.location ?? "";
+        profileIndustry = searchProfile.industry ?? "";
         cvVariations = searchProfile.cv_variations ?? [];
       }
     }
@@ -817,7 +836,7 @@ export async function POST(request: NextRequest) {
             }
 
             const { results: outputs, filteredCounts } = await searchRound(
-              searchQuery, profileLocation, titles, cvTexts,
+              searchQuery, profileLocation, profileIndustry, titles, cvTexts,
               user, profile, authHeader, dataClient, searchId,
               bannedJobs, bannedCompanies, undefined, sendStatus,
               dedupSets
@@ -853,7 +872,7 @@ export async function POST(request: NextRequest) {
                 match_summary: r.match_summary, job_url: r.job_url, full_spec: r.full_spec,
                 search_query: r.search_query, domain_verified: r.domain_verified,
                 domain_unverified_reason: r.domain_unverified_reason, posted_at: r.posted_at,
-                suggested_cv: r.suggested_cv,
+                suggested_cv: r.suggested_cv, verdict_bullets: r.verdict_bullets,
               }));
               dataClient.from("job_results").insert(rows).then(({ error }: any) => {
                 if (error) console.error("[SEARCH] Failed to insert job results:", error.message);
@@ -907,7 +926,7 @@ export async function POST(request: NextRequest) {
 
             try {
               const result = await searchRound(
-                fullQuery, profileLocation, titles, cvTexts,
+                fullQuery, profileLocation, profileIndustry, titles, cvTexts,
                 user, profile, authHeader, dataClient, searchId,
                 bannedJobs, bannedCompanies, pfRound, sendStatus,
                 dedupSets
@@ -1010,7 +1029,7 @@ Return ONLY a JSON array of strings. No explanation.`;
               match_summary: r.match_summary, job_url: r.job_url, full_spec: r.full_spec,
               search_query: r.search_query, domain_verified: r.domain_verified,
               domain_unverified_reason: r.domain_unverified_reason, posted_at: r.posted_at,
-              suggested_cv: r.suggested_cv,
+              suggested_cv: r.suggested_cv, verdict_bullets: r.verdict_bullets,
             }));
             dataClient.from("job_results").insert(rows).then(({ error }: any) => {
               if (error) console.error("[PF] Failed to insert job results:", error.message);

@@ -27,6 +27,7 @@ interface JobResult {
   estimated_salary: string;
   match_score: number;
   match_summary: string;
+  verdict_bullets?: { industry: string; function: string; competition: string } | null;
   job_url: string;
   full_description: string;
   domain_verified?: boolean;
@@ -43,6 +44,7 @@ interface HistoryResult {
   estimated_salary: string;
   match_score: number;
   match_summary: string;
+  verdict_bullets?: { industry: string; function: string; competition: string } | null;
   job_url: string;
   full_spec: string;
   domain_verified?: boolean;
@@ -440,6 +442,8 @@ export default function DashboardPage() {
                       location={r.location}
                       salary={r.estimated_salary}
                       matchScore={r.match_score}
+                      matchSummary={r.match_summary}
+                      verdictBullets={r.verdict_bullets}
                       jobUrl={r.job_url}
                       fullDescription={r.full_description}
                       domainVerified={r.domain_verified ?? true}
@@ -483,6 +487,8 @@ export default function DashboardPage() {
                   location={r.location}
                   salary={r.estimated_salary}
                   matchScore={r.match_score}
+                  matchSummary={r.match_summary}
+                  verdictBullets={r.verdict_bullets}
                   jobUrl={r.job_url}
                   fullDescription={r.full_spec}
                   domainVerified={r.domain_verified ?? true}

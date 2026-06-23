@@ -25,6 +25,8 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
   const [name, setName] = useState("");
   const [jobTitles, setJobTitles] = useState<string[]>([""]);
   const [location, setLocation] = useState("");
+  const [industry, setIndustry] = useState("");
+  const [suggestingIndustry, setSuggestingIndustry] = useState(false);
   const [jobTypes, setJobTypes] = useState<string[]>([]);
   const [cvVariations, setCvVariations] = useState<CvVariation[]>([]);
   const [error, setError] = useState("");
@@ -35,6 +37,7 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
   const [uploadingCv, setUploadingCv] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const addInputRef = useRef<HTMLInputElement>(null);
+  const suggestedIndustryRef = useRef(false);
 
   useEffect(() => {
     requestAnimationFrame(() => setMounted(true));
@@ -44,7 +47,7 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
     const supabase = createClient();
     supabase
       .from("search_profiles")
-      .select("name, job_titles, job_types, location, cv_variations")
+      .select("name, job_titles, job_types, location, industry, cv_variations")
       .eq("id", profileId)
       .maybeSingle()
       .then(({ data }: { data: any }) => {
@@ -53,11 +56,37 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
           setJobTitles(data.job_titles?.length ? data.job_titles : [""]);
           setJobTypes(data.job_types ?? []);
           setLocation(data.location ?? "");
+          setIndustry(data.industry ?? "");
           setCvVariations(data.cv_variations?.length ? data.cv_variations : []);
         }
         setLoadingProfile(false);
       });
   }, [profileId]);
+
+  useEffect(() => {
+    if (step !== "form" || !showUploadStep || suggestedIndustryRef.current) return;
+    const titles = jobTitles.filter((t) => t.trim());
+    if (titles.length === 0) return;
+    suggestedIndustryRef.current = true;
+    setSuggestingIndustry(true);
+    (async () => {
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) { setSuggestingIndustry(false); return; }
+      try {
+        const res = await fetch("/api/suggest-industry", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ job_titles: titles }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.industry) setIndustry(data.industry);
+        }
+      } catch {}
+      setSuggestingIndustry(false);
+    })();
+  }, [step, showUploadStep, jobTitles]);
 
   if (loadingProfile) return null;
 
@@ -105,6 +134,8 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
             : [""];
           setJobTitles(titles);
           setLocation(data.preferred_location ?? "");
+          setIndustry("");
+          suggestedIndustryRef.current = false;
           if (data.cv_file_path) {
             setCvVariations([{ name: "CV", file_path: data.cv_file_path }]);
           }
@@ -269,6 +300,7 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
     const updateData: Record<string, any> = {
       job_titles: filtered,
       location: cleanedLocation,
+      industry: industry.trim(),
       job_types: jobTypes,
       cv_variations: namedCvs,
     };
@@ -408,6 +440,20 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
                   className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-white placeholder-white/30 focus:outline-none focus:border-[var(--color-accent)] transition-colors"
                 />
                 <p className="mt-1 text-xs text-white/30">City or country only. Select work type below.</p>
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-white/80 mb-1.5 block">Industry</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    value={industry}
+                    onChange={(e) => setIndustry(e.target.value)}
+                    placeholder="e.g. Fintech, Healthcare, SaaS"
+                    className="flex-1 px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-white placeholder-white/30 focus:outline-none focus:border-[var(--color-accent)] transition-colors"
+                  />
+                  {suggestingIndustry && <Loader2 size={16} className="text-[var(--color-accent)] animate-spin shrink-0" />}
+                </div>
+                <p className="mt-1 text-xs text-white/30">Your target industry. Used in search queries and scoring.</p>
               </div>
 
               <div>
