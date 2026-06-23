@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { searchGoogleJobs } from "@/lib/serpapi";
 import { extractTextFromPDF } from "@/lib/pdf";
 import { callAIWithFallback, lastAITier } from "@/lib/gemini";
+import { StreamWriter, type SearchEvent } from "@/lib/search-stream";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -198,7 +199,8 @@ async function searchRound(
   searchId: string,
   bannedJobs: string[],
   bannedCompanies: string[],
-  pfRound?: number
+  pfRound?: number,
+  onStatus?: (event: SearchEvent) => void
 ): Promise<{ results: JobRow[]; queryUsed: string }> {
   console.log(`[PF] Round query: "${query}" (location: "${profileLocation}")`);
   console.log(`[PF] lastAITier before searchRound: ${lastAITier}`);
@@ -240,6 +242,8 @@ async function searchRound(
   if (!rawJobs || rawJobs.length === 0) {
     return { results: [], queryUsed: query };
   }
+
+  onStatus?.({ type: "found_results", count: rawJobs.length, progress: 20 });
 
   // Domain verification
   for (const j of rawJobs) {
@@ -398,6 +402,8 @@ Each object: { "index": number, "score": number (0-100), "is_valid": boolean, "r
     console.log(`[PF] Pass 1 batch failed, falling back to individual (${rawJobs.length} jobs)`);
     for (let i = 0; i < rawJobs.length; i++) {
       const job = rawJobs[i];
+      const progress = Math.min(20 + ((i + 1) / rawJobs.length) * 35, 55);
+      onStatus?.({ type: "screening_job", current: i + 1, total: rawJobs.length, progress });
       if (i > 0) await sleep(6000);
       const singlePrompt = `You are a recruiter screening a single job match.
 Return ONLY valid JSON (no markdown, no code fences):
@@ -425,6 +431,9 @@ Return ONLY valid JSON (no markdown, no code fences):
     const batchResult = batchResults.find((r) => r.index === i);
     const jobUrl = jobUrls.get(i) || buildJobUrl(job);
     const fullSpec = jobFullSpecs.get(i) || job.description || "";
+
+    const progress = Math.min(55 + ((i + 1) / rawJobs.length) * 30, 85);
+    onStatus?.({ type: "analyzing_job", title: job.title, company: job.company_name, current: i + 1, total: rawJobs.length, progress });
 
     if (i > 0) await sleep(6000);
 
@@ -496,8 +505,11 @@ Return ONLY valid JSON with this exact schema (no markdown, no code fences):
     }
   }
 
+  onStatus?.({ type: "almost_done", progress: 90 });
+
   return { results: outputs, queryUsed: query };
 }
+
 
 export async function POST(request: NextRequest) {
   const supabase = getSupabase();
@@ -608,246 +620,227 @@ export async function POST(request: NextRequest) {
 
     console.log(`[SEARCH] CV text length: ${cvText.length}, titles: ${titles.length}`);
 
-    if (!pf_mode) {
-      // === NORMAL SINGLE SEARCH ===
-      console.log(`[SEARCH] Non-PF mode, picking random title`);
-      const pick = titles[Math.floor(Math.random() * titles.length)] ?? "";
-      const searchQuery = [pick, profileLocation].filter(Boolean).join(" in ");
-      
-      if (!searchQuery || searchQuery === "jobs") {
-        return NextResponse.json({ results: [], code: "NO_QUERY", message: "Add job titles to your search profile first." });
-      }
+    // === STREAMING SEARCH ===
+    const stream = new ReadableStream({
+      async start(controller) {
+        const writer = new StreamWriter(controller);
+        const sendStatus = (event: SearchEvent) => writer.send(event);
 
-      const { results: outputs } = await searchRound(
-        searchQuery, profileLocation, titles, cvText,
-        user, profile, authHeader, dataClient, searchId,
-        bannedJobs, bannedCompanies
-      );
-
-      // Sort
-      outputs.sort((a, b) => {
-        if (a.domain_verified !== b.domain_verified) return a.domain_verified ? -1 : 1;
-        return b.posted_at_ms - a.posted_at_ms;
-      });
-
-      // Deduct balance
-      if (!isAdmin) {
         try {
-          await dataClient.from("profiles").update({ search_balance: (profile.search_balance ?? 3) - 1 }).eq("id", user.id);
-        } catch {}
-      }
+          if (!pf_mode) {
+            // === NORMAL SINGLE SEARCH ===
+            const pick = titles[Math.floor(Math.random() * titles.length)] ?? "";
+            const searchQuery = [pick, profileLocation].filter(Boolean).join(" in ");
 
-      // Save & return
-      if (outputs.length > 0) {
-        const rows = outputs.map((r) => ({
-          user_id: r.user_id,
-          search_id: r.search_id,
-          profile_id: profile_id ?? null,
-          job_title: r.job_title,
-          company: r.company,
-          location: r.location,
-          estimated_salary: r.estimated_salary,
-          match_score: r.match_score,
-          match_summary: r.match_summary,
-          job_url: r.job_url,
-          full_spec: r.full_spec,
-          search_query: r.search_query,
-          domain_verified: r.domain_verified,
-          domain_unverified_reason: r.domain_unverified_reason,
-          posted_at: r.posted_at,
-        }));
-
-        const { data: saved } = await dataClient.from("job_results").insert(rows).select("id, job_title, company, location, estimated_salary, match_score, match_summary, job_url, full_spec, domain_verified, domain_unverified_reason, posted_at, created_at");
-        return NextResponse.json({ results: (saved ?? outputs).map(normalize) });
-      }
-
-      return NextResponse.json({ results: [], code: "ALL_FILTERED_AI", message: "No strong matches found. Try broadening your criteria." });
-    }
-
-    // === PERSISTENT FINDER MODE ===
-    const MAX_ROUNDS = 8;
-    const PHASE1_ROUNDS = 4;
-    const STOP_THRESHOLD_PHASE1 = 80;
-    const STOP_THRESHOLD_PHASE2 = 40;
-    const STOP_COUNT = 5;
-
-    let allResults: JobRow[] = [];
-    const seenUrls = new Set<string>();
-    let remainingTitles = [...titles];
-    let aiVariations: string[] = [];
-    let pfRound = 0;
-    let pfAborted = false;
-
-    // Shuffle titles
-    for (let i = remainingTitles.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [remainingTitles[i], remainingTitles[j]] = [remainingTitles[j], remainingTitles[i]];
-    }
-
-    for (let round = 0; round < MAX_ROUNDS; round++) {
-      const phase = round < PHASE1_ROUNDS ? 1 : 2;
-      const threshold = phase === 1 ? STOP_THRESHOLD_PHASE1 : STOP_THRESHOLD_PHASE2;
-
-      let roundQuery: string;
-
-      if (phase === 1) {
-        // Use original titles
-        if (round >= remainingTitles.length) {
-          // No more original titles — move to phase 2 early
-          if (aiVariations.length === 0) {
-            // Generate AI variations
-            try {
-              const variationPrompt = `You are a job search strategist. Generate 4 different job title variations based on the candidate's profile and original titles. Each variation should be a realistic job search query that could return different results. Return ONLY a JSON array of strings. No markdown, no explanation.`;
-              const variationResult = await callAIWithFallback(
-                variationPrompt,
-                `Original job titles: ${JSON.stringify(titles)}\nCandidate location: ${profileLocation}\nCV summary: ${(cvText || "No CV").slice(0, 1000)}`,
-                "PF title variation gen",
-                { responseMimeType: "application/json", temperature: 0.7 }
-              );
-              const parsedTitles = JSON.parse(variationResult);
-              aiVariations = unwrapArray(parsedTitles) as string[];
-              if (aiVariations.length === 0) {
-                aiVariations = titles.slice(0, 4); // fallback
-              }
-            } catch {
-              aiVariations = titles.slice(0, 4); // fallback on error
+            if (!searchQuery || searchQuery === "jobs") {
+              writer.send({ type: "error", code: "NO_QUERY", message: "Add job titles to your search profile first.", progress: 0 });
+              writer.close();
+              return;
             }
-          }
-          if (round < remainingTitles.length + aiVariations.length) {
-            roundQuery = remainingTitles[round] ?? aiVariations[0];
-          } else {
-            break;
-          }
-        } else {
-          roundQuery = remainingTitles[round];
-        }
-      } else {
-        // Use AI variations
-        if (aiVariations.length === 0) {
-          // Generate AI variations
-          try {
-            const variationPrompt = `You are a job search strategist. Generate 4 different job title variations based on the candidate's profile and original titles. Each variation should be a realistic job search query that could return different results. Return ONLY a JSON array of strings. No markdown, no explanation.`;
-            const variationResult = await callAIWithFallback(
-              variationPrompt,
-              `Original job titles: ${JSON.stringify(titles)}\nCandidate location: ${profileLocation}\nCV summary: ${(cvText || "No CV").slice(0, 1000)}`,
-              "PF title variation gen",
-              { responseMimeType: "application/json", temperature: 0.7 }
+
+            const { results: outputs } = await searchRound(
+              searchQuery, profileLocation, titles, cvText,
+              user, profile, authHeader, dataClient, searchId,
+              bannedJobs, bannedCompanies, undefined, sendStatus
             );
-            const parsedTitles = JSON.parse(variationResult);
-            aiVariations = unwrapArray(parsedTitles) as string[];
-            if (aiVariations.length === 0) {
-              aiVariations = titles.slice(0, 4);
+
+            outputs.sort((a, b) => {
+              if (a.domain_verified !== b.domain_verified) return a.domain_verified ? -1 : 1;
+              return b.posted_at_ms - a.posted_at_ms;
+            });
+
+            if (!isAdmin) {
+              try {
+                await dataClient.from("profiles").update({ search_balance: (profile.search_balance ?? 3) - 1 }).eq("id", user.id);
+              } catch {}
             }
-          } catch {
-            aiVariations = titles.slice(0, 4);
+
+            if (outputs.length > 0) {
+              const rows = outputs.map((r) => ({
+                user_id: r.user_id, search_id: r.search_id, profile_id: profile_id ?? null,
+                job_title: r.job_title, company: r.company, location: r.location,
+                estimated_salary: r.estimated_salary, match_score: r.match_score,
+                match_summary: r.match_summary, job_url: r.job_url, full_spec: r.full_spec,
+                search_query: r.search_query, domain_verified: r.domain_verified,
+                domain_unverified_reason: r.domain_unverified_reason, posted_at: r.posted_at,
+              }));
+
+              const { data: saved } = await dataClient.from("job_results").insert(rows).select("id, job_title, company, location, estimated_salary, match_score, match_summary, job_url, full_spec, domain_verified, domain_unverified_reason, posted_at, created_at");
+              writer.send({ type: "complete", results: (saved ?? outputs).map(normalize), progress: 100 });
+            } else {
+              writer.send({ type: "complete", results: [], progress: 100, message: "No strong matches found. Try broadening your criteria." });
+            }
+
+            writer.close();
+            return;
           }
+
+          // === PERSISTENT FINDER MODE ===
+          const MAX_ROUNDS = 8;
+          const PHASE1_ROUNDS = 4;
+          const STOP_THRESHOLD_PHASE1 = 80;
+          const STOP_THRESHOLD_PHASE2 = 40;
+          const STOP_COUNT = 5;
+
+          let allResults: JobRow[] = [];
+          const seenUrls = new Set<string>();
+          let remainingTitles = [...titles];
+          let aiVariations: string[] = [];
+          let pfRound = 0;
+          let pfAborted = false;
+
+          for (let i = remainingTitles.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [remainingTitles[i], remainingTitles[j]] = [remainingTitles[j], remainingTitles[i]];
+          }
+
+          for (let round = 0; round < MAX_ROUNDS; round++) {
+            const phase = round < PHASE1_ROUNDS ? 1 : 2;
+            const threshold = phase === 1 ? STOP_THRESHOLD_PHASE1 : STOP_THRESHOLD_PHASE2;
+
+            let roundQuery: string;
+
+            if (phase === 1) {
+              if (round >= remainingTitles.length) {
+                if (aiVariations.length === 0) {
+                  try {
+                    const variationPrompt = `You are a job search strategist. Generate 4 different job title variations based on the candidate's profile and original titles. Each variation should be a realistic job search query that could return different results. Return ONLY a JSON array of strings. No markdown, no explanation.`;
+                    const variationResult = await callAIWithFallback(
+                      variationPrompt,
+                      `Original job titles: ${JSON.stringify(titles)}\nCandidate location: ${profileLocation}\nCV summary: ${(cvText || "No CV").slice(0, 1000)}`,
+                      "PF title variation gen",
+                      { responseMimeType: "application/json", temperature: 0.7 }
+                    );
+                    const parsedTitles = JSON.parse(variationResult);
+                    aiVariations = unwrapArray(parsedTitles) as string[];
+                    if (aiVariations.length === 0) aiVariations = titles.slice(0, 4);
+                  } catch {
+                    aiVariations = titles.slice(0, 4);
+                  }
+                }
+                if (round < remainingTitles.length + aiVariations.length) {
+                  roundQuery = remainingTitles[round] ?? aiVariations[0];
+                } else break;
+              } else {
+                roundQuery = remainingTitles[round];
+              }
+            } else {
+              if (aiVariations.length === 0) {
+                try {
+                  const variationPrompt = `You are a job search strategist. Generate 4 different job title variations based on the candidate's profile and original titles. Each variation should be a realistic job search query that could return different results. Return ONLY a JSON array of strings. No markdown, no explanation.`;
+                  const variationResult = await callAIWithFallback(
+                    variationPrompt,
+                    `Original job titles: ${JSON.stringify(titles)}\nCandidate location: ${profileLocation}\nCV summary: ${(cvText || "No CV").slice(0, 1000)}`,
+                    "PF title variation gen",
+                    { responseMimeType: "application/json", temperature: 0.7 }
+                  );
+                  const parsedTitles = JSON.parse(variationResult);
+                  aiVariations = unwrapArray(parsedTitles) as string[];
+                  if (aiVariations.length === 0) aiVariations = titles.slice(0, 4);
+                } catch {
+                  aiVariations = titles.slice(0, 4);
+                }
+              }
+              const varIdx = round - PHASE1_ROUNDS;
+              if (varIdx < aiVariations.length) roundQuery = aiVariations[varIdx];
+              else break;
+            }
+
+            const fullQuery = [roundQuery, profileLocation].filter(Boolean).join(" in ");
+            pfRound = round + 1;
+
+            console.log(`[PF] Round ${pfRound}/${MAX_ROUNDS} (Phase ${phase}, threshold ${threshold}): "${fullQuery}"`);
+            sendStatus({ type: "pf_round", round: pfRound, max: MAX_ROUNDS, query: fullQuery, progress: Math.min((pfRound / MAX_ROUNDS) * 90, 90) });
+
+            if (lastAITier === "openrouter") {
+              console.log("[PF] On OpenRouter tier — using 12s delay between rounds");
+              await sleep(12000);
+            }
+
+            let roundResults: JobRow[];
+            try {
+              const result = await searchRound(
+                fullQuery, profileLocation, titles, cvText,
+                user, profile, authHeader, dataClient, searchId,
+                bannedJobs, bannedCompanies, pfRound, sendStatus
+              );
+              roundResults = result.results;
+            } catch (err) {
+              const errMsg = err instanceof Error ? err.message : String(err);
+              console.log(`[PF] Round ${pfRound} failed — error: ${errMsg}`);
+              pfAborted = true;
+              break;
+            }
+
+            for (const r of roundResults) {
+              if (!seenUrls.has(r.job_url)) {
+                seenUrls.add(r.job_url);
+                allResults.push(r);
+              }
+            }
+
+            console.log(`[PF] Round ${pfRound} results: ${roundResults.length} (total unique: ${allResults.length})`);
+
+            const highScoreCount = allResults.filter((r) => r.match_score >= threshold).length;
+            if (highScoreCount >= STOP_COUNT) {
+              console.log(`[PF] Stopping early — ${highScoreCount} jobs with score >= ${threshold} (round ${pfRound})`);
+              break;
+            }
+          }
+
+          allResults.sort((a, b) => {
+            if (a.domain_verified !== b.domain_verified) return a.domain_verified ? -1 : 1;
+            return b.posted_at_ms - a.posted_at_ms;
+          });
+
+          console.log(`[PF] Total unique results: ${allResults.length}`);
+
+          if (!isAdmin) {
+            try {
+              await dataClient.from("profiles").update({
+                search_balance: (profile.search_balance ?? 3) - 1,
+                persistent_finder_balance: (profile.persistent_finder_balance ?? 0) - 1,
+              }).eq("id", user.id);
+            } catch {}
+          }
+
+          if (allResults.length > 0) {
+            const rows = allResults.map((r) => ({
+              user_id: r.user_id, search_id: r.search_id, profile_id: profile_id ?? null,
+              job_title: r.job_title, company: r.company, location: r.location,
+              estimated_salary: r.estimated_salary, match_score: r.match_score,
+              match_summary: r.match_summary, job_url: r.job_url, full_spec: r.full_spec,
+              search_query: r.search_query, domain_verified: r.domain_verified,
+              domain_unverified_reason: r.domain_unverified_reason, posted_at: r.posted_at,
+            }));
+
+            const { data: saved } = await dataClient.from("job_results").insert(rows).select("id, job_title, company, location, estimated_salary, match_score, match_summary, job_url, full_spec, domain_verified, domain_unverified_reason, posted_at, created_at");
+            const pfMessage = pfAborted
+              ? `Search stopped early due to high demand — showing ${allResults.length} result${allResults.length === 1 ? "" : "s"} found so far`
+              : undefined;
+            writer.send({ type: "complete", results: (saved ?? allResults).map(normalize), progress: 100, pf_mode: true, pf_rounds: pfRound, ...(pfMessage ? { message: pfMessage } : {}) });
+          } else {
+            const noResultsMessage = pfAborted
+              ? "Search stopped early due to high demand — no results were found. Try again later."
+              : "Persistent Finder completed but found no matches. Try different profile keywords.";
+            writer.send({ type: "complete", results: [], progress: 100, message: noResultsMessage, pf_mode: true, pf_rounds: pfRound });
+          }
+
+          writer.close();
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.log("[SEARCH] Unhandled error:", msg);
+          try {
+            writer.send({ type: "error", code: "GENERIC_ERROR", message: "Something went wrong. Please try again.", progress: 0 });
+            writer.close();
+          } catch {}
         }
-        const varIdx = round - PHASE1_ROUNDS;
-        if (varIdx < aiVariations.length) {
-          roundQuery = aiVariations[varIdx];
-        } else {
-          break;
-        }
-      }
-
-      const fullQuery = [roundQuery, profileLocation].filter(Boolean).join(" in ");
-      pfRound = round + 1;
-
-      console.log(`[PF] Round ${pfRound}/${MAX_ROUNDS} (Phase ${phase}, threshold ${threshold}): "${fullQuery}"`);
-
-      // Slow down when on the last available AI tier
-      if (lastAITier === "openrouter") {
-        console.log("[PF] On OpenRouter tier — using 12s delay between rounds");
-        await sleep(12000);
-      }
-
-      let roundResults: JobRow[];
-      try {
-        const result = await searchRound(
-          fullQuery, profileLocation, titles, cvText,
-          user, profile, authHeader, dataClient, searchId,
-          bannedJobs, bannedCompanies, pfRound
-        );
-        roundResults = result.results;
-      } catch (err) {
-        const errMsg = err instanceof Error ? err.message : String(err);
-        console.log(`[PF] Round ${pfRound} failed — error: ${errMsg}`);
-        pfAborted = true;
-        break;
-      }
-
-      // Deduplicate
-      for (const r of roundResults) {
-        if (!seenUrls.has(r.job_url)) {
-          seenUrls.add(r.job_url);
-          allResults.push(r);
-        }
-      }
-
-      console.log(`[PF] Round ${pfRound} results: ${roundResults.length} (total unique: ${allResults.length})`);
-
-      // Check stop condition
-      const highScoreCount = allResults.filter((r) => r.match_score >= threshold).length;
-      if (highScoreCount >= STOP_COUNT) {
-        console.log(`[PF] Stopping early — ${highScoreCount} jobs with score >= ${threshold} (round ${pfRound})`);
-        break;
-      }
-    }
-
-    // Sort final results
-    allResults.sort((a, b) => {
-      if (a.domain_verified !== b.domain_verified) return a.domain_verified ? -1 : 1;
-      return b.posted_at_ms - a.posted_at_ms;
+      },
     });
 
-    console.log(`[PF] Total unique results: ${allResults.length}`);
-
-    // Deduct balance (1 search + 1 PF)
-    if (!isAdmin) {
-      try {
-        await dataClient.from("profiles").update({
-          search_balance: (profile.search_balance ?? 3) - 1,
-          persistent_finder_balance: (profile.persistent_finder_balance ?? 0) - 1,
-        }).eq("id", user.id);
-      } catch {}
-    }
-
-    // Save & return
-    if (allResults.length > 0) {
-      const rows = allResults.map((r) => ({
-        user_id: r.user_id,
-        search_id: r.search_id,
-        profile_id: profile_id ?? null,
-        job_title: r.job_title,
-        company: r.company,
-        location: r.location,
-        estimated_salary: r.estimated_salary,
-        match_score: r.match_score,
-        match_summary: r.match_summary,
-        job_url: r.job_url,
-        full_spec: r.full_spec,
-        search_query: r.search_query,
-        domain_verified: r.domain_verified,
-        domain_unverified_reason: r.domain_unverified_reason,
-        posted_at: r.posted_at,
-      }));
-
-      const { data: saved } = await dataClient.from("job_results").insert(rows).select("id, job_title, company, location, estimated_salary, match_score, match_summary, job_url, full_spec, domain_verified, domain_unverified_reason, posted_at, created_at");
-      const pfMessage = pfAborted
-        ? `Search stopped early due to high demand — showing ${allResults.length} result${allResults.length === 1 ? "" : "s"} found so far`
-        : undefined;
-      return NextResponse.json({
-        results: (saved ?? allResults).map(normalize),
-        pf_mode: true,
-        pf_rounds: pfRound,
-        ...(pfMessage ? { message: pfMessage } : {}),
-      });
-    }
-
-    const noResultsMessage = pfAborted
-      ? "Search stopped early due to high demand — no results were found. Try again later."
-      : "Persistent Finder completed but found no matches. Try different profile keywords.";
-    return NextResponse.json({ results: [], code: "PF_NO_RESULTS", message: noResultsMessage });
+    return new Response(stream, {
+      headers: { "Content-Type": "text/plain", "X-Content-Type-Options": "nosniff" },
+    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.log("[SEARCH] Unhandled error:", msg);

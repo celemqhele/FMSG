@@ -10,6 +10,7 @@ import { PFPurchaseModal } from "@/components/dashboard/pf-purchase-modal";
 import { DashboardTabs, type TabId } from "@/components/dashboard/dashboard-tabs";
 import { BalanceChips } from "@/components/dashboard/balance-chips";
 import { FilterSortBar, type FilterState, type SortMode } from "@/components/dashboard/filter-sort-bar";
+import { SearchProgress } from "@/components/dashboard/search-progress";
 import { SavedJobs } from "@/components/dashboard/saved-jobs";
 import { BlockedList } from "@/components/dashboard/blocked-list";
 import { RejectedJobs } from "@/components/dashboard/rejected-jobs";
@@ -79,6 +80,8 @@ export default function DashboardPage() {
   const [pfModalOpen, setPfModalOpen] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
   const [resultMessage, setResultMessage] = useState("");
+  const [statusCompleted, setStatusCompleted] = useState<string[]>([]);
+  const [statusActive, setStatusActive] = useState("");
 
   useEffect(() => { endTransition(); }, [endTransition]);
 
@@ -167,37 +170,36 @@ export default function DashboardPage() {
     setProgress(0);
     setHasSearched(true);
     setResultMessage("");
+    setStatusCompleted([]);
+    setStatusActive("Searching live job listings");
     setVideoFast(true);
     setPfActive(!!pfMode);
-
-    const interval = setInterval(() => {
-      setProgress((p) => Math.min(p + Math.random() * 15, pfMode ? 90 : 85));
-    }, 1000);
 
     const supabase = createClient();
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) {
-      clearInterval(interval);
       setSearching(false);
       setVideoFast(false);
       return;
     }
 
-    try {
-      const res = await fetch("/api/search", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ query, profile_id: profileId, pf_mode: pfMode }),
-      });
+    const res = await fetch("/api/search", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ query, profile_id: profileId, pf_mode: pfMode }),
+    });
 
-      const data = await res.json();
+    // Handle JSON error responses (auth, balance, profile)
+    const contentType = res.headers.get("Content-Type") || "";
+    if (!contentType.includes("text/plain")) {
+      let data: any = {};
+      try { data = await res.json(); } catch {}
 
       if (res.status === 403 && data.code === "LIMIT_001") {
         setShowLimitModal("LIMIT_001");
-        clearInterval(interval);
         setSearching(false);
         setProgress(0);
         setVideoFast(false);
@@ -207,7 +209,6 @@ export default function DashboardPage() {
 
       if (res.status === 403 && data.code === "LIMIT_003") {
         setShowLimitModal("LIMIT_003");
-        clearInterval(interval);
         setSearching(false);
         setProgress(0);
         setVideoFast(false);
@@ -216,36 +217,157 @@ export default function DashboardPage() {
       }
 
       if (!res.ok) {
-        clearInterval(interval);
         setSearching(false);
         setProgress(0);
         setVideoFast(false);
-        const msg = data?.message ?? "Something went wrong. Please try again.";
-        setResultMessage(msg);
+        setResultMessage(data?.message ?? "Something went wrong. Please try again.");
         return;
       }
 
-      setProgress(100);
-      setTimeout(() => {
-        setResults(data.results ?? []);
+      setResults(data.results ?? []);
+      setSearching(false);
+      setProgress(0);
+      setVideoFast(false);
+      setPfActive(false);
+      if ((data.results?.length ?? 0) === 0 && data.message) {
+        setResultMessage(data.message);
+      }
+      return;
+    }
+
+    // Handle streaming response
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let streamComplete = false;
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.trim()) continue;
+
+          let event: any;
+          try { event = JSON.parse(line); } catch { continue; }
+
+          switch (event.type) {
+            case "found_results":
+              setStatusCompleted((prev) => [...prev, "Searching live job listings"]);
+              setStatusActive(`Found ${event.count} matching results`);
+              setProgress(event.progress ?? 20);
+              break;
+
+            case "screening_job":
+              setStatusCompleted((prev) => {
+                if (prev[prev.length - 1]?.startsWith("Found")) {
+                  return [...prev];
+                }
+                const filtered = prev.filter((s) => !s.startsWith("Screening job"));
+                return [...filtered, `Found ${event.total} matching results`];
+              });
+              setStatusActive(`Screening job ${event.current} of ${event.total}`);
+              setProgress(event.progress ?? 40);
+              break;
+
+            case "analyzing_job":
+              setStatusCompleted((prev) => {
+                const filtered = prev.filter((s) => !s.startsWith("Screening job"));
+                return [...filtered, `Screening ${event.total} of ${event.total} complete`];
+              });
+              setStatusActive(`Analysing fit for: ${event.title} at ${event.company}`);
+              setProgress(event.progress ?? 70);
+              break;
+
+            case "almost_done":
+              setStatusCompleted((prev) => {
+                const filtered = prev.filter((s) => !s.startsWith("Analysing fit"));
+                return [...filtered, statusActive].filter(Boolean);
+              });
+              setStatusActive("Almost done");
+              setProgress(event.progress ?? 90);
+              break;
+
+            case "pf_round":
+              setStatusCompleted((prev) => {
+                const filtered = prev.filter((s) => !s.startsWith("Persistent Finder round"));
+                return [...filtered, `Persistent Finder round ${event.round} of ${event.max}`];
+              });
+              setStatusActive(event.query);
+              setProgress(event.progress ?? 50);
+              break;
+
+            case "complete":
+              streamComplete = true;
+              setProgress(100);
+              setStatusCompleted((prev) => {
+                const filtered = prev.filter((s) =>
+                  !s.startsWith("Analysing fit") &&
+                  !s.startsWith("Almost done") &&
+                  !s.startsWith("Screening job")
+                );
+                const lines = [...filtered];
+                if (statusActive && !statusActive.startsWith("Almost done")) {
+                  lines.push(statusActive);
+                }
+                return lines;
+              });
+              setStatusActive("");
+              setTimeout(() => {
+                setResults(event.results ?? []);
+                setSearching(false);
+                setProgress(0);
+                setVideoFast(false);
+                setPfActive(false);
+                if (event.results?.length === 0 && event.message) {
+                  setResultMessage(event.message);
+                } else if (event.pf_mode && event.pf_rounds) {
+                  setResultMessage(`Persistent Finder completed — ${event.results?.length ?? 0} results across ${event.pf_rounds} rounds`);
+                }
+              }, 500);
+              break;
+
+            case "error":
+              streamComplete = true;
+              setSearching(false);
+              setProgress(0);
+              setVideoFast(false);
+              setPfActive(false);
+              setStatusCompleted([]);
+              setStatusActive("");
+              setResultMessage(event.message ?? "Something went wrong. Please try again.");
+              break;
+          }
+        }
+      }
+
+      // Stream ended without complete/error event
+      if (!streamComplete) {
         setSearching(false);
         setProgress(0);
         setVideoFast(false);
         setPfActive(false);
-        if ((data.results?.length ?? 0) === 0 && data.message) {
-          setResultMessage(data.message);
-        } else if (data.pf_mode && data.pf_rounds) {
-          setResultMessage(`Persistent Finder completed — ${data.results?.length ?? 0} results across ${data.pf_rounds} rounds`);
-        }
-      }, 500);
+        setStatusCompleted([]);
+        setStatusActive("");
+        setResultMessage("Connection lost. Please try again.");
+      }
     } catch {
-      clearInterval(interval);
-      setSearching(false);
-      setProgress(0);
-      setVideoFast(false);
-      setResultMessage("Something went wrong. Please try again.");
+      if (!streamComplete) {
+        setSearching(false);
+        setProgress(0);
+        setVideoFast(false);
+        setPfActive(false);
+        setStatusCompleted([]);
+        setStatusActive("");
+        setResultMessage("Something went wrong. Please try again.");
+      }
     }
-  }, [setVideoFast]); // profileId passed from SearchPill is always the active profile
+  }, [setVideoFast, statusActive]);
 
   const handleDelete = useCallback((id: string) => {
     setResults((prev) => prev.filter((x) => x.id !== id));
@@ -278,23 +400,11 @@ export default function DashboardPage() {
             )}
 
             {searching && (
-              <div className="space-y-2">
-                <div className="h-1.5 rounded-full bg-[var(--color-border)] overflow-hidden">
-                  <div
-                    className="h-full rounded-full bg-[var(--color-accent)] transition-all duration-500"
-                    style={{ width: `${progress}%` }}
-                  />
-                </div>
-                <p className="text-xs text-[var(--color-text-secondary)] text-center">Usually takes 30 seconds</p>
-              </div>
-            )}
-
-            {searching && (
-              <div className="space-y-4 [&>*]:animate-[enter_0.35s_ease-out_forwards]">
-                <SkeletonCard />
-                <SkeletonCard style={{ animationDelay: "0.1s" }} />
-                <SkeletonCard style={{ animationDelay: "0.2s" }} />
-              </div>
+              <SearchProgress
+                completedLines={statusCompleted}
+                activeLine={statusActive}
+                progress={progress}
+              />
             )}
 
             {!searching && results.length > 0 && (
