@@ -15,6 +15,7 @@ interface JobResultCardProps {
   fullDescription: string;
   domainVerified?: boolean;
   domainUnverifiedReason?: string;
+  suggestedCvName?: string;
   onDelete: (id: string) => void;
 }
 
@@ -29,6 +30,7 @@ export function JobResultCard({
   fullDescription,
   domainVerified = true,
   domainUnverifiedReason = "",
+  suggestedCvName = "",
   onDelete,
 }: JobResultCardProps) {
   const [showDeleteMenu, setShowDeleteMenu] = useState(false);
@@ -167,6 +169,11 @@ export function JobResultCard({
             >
               Untrusted Domain
             </button>
+          )}
+          {suggestedCvName && (
+            <span className="text-xs font-medium px-3 py-1 rounded-full bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400 border border-purple-500/30">
+              CV: {suggestedCvName}
+            </span>
           )}
         </div>
         <div className="relative">

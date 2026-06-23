@@ -31,6 +31,7 @@ interface JobResult {
   full_description: string;
   domain_verified?: boolean;
   domain_unverified_reason?: string;
+  suggested_cv?: string;
   created_at?: string;
 }
 
@@ -46,6 +47,7 @@ interface HistoryResult {
   full_spec: string;
   domain_verified?: boolean;
   domain_unverified_reason?: string;
+  suggested_cv?: string;
 }
 
 function SkeletonCard({ style }: { style?: React.CSSProperties }) {
@@ -442,6 +444,7 @@ export default function DashboardPage() {
                       fullDescription={r.full_description}
                       domainVerified={r.domain_verified ?? true}
                       domainUnverifiedReason={r.domain_unverified_reason ?? ""}
+                      suggestedCvName={r.suggested_cv ?? ""}
                       onDelete={handleDelete}
                     />
                 ))}
@@ -484,6 +487,7 @@ export default function DashboardPage() {
                   fullDescription={r.full_spec}
                   domainVerified={r.domain_verified ?? true}
                   domainUnverifiedReason={r.domain_unverified_reason ?? ""}
+                  suggestedCvName={r.suggested_cv ?? ""}
                   onDelete={(id) => setHistoryResults((prev) => prev.filter((x) => x.id !== id))}
                 />
               ))}

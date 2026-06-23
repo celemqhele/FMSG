@@ -218,7 +218,7 @@ export async function POST(request: NextRequest) {
     // Fetch job_result row
     const { data: jobRow, error: jobErr } = await supabase
       .from("job_results")
-      .select("job_title, company, full_spec, search_query, profile_id")
+      .select("job_title, company, full_spec, search_query, profile_id, suggested_cv")
       .eq("id", job_result_id)
       .maybeSingle();
 
@@ -230,17 +230,25 @@ export async function POST(request: NextRequest) {
     const jobTitle = (jobRow as any).job_title ?? "";
     const company = (jobRow as any).company ?? "";
     const jobProfileId = (jobRow as any).profile_id;
+    const suggestedCv = (jobRow as any).suggested_cv ?? "";
 
-    // Look up CV from the search_profile that was used for this search,
-    // falling back to the main profile's cv_file_path for older results
+    // Determine which CV variation to use from the search profile
     let cvFilePath = "";
     if (jobProfileId) {
       const { data: sp } = await supabase
         .from("search_profiles")
-        .select("cv_file_path")
+        .select("cv_variations")
         .eq("id", jobProfileId)
         .maybeSingle();
-      cvFilePath = (sp as any)?.cv_file_path ?? "";
+      const variations: { name: string; file_path: string }[] = (sp as any)?.cv_variations ?? [];
+      if (variations.length > 0) {
+        if (suggestedCv) {
+          const match = variations.find((v) => v.name === suggestedCv);
+          cvFilePath = match?.file_path ?? variations[0].file_path;
+        } else {
+          cvFilePath = variations[0].file_path;
+        }
+      }
     }
     if (!cvFilePath) {
       const { data: profileRow } = await supabase

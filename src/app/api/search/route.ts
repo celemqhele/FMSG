@@ -177,6 +177,7 @@ interface JobRow {
   domain_unverified_reason: string;
   posted_at: string;
   posted_at_ms: number;
+  suggested_cv: string;
 }
 
 function normalize(r: any) {
@@ -212,7 +213,7 @@ async function searchRound(
   query: string,
   profileLocation: string,
   titles: string[],
-  cvText: string,
+  cvTexts: { name: string; text: string }[],
   user: any,
   profile: any,
   authHeader: string,
@@ -416,11 +417,13 @@ async function searchRound(
 
   if (rawJobs.length === 0) return { results: [], queryUsed: query, filteredCounts };
 
-  // Build profile context
+  // Build profile context with multiple CVs
   const profileContext = JSON.stringify({
     job_titles: titles,
     location: profileLocation || null,
-    cv_text: cvText ? cvText.slice(0, 5000) : "No CV provided",
+    cv_texts: cvTexts.length > 0
+      ? cvTexts.map(cv => ({ name: cv.name, text: cv.text }))
+      : [{ name: "No CV", text: "No CV provided" }],
   });
 
   const sanitiseForJson = (s: string | undefined | null): string =>
@@ -515,7 +518,8 @@ Return ONLY valid JSON (no markdown, no code fences):
     if (i > 0) await sleep(6000);
 
     const deepSystemPrompt = `You are a senior recruiter doing a deep-fit analysis.
-You have the candidate's full CV text and profile. You have a full job specification.
+You have the candidate's full CVs and profile. You have a full job specification.
+The candidate has provided multiple CV variations with names.
 Rules:
 - The job MUST be in South Africa or the candidate's preferred location. Reject if not.
 - Reject if the position is expired, filled, or no longer accepting applications.
@@ -523,6 +527,7 @@ Rules:
 - Judge like a human recruiter. Consider transferable skills and career trajectory.
 - Do NOT use keyword matching.
 - In match_summary, reference specifics from the CV and job spec.
+- Choose the CV variation that best matches this role and return its name in suggested_cv_name.
 
 ${blacklistInfo}${bannedInfo}
 
@@ -531,7 +536,8 @@ Return ONLY valid JSON with this exact schema (no markdown, no code fences):
   "score": number (0-100),
   "match_summary": string,
   "estimated_salary": string,
-  "is_valid": boolean
+  "is_valid": boolean,
+  "suggested_cv_name": string
 }`;
 
     try {
@@ -563,6 +569,7 @@ Return ONLY valid JSON with this exact schema (no markdown, no code fences):
         domain_unverified_reason: (job as any)._domainReason ?? "",
         posted_at: (job as any)._postedAt ?? "",
         posted_at_ms: (job as any)._postedAtMs ?? 0,
+        suggested_cv: deepResult.suggested_cv_name || "",
       });
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
@@ -587,6 +594,7 @@ Return ONLY valid JSON with this exact schema (no markdown, no code fences):
           domain_unverified_reason: (job as any)._domainReason ?? "",
           posted_at: (job as any)._postedAt ?? "",
           posted_at_ms: (job as any)._postedAtMs ?? 0,
+          suggested_cv: "",
         });
       }
     }
@@ -699,19 +707,19 @@ export async function POST(request: NextRequest) {
     // Get search profile data
     let titles: string[] = [];
     let profileLocation = "";
-    let cvFilePath = "";
+    let cvVariations: { name: string; file_path: string }[] = [];
 
     if (profile_id) {
       const { data: searchProfile } = await dataClient
         .from("search_profiles")
-        .select("job_titles, location, cv_file_path")
+        .select("job_titles, location, cv_variations")
         .eq("id", profile_id)
         .eq("user_id", user.id)
         .maybeSingle();
       if (searchProfile?.job_titles?.length) {
         titles = searchProfile.job_titles;
         profileLocation = searchProfile.location ?? "";
-        cvFilePath = searchProfile.cv_file_path ?? "";
+        cvVariations = searchProfile.cv_variations ?? [];
       }
     }
 
@@ -719,24 +727,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ results: [], code: "NO_TITLES", message: "Add job titles to your search profile first." });
     }
 
-    // Load CV text
-    let cvText = "";
-    if (cvFilePath) {
+    // Load CV texts from all variations
+    let cvTexts: { name: string; text: string }[] = [];
+    for (const cv of cvVariations) {
+      if (!cv.file_path) continue;
       try {
         const { data: fileData } = await dataClient
           .storage
           .from("cv-files")
-          .download(cvFilePath);
+          .download(cv.file_path);
         if (fileData) {
           const buffer = Buffer.from(await fileData.arrayBuffer());
-          cvText = await extractTextFromPDF(buffer);
+          const text = await extractTextFromPDF(buffer);
+          cvTexts.push({ name: cv.name || "CV", text: text.slice(0, 5000) });
         }
       } catch {
-        // CV unavailable
+        // CV variation unavailable
       }
     }
 
-    console.log(`[SEARCH] CV text length: ${cvText.length}, titles: ${titles.length}`);
+    const cvText = cvTexts.map(cv => cv.text).join("\n\n---\n\n");
+    console.log(`[SEARCH] CV variations: ${cvTexts.length}, total text length: ${cvText.length}, titles: ${titles.length}`);
 
     // Pre-fetch existing job URLs for dedup (history, saved, blocked)
     const [existingResultsRes, existingSavedRes] = await Promise.all([
@@ -772,7 +783,7 @@ export async function POST(request: NextRequest) {
             }
 
             const { results: outputs, filteredCounts } = await searchRound(
-              searchQuery, profileLocation, titles, cvText,
+              searchQuery, profileLocation, titles, cvTexts,
               user, profile, authHeader, dataClient, searchId,
               bannedJobs, bannedCompanies, undefined, sendStatus,
               dedupSets
@@ -802,9 +813,10 @@ export async function POST(request: NextRequest) {
                 match_summary: r.match_summary, job_url: r.job_url, full_spec: r.full_spec,
                 search_query: r.search_query, domain_verified: r.domain_verified,
                 domain_unverified_reason: r.domain_unverified_reason, posted_at: r.posted_at,
+                suggested_cv: r.suggested_cv,
               }));
 
-              const { data: saved } = await dataClient.from("job_results").insert(rows).select("id, job_title, company, location, estimated_salary, match_score, match_summary, job_url, full_spec, domain_verified, domain_unverified_reason, posted_at, created_at");
+              const { data: saved } = await dataClient.from("job_results").insert(rows).select("id, job_title, company, location, estimated_salary, match_score, match_summary, job_url, full_spec, domain_verified, domain_unverified_reason, posted_at, created_at, suggested_cv");
               writer.send({ type: "complete", results: (saved ?? outputs).map(normalize), progress: 100, ...(totalFiltered > 0 ? { filtered_summary: filteredCounts } : {}) });
             } else {
               writer.send({ type: "complete", results: [], progress: 100, message: "No strong matches found. Try broadening your criteria." });
@@ -901,7 +913,7 @@ export async function POST(request: NextRequest) {
             let roundFiltered: typeof pfFilteredCounts;
             try {
               const result = await searchRound(
-                fullQuery, profileLocation, titles, cvText,
+                fullQuery, profileLocation, titles, cvTexts,
                 user, profile, authHeader, dataClient, searchId,
                 bannedJobs, bannedCompanies, pfRound, sendStatus,
                 dedupSets
@@ -965,9 +977,10 @@ export async function POST(request: NextRequest) {
               match_summary: r.match_summary, job_url: r.job_url, full_spec: r.full_spec,
               search_query: r.search_query, domain_verified: r.domain_verified,
               domain_unverified_reason: r.domain_unverified_reason, posted_at: r.posted_at,
+              suggested_cv: r.suggested_cv,
             }));
 
-            const { data: saved } = await dataClient.from("job_results").insert(rows).select("id, job_title, company, location, estimated_salary, match_score, match_summary, job_url, full_spec, domain_verified, domain_unverified_reason, posted_at, created_at");
+            const { data: saved } = await dataClient.from("job_results").insert(rows).select("id, job_title, company, location, estimated_salary, match_score, match_summary, job_url, full_spec, domain_verified, domain_unverified_reason, posted_at, created_at, suggested_cv");
             const pfMessage = pfAborted
               ? `Search stopped early due to high demand — showing ${allResults.length} result${allResults.length === 1 ? "" : "s"} found so far`
               : undefined;

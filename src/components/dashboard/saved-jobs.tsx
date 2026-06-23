@@ -15,6 +15,7 @@ interface SavedJob {
   match_summary: string;
   job_url: string;
   full_spec: string;
+  suggested_cv?: string;
 }
 
 export function SavedJobs() {
@@ -65,6 +66,7 @@ export function SavedJobs() {
           jobUrl={j.job_url}
           fullDescription={j.full_spec}
           domainVerified={true}
+          suggestedCvName={j.suggested_cv ?? ""}
           onDelete={(id) => setJobs((prev) => prev.filter((x) => x.id !== id))}
         />
       ))}

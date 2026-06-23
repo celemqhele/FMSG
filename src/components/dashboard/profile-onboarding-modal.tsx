@@ -2,8 +2,13 @@
 
 import { useState, useEffect, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { Upload, X, Loader2, Trash2 } from "lucide-react";
+import { Upload, X, Loader2, Trash2, Plus, FileText } from "lucide-react";
 import "../landing/liquid-glass.css";
+
+interface CvVariation {
+  name: string;
+  file_path: string;
+}
 
 interface ProfileOnboardingModalProps {
   profileId: string;
@@ -21,13 +26,15 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
   const [jobTitles, setJobTitles] = useState<string[]>([""]);
   const [location, setLocation] = useState("");
   const [jobTypes, setJobTypes] = useState<string[]>([]);
-  const [cvFilePath, setCvFilePath] = useState("");
+  const [cvVariations, setCvVariations] = useState<CvVariation[]>([]);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [uploadingCv, setUploadingCv] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const addInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     requestAnimationFrame(() => setMounted(true));
@@ -37,7 +44,7 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
     const supabase = createClient();
     supabase
       .from("search_profiles")
-      .select("name, job_titles, job_types, location, cv_file_path")
+      .select("name, job_titles, job_types, location, cv_variations")
       .eq("id", profileId)
       .maybeSingle()
       .then(({ data }: { data: any }) => {
@@ -46,7 +53,7 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
           setJobTitles(data.job_titles?.length ? data.job_titles : [""]);
           setJobTypes(data.job_types ?? []);
           setLocation(data.location ?? "");
-          setCvFilePath(data.cv_file_path ?? "");
+          setCvVariations(data.cv_variations?.length ? data.cv_variations : []);
         }
         setLoadingProfile(false);
       });
@@ -92,7 +99,9 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
             : [""];
           setJobTitles(titles);
           setLocation(data.preferred_location ?? "");
-          if (data.cv_file_path) setCvFilePath(data.cv_file_path);
+          if (data.cv_file_path) {
+            setCvVariations([{ name: "CV", file_path: data.cv_file_path }]);
+          }
           setStep("form");
         })
         .catch(() => {
@@ -100,6 +109,116 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
           setStep("upload");
         });
     });
+  };
+
+  const handleAddCvUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    if (f.type !== "application/pdf") {
+      setError("Only PDF files are supported.");
+      if (e.target) e.target.value = "";
+      return;
+    }
+    if (f.size > 10 * 1024 * 1024) {
+      setError("File too large. Max 10MB.");
+      if (e.target) e.target.value = "";
+      return;
+    }
+
+    setUploadingCv(true);
+    setError("");
+
+    const supabase = createClient();
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      setError("Not authenticated.");
+      setUploadingCv(false);
+      return;
+    }
+
+    const fileExt = f.name.split('.').pop();
+    const filePath = `${session.user.id}/${crypto.randomUUID()}.${fileExt}`;
+    const { error: uploadErr } = await supabase.storage
+      .from("cv-files")
+      .upload(filePath, f, { contentType: "application/pdf" });
+
+    if (uploadErr) {
+      setError("Failed to upload CV. Please try again.");
+      setUploadingCv(false);
+      if (e.target) e.target.value = "";
+      return;
+    }
+
+    setCvVariations((prev) => [...prev, { name: "", file_path: filePath }]);
+    setUploadingCv(false);
+    if (addInputRef.current) addInputRef.current.value = "";
+  };
+
+  const handleReplaceCv = (index: number) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".pdf,application/pdf";
+    input.onchange = async (e) => {
+      const target = e.target as HTMLInputElement;
+      const f = target.files?.[0];
+      if (!f) return;
+      if (f.type !== "application/pdf") {
+        setError("Only PDF files are supported.");
+        return;
+      }
+      if (f.size > 10 * 1024 * 1024) {
+        setError("File too large. Max 10MB.");
+        return;
+      }
+
+      setUploadingCv(true);
+      setError("");
+
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        setError("Not authenticated.");
+        setUploadingCv(false);
+        return;
+      }
+
+      const oldCv = cvVariations[index];
+      if (oldCv?.file_path) {
+        await supabase.storage.from("cv-files").remove([oldCv.file_path]);
+      }
+
+      const fileExt = f.name.split('.').pop();
+      const filePath = `${session.user.id}/${crypto.randomUUID()}.${fileExt}`;
+      const { error: uploadErr } = await supabase.storage
+        .from("cv-files")
+        .upload(filePath, f, { contentType: "application/pdf" });
+
+      if (uploadErr) {
+        setError("Failed to upload CV. Please try again.");
+        setUploadingCv(false);
+        return;
+      }
+
+      setCvVariations((prev) =>
+        prev.map((cv, i) => (i === index ? { ...cv, file_path: filePath } : cv))
+      );
+      setUploadingCv(false);
+    };
+    input.click();
+  };
+
+  const handleRemoveCv = (index: number) => {
+    if (cvVariations.length <= 1) {
+      setError("You need at least one CV.");
+      return;
+    }
+    setCvVariations((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleCvNameChange = (index: number, value: string) => {
+    setCvVariations((prev) =>
+      prev.map((cv, i) => (i === index ? { ...cv, name: value } : cv))
+    );
   };
 
   const handleTitleChange = (i: number, v: string) => {
@@ -121,18 +240,33 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
       setError("Add at least one job title.");
       return;
     }
+
+    const validCvs = cvVariations.filter((cv) => cv.file_path.trim());
+    if (validCvs.length === 0) {
+      setError("Upload at least one CV.");
+      return;
+    }
+
+    const namedCvs = validCvs.map((cv) => ({
+      ...cv,
+      name: cv.name.trim() || "CV",
+    }));
+
     setSaving(true);
     setError("");
 
     const supabase = createClient();
-    // Strip non-geographic terms from location (SerpAPI rejects "Remote / UK-based")
     const cleanedLocation = location
       .replace(/\b(Remote|Hybrid|On-site|Online|Work from home|WFH|Flexible|Anywhere)\b/gi, "")
       .replace(/[\s,;/-]+/g, " ")
       .trim();
-    const updateData: Record<string, any> = { job_titles: filtered, location: cleanedLocation, job_types: jobTypes };
+    const updateData: Record<string, any> = {
+      job_titles: filtered,
+      location: cleanedLocation,
+      job_types: jobTypes,
+      cv_variations: namedCvs,
+    };
     if (name.trim()) updateData.name = name.trim();
-    if (cvFilePath.trim()) updateData.cv_file_path = cvFilePath.trim();
 
     const { error: updateErr } = await supabase
       .from("search_profiles")
@@ -184,7 +318,7 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
           </button>
         </div>
 
-        <div className="px-6 py-6">
+        <div className="px-6 py-6 max-h-[70vh] overflow-y-auto">
           {error && (
             <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-400">
               {error}
@@ -292,6 +426,66 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
                     </button>
                   ))}
                 </div>
+              </div>
+
+              {/* CV Variations */}
+              <div>
+                <label className="text-sm font-medium text-white/80 mb-1.5 block">
+                  CV Variations <span className="text-white/30 font-normal">(max 4)</span>
+                </label>
+                <div className="flex flex-col gap-2">
+                  {cvVariations.map((cv, i) => (
+                    <div key={i} className="flex flex-col gap-1.5 p-3 rounded-lg bg-white/5 border border-white/10">
+                      <div className="flex items-center gap-2">
+                        <FileText size={14} className="text-white/30 shrink-0" />
+                        <input
+                          value={cv.name}
+                          onChange={(e) => handleCvNameChange(i, e.target.value)}
+                          placeholder="e.g. General, Tech Focus, Senior"
+                          className="flex-1 px-2 py-1.5 rounded-lg bg-white/5 border border-white/10 text-sm text-white placeholder-white/30 focus:outline-none focus:border-[var(--color-accent)] transition-colors"
+                        />
+                      </div>
+                      <div className="flex items-center gap-2 text-xs text-white/40 pl-6">
+                        <span className="truncate flex-1">{cv.file_path.split('/').pop()}</span>
+                        <button
+                          onClick={() => handleReplaceCv(i)}
+                          className="text-[var(--color-accent)] hover:underline"
+                        >
+                          Replace
+                        </button>
+                        <button
+                          onClick={() => handleRemoveCv(i)}
+                          className={`${cvVariations.length <= 1 ? 'text-white/20 cursor-not-allowed' : 'text-red-400 hover:text-red-300'}`}
+                        >
+                          <X size={13} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {cvVariations.length < 4 && (
+                  <>
+                    <input
+                      ref={addInputRef}
+                      type="file"
+                      accept=".pdf,application/pdf"
+                      className="hidden"
+                      onChange={handleAddCvUpload}
+                    />
+                    <button
+                      onClick={() => addInputRef.current?.click()}
+                      disabled={uploadingCv}
+                      className="mt-2 flex items-center gap-1.5 text-xs text-[var(--color-accent)] hover:underline disabled:opacity-50"
+                    >
+                      {uploadingCv ? (
+                        <Loader2 size={12} className="animate-spin" />
+                      ) : (
+                        <Plus size={12} />
+                      )}
+                      {uploadingCv ? "Uploading..." : `Add CV (${cvVariations.length}/4)`}
+                    </button>
+                  </>
+                )}
               </div>
 
               <button
