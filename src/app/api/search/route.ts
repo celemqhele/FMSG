@@ -65,9 +65,11 @@ function extractDomain(url: string): string | null {
 function decodeGoogleRedirect(url: string): string {
   try {
     const u = new URL(url);
-    if (u.hostname.includes('google') && u.searchParams.has('q')) {
-      const decoded = u.searchParams.get('q')!;
-      if (decoded.startsWith('http://') || decoded.startsWith('https://')) return decoded;
+    if (u.hostname.includes('google')) {
+      for (const param of ['q', 'url', 'adurl', 'dest', 'continue', 'redirect']) {
+        const val = u.searchParams.get(param);
+        if (val && (val.startsWith('http://') || val.startsWith('https://'))) return val;
+      }
     }
   } catch {}
   return url;
@@ -298,16 +300,18 @@ async function searchRound(
 
   onStatus?.({ type: "found_results", count: rawJobs.length, progress: 20 });
 
-  // Domain verification
+  // Domain verification — check the actual destination (apply_options[0].link), not the Google Jobs wrapper URL
   for (const j of rawJobs) {
-    const url = buildJobUrl(j);
+    const destUrl = j.apply_options?.[0]?.link
+      ? decodeGoogleRedirect(j.apply_options[0].link)
+      : buildJobUrl(j);
     const postedStr = (j as any).detected_extensions?.posted_at ?? (j as any).posted_at ?? "";
-    const result = isDomainVerified(url, postedStr);
+    const result = isDomainVerified(destUrl, postedStr);
     (j as any)._domainVerified = result.verified;
     (j as any)._domainReason = result.verified
       ? ""
       : result.reason === "untrusted_domain"
-        ? `untrusted_domain: ${extractDomain(url)}`
+        ? `untrusted_domain: ${extractDomain(destUrl)}`
         : result.reason;
     (j as any)._postedAt = postedStr;
     (j as any)._postedAtMs = parsePostedAt(postedStr) ?? 0;
