@@ -152,7 +152,8 @@ export async function callAIWithFallback(
   } catch (err: any) {
     const msg = err?.message ?? String(err);
     console.log(`[AI] Gemini error on "${stepName}": ${msg}`);
-    if (!msg.includes("429") && !msg.includes("quota")) throw err;
+    const isRetryable = msg.includes("429") || msg.includes("quota") || /5\d{2}/.test(msg) || /UNAVAILABLE/i.test(msg);
+    if (!isRetryable) throw err;
   }
 
   // Tier 2: Groq
@@ -165,7 +166,8 @@ export async function callAIWithFallback(
     } catch (err: any) {
       const msg = err?.message ?? String(err);
       console.log(`[AI] Groq error on "${stepName}": ${msg}`);
-      if (!msg.includes("429") && !msg.includes("quota")) throw err;
+      const isRetryable = msg.includes("429") || msg.includes("quota") || /5\d{2}/.test(msg) || /UNAVAILABLE/i.test(msg);
+      if (!isRetryable) throw err;
     }
   }
 
