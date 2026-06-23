@@ -837,7 +837,12 @@ export async function POST(request: NextRequest) {
             }
 
             if (outputs.length > 0) {
-              const rows = outputs.map((r) => ({
+              const withIds = outputs.map((r) => ({ ...r, id: crypto.randomUUID() }));
+
+              writer.send({ type: "complete", results: withIds.map(normalize), progress: 100, ...(totalFiltered > 0 ? { filtered_summary: filteredCounts } : {}) });
+
+              const rows = withIds.map((r) => ({
+                id: r.id,
                 user_id: r.user_id, search_id: r.search_id, profile_id: profile_id ?? null,
                 job_title: r.job_title, company: r.company, location: r.location,
                 estimated_salary: r.estimated_salary, match_score: r.match_score,
@@ -846,15 +851,9 @@ export async function POST(request: NextRequest) {
                 domain_unverified_reason: r.domain_unverified_reason, posted_at: r.posted_at,
                 suggested_cv: r.suggested_cv,
               }));
-
-              const { data: saved, error: insertErr } = await dataClient.from("job_results").insert(rows).select("id, job_title, company, location, estimated_salary, match_score, match_summary, job_url, full_spec, domain_verified, domain_unverified_reason, posted_at, created_at, suggested_cv");
-              if (insertErr) {
-                console.error("[SEARCH] Failed to insert job results:", insertErr.message);
-                writer.send({ type: "error", code: "DB_ERROR", message: "Failed to save results.", progress: 100 });
-                writer.close();
-                return;
-              }
-              writer.send({ type: "complete", results: (saved ?? outputs).map(normalize), progress: 100, ...(totalFiltered > 0 ? { filtered_summary: filteredCounts } : {}) });
+              dataClient.from("job_results").insert(rows).then(({ error }: any) => {
+                if (error) console.error("[SEARCH] Failed to insert job results:", error.message);
+              });
             } else {
               writer.send({ type: "complete", results: [], progress: 100, message: "No strong matches found. Try broadening your criteria." });
             }
@@ -991,7 +990,16 @@ Return ONLY a JSON array of strings. No explanation.`;
           }
 
           if (allResults.length > 0) {
-            const rows = allResults.map((r) => ({
+            const withIds = allResults.map((r) => ({ ...r, id: crypto.randomUUID() }));
+
+            const pfMessage = pfAborted
+              ? `Search stopped early due to high demand — showing ${allResults.length} result${allResults.length === 1 ? "" : "s"} found so far`
+              : undefined;
+
+            writer.send({ type: "complete", results: withIds.map(normalize), progress: 100, pf_mode: true, pf_rounds: pfRound, ...(pfTotalFiltered > 0 ? { filtered_summary: pfFilteredCounts } : {}), ...(pfMessage ? { message: pfMessage } : {}) });
+
+            const rows = withIds.map((r) => ({
+              id: r.id,
               user_id: r.user_id, search_id: r.search_id, profile_id: profile_id ?? null,
               job_title: r.job_title, company: r.company, location: r.location,
               estimated_salary: r.estimated_salary, match_score: r.match_score,
@@ -1000,18 +1008,9 @@ Return ONLY a JSON array of strings. No explanation.`;
               domain_unverified_reason: r.domain_unverified_reason, posted_at: r.posted_at,
               suggested_cv: r.suggested_cv,
             }));
-
-            const { data: saved, error: pfInsertErr } = await dataClient.from("job_results").insert(rows).select("id, job_title, company, location, estimated_salary, match_score, match_summary, job_url, full_spec, domain_verified, domain_unverified_reason, posted_at, created_at, suggested_cv");
-            if (pfInsertErr) {
-              console.error("[PF] Failed to insert job results:", pfInsertErr.message);
-              writer.send({ type: "error", code: "DB_ERROR", message: "Failed to save results.", progress: 100 });
-              writer.close();
-              return;
-            }
-            const pfMessage = pfAborted
-              ? `Search stopped early due to high demand — showing ${allResults.length} result${allResults.length === 1 ? "" : "s"} found so far`
-              : undefined;
-            writer.send({ type: "complete", results: (saved ?? allResults).map(normalize), progress: 100, pf_mode: true, pf_rounds: pfRound, ...(pfTotalFiltered > 0 ? { filtered_summary: pfFilteredCounts } : {}), ...(pfMessage ? { message: pfMessage } : {}) });
+            dataClient.from("job_results").insert(rows).then(({ error }: any) => {
+              if (error) console.error("[PF] Failed to insert job results:", error.message);
+            });
           } else {
             const noResultsMessage = pfAborted
               ? "Search stopped early due to high demand — no results were found. Try again later."
