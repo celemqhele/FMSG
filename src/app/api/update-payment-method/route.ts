@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Get active subscription
-  const { data: sub } = await supabase
+  const { data: sub, error: subErr } = await supabase
     .from("subscriptions")
     .select("*")
     .eq("user_id", user.id)
@@ -31,6 +31,10 @@ export async function POST(request: NextRequest) {
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
+
+  if (subErr) {
+    return NextResponse.json({ error: "Failed to fetch subscription." }, { status: 500 });
+  }
 
   if (!sub) {
     return NextResponse.json({ error: "No active subscription found" }, { status: 404 });

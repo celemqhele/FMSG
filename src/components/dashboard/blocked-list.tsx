@@ -39,7 +39,11 @@ export function BlockedList() {
     const { data }: { data: any } = await supabase.auth.getUser();
     const user = data?.user;
     if (user) {
-      await supabase.from("profiles").update({ banned_companies: updated }).eq("id", user.id);
+      const { error: err } = await supabase.from("profiles").update({ banned_companies: updated }).eq("id", user.id);
+      if (err) {
+        console.error("Failed to unban company:", err.message);
+        setCompanies(companies);
+      }
     }
   };
 
@@ -50,7 +54,11 @@ export function BlockedList() {
     const { data }: { data: any } = await supabase.auth.getUser();
     const user = data?.user;
     if (user) {
-      await supabase.from("profiles").update({ banned_jobs: updated }).eq("id", user.id);
+      const { error: err } = await supabase.from("profiles").update({ banned_jobs: updated }).eq("id", user.id);
+      if (err) {
+        console.error("Failed to unban job:", err.message);
+        setJobs(jobs);
+      }
     }
   };
 

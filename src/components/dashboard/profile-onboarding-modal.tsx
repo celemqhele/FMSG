@@ -87,7 +87,13 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
         headers: session ? { Authorization: `Bearer ${session.access_token}` } : {},
         body: formData,
       })
-        .then((r) => r.json())
+        .then(async (r) => {
+          if (!r.ok) {
+            const errData = await r.json().catch(() => ({}));
+            throw new Error(errData.error || "Failed to extract CV");
+          }
+          return r.json();
+        })
         .then((data) => {
           if (data.error) {
             setError(data.error);

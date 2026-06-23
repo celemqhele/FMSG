@@ -79,12 +79,23 @@ export function JobResultCard({
       setDeleting(false);
       return;
     }
-    await fetch(`/api/job-results/${id}`, {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ ban_job: banJob, ban_company: banCompany }),
-    });
-    setTimeout(() => onDelete(id), 300);
+    try {
+      const res = await fetch(`/api/job-results/${id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ ban_job: banJob, ban_company: banCompany }),
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        console.error("Failed to hide job:", errData.error || res.statusText);
+        setDeleting(false);
+        return;
+      }
+      setTimeout(() => onDelete(id), 300);
+    } catch (err) {
+      console.error("Network error hiding job:", err);
+      setDeleting(false);
+    }
   };
 
   const handleSave = async () => {

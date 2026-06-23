@@ -54,11 +54,16 @@ export async function POST(request: NextRequest) {
         if (!paystackSubId && !reference) break;
 
         // Find existing subscription by paystack reference or subscription code
-        const { data: existingSub } = await supabase
+        const { data: existingSub, error: subErr } = await supabase
           .from("subscriptions")
           .select("id, user_id, plan, expiry_date")
           .or(`paystack_reference.eq.${reference},paystack_subscription_id.eq.${paystackSubId}`)
           .maybeSingle();
+
+        if (subErr) {
+          console.error("[WEBHOOK] Failed to find subscription:", subErr.message);
+          return NextResponse.json({ error: "DB error" }, { status: 500 });
+        }
 
         if (existingSub) {
           // Recurring payment — extend expiry
@@ -75,7 +80,7 @@ export async function POST(request: NextRequest) {
           const limits = PLAN_LIMITS[existingSub.plan] ?? { searches: 1, cv_gens: 0, pf_balance: 0 };
 
           // Insert payment record
-          await supabase.from("subscriptions").insert({
+          const { error: insertErr } = await supabase.from("subscriptions").insert({
             user_id: existingSub.user_id,
             plan: existingSub.plan,
             billing_cycle: billingCycle,
@@ -91,8 +96,13 @@ export async function POST(request: NextRequest) {
             status: "active",
           });
 
+          if (insertErr) {
+            console.error("[WEBHOOK] Failed to insert payment record:", insertErr.message);
+            return NextResponse.json({ error: "DB error" }, { status: 500 });
+          }
+
           // Extend user's plan
-          await supabase
+          const { error: updateErr } = await supabase
             .from("profiles")
             .update({
               plan_expiry: newExpiry.toISOString(),
@@ -101,13 +111,23 @@ export async function POST(request: NextRequest) {
               persistent_finder_balance: limits.pf_balance,
             })
             .eq("id", existingSub.user_id);
+
+          if (updateErr) {
+            console.error("[WEBHOOK] Failed to extend profile:", updateErr.message);
+            return NextResponse.json({ error: "DB error" }, { status: 500 });
+          }
         } else if (reference) {
           // First-time payment — find user by email
-          const { data: user } = await supabase
+          const { data: user, error: userErr } = await supabase
             .from("profiles")
             .select("id")
             .eq("email", email)
             .maybeSingle();
+
+          if (userErr) {
+            console.error("[WEBHOOK] Failed to find user by email:", userErr.message);
+            return NextResponse.json({ error: "DB error" }, { status: 500 });
+          }
 
           if (user) {
             const now = new Date();
@@ -120,7 +140,7 @@ export async function POST(request: NextRequest) {
 
             const limits = PLAN_LIMITS[plan] ?? { searches: 1, cv_gens: 0, pf_balance: 0 };
 
-            await supabase.from("subscriptions").insert({
+            const { error: insertErr } = await supabase.from("subscriptions").insert({
               user_id: user.id,
               plan,
               billing_cycle: billingCycle,
@@ -136,7 +156,12 @@ export async function POST(request: NextRequest) {
               status: "active",
             });
 
-            await supabase
+            if (insertErr) {
+              console.error("[WEBHOOK] Failed to insert first-time subscription:", insertErr.message);
+              return NextResponse.json({ error: "DB error" }, { status: 500 });
+            }
+
+            const { error: profileErr } = await supabase
               .from("profiles")
               .update({
                 plan: plan.toLowerCase(),
@@ -146,6 +171,11 @@ export async function POST(request: NextRequest) {
                 persistent_finder_balance: limits.pf_balance,
               })
               .eq("id", user.id);
+
+            if (profileErr) {
+              console.error("[WEBHOOK] Failed to update profile for first-time payment:", profileErr.message);
+              return NextResponse.json({ error: "DB error" }, { status: 500 });
+            }
           }
         }
         break;
@@ -157,7 +187,7 @@ export async function POST(request: NextRequest) {
         if (!paystackSubId) break;
 
         // Mark subscription for grace period
-        const { data: existingSub } = await supabase
+        const { data: existingSub, error: subErr } = await supabase
           .from("subscriptions")
           .select("id, user_id")
           .eq("paystack_subscription_id", paystackSubId)
@@ -166,11 +196,21 @@ export async function POST(request: NextRequest) {
           .limit(1)
           .maybeSingle();
 
+        if (subErr) {
+          console.error("[WEBHOOK] Failed to find subscription for not_renew:", subErr.message);
+          return NextResponse.json({ error: "DB error" }, { status: 500 });
+        }
+
         if (existingSub) {
-          await supabase
+          const { error: updateErr } = await supabase
             .from("subscriptions")
             .update({ status: "past_due" })
             .eq("id", existingSub.id);
+
+          if (updateErr) {
+            console.error("[WEBHOOK] Failed to update subscription to past_due:", updateErr.message);
+            return NextResponse.json({ error: "DB error" }, { status: 500 });
+          }
         }
         break;
       }
@@ -180,7 +220,7 @@ export async function POST(request: NextRequest) {
         const paystackSubId = subData.subscription_code ?? subData.subscription?.subscription_code ?? "";
         if (!paystackSubId) break;
 
-        const { data: existingSub } = await supabase
+        const { data: existingSub, error: subErr } = await supabase
           .from("subscriptions")
           .select("id, user_id")
           .eq("paystack_subscription_id", paystackSubId)
@@ -189,11 +229,21 @@ export async function POST(request: NextRequest) {
           .limit(1)
           .maybeSingle();
 
+        if (subErr) {
+          console.error("[WEBHOOK] Failed to find subscription for disable:", subErr.message);
+          return NextResponse.json({ error: "DB error" }, { status: 500 });
+        }
+
         if (existingSub) {
-          await supabase
+          const { error: updateErr } = await supabase
             .from("subscriptions")
             .update({ status: "cancelled", cancelled_at: new Date().toISOString() })
             .eq("id", existingSub.id);
+
+          if (updateErr) {
+            console.error("[WEBHOOK] Failed to cancel subscription:", updateErr.message);
+            return NextResponse.json({ error: "DB error" }, { status: 500 });
+          }
         }
         break;
       }
@@ -206,6 +256,7 @@ export async function POST(request: NextRequest) {
     }
   } catch (err) {
     console.error("[WEBHOOK] Error processing event:", err);
+    return NextResponse.json({ error: "Processing failed" }, { status: 500 });
   }
 
   return NextResponse.json({ ok: true });

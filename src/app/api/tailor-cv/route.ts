@@ -41,13 +41,17 @@ export async function POST(request: NextRequest) {
     }
 
     // Get profile for CV file path
-    const { data: profile } = await supabase
+    const { data: profile, error: profileErr } = await supabase
       .from("profiles")
       .select("*")
       .eq("id", user.id)
       .single();
 
-    if (!profile || !profile.cv_file_path) {
+    if (profileErr || !profile) {
+      return NextResponse.json({ error: profileErr?.message || "Profile not found." }, { status: 500 });
+    }
+
+    if (!profile.cv_file_path) {
       return NextResponse.json({ error: "No CV found. Upload one first." }, { status: 400 });
     }
 
@@ -63,10 +67,14 @@ export async function POST(request: NextRequest) {
 
     // Decrement balance
     if (!isAdmin) {
-      await supabase
+      const { error: decErr } = await supabase
         .from("profiles")
         .update({ cv_generation_balance: (profile.cv_generation_balance ?? 5) - 1 })
         .eq("id", user.id);
+
+      if (decErr) {
+        console.error("[TAILOR-CV] Failed to decrement balance:", decErr.message);
+      }
     }
 
     // Fetch raw PDF from Storage

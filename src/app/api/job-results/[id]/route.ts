@@ -22,55 +22,75 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
     const body = await request.json().catch(() => ({}));
 
     // Get the job result to know which company/job URL to ban
-    const { data: job } = await supabase
+    const { data: job, error: jobErr } = await supabase
       .from("job_results")
       .select("*")
       .eq("id", id)
       .eq("user_id", user.id)
       .single();
 
-    if (!job) {
-      return NextResponse.json({ error: "Job result not found." }, { status: 404 });
+    if (jobErr || !job) {
+      return NextResponse.json({ error: jobErr?.message || "Job result not found." }, { status: jobErr ? 500 : 404 });
     }
 
     if (body.ban_company) {
-      const { data: prof } = await supabase
+      const { data: prof, error: profErr } = await supabase
         .from("profiles")
         .select("banned_companies")
         .eq("id", user.id)
         .single();
 
+      if (profErr) {
+        return NextResponse.json({ error: "Failed to fetch profile." }, { status: 500 });
+      }
+
       const existing = prof?.banned_companies ?? [];
       if (!existing.includes(job.company)) {
-        await supabase
+        const { error: updateErr } = await supabase
           .from("profiles")
           .update({ banned_companies: [...existing, job.company] })
           .eq("id", user.id);
+
+        if (updateErr) {
+          return NextResponse.json({ error: "Failed to ban company." }, { status: 500 });
+        }
       }
     }
 
     if (body.ban_job) {
-      const { data: prof } = await supabase
+      const { data: prof, error: profErr } = await supabase
         .from("profiles")
         .select("banned_jobs")
         .eq("id", user.id)
         .single();
 
+      if (profErr) {
+        return NextResponse.json({ error: "Failed to fetch profile." }, { status: 500 });
+      }
+
       const existing = prof?.banned_jobs ?? [];
       if (!existing.includes(job.job_url)) {
-        await supabase
+        const { error: updateErr } = await supabase
           .from("profiles")
           .update({ banned_jobs: [...existing, job.job_url] })
           .eq("id", user.id);
+
+        if (updateErr) {
+          return NextResponse.json({ error: "Failed to ban job." }, { status: 500 });
+        }
       }
     }
 
     // Mark as deleted
-    await supabase
+    const { error: deleteErr } = await supabase
       .from("job_results")
       .update({ is_deleted: true })
       .eq("id", id)
       .eq("user_id", user.id);
+
+    if (deleteErr) {
+      return NextResponse.json({ error: "Failed to mark job as deleted." }, { status: 500 });
+    }
 
     return NextResponse.json({ success: true });
   } catch (err) {

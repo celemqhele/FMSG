@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Get active subscription
-  const { data: sub } = await supabase
+  const { data: sub, error: subErr } = await supabase
     .from("subscriptions")
     .select("*")
     .eq("user_id", user.id)
@@ -32,6 +32,10 @@ export async function POST(request: NextRequest) {
     .limit(1)
     .maybeSingle();
 
+  if (subErr) {
+    return NextResponse.json({ error: "Failed to fetch subscription." }, { status: 500 });
+  }
+
   if (!sub) {
     return NextResponse.json({ error: "No active subscription found" }, { status: 404 });
   }
@@ -39,7 +43,7 @@ export async function POST(request: NextRequest) {
   // Disable on Paystack if we have a subscription ID
   if (sub.paystack_subscription_id && PAYSTACK_SECRET_KEY) {
     try {
-      await fetch(`https://api.paystack.co/subscription/${sub.paystack_subscription_id}/disable`, {
+      const paystackRes = await fetch(`https://api.paystack.co/subscription/${sub.paystack_subscription_id}/disable`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
@@ -47,16 +51,24 @@ export async function POST(request: NextRequest) {
         },
         body: JSON.stringify({ code: sub.paystack_subscription_id, token: sub.email }),
       });
+      if (!paystackRes.ok) {
+        console.error("[CANCEL_SUB] Paystack returned non-OK:", paystackRes.status);
+      }
     } catch (err) {
       console.error("[CANCEL_SUB] Paystack disable error:", err);
     }
   }
 
   // Mark as cancelled in DB
-  await supabase
+  const { error: updateErr } = await supabase
     .from("subscriptions")
     .update({ status: "cancelled", cancelled_at: new Date().toISOString() })
     .eq("id", sub.id);
+
+  if (updateErr) {
+    console.error("[CANCEL_SUB] Failed to update subscription:", updateErr.message);
+    return NextResponse.json({ error: "Failed to cancel subscription." }, { status: 500 });
+  }
 
   return NextResponse.json({ ok: true, message: "Subscription cancelled. You'll retain access until the current billing period ends." });
 }

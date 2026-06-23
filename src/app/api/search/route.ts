@@ -802,9 +802,10 @@ export async function POST(request: NextRequest) {
             });
 
             if (!isAdmin) {
-              try {
-                await dataClient.from("profiles").update({ search_balance: (profile.search_balance ?? 3) - 1 }).eq("id", user.id);
-              } catch {}
+              const { error: balanceErr } = await dataClient.from("profiles").update({ search_balance: (profile.search_balance ?? 3) - 1 }).eq("id", user.id);
+              if (balanceErr) {
+                console.error("[SEARCH] Failed to decrement search balance:", balanceErr.message);
+              }
             }
 
             if (outputs.length > 0) {
@@ -818,7 +819,13 @@ export async function POST(request: NextRequest) {
                 suggested_cv: r.suggested_cv,
               }));
 
-              const { data: saved } = await dataClient.from("job_results").insert(rows).select("id, job_title, company, location, estimated_salary, match_score, match_summary, job_url, full_spec, domain_verified, domain_unverified_reason, posted_at, created_at, suggested_cv");
+              const { data: saved, error: insertErr } = await dataClient.from("job_results").insert(rows).select("id, job_title, company, location, estimated_salary, match_score, match_summary, job_url, full_spec, domain_verified, domain_unverified_reason, posted_at, created_at, suggested_cv");
+              if (insertErr) {
+                console.error("[SEARCH] Failed to insert job results:", insertErr.message);
+                writer.send({ type: "error", code: "DB_ERROR", message: "Failed to save results.", progress: 100 });
+                writer.close();
+                return;
+              }
               writer.send({ type: "complete", results: (saved ?? outputs).map(normalize), progress: 100, ...(totalFiltered > 0 ? { filtered_summary: filteredCounts } : {}) });
             } else {
               writer.send({ type: "complete", results: [], progress: 100, message: "No strong matches found. Try broadening your criteria." });
@@ -958,12 +965,13 @@ export async function POST(request: NextRequest) {
           console.log(`[PF] Total unique results: ${allResults.length}`);
 
           if (!isAdmin) {
-            try {
-              await dataClient.from("profiles").update({
-                search_balance: (profile.search_balance ?? 3) - 1,
-                persistent_finder_balance: (profile.persistent_finder_balance ?? 0) - 1,
-              }).eq("id", user.id);
-            } catch {}
+            const { error: balanceErr } = await dataClient.from("profiles").update({
+              search_balance: (profile.search_balance ?? 3) - 1,
+              persistent_finder_balance: (profile.persistent_finder_balance ?? 0) - 1,
+            }).eq("id", user.id);
+            if (balanceErr) {
+              console.error("[PF] Failed to decrement balance:", balanceErr.message);
+            }
           }
 
           const pfTotalFiltered = pfFilteredCounts.history + pfFilteredCounts.saved + pfFilteredCounts.rejected + pfFilteredCounts.blocked;
@@ -982,7 +990,13 @@ export async function POST(request: NextRequest) {
               suggested_cv: r.suggested_cv,
             }));
 
-            const { data: saved } = await dataClient.from("job_results").insert(rows).select("id, job_title, company, location, estimated_salary, match_score, match_summary, job_url, full_spec, domain_verified, domain_unverified_reason, posted_at, created_at, suggested_cv");
+            const { data: saved, error: pfInsertErr } = await dataClient.from("job_results").insert(rows).select("id, job_title, company, location, estimated_salary, match_score, match_summary, job_url, full_spec, domain_verified, domain_unverified_reason, posted_at, created_at, suggested_cv");
+            if (pfInsertErr) {
+              console.error("[PF] Failed to insert job results:", pfInsertErr.message);
+              writer.send({ type: "error", code: "DB_ERROR", message: "Failed to save results.", progress: 100 });
+              writer.close();
+              return;
+            }
             const pfMessage = pfAborted
               ? `Search stopped early due to high demand — showing ${allResults.length} result${allResults.length === 1 ? "" : "s"} found so far`
               : undefined;

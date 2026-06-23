@@ -195,11 +195,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { data: profile } = await supabase
+    const { data: profile, error: profileErr } = await supabase
       .from("profiles")
       .select("cv_generation_balance, is_admin")
       .eq("id", user.id)
       .maybeSingle();
+
+    if (profileErr) {
+      return NextResponse.json({ error: "Failed to fetch profile." }, { status: 500 });
+    }
+
     const isAdmin = ((profile as any)?.is_admin ?? false) || (ADMIN_EMAIL && user.email === ADMIN_EMAIL);
 
     // Balance check (skip if admin)
@@ -235,36 +240,40 @@ export async function POST(request: NextRequest) {
     // Determine which CV variation to use from the search profile
     let cvFilePath = "";
     if (jobProfileId) {
-      const { data: sp } = await supabase
+      const { data: sp, error: spErr } = await supabase
         .from("search_profiles")
         .select("cv_variations")
         .eq("id", jobProfileId)
         .maybeSingle();
-      const variations: { name: string; file_path: string }[] = (sp as any)?.cv_variations ?? [];
-      if (variations.length > 0) {
-        if (suggestedCv) {
-          const match = variations.find((v) => v.name === suggestedCv);
-          cvFilePath = match?.file_path ?? variations[0].file_path;
-        } else {
-          cvFilePath = variations[0].file_path;
+      if (!spErr) {
+        const variations: { name: string; file_path: string }[] = (sp as any)?.cv_variations ?? [];
+        if (variations.length > 0) {
+          if (suggestedCv) {
+            const match = variations.find((v) => v.name === suggestedCv);
+            cvFilePath = match?.file_path ?? variations[0].file_path;
+          } else {
+            cvFilePath = variations[0].file_path;
+          }
         }
       }
     }
     if (!cvFilePath) {
-      const { data: profileRow } = await supabase
+      const { data: profileRow, error: prErr } = await supabase
         .from("profiles")
         .select("cv_file_path")
         .eq("id", user.id)
         .maybeSingle();
-      cvFilePath = (profileRow as any)?.cv_file_path ?? "";
+      if (!prErr) {
+        cvFilePath = (profileRow as any)?.cv_file_path ?? "";
+      }
     }
 
     // Fetch and extract CV text
     let cvText = "";
     if (cvFilePath) {
       try {
-        const { data: fileData } = await supabase.storage.from("cv-files").download(cvFilePath);
-        if (fileData) {
+        const { data: fileData, error: dlErr } = await supabase.storage.from("cv-files").download(cvFilePath);
+        if (!dlErr && fileData) {
           const buffer = Buffer.from(await fileData.arrayBuffer());
           cvText = await extractTextFromPDF(buffer);
         }
@@ -321,17 +330,26 @@ Use the job spec to identify what skills and experience to emphasise. Use the CV
 
     // Decrement balance (skip if admin)
     if (!isAdmin) {
-      const { data: current } = await supabase
+      const { data: current, error: curErr } = await supabase
         .from("profiles")
         .select("cv_generation_balance")
         .eq("id", user.id)
         .maybeSingle();
-      const curBalance = (current as any)?.cv_generation_balance ?? 0;
-      if (curBalance > 0) {
-        await supabase
-          .from("profiles")
-          .update({ cv_generation_balance: curBalance - 1 })
-          .eq("id", user.id);
+
+      if (curErr) {
+        console.error("[GENERATE-CV] Failed to fetch balance:", curErr.message);
+      } else {
+        const curBalance = (current as any)?.cv_generation_balance ?? 0;
+        if (curBalance > 0) {
+          const { error: decErr } = await supabase
+            .from("profiles")
+            .update({ cv_generation_balance: curBalance - 1 })
+            .eq("id", user.id);
+
+          if (decErr) {
+            console.error("[GENERATE-CV] Failed to decrement balance:", decErr.message);
+          }
+        }
       }
     }
 

@@ -91,7 +91,8 @@ export default function ProfilePage() {
     setSaving("personal");
     const userId = await getUserId();
     if (!userId) return;
-    await supabase.from("profiles").update({ name, surname, phone, address, current_salary: currentSalary, desired_salary: desiredSalary }).eq("id", userId);
+    const { error: err } = await supabase.from("profiles").update({ name, surname, phone, address, current_salary: currentSalary, desired_salary: desiredSalary }).eq("id", userId);
+    if (err) console.error("Failed to save personal info:", err.message);
     setSaving(null);
   };
 
@@ -99,7 +100,8 @@ export default function ProfilePage() {
     setSaving("jobs");
     const userId = await getUserId();
     if (!userId) return;
-    await supabase.from("profiles").update({ job_titles: jobTitles, job_types: jobTypes, location }).eq("id", userId);
+    const { error: err } = await supabase.from("profiles").update({ job_titles: jobTitles, job_types: jobTypes, location }).eq("id", userId);
+    if (err) console.error("Failed to save job prefs:", err.message);
     setSaving(null);
   };
 
@@ -116,13 +118,15 @@ export default function ProfilePage() {
     const filePath = `${userId}/${safeName}`;
 
     if (cvFilePath) {
-      await supabase.storage.from("cv-files").remove([cvFilePath]);
+      const { error: removeErr } = await supabase.storage.from("cv-files").remove([cvFilePath]);
+      if (removeErr) console.error("[CV UPLOAD] Remove old file error:", removeErr.message);
     }
 
     const { error: uploadErr } = await supabase.storage.from("cv-files").upload(filePath, file, { upsert: true });
     if (uploadErr) { console.error("[CV UPLOAD]", uploadErr); alert(`Upload failed: ${uploadErr.message}`); setCvUploading(false); return; }
 
-    await supabase.from("profiles").update({ cv_file_path: filePath }).eq("id", userId);
+    const { error: updateErr } = await supabase.from("profiles").update({ cv_file_path: filePath }).eq("id", userId);
+    if (updateErr) console.error("[CV UPLOAD] Failed to update profile:", updateErr.message);
     setCvFilePath(filePath);
     setCvFileName(file.name);
     setCvUploadDate(new Date().toLocaleDateString());
@@ -133,12 +137,23 @@ export default function ProfilePage() {
     setDeleting(true);
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return;
-    await fetch("/api/delete-account", {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${session.access_token}` },
-    });
-    await supabase.auth.signOut();
-    window.location.href = "/";
+    try {
+      const res = await fetch("/api/delete-account", {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        console.error("Failed to delete account:", errData.error || res.statusText);
+        setDeleting(false);
+        return;
+      }
+      await supabase.auth.signOut();
+      window.location.href = "/";
+    } catch (err) {
+      console.error("Network error deleting account:", err);
+      setDeleting(false);
+    }
   };
 
   if (loading) {

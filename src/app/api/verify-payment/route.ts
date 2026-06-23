@@ -107,13 +107,17 @@ export async function POST(request: NextRequest) {
           });
           const subData = await subRes.json();
           if (subData.status && subData.data?.subscription_code) {
-            await supabase
+            const { error: updateErr } = await supabase
               .from("subscriptions")
               .update({
                 paystack_subscription_id: subData.data.subscription_code,
                 next_payment_date: subData.data.next_payment_date ?? null,
               })
               .eq("paystack_reference", reference);
+
+            if (updateErr) {
+              console.error("[VERIFY] Failed to update subscription with sub ID:", updateErr.message);
+            }
           }
         } catch (subErr) {
           console.error("[VERIFY] Failed to create subscription:", subErr);
