@@ -209,6 +209,34 @@ function unwrapArray(val: unknown): unknown[] {
   return [];
 }
 
+function buildOrQuery(titles: string[]): string {
+  const clean = titles.map(t => t.trim()).filter(Boolean);
+  if (clean.length === 0) return "";
+  return clean
+    .map(t => t.includes(" ") ? `"${t}"*` : `${t}*`)
+    .join(" OR ");
+}
+
+async function deduplicateTitles(titles: string[]): Promise<string[]> {
+  if (titles.length <= 1) return titles;
+  try {
+    const result = await callAIWithFallback(
+      `You are a job title analyst. Remove redundant/duplicate job titles.
+For example: ["Project Manager","Senior Project Manager","Project Manager II"]
+→ ["Project Manager"]. Keep the broadest, most inclusive title per group.
+Return ONLY a JSON array of strings with no duplicates. No explanation.`,
+      `Job titles: ${JSON.stringify(titles)}`,
+      "title dedup",
+      { responseMimeType: "application/json", temperature: 0.3 }
+    );
+    const parsed = JSON.parse(result);
+    const cleaned = unwrapArray(parsed) as string[];
+    return cleaned.length > 0 ? cleaned : titles;
+  } catch {
+    return titles;
+  }
+}
+
 async function searchRound(
   query: string,
   profileLocation: string,
@@ -723,6 +751,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    titles = await deduplicateTitles(titles);
+
     if (titles.length === 0) {
       return NextResponse.json({ results: [], code: "NO_TITLES", message: "Add job titles to your search profile first." });
     }
@@ -773,9 +803,7 @@ export async function POST(request: NextRequest) {
         try {
           if (!pf_mode) {
             // === NORMAL SINGLE SEARCH ===
-            const shuffled = [...titles].sort(() => Math.random() - 0.5);
-            const selected = shuffled.slice(0, 3);
-            const orQuery = selected.map(t => t.includes(" ") ? `"${t}"` : t).join(" OR ");
+            const orQuery = buildOrQuery(titles);
             const searchQuery = [orQuery, profileLocation].filter(Boolean).join(" in ");
 
             if (!searchQuery || searchQuery === "jobs") {
@@ -835,82 +863,38 @@ export async function POST(request: NextRequest) {
             return;
           }
 
-          // === PERSISTENT FINDER MODE ===
-          const MAX_ROUNDS = 8;
-          const PHASE1_ROUNDS = 4;
-          const STOP_THRESHOLD_PHASE1 = 80;
-          const STOP_THRESHOLD_PHASE2 = 40;
+          // === PERSISTENT FINDER MODE (combined OR) ===
+          const MAX_ROUNDS = 2;
+          const STOP_THRESHOLD = 80;
           const STOP_COUNT = 5;
 
           let allResults: JobRow[] = [];
           const pfFilteredCounts = { history: 0, saved: 0, rejected: 0, blocked: 0 };
           const seenUrls = new Set<string>([...dedupSets.history, ...dedupSets.saved, ...dedupSets.blocked]);
-          let remainingTitles = [...titles];
-          let aiVariations: string[] = [];
           let pfRound = 0;
           let pfAborted = false;
 
-          for (let i = remainingTitles.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [remainingTitles[i], remainingTitles[j]] = [remainingTitles[j], remainingTitles[i]];
-          }
+          const baseQuery = buildOrQuery(titles);
+          const pfQueries: string[] = [baseQuery];
 
-          for (let round = 0; round < MAX_ROUNDS; round++) {
-            const phase = round < PHASE1_ROUNDS ? 1 : 2;
-            const threshold = phase === 1 ? STOP_THRESHOLD_PHASE1 : STOP_THRESHOLD_PHASE2;
+          try {
+            const variationPrompt = `You are a job search strategist. Generate 1 alternative job search query based on the candidate's profile and original titles. The query should use OR syntax to cover all roles broadly. Return ONLY a JSON array with one string. No explanation.`;
+            const variationResult = await callAIWithFallback(
+              variationPrompt,
+              `Original job titles: ${JSON.stringify(titles)}\\nCandidate location: ${profileLocation}\\nCV summary: ${(cvText || "No CV").slice(0, 1000)}`,
+              "PF OR variation gen",
+              { responseMimeType: "application/json", temperature: 0.7 }
+            );
+            const parsed = JSON.parse(variationResult);
+            const alt = unwrapArray(parsed) as string[];
+            if (alt.length > 0 && alt[0] !== baseQuery) pfQueries.push(alt[0]);
+          } catch {}
 
-            let roundQuery: string;
-
-            if (phase === 1) {
-              if (round >= remainingTitles.length) {
-                if (aiVariations.length === 0) {
-                  try {
-                    const variationPrompt = `You are a job search strategist. Generate 4 different job title variations based on the candidate's profile and original titles. Each variation should be a realistic job search query that could return different results. Return ONLY a JSON array of strings. No markdown, no explanation.`;
-                    const variationResult = await callAIWithFallback(
-                      variationPrompt,
-                      `Original job titles: ${JSON.stringify(titles)}\nCandidate location: ${profileLocation}\nCV summary: ${(cvText || "No CV").slice(0, 1000)}`,
-                      "PF title variation gen",
-                      { responseMimeType: "application/json", temperature: 0.7 }
-                    );
-                    const parsedTitles = JSON.parse(variationResult);
-                    aiVariations = unwrapArray(parsedTitles) as string[];
-                    if (aiVariations.length === 0) aiVariations = titles.slice(0, 4);
-                  } catch {
-                    aiVariations = titles.slice(0, 4);
-                  }
-                }
-                if (round < remainingTitles.length + aiVariations.length) {
-                  roundQuery = remainingTitles[round] ?? aiVariations[0];
-                } else break;
-              } else {
-                roundQuery = remainingTitles[round];
-              }
-            } else {
-              if (aiVariations.length === 0) {
-                try {
-                  const variationPrompt = `You are a job search strategist. Generate 4 different job title variations based on the candidate's profile and original titles. Each variation should be a realistic job search query that could return different results. Return ONLY a JSON array of strings. No markdown, no explanation.`;
-                  const variationResult = await callAIWithFallback(
-                    variationPrompt,
-                    `Original job titles: ${JSON.stringify(titles)}\nCandidate location: ${profileLocation}\nCV summary: ${(cvText || "No CV").slice(0, 1000)}`,
-                    "PF title variation gen",
-                    { responseMimeType: "application/json", temperature: 0.7 }
-                  );
-                  const parsedTitles = JSON.parse(variationResult);
-                  aiVariations = unwrapArray(parsedTitles) as string[];
-                  if (aiVariations.length === 0) aiVariations = titles.slice(0, 4);
-                } catch {
-                  aiVariations = titles.slice(0, 4);
-                }
-              }
-              const varIdx = round - PHASE1_ROUNDS;
-              if (varIdx < aiVariations.length) roundQuery = aiVariations[varIdx];
-              else break;
-            }
-
-            const fullQuery = [roundQuery, profileLocation].filter(Boolean).join(" in ");
+          for (let round = 0; round < Math.min(MAX_ROUNDS, pfQueries.length); round++) {
+            const fullQuery = [pfQueries[round], profileLocation].filter(Boolean).join(" in ");
             pfRound = round + 1;
 
-            console.log(`[PF] Round ${pfRound}/${MAX_ROUNDS} (Phase ${phase}, threshold ${threshold}): "${fullQuery}"`);
+            console.log(`[PF] Round ${pfRound}/${MAX_ROUNDS}: "${fullQuery}"`);
             sendStatus({ type: "pf_round", round: pfRound, max: MAX_ROUNDS, query: fullQuery, progress: Math.min((pfRound / MAX_ROUNDS) * 90, 90) });
 
             if (lastAITier === "openrouter") {
@@ -918,8 +902,6 @@ export async function POST(request: NextRequest) {
               await sleep(12000);
             }
 
-            let roundResults: JobRow[];
-            let roundFiltered: typeof pfFilteredCounts;
             try {
               const result = await searchRound(
                 fullQuery, profileLocation, titles, cvTexts,
@@ -927,32 +909,29 @@ export async function POST(request: NextRequest) {
                 bannedJobs, bannedCompanies, pfRound, sendStatus,
                 dedupSets
               );
-              roundResults = result.results;
-              roundFiltered = result.filteredCounts;
+              pfFilteredCounts.history += result.filteredCounts.history;
+              pfFilteredCounts.saved += result.filteredCounts.saved;
+              pfFilteredCounts.rejected += result.filteredCounts.rejected;
+              pfFilteredCounts.blocked += result.filteredCounts.blocked;
+
+              for (const r of result.results) {
+                if (!seenUrls.has(r.job_url)) {
+                  seenUrls.add(r.job_url);
+                  allResults.push(r);
+                }
+              }
+
+              console.log(`[PF] Round ${pfRound} results: ${result.results.length} (total unique: ${allResults.length})`);
+
+              const highScoreCount = allResults.filter((r) => r.match_score >= STOP_THRESHOLD).length;
+              if (highScoreCount >= STOP_COUNT) {
+                console.log(`[PF] Stopping early — ${highScoreCount} jobs with score >= ${STOP_THRESHOLD} (round ${pfRound})`);
+                break;
+              }
             } catch (err) {
               const errMsg = err instanceof Error ? err.message : String(err);
               console.log(`[PF] Round ${pfRound} failed — error: ${errMsg}`);
               pfAborted = true;
-              break;
-            }
-
-            pfFilteredCounts.history += roundFiltered.history;
-            pfFilteredCounts.saved += roundFiltered.saved;
-            pfFilteredCounts.rejected += roundFiltered.rejected;
-            pfFilteredCounts.blocked += roundFiltered.blocked;
-
-            for (const r of roundResults) {
-              if (!seenUrls.has(r.job_url)) {
-                seenUrls.add(r.job_url);
-                allResults.push(r);
-              }
-            }
-
-            console.log(`[PF] Round ${pfRound} results: ${roundResults.length} (total unique: ${allResults.length})`);
-
-            const highScoreCount = allResults.filter((r) => r.match_score >= threshold).length;
-            if (highScoreCount >= STOP_COUNT) {
-              console.log(`[PF] Stopping early — ${highScoreCount} jobs with score >= ${threshold} (round ${pfRound})`);
               break;
             }
           }
