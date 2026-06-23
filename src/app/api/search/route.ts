@@ -478,7 +478,7 @@ async function searchRound(
     job_title: sanitiseForJson(j.title),
     company: sanitiseForJson(j.company_name),
     location: sanitiseForJson(j.location),
-    description_snippet: sanitiseForJson((j.description ?? "").slice(0, 3500)),
+    description_snippet: sanitiseForJson(j.description ?? ""),
     url: jobUrls.get(i) || "",
   }));
 
@@ -626,7 +626,7 @@ Return ONLY valid JSON (no markdown, no code fences). Exact schema:
     try {
       const raw = await callAIWithFallback(
         deepSystemPrompt,
-        `Candidate Profile:\n${profileContext}\n\nFull Job Specification:\n${fullSpec.slice(0, 8000)}\n\nJob Title: ${job.title}\nCompany: ${job.company_name}\nLocation: ${job.location}`,
+        `Candidate Profile:\n${profileContext}\n\nFull Job Specification:\n${fullSpec}\n\nJob Title: ${job.title}\nCompany: ${job.company_name}\nLocation: ${job.location}`,
         `search pass 2${pfRound ? ` (PF round ${pfRound})` : ""}: ${job.title} at ${job.company_name}`,
         { responseMimeType: "application/json", temperature: 0.1 }
       );
@@ -681,7 +681,7 @@ Return ONLY valid JSON (no markdown, no code fences):
 { "score": number (0-100), "estimated_salary": string, "match_summary": string, "suggested_cv_name": string }`;
         const retryRaw = await callAIWithFallback(
           retryPrompt,
-          `Candidate Profile:\n${profileContext}\n\nFull Job Specification:\n${fullSpec.slice(0, 8000)}\n\nJob Title: ${job.title}\nCompany: ${job.company_name}\nLocation: ${job.location}`,
+          `Candidate Profile:\n${profileContext}\n\nFull Job Specification:\n${fullSpec}\n\nJob Title: ${job.title}\nCompany: ${job.company_name}\nLocation: ${job.location}`,
           `search pass 2 retry${pfRound ? ` (PF round ${pfRound})` : ""}: ${job.title} at ${job.company_name}`,
           { responseMimeType: "application/json", temperature: 0.1, maxOutputTokens: 1024 }
         );
