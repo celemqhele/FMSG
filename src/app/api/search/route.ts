@@ -212,6 +212,9 @@ function unwrapArray(val: unknown): unknown[] {
   return [];
 }
 
+const sanitiseForJson = (s: string | undefined | null): string =>
+  (s ?? "").replace(/["\n\r\t]/g, " ").replace(/\s+/g, " ").trim();
+
 function buildOrQuery(titles: string[]): string {
   const clean = titles.map(t => t.trim()).filter(Boolean);
   if (clean.length === 0) return "";
@@ -240,28 +243,17 @@ Return ONLY a JSON array of strings with no duplicates. No explanation.`,
   }
 }
 
-async function searchRound(
+async function fetchAndFilterJobs(
   query: string,
   profileLocation: string,
-  profileIndustry: string,
-  titles: string[],
-  cvTexts: { name: string; text: string }[],
   user: any,
-  profile: any,
-  authHeader: string,
-  dataClient: any,
   searchId: string,
   bannedJobs: string[],
   bannedCompanies: string[],
-  pfRound?: number,
+  dataClient: any,
   onStatus?: (event: SearchEvent) => void,
-  dedupSets?: { history: Set<string>; saved: Set<string>; blocked: Set<string> }
-): Promise<{ results: JobRow[]; queryUsed: string; filteredCounts: { history: number; saved: number; rejected: number; blocked: number } }> {
-  const filteredCounts = { history: 0, saved: 0, rejected: 0, blocked: 0 };
-  const aiRejectedJobs: { job: any; reason: string; stage: string }[] = [];
-  console.log(`[PF] Round query: "${query}" (location: "${profileLocation}")`);
-  console.log(`[PF] lastAITier before searchRound: ${lastAITier}`);
-
+  pfRound?: number,
+): Promise<{ rawJobs: any[]; jobSpecs: [number, string][]; jobUrls: [number, string][]; queryUsed: string }> {
   function sanitiseLocation(raw: string): string | undefined {
     if (!raw) return undefined;
     const stripped = raw.replace(/\b(Remote|Hybrid|On-site|Online|Work from home|WFH|Flexible|Anywhere)\b/gi, "").trim();
@@ -289,20 +281,18 @@ async function searchRound(
       try {
         rawJobs = await searchGoogleJobs(buildSerpParams(undefined));
       } catch {
-        return { results: [], queryUsed: query, filteredCounts };
+        return { rawJobs: [], jobSpecs: [], jobUrls: [], queryUsed: query };
       }
     } else {
-      return { results: [], queryUsed: query, filteredCounts };
+      return { rawJobs: [], jobSpecs: [], jobUrls: [], queryUsed: query };
     }
   }
-
   if (!rawJobs || rawJobs.length === 0) {
-    return { results: [], queryUsed: query, filteredCounts };
+    return { rawJobs: [], jobSpecs: [], jobUrls: [], queryUsed: query };
   }
 
   onStatus?.({ type: "found_results", count: rawJobs.length, progress: 20 });
 
-  // Domain verification — check the actual destination (apply_options[0].link), not the Google Jobs wrapper URL
   for (const j of rawJobs) {
     const destUrl = j.apply_options?.[0]?.link
       ? decodeGoogleRedirect(j.apply_options[0].link)
@@ -319,7 +309,6 @@ async function searchRound(
     (j as any)._postedAtMs = parsePostedAt(postedStr) ?? 0;
   }
 
-  // Blacklist hard-remove (domain + via)
   const blacklistRejected: { job: any; reason: string }[] = [];
   rawJobs = rawJobs.filter((j) => {
     const url = buildJobUrl(j);
@@ -327,10 +316,7 @@ async function searchRound(
     const viaBlocked = isBlacklistedByVia(j.via);
     const domainBlocked = domain && BLACKLISTED_DOMAINS.some((d) => domain === d || domain?.endsWith(`.${d}`) || domain?.includes(d));
     if (domainBlocked || viaBlocked) {
-      blacklistRejected.push({
-        job: j,
-        reason: viaBlocked ? `blacklisted_via: ${j.via}` : `blacklisted_domain: ${domain}`,
-      });
+      blacklistRejected.push({ job: j, reason: viaBlocked ? `blacklisted_via: ${j.via}` : `blacklisted_domain: ${domain}` });
       return false;
     }
     return true;
@@ -339,26 +325,18 @@ async function searchRound(
     const rows = blacklistRejected.map(({ job: j, reason }) => ({
       user_id: user.id, search_id: searchId, search_query: query,
       job_title: j.title, company: j.company_name, location: j.location ?? '',
-      snippet: (j.description ?? '').slice(0, 500), job_url: buildJobUrl(j),
-      reason,
+      snippet: (j.description ?? '').slice(0, 500), job_url: buildJobUrl(j), reason,
       passed_domain_filter: false, passed_banned_filter: false,
     }));
     dataClient.from("rejected_jobs").insert(rows).then((r: any) => r.error && console.log('[SEARCH] Failed to log blacklist rejected:', r.error));
   }
 
-  // Banned filter
   const bannedRejected: any[] = [];
   rawJobs = rawJobs.filter((j) => {
     const url = buildJobUrl(j);
-    if (url && bannedJobs.includes(url)) {
-      bannedRejected.push(j);
-      return false;
-    }
+    if (url && bannedJobs.includes(url)) { bannedRejected.push(j); return false; }
     const companyLower = (j.company_name ?? "").toLowerCase();
-    if (bannedCompanies.some((bc) => companyLower.includes(bc.toLowerCase()))) {
-      bannedRejected.push(j);
-      return false;
-    }
+    if (bannedCompanies.some((bc) => companyLower.includes(bc.toLowerCase()))) { bannedRejected.push(j); return false; }
     return true;
   });
   if (bannedRejected.length > 0) {
@@ -372,74 +350,52 @@ async function searchRound(
     dataClient.from("rejected_jobs").insert(rows).then((r: any) => r.error && console.log('[SEARCH] Failed to log banned rejected:', r.error));
   }
 
-  // Expired snippet check
-  rawJobs = rawJobs.filter((j) => {
-    if (j.description && isExpired(j.description)) return false;
-    return true;
-  });
+  rawJobs = rawJobs.filter((j) => !(j.description && isExpired(j.description)));
+  if (rawJobs.length === 0) return { rawJobs: [], jobSpecs: [], jobUrls: [], queryUsed: query };
 
-  if (rawJobs.length === 0) return { results: [], queryUsed: query, filteredCounts };
+  rawJobs = rawJobs.filter((j) => !(j.description && BLOCKED_ATS_TRACKERS.some(t => j.description!.includes(t))));
+  if (rawJobs.length === 0) return { rawJobs: [], jobSpecs: [], jobUrls: [], queryUsed: query };
 
-  // ATS tracker pre-check on Google snippet (before Jina fetch)
-  rawJobs = rawJobs.filter((j) => {
-    if (j.description && BLOCKED_ATS_TRACKERS.some(t => j.description!.includes(t))) return false;
-    return true;
-  });
-
-  if (rawJobs.length === 0) return { results: [], queryUsed: query, filteredCounts };
-
-  // Jina fetch
-  let jobUrls = new Map<number, string>();
-  let jobFullSpecs = new Map<number, string>();
-
+  const tempJobUrls = new Map<number, string>();
+  const tempJobSpecs = new Map<number, string>();
   for (let i = 0; i < rawJobs.length; i++) {
     const job = rawJobs[i];
     const jobUrl = buildJobUrl(job);
-    jobUrls.set(i, jobUrl);
+    tempJobUrls.set(i, jobUrl);
     let specText = job.description ?? "";
     if (jobUrl) {
       try {
         const headers: Record<string, string> = {};
         if (JINA_API_KEY) headers["Authorization"] = `Bearer ${JINA_API_KEY}`;
         const jinaRes = await fetch(`https://r.jina.ai/${encodeURIComponent(jobUrl)}`, { headers });
-        if (jinaRes.ok) {
-          specText = await jinaRes.text();
-        }
-      } catch {
-        // Jina failed
-      }
+        if (jinaRes.ok) specText = await jinaRes.text();
+      } catch {}
     }
-    jobFullSpecs.set(i, specText || job.description || "");
-    if (specText && isExpired(specText)) {
-      (job as any)._expired = true;
-    }
+    tempJobSpecs.set(i, specText || job.description || "");
+    if (specText && isExpired(specText)) (job as any)._expired = true;
   }
 
-  const preFilterUrls = new Map(jobUrls);
-  const preFilterSpecs = new Map(jobFullSpecs);
+  const preFilterUrls = new Map(tempJobUrls);
+  const preFilterSpecs = new Map(tempJobSpecs);
   rawJobs = rawJobs.filter((j) => !(j as any)._expired);
-  jobUrls = new Map(rawJobs.map((j, i) => [i, buildJobUrl(j)] as const));
-  const newJobFullSpecs = new Map<number, string>();
+  const rebuiltUrls = new Map(rawJobs.map((j, i) => [i, buildJobUrl(j)] as const));
+  const rebuiltSpecs = new Map<number, string>();
   for (let i = 0; i < rawJobs.length; i++) {
-    const url = jobUrls.get(i) ?? "";
+    const url = rebuiltUrls.get(i) ?? "";
     const origEntry = [...preFilterSpecs.entries()].find(([origIdx]) => preFilterUrls.get(origIdx) === url);
-    newJobFullSpecs.set(i, origEntry?.[1] ?? rawJobs[i].description ?? "");
+    rebuiltSpecs.set(i, origEntry?.[1] ?? rawJobs[i].description ?? "");
   }
-  jobFullSpecs = newJobFullSpecs;
 
-  // Recruitment agency + short spec filter
   {
     const filtered: typeof rawJobs = [];
     const filteredSpecs = new Map<number, string>();
     const filteredUrls = new Map<number, string>();
     rawJobs.forEach((j, i) => {
-      const spec = jobFullSpecs.get(i) ?? "";
+      const spec = rebuiltSpecs.get(i) ?? "";
       if (BLOCKED_ATS_TRACKERS.some(t => spec.includes(t))) return;
       if (spec.length >= SHORT_SPEC_THRESHOLD) {
         const newIdx = filtered.length;
-        filtered.push(j);
-        filteredSpecs.set(newIdx, spec);
-        filteredUrls.set(newIdx, buildJobUrl(j));
+        filtered.push(j); filteredSpecs.set(newIdx, spec); filteredUrls.set(newIdx, buildJobUrl(j));
         return;
       }
       const companyLower = (j.company_name ?? "").toLowerCase();
@@ -447,19 +403,37 @@ async function searchRound(
         || RECRUITMENT_SPEC_PATTERNS.some(p => p.test(spec.slice(0, 500)));
       if (!isRecruitmentAgency) {
         const newIdx = filtered.length;
-        filtered.push(j);
-        filteredSpecs.set(newIdx, spec);
-        filteredUrls.set(newIdx, buildJobUrl(j));
+        filtered.push(j); filteredSpecs.set(newIdx, spec); filteredUrls.set(newIdx, buildJobUrl(j));
       }
     });
     rawJobs = filtered;
-    jobFullSpecs = filteredSpecs;
-    jobUrls = filteredUrls;
+    return { rawJobs, jobSpecs: [...filteredSpecs.entries()], jobUrls: [...filteredUrls.entries()], queryUsed: query };
   }
+}
 
-  if (rawJobs.length === 0) return { results: [], queryUsed: query, filteredCounts };
+async function screenAndAnalyze(
+  rawJobs: any[],
+  jobSpecsEntries: [number, string][],
+  jobUrlsEntries: [number, string][],
+  query: string,
+  profileLocation: string,
+  profileIndustry: string,
+  titles: string[],
+  cvTexts: { name: string; text: string }[],
+  user: any,
+  searchId: string,
+  dataClient: any,
+  bannedJobs: string[],
+  bannedCompanies: string[],
+  onStatus?: (event: SearchEvent) => void,
+  pfRound?: number,
+  dedupSets?: { history: Set<string>; saved: Set<string>; blocked: Set<string> }
+): Promise<{ results: JobRow[]; queryUsed: string; filteredCounts: { history: number; saved: number; rejected: number; blocked: number } }> {
+  const filteredCounts = { history: 0, saved: 0, rejected: 0, blocked: 0 };
+  const aiRejectedJobs: { job: any; reason: string; stage: string }[] = [];
+  const jobSpecs = new Map(jobSpecsEntries);
+  const jobUrls = new Map(jobUrlsEntries);
 
-  // Build profile context with multiple CVs
   const profileContext = JSON.stringify({
     job_titles: titles,
     location: profileLocation || null,
@@ -469,10 +443,6 @@ async function searchRound(
       : [{ name: "No CV", text: "No CV provided" }],
   });
 
-  const sanitiseForJson = (s: string | undefined | null): string =>
-    (s ?? "").replace(/["\n\r\t]/g, " ").replace(/\s+/g, " ").trim();
-
-  // Pass 1 batch
   const batchInput = rawJobs.map((j, i) => ({
     index: i,
     job_title: sanitiseForJson(j.title),
@@ -512,7 +482,7 @@ ${blacklistInfo}${bannedInfo}`;
 
   let rawPass1 = "";
   try {
-    console.log(`[PF] Starting Pass 1 batch (${rawJobs.length} jobs)`);
+    console.log(`[SEARCH] Starting Pass 1 batch (${rawJobs.length} jobs)`);
     rawPass1 = await callAIWithFallback(
       batchSystemPrompt,
       `Candidate Profile:\n${profileContext}\n\nJobs:\n${JSON.stringify(batchInput, null, 2)}`,
@@ -522,13 +492,13 @@ ${blacklistInfo}${bannedInfo}`;
     const parsedPass1 = JSON.parse(rawPass1);
     const unwrappedPass1 = unwrapArray(parsedPass1);
     if (!Array.isArray(unwrappedPass1) || unwrappedPass1.length === 0) {
-      console.log(`[PF] Pass 1 batch returned empty/unexpected format, falling back to individual`);
+      console.log(`[SEARCH] Pass 1 batch returned empty/unexpected format, falling back to individual`);
       throw new Error("batch empty");
     }
     batchResults = unwrappedPass1 as { index: number; score: number; reason: string; estimated_salary: string }[];
-    console.log(`[PF] Pass 1 batch succeeded via ${lastAITier} (${batchResults.length} results)`);
+    console.log(`[SEARCH] Pass 1 batch succeeded via ${lastAITier} (${batchResults.length} results)`);
   } catch {
-    console.log(`[PF] Pass 1 batch failed, falling back to individual (${rawJobs.length} jobs)`);
+    console.log(`[SEARCH] Pass 1 batch failed, falling back to individual (${rawJobs.length} jobs)`);
     for (let i = 0; i < rawJobs.length; i++) {
       const job = rawJobs[i];
       const progress = Math.min(20 + ((i + 1) / rawJobs.length) * 35, 55);
@@ -568,14 +538,13 @@ Return ONLY valid JSON (no markdown, no code fences):
     }
   }
 
-  // Pass 2
-  console.log(`[PF] Starting Pass 2 deep analysis (${rawJobs.length} jobs)`);
+  console.log(`[SEARCH] Starting Pass 2 deep analysis (${rawJobs.length} jobs)`);
   let outputs: JobRow[] = [];
   for (let i = 0; i < rawJobs.length; i++) {
     const job = rawJobs[i];
     const batchResult = batchResults.find((r) => r.index === i);
     const jobUrl = jobUrls.get(i) || buildJobUrl(job);
-    const fullSpec = jobFullSpecs.get(i) || job.description || "";
+    const fullSpec = jobSpecs.get(i) || job.description || "";
 
     const progress = Math.min(55 + ((i + 1) / rawJobs.length) * 30, 85);
     onStatus?.({ type: "analyzing_job", title: job.title, company: job.company_name, current: i + 1, total: rawJobs.length, progress });
@@ -658,7 +627,6 @@ Return ONLY valid JSON (no markdown, no code fences). Exact schema:
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       console.log(`[AI] Pass 2 failed for "${job.title}" at ${job.company_name}: ${errMsg.slice(0, 150)}`);
-      // Retry with simplified prompt
       let fallbackScore = batchResult?.score ?? 30;
       let fallbackSummary = batchResult?.reason || "Analysis unavailable";
       let fallbackSalary = batchResult?.estimated_salary || "";
@@ -715,7 +683,6 @@ Return ONLY valid JSON (no markdown, no code fences):
     }
   }
 
-  // Log AI-rejected jobs
   if (aiRejectedJobs.length > 0) {
     const rows = aiRejectedJobs.map(({ job, reason, stage }) => ({
       user_id: user.id, search_id: searchId, search_query: query,
@@ -728,7 +695,6 @@ Return ONLY valid JSON (no markdown, no code fences):
     dataClient.from("rejected_jobs").insert(rows).then((r: any) => r.error && console.log('[SEARCH] Failed to log AI rejected:', r.error));
   }
 
-  // Dedup against existing URLs (history, saved, blocked)
   if (dedupSets) {
     const allExisting = new Set([...dedupSets.history, ...dedupSets.saved, ...dedupSets.blocked]);
     if (allExisting.size > 0) {
@@ -767,13 +733,18 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { query, profile_id, pf_mode } = body;
-    if (!query && !pf_mode) {
-      return NextResponse.json({ error: "SEARCH_001" }, { status: 400 });
-    }
+    const { query, profile_id, pf_mode, continuation } = body;
+    const isContinuation = !!continuation;
 
-    console.log(`[SEARCH] Search started at: ${new Date().toISOString()}`);
-    console.log(`[SEARCH] Query: ${query ?? "(pf_mode)"}, PF mode: ${pf_mode}, Profile: ${profile_id}`);
+    if (!isContinuation) {
+      if (!query && !pf_mode) {
+        return NextResponse.json({ error: "SEARCH_001" }, { status: 400 });
+      }
+      console.log(`[SEARCH] Search started at: ${new Date().toISOString()}`);
+      console.log(`[SEARCH] Query: ${query ?? "(pf_mode)"}, PF mode: ${pf_mode}, Profile: ${profile_id}`);
+    } else {
+      console.log(`[SEARCH] Continue at: ${new Date().toISOString()}`);
+    }
 
     const userEmail = user.email ?? "";
 
@@ -787,101 +758,121 @@ export async function POST(request: NextRequest) {
       }
     );
 
-    // Get profile
-    const { data: profile, error: profileErr } = await dataClient
-      .from("profiles")
-      .select("*")
-      .eq("id", user.id)
-      .maybeSingle();
+    let state: any = {};
 
-    if (profileErr || !profile) {
-      return NextResponse.json({ error: "PROFILE_NOT_FOUND", message: "Please set up your profile before searching." }, { status: 404 });
-    }
-
-    const isAdmin = (profile.is_admin ?? false) || (ADMIN_EMAIL && user.email === ADMIN_EMAIL);
-
-    // Balance check
-    if (!isAdmin) {
-      const searchBalance = profile.search_balance ?? 0;
-      if (searchBalance <= 0) {
-        return NextResponse.json({ code: "LIMIT_001" }, { status: 403 });
-      }
-
-      if (pf_mode) {
-        const pfBalance = profile.persistent_finder_balance ?? 0;
-        if (pfBalance <= 0) {
-          return NextResponse.json({ code: "LIMIT_003", message: "No Persistent Finder rounds remaining. Upgrade your plan." }, { status: 403 });
-        }
-      }
-    }
-
-    // Banned lists
-    const bannedJobs: string[] = profile.banned_jobs ?? [];
-    const bannedCompanies: string[] = profile.banned_companies ?? [];
-
-    // Get search profile data
-    let titles: string[] = [];
-    let profileLocation = "";
-    let profileIndustry = "";
-    let cvVariations: { name: string; file_path: string }[] = [];
-
-    if (profile_id) {
-      const { data: searchProfile } = await dataClient
-        .from("search_profiles")
-        .select("job_titles, location, industry, cv_variations")
-        .eq("id", profile_id)
-        .eq("user_id", user.id)
+    if (isContinuation) {
+      // Decode continuation state
+      state = JSON.parse(Buffer.from(continuation, "base64").toString());
+    } else {
+      // Get profile
+      const { data: profile, error: profileErr } = await dataClient
+        .from("profiles")
+        .select("*")
+        .eq("id", user.id)
         .maybeSingle();
-      if (searchProfile?.job_titles?.length) {
-        titles = searchProfile.job_titles;
-        profileLocation = searchProfile.location ?? "";
-        profileIndustry = searchProfile.industry ?? "";
-        cvVariations = searchProfile.cv_variations ?? [];
+
+      if (profileErr || !profile) {
+        return NextResponse.json({ error: "PROFILE_NOT_FOUND", message: "Please set up your profile before searching." }, { status: 404 });
       }
-    }
 
-    titles = await deduplicateTitles(titles);
+      const isAdmin = (profile.is_admin ?? false) || (ADMIN_EMAIL && user.email === ADMIN_EMAIL);
 
-    if (titles.length === 0) {
-      return NextResponse.json({ results: [], code: "NO_TITLES", message: "Add job titles to your search profile first." });
-    }
-
-    // Load CV texts from all variations
-    let cvTexts: { name: string; text: string }[] = [];
-    for (const cv of cvVariations) {
-      if (!cv.file_path) continue;
-      try {
-        const { data: fileData } = await dataClient
-          .storage
-          .from("cv-files")
-          .download(cv.file_path);
-        if (fileData) {
-          const buffer = Buffer.from(await fileData.arrayBuffer());
-          const text = await extractTextFromPDF(buffer);
-          cvTexts.push({ name: cv.name || "CV", text: text.slice(0, 5000) });
+      // Balance check
+      if (!isAdmin) {
+        const searchBalance = profile.search_balance ?? 0;
+        if (searchBalance <= 0) {
+          return NextResponse.json({ code: "LIMIT_001" }, { status: 403 });
         }
-      } catch {
-        // CV variation unavailable
+
+        if (pf_mode) {
+          const pfBalance = profile.persistent_finder_balance ?? 0;
+          if (pfBalance <= 0) {
+            return NextResponse.json({ code: "LIMIT_003", message: "No Persistent Finder rounds remaining. Upgrade your plan." }, { status: 403 });
+          }
+        }
       }
-    }
 
-    const cvText = cvTexts.map(cv => cv.text).join("\n\n---\n\n");
-    console.log(`[SEARCH] CV variations: ${cvTexts.length}, total text length: ${cvText.length}, titles: ${titles.length}`);
+      // Banned lists
+      state.bannedJobs = profile.banned_jobs ?? [];
+      state.bannedCompanies = profile.banned_companies ?? [];
 
-    // Pre-fetch existing job URLs for dedup (history, saved, blocked)
-    const [existingResultsRes, existingSavedRes] = await Promise.all([
-      dataClient.from("job_results").select("job_url, is_deleted").eq("user_id", user.id),
-      dataClient.from("saved_jobs").select("job_url").eq("user_id", user.id),
-    ]);
-    const historyUrls = new Set<string>();
-    const rejectedUrls = new Set<string>();
-    for (const r of existingResultsRes.data ?? []) {
-      if (r.is_deleted) rejectedUrls.add(r.job_url);
-      else historyUrls.add(r.job_url);
+      // Get search profile data
+      let titles: string[] = [];
+      let profileLocation = "";
+      let profileIndustry = "";
+      let cvVariations: { name: string; file_path: string }[] = [];
+
+      if (profile_id) {
+        const { data: searchProfile } = await dataClient
+          .from("search_profiles")
+          .select("job_titles, location, industry, cv_variations")
+          .eq("id", profile_id)
+          .eq("user_id", user.id)
+          .maybeSingle();
+        if (searchProfile?.job_titles?.length) {
+          titles = searchProfile.job_titles;
+          profileLocation = searchProfile.location ?? "";
+          profileIndustry = searchProfile.industry ?? "";
+          cvVariations = searchProfile.cv_variations ?? [];
+        }
+      }
+
+      titles = await deduplicateTitles(titles);
+
+      if (titles.length === 0) {
+        return NextResponse.json({ results: [], code: "NO_TITLES", message: "Add job titles to your search profile first." });
+      }
+
+      // Load CV texts
+      let cvTexts: { name: string; text: string }[] = [];
+      for (const cv of cvVariations) {
+        if (!cv.file_path) continue;
+        try {
+          const { data: fileData } = await dataClient
+            .storage
+            .from("cv-files")
+            .download(cv.file_path);
+          if (fileData) {
+            const buffer = Buffer.from(await fileData.arrayBuffer());
+            const text = await extractTextFromPDF(buffer);
+            cvTexts.push({ name: cv.name || "CV", text: text.slice(0, 5000) });
+          }
+        } catch {}
+      }
+
+      const cvText = cvTexts.map(cv => cv.text).join("\n\n---\n\n");
+      console.log(`[SEARCH] CV variations: ${cvTexts.length}, total text length: ${cvText.length}, titles: ${titles.length}`);
+
+      // Pre-fetch existing job URLs for dedup
+      const [existingResultsRes, existingSavedRes] = await Promise.all([
+        dataClient.from("job_results").select("job_url, is_deleted").eq("user_id", user.id),
+        dataClient.from("saved_jobs").select("job_url").eq("user_id", user.id),
+      ]);
+      const historyUrls = new Set<string>();
+      const rejectedUrls = new Set<string>();
+      for (const r of existingResultsRes.data ?? []) {
+        if (r.is_deleted) rejectedUrls.add(r.job_url);
+        else historyUrls.add(r.job_url);
+      }
+      const savedUrls = new Set((existingSavedRes.data ?? []).map((r: any) => r.job_url));
+      const blockedUrls = new Set<string>(profile.banned_jobs ?? []);
+
+      state = {
+        mode: pf_mode ? "pf" : "normal",
+        profile,
+        isAdmin,
+        titles,
+        profileLocation,
+        profileIndustry,
+        cvTexts,
+        cvText,
+        dedupSets: { history: historyUrls, saved: savedUrls, rejected: rejectedUrls, blocked: blockedUrls },
+        bannedJobs: state.bannedJobs,
+        bannedCompanies: state.bannedCompanies,
+        pf_mode: !!pf_mode,
+        query: query ?? "",
+      };
     }
-    const savedUrls = new Set((existingSavedRes.data ?? []).map((r: any) => r.job_url));
-    const blockedUrls = new Set<string>(profile.banned_jobs ?? []);
-    const dedupSets = { history: historyUrls, saved: savedUrls, rejected: rejectedUrls, blocked: blockedUrls };
 
     // === STREAMING SEARCH ===
     const stream = new ReadableStream({
@@ -890,10 +881,28 @@ export async function POST(request: NextRequest) {
         const sendStatus = (event: SearchEvent) => writer.send(event);
 
         try {
-          if (!pf_mode) {
-            // === NORMAL SINGLE SEARCH ===
-            const orQuery = buildOrQuery(titles);
-            const searchQuery = [orQuery, profileLocation].filter(Boolean).join(" in ");
+          // Balance deduction (only at start, not on continuation)
+          if (!isContinuation && !state.isAdmin) {
+            if (state.pf_mode) {
+              await dataClient.from("profiles").update({
+                search_balance: (state.profile.search_balance ?? 3) - 1,
+                persistent_finder_balance: (state.profile.persistent_finder_balance ?? 0) - 1,
+              }).eq("id", user.id);
+            } else {
+              await dataClient.from("profiles").update({
+                search_balance: (state.profile.search_balance ?? 3) - 1,
+              }).eq("id", user.id);
+            }
+          }
+
+          const effectivePfMode = state.pf_mode ?? (state.mode === "pf");
+
+          if (!effectivePfMode) {
+            let searchQuery = state.query || state.searchQuery;
+            if (!searchQuery) {
+              const normQuery = buildOrQuery(state.titles);
+              searchQuery = [normQuery, state.profileLocation].filter(Boolean).join(" in ");
+            }
 
             if (!searchQuery || searchQuery === "jobs") {
               writer.send({ type: "error", code: "NO_QUERY", message: "Add job titles to your search profile first.", progress: 0 });
@@ -901,69 +910,108 @@ export async function POST(request: NextRequest) {
               return;
             }
 
-            const { results: outputs, filteredCounts } = await searchRound(
-              searchQuery, profileLocation, profileIndustry, titles, cvTexts,
-              user, profile, authHeader, dataClient, searchId,
-              bannedJobs, bannedCompanies, undefined, sendStatus,
-              dedupSets
+            if (isContinuation) {
+              // Continuation: skip filtering, go straight to AI screening
+              const result = await screenAndAnalyze(
+                state.rawJobs, state.jobSpecs, state.jobUrls, state.queryUsed,
+                state.profileLocation, state.profileIndustry, state.titles, state.cvTexts,
+                user, searchId, dataClient, state.bannedJobs, state.bannedCompanies,
+                sendStatus, undefined,
+                { history: new Set(state.dedupSets.history), saved: new Set(state.dedupSets.saved), blocked: new Set(state.dedupSets.blocked) }
+              );
+
+              const totalFiltered = result.filteredCounts.history + result.filteredCounts.saved + result.filteredCounts.rejected + result.filteredCounts.blocked;
+              if (totalFiltered > 0) {
+                writer.send({ type: "filtered_summary", ...result.filteredCounts, progress: 50 });
+              }
+
+              if (result.results.length > 0) {
+                const withIds = result.results.map((r: JobRow) => ({ ...r, id: crypto.randomUUID() }));
+                writer.send({ type: "complete", results: withIds.map(normalize), progress: 100, ...(totalFiltered > 0 ? { filtered_summary: result.filteredCounts } : {}) });
+
+                const rows = withIds.map((r: any) => ({
+                  id: r.id, user_id: r.user_id, search_id: r.search_id, profile_id: null,
+                  job_title: r.job_title, company: r.company, location: r.location,
+                  estimated_salary: r.estimated_salary, match_score: r.match_score,
+                  match_summary: r.match_summary, job_url: r.job_url, full_spec: r.full_spec,
+                  search_query: r.search_query, domain_verified: r.domain_verified,
+                  domain_unverified_reason: r.domain_unverified_reason, posted_at: r.posted_at,
+                  suggested_cv: r.suggested_cv, verdict_bullets: r.verdict_bullets,
+                }));
+                dataClient.from("job_results").insert(rows).then(({ error }: any) => {
+                  if (error) console.error("[SEARCH] Failed to insert job results:", error.message);
+                });
+              } else {
+                writer.send({ type: "complete", results: [], progress: 100, message: "No strong matches found. Try broadening your criteria." });
+              }
+              writer.close();
+              return;
+            }
+
+            // Phase 1: search + filter (no AI) — initial call
+            const { rawJobs, jobSpecs, jobUrls, queryUsed } = await fetchAndFilterJobs(
+              searchQuery, state.profileLocation, user, searchId,
+              state.bannedJobs, state.bannedCompanies, dataClient, sendStatus
             );
 
-            const totalFiltered = filteredCounts.history + filteredCounts.saved + filteredCounts.rejected + filteredCounts.blocked;
-            if (totalFiltered > 0) {
-              writer.send({ type: "filtered_summary", ...filteredCounts, progress: 50 });
+            if (rawJobs.length === 0) {
+              writer.send({ type: "complete", results: [], progress: 100, message: "No matching jobs found. Try broadening your criteria." });
+              writer.close();
+              return;
             }
 
-            outputs.sort((a, b) => {
-              if (a.domain_verified !== b.domain_verified) return a.domain_verified ? -1 : 1;
-              return b.posted_at_ms - a.posted_at_ms;
+            // Pause after filtering — user clicks Continue to start AI screening
+            writer.send({
+              type: "pause",
+              message: `Found ${rawJobs.length} matching results. Ready to screen?`,
+              progress: 20,
+              continuation: Buffer.from(JSON.stringify({
+                mode: "normal",
+                rawJobs,
+                jobSpecs,
+                jobUrls,
+                queryUsed,
+                searchId,
+                titles: state.titles,
+                profileLocation: state.profileLocation,
+                profileIndustry: state.profileIndustry,
+                cvTexts: state.cvTexts,
+                bannedJobs: state.bannedJobs,
+                bannedCompanies: state.bannedCompanies,
+                query: searchQuery,
+                dedupSets: { history: [...state.dedupSets.history], saved: [...state.dedupSets.saved], blocked: [...state.dedupSets.blocked] },
+              })).toString("base64"),
             });
-
-            if (!isAdmin) {
-              const { error: balanceErr } = await dataClient.from("profiles").update({ search_balance: (profile.search_balance ?? 3) - 1 }).eq("id", user.id);
-              if (balanceErr) {
-                console.error("[SEARCH] Failed to decrement search balance:", balanceErr.message);
-              }
-            }
-
-            if (outputs.length > 0) {
-              const withIds = outputs.map((r) => ({ ...r, id: crypto.randomUUID() }));
-
-              writer.send({ type: "complete", results: withIds.map(normalize), progress: 100, ...(totalFiltered > 0 ? { filtered_summary: filteredCounts } : {}) });
-
-              const rows = withIds.map((r) => ({
-                id: r.id,
-                user_id: r.user_id, search_id: r.search_id, profile_id: profile_id ?? null,
-                job_title: r.job_title, company: r.company, location: r.location,
-                estimated_salary: r.estimated_salary, match_score: r.match_score,
-                match_summary: r.match_summary, job_url: r.job_url, full_spec: r.full_spec,
-                search_query: r.search_query, domain_verified: r.domain_verified,
-                domain_unverified_reason: r.domain_unverified_reason, posted_at: r.posted_at,
-                suggested_cv: r.suggested_cv, verdict_bullets: r.verdict_bullets,
-              }));
-              dataClient.from("job_results").insert(rows).then(({ error }: any) => {
-                if (error) console.error("[SEARCH] Failed to insert job results:", error.message);
-              });
-            } else {
-              writer.send({ type: "complete", results: [], progress: 100, message: "No strong matches found. Try broadening your criteria." });
-            }
-
             writer.close();
             return;
           }
 
-          // === PERSISTENT FINDER MODE (adaptive OR) ===
+          // === PERSISTENT FINDER MODE (adaptive OR, per-round checkpoint) ===
           const MAX_ROUNDS = 8;
           const STOP_THRESHOLD = 80;
           const STOP_COUNT = 5;
 
-          let allResults: JobRow[] = [];
-          const pfFilteredCounts = { history: 0, saved: 0, rejected: 0, blocked: 0 };
-          const seenUrls = new Set<string>([...dedupSets.history, ...dedupSets.saved, ...dedupSets.blocked]);
-          let activeTitles = [...titles];
-          const usedTitles = new Set(titles);
-          const usedQueries = new Set<string>();
-          let pfRound = 0;
-          let pfAborted = false;
+          const pfTitles = state.titles;
+          const pfLocation = state.profileLocation;
+          const pfIndustry = state.profileIndustry;
+          const pfCvTexts = state.cvTexts;
+          const pfCvText = state.cvText;
+          const pfBannedJobs = state.bannedJobs;
+          const pfBannedCompanies = state.bannedCompanies;
+          const pfDedupSets = state.dedupSets;
+
+          let allResults: JobRow[] = isContinuation ? (state.allResults || []) : [];
+          const pfFilteredCounts = isContinuation
+            ? (state.pfFilteredCounts || { history: 0, saved: 0, rejected: 0, blocked: 0 })
+            : { history: 0, saved: 0, rejected: 0, blocked: 0 };
+          const seenUrls = new Set<string>(
+            isContinuation ? (state.seenUrls || []) : [...pfDedupSets.history, ...pfDedupSets.saved, ...pfDedupSets.blocked]
+          );
+          let activeTitles = isContinuation ? (state.activeTitles || [...pfTitles]) : [...pfTitles];
+          const usedTitles = new Set<string>(isContinuation ? (state.usedTitles || pfTitles) : pfTitles);
+          const usedQueries = new Set<string>(isContinuation ? (state.usedQueries || []) : []);
+          let pfRound = isContinuation ? (state.nextRound - 1) : 0;
+          let pfAborted = isContinuation ? (state.pfAborted || false) : false;
 
           for (let round = 0; round < MAX_ROUNDS; round++) {
             pfRound = round + 1;
@@ -974,7 +1022,7 @@ export async function POST(request: NextRequest) {
             }
 
             const orQuery = buildOrQuery(activeTitles);
-            const fullQuery = [orQuery, profileLocation].filter(Boolean).join(" in ");
+            const fullQuery = [orQuery, pfLocation].filter(Boolean).join(" in ");
 
             if (usedQueries.has(fullQuery)) {
               console.log(`[PF] Round ${pfRound}/${MAX_ROUNDS}: skipping duplicate query "${fullQuery}"`);
@@ -991,26 +1039,39 @@ export async function POST(request: NextRequest) {
             }
 
             try {
-              const result = await searchRound(
-                fullQuery, profileLocation, profileIndustry, titles, cvTexts,
-                user, profile, authHeader, dataClient, searchId,
-                bannedJobs, bannedCompanies, pfRound, sendStatus,
-                dedupSets
+              const filtered = await fetchAndFilterJobs(
+                fullQuery, pfLocation, user, searchId,
+                pfBannedJobs, pfBannedCompanies, dataClient, sendStatus, pfRound
               );
 
-              pfFilteredCounts.history += result.filteredCounts.history;
-              pfFilteredCounts.saved += result.filteredCounts.saved;
-              pfFilteredCounts.rejected += result.filteredCounts.rejected;
-              pfFilteredCounts.blocked += result.filteredCounts.blocked;
+              let roundResults: JobRow[] = [];
+              let roundFilteredCounts = { history: 0, saved: 0, rejected: 0, blocked: 0 };
 
-              for (const r of result.results) {
+              if (filtered.rawJobs.length > 0) {
+                const result = await screenAndAnalyze(
+                  filtered.rawJobs, filtered.jobSpecs, filtered.jobUrls, filtered.queryUsed,
+                  pfLocation, pfIndustry, pfTitles, pfCvTexts,
+                  user, searchId, dataClient, pfBannedJobs, pfBannedCompanies,
+                  sendStatus, pfRound,
+                  { history: new Set(pfDedupSets.history), saved: new Set(pfDedupSets.saved), blocked: new Set(pfDedupSets.blocked) }
+                );
+                roundResults = result.results;
+                roundFilteredCounts = result.filteredCounts;
+              }
+
+              pfFilteredCounts.history += roundFilteredCounts.history;
+              pfFilteredCounts.saved += roundFilteredCounts.saved;
+              pfFilteredCounts.rejected += roundFilteredCounts.rejected;
+              pfFilteredCounts.blocked += roundFilteredCounts.blocked;
+
+              for (const r of roundResults) {
                 if (!seenUrls.has(r.job_url)) {
                   seenUrls.add(r.job_url);
                   allResults.push(r);
                 }
               }
 
-              console.log(`[PF] Round ${pfRound}: ${result.results.length} valid, ${result.filteredCounts.blocked} blocked (total unique: ${allResults.length})`);
+              console.log(`[PF] Round ${pfRound}: ${roundResults.length} valid (total unique: ${allResults.length})`);
 
               const highScoreCount = allResults.filter((r) => r.match_score >= STOP_THRESHOLD).length;
               if (highScoreCount >= STOP_COUNT) {
@@ -1018,12 +1079,15 @@ export async function POST(request: NextRequest) {
                 break;
               }
 
-              // Generate new title variations based on round feedback
-              const variationPrompt = `You are a job search strategist. The candidate's original job titles are: ${JSON.stringify(titles)}.
+              const isLastRound = pfRound >= MAX_ROUNDS;
+              if (isLastRound) break;
+
+              // Generate new title variations
+              const variationPrompt = `You are a job search strategist. The candidate's original job titles are: ${JSON.stringify(pfTitles)}.
 The following titles were just searched and didn't return enough valid results: ${JSON.stringify(activeTitles)}.
 Previous titles already tried: ${JSON.stringify([...usedTitles])}.
-Round feedback: ${result.results.length} valid jobs found, ${result.filteredCounts.blocked} blocked by user preferences.
-Banned companies: ${bannedCompanies.join(", ") || "none"}.
+Round feedback: ${roundResults.length} valid jobs found.
+Banned companies: ${pfBannedCompanies.join(", ") || "none"}.
 
 Generate 3-4 NEW job title variations that are related BUT DIFFERENT from the ones already tried. Suggest alternative phrasings, adjacent roles, or more specific titles. Avoid titles likely to hit blocked companies or similar dead ends.
 Return ONLY a JSON array of strings. No explanation.`;
@@ -1031,7 +1095,7 @@ Return ONLY a JSON array of strings. No explanation.`;
               try {
                 const variationResult = await callAIWithFallback(
                   variationPrompt,
-                  `Candidate original titles: ${JSON.stringify(titles)}\nLocation: ${profileLocation}\nCV summary: ${(cvText || "No CV").slice(0, 500)}`,
+                  `Candidate original titles: ${JSON.stringify(pfTitles)}\nLocation: ${pfLocation}\nCV summary: ${(pfCvText || "No CV").slice(0, 500)}`,
                   `PF round ${pfRound} title variation`,
                   { responseMimeType: "application/json", temperature: 0.7 }
                 );
@@ -1048,6 +1112,35 @@ Return ONLY a JSON array of strings. No explanation.`;
               } catch {
                 console.log(`[PF] AI title generation failed — keeping current titles`);
               }
+
+              // Pause after round — send continuation to client
+              writer.send({
+                type: "pause",
+                message: roundResults.length > 0
+                  ? `Round ${pfRound} complete — ${allResults.length} results so far. Continue to round ${pfRound + 1}?`
+                  : `Round ${pfRound} found no matches. Continue to round ${pfRound + 1}?`,
+                progress: Math.min((pfRound / MAX_ROUNDS) * 90, 90),
+                continuation: Buffer.from(JSON.stringify({
+                  mode: "pf",
+                  nextRound: pfRound + 1,
+                  allResults,
+                  seenUrls: [...seenUrls],
+                  activeTitles,
+                  usedTitles: [...usedTitles],
+                  usedQueries: [...usedQueries],
+                  pfFilteredCounts,
+                  searchId,
+                  titles: pfTitles,
+                  profileLocation: pfLocation,
+                  profileIndustry: pfIndustry,
+                  cvTexts: pfCvTexts,
+                  bannedJobs: pfBannedJobs,
+                  bannedCompanies: pfBannedCompanies,
+                  dedupSets: { history: [...pfDedupSets.history], saved: [...pfDedupSets.saved], blocked: [...pfDedupSets.blocked] },
+                })).toString("base64"),
+              });
+              writer.close();
+              return; // Stream ends here, client resumes via /api/search/continue
             } catch (err) {
               const errMsg = err instanceof Error ? err.message : String(err);
               console.log(`[PF] Round ${pfRound} failed — error: ${errMsg}`);
@@ -1056,22 +1149,13 @@ Return ONLY a JSON array of strings. No explanation.`;
             }
           }
 
+          // Finalize (reached after last round or early stop)
           allResults.sort((a, b) => {
             if (a.domain_verified !== b.domain_verified) return a.domain_verified ? -1 : 1;
             return b.posted_at_ms - a.posted_at_ms;
           });
 
           console.log(`[PF] Total unique results: ${allResults.length}`);
-
-          if (!isAdmin) {
-            const { error: balanceErr } = await dataClient.from("profiles").update({
-              search_balance: (profile.search_balance ?? 3) - 1,
-              persistent_finder_balance: (profile.persistent_finder_balance ?? 0) - 1,
-            }).eq("id", user.id);
-            if (balanceErr) {
-              console.error("[PF] Failed to decrement balance:", balanceErr.message);
-            }
-          }
 
           const pfTotalFiltered = pfFilteredCounts.history + pfFilteredCounts.saved + pfFilteredCounts.rejected + pfFilteredCounts.blocked;
           if (pfTotalFiltered > 0) {

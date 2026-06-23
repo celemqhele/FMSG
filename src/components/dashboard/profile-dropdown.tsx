@@ -81,89 +81,72 @@ export function ProfileDropdown() {
   };
 
   return (
-    <div className="relative flex flex-col items-end">
+    <div className="relative">
       {phase !== "closed" && <div className="fixed inset-0 z-40" onClick={closeMenu} />}
 
+      {/* Trigger pill */}
       <div
-        className="flex flex-col overflow-hidden transition-all duration-300 ease-out border border-white/20 z-50"
+        className="flex items-center gap-2 px-3 h-[2.75rem] cursor-pointer select-none border border-white/20 z-50 transition-all duration-300 ease-out"
         style={{
           width: phase === "closed" ? "2.75rem" : "14rem",
-          height: phase === "full" ? "auto" : "2.75rem",
-          borderRadius: phase === "full" ? "1rem" : "9999px",
+          borderRadius: "9999px",
           background: "rgba(28,28,30,0.95)",
+          justifyContent: phase === "closed" ? "center" : "flex-start",
+        }}
+        onClick={handleToggle}
+      >
+        <span className="shrink-0 text-xs font-semibold text-white">{initials || <User size={14} className="text-white" />}</span>
+        {phase !== "closed" && (
+          <span className="text-xs text-white/80 truncate max-w-[100px] animate-in fade-in duration-200">
+            {name}
+          </span>
+        )}
+      </div>
+
+      {/* Dropdown panel */}
+      <div
+        className="absolute top-full right-0 mt-2 z-50 transition-all duration-300 ease-out overflow-hidden border border-white/20"
+        style={{
+          width: "14rem",
+          maxHeight: phase === "full" ? "20rem" : "0rem",
+          borderRadius: "1rem",
+          background: "rgba(28,28,30,0.95)",
+          opacity: phase === "full" ? 1 : 0,
+          transform: phase === "full" ? "translateY(0)" : "translateY(-4px)",
         }}
       >
-        {/* Top row */}
-        <div
-          className="flex items-center gap-2 px-3 h-[2.75rem] cursor-pointer select-none transition-all duration-300"
-          style={{ justifyContent: phase === "closed" ? "center" : "flex-start" }}
-          onClick={handleToggle}
-        >
-          <span className="shrink-0 text-xs font-semibold text-white">{initials || <User size={14} className="text-white" />}</span>
-          {phase !== "closed" && (
-            <span className="text-xs text-white/80 truncate max-w-[100px] animate-in fade-in duration-200">
-              {name}
-            </span>
-          )}
+        <div className="py-1">
+          <button
+            onClick={() => handleNav("/profile")}
+            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-white hover:bg-white/5 transition-all duration-300"
+          >
+            <User size={15} className="opacity-60" />
+            My Profile
+          </button>
+          <button
+            onClick={() => { closeMenu(); setTimeout(() => setSettingsOpen(true), 160); }}
+            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-white hover:bg-white/5 transition-all duration-300"
+          >
+            <Settings size={15} className="opacity-60" />
+            Settings
+          </button>
+          <button
+            onClick={() => handleNav("/upgrade")}
+            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-white hover:bg-white/5 transition-all duration-300"
+          >
+            <Sparkles size={15} className="opacity-60" />
+            Upgrade Plan
+          </button>
         </div>
-
-        {/* Expandable menu */}
-        <div
-          className="grid transition-all duration-300 ease-out"
-          style={{ gridTemplateRows: phase === "full" ? "1fr" : "0fr" }}
-        >
-          <div className="overflow-hidden">
-            <div className="h-px bg-white/10 mx-3" />
-            <div className="py-1">
-              <button
-                onClick={() => handleNav("/profile")}
-                className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-white hover:bg-white/5 transition-all duration-300"
-                style={{
-                  opacity: phase === "full" ? 1 : 0,
-                  transform: phase === "full" ? "translateY(0)" : "translateY(-4px)",
-                }}
-              >
-                <User size={15} className="opacity-60" />
-                My Profile
-              </button>
-              <button
-                onClick={() => { closeMenu(); setTimeout(() => setSettingsOpen(true), 160); }}
-                className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-white hover:bg-white/5 transition-all duration-300"
-                style={{
-                  opacity: phase === "full" ? 1 : 0,
-                  transform: phase === "full" ? "translateY(0)" : "translateY(-4px)",
-                }}
-              >
-                <Settings size={15} className="opacity-60" />
-                Settings
-              </button>
-              <button
-                onClick={() => handleNav("/upgrade")}
-                className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-white hover:bg-white/5 transition-all duration-300"
-                style={{
-                  opacity: phase === "full" ? 1 : 0,
-                  transform: phase === "full" ? "translateY(0)" : "translateY(-4px)",
-                }}
-              >
-                <Sparkles size={15} className="opacity-60" />
-                Upgrade Plan
-              </button>
-            </div>
-            <div className="h-px bg-white/10 mx-3" />
-            <div className="py-1">
-              <button
-                onClick={handleLogout}
-                className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-400 hover:bg-white/5 transition-all duration-300"
-                style={{
-                  opacity: phase === "full" ? 1 : 0,
-                  transform: phase === "full" ? "translateY(0)" : "translateY(-4px)",
-                }}
-              >
-                <LogOut size={15} className="opacity-70" />
-                Logout
-              </button>
-            </div>
-          </div>
+        <div className="h-px bg-white/10 mx-3" />
+        <div className="py-1">
+          <button
+            onClick={handleLogout}
+            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-400 hover:bg-white/5 transition-all duration-300"
+          >
+            <LogOut size={15} className="opacity-70" />
+            Logout
+          </button>
         </div>
       </div>
 
