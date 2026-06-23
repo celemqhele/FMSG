@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, startTransition } from "react";
 import { useRouter } from "next/navigation";
-import { X } from "lucide-react";
+import { X, ArrowRight } from "lucide-react";
 import { DashboardLayout } from "@/components/dashboard/dashboard-layout";
 import { SearchPill } from "@/components/dashboard/search-pill";
 import { JobResultCard } from "@/components/dashboard/job-result-card";
@@ -88,6 +88,7 @@ export default function DashboardPage() {
   const [statusCompleted, setStatusCompleted] = useState<string[]>([]);
   const [statusActive, setStatusActive] = useState("");
   const [filteredSummary, setFilteredSummary] = useState<FilteredSummary | null>(null);
+  const [continuationToken, setContinuationToken] = useState<string | null>(null);
 
   useEffect(() => { endTransition(); }, [endTransition]);
 
@@ -181,6 +182,7 @@ export default function DashboardPage() {
     setFilteredSummary(null);
     setVideoFast(true);
     setPfActive(!!pfMode);
+    setContinuationToken(null);
 
     const supabase = createClient();
     const { data: { session } } = await supabase.auth.getSession();
@@ -199,7 +201,34 @@ export default function DashboardPage() {
       body: JSON.stringify({ query, profile_id: profileId, pf_mode: pfMode }),
     });
 
-    // Handle JSON error responses (auth, balance, profile)
+    await handleStreamResponse(res);
+  }, [setVideoFast]);
+
+  const handleContinue = useCallback(async () => {
+    if (!continuationToken) return;
+
+    setSearching(true);
+    setVideoFast(true);
+    setResultMessage("");
+
+    const supabase = createClient();
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+
+    const res = await fetch("/api/search", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ continuation: continuationToken }),
+    });
+
+    setContinuationToken(null);
+    await handleStreamResponse(res);
+  }, [continuationToken, setVideoFast]);
+
+  const handleStreamResponse = async (res: Response) => {
     const contentType = res.headers.get("Content-Type") || "";
     if (!contentType.includes("text/plain")) {
       let data: any = {};
@@ -247,6 +276,7 @@ export default function DashboardPage() {
     const decoder = new TextDecoder();
     let buffer = "";
     let streamComplete = false;
+    let currentStatusActive = "";
 
     try {
       while (true) {
@@ -266,7 +296,8 @@ export default function DashboardPage() {
           switch (event.type) {
             case "found_results":
               setStatusCompleted((prev) => [...prev, "Searching live job listings"]);
-              setStatusActive(`Found ${event.count} matching results`);
+              currentStatusActive = `Found ${event.count} matching results`;
+              setStatusActive(currentStatusActive);
               setProgress(event.progress ?? 20);
               break;
 
@@ -282,7 +313,8 @@ export default function DashboardPage() {
                 const filtered = prev.filter((s) => !s.startsWith("Screening job"));
                 return [...filtered, `Found ${event.total} matching results`];
               });
-              setStatusActive(`Screening job ${event.current} of ${event.total}`);
+              currentStatusActive = `Screening job ${event.current} of ${event.total}`;
+              setStatusActive(currentStatusActive);
               setProgress(event.progress ?? 40);
               break;
 
@@ -291,16 +323,18 @@ export default function DashboardPage() {
                 const filtered = prev.filter((s) => !s.startsWith("Screening job"));
                 return [...filtered, `Screening ${event.total} of ${event.total} complete`];
               });
-              setStatusActive(`Analysing fit for: ${event.title} at ${event.company}`);
+              currentStatusActive = `Analysing fit for: ${event.title} at ${event.company}`;
+              setStatusActive(currentStatusActive);
               setProgress(event.progress ?? 70);
               break;
 
             case "almost_done":
               setStatusCompleted((prev) => {
                 const filtered = prev.filter((s) => !s.startsWith("Analysing fit"));
-                return [...filtered, statusActive].filter(Boolean);
+                return [...filtered, currentStatusActive].filter(Boolean);
               });
-              setStatusActive("Almost done");
+              currentStatusActive = "Almost done";
+              setStatusActive(currentStatusActive);
               setProgress(event.progress ?? 90);
               break;
 
@@ -309,8 +343,30 @@ export default function DashboardPage() {
                 const filtered = prev.filter((s) => !s.startsWith("Persistent Finder round"));
                 return [...filtered, `Persistent Finder round ${event.round} of ${event.max}`];
               });
-              setStatusActive(event.query);
+              currentStatusActive = event.query;
+              setStatusActive(currentStatusActive);
               setProgress(event.progress ?? 50);
+              break;
+
+            case "pause":
+              streamComplete = true;
+              setStatusCompleted((prev) => {
+                const filtered = prev.filter((s) =>
+                  !s.startsWith("Analysing fit") &&
+                  !s.startsWith("Almost done") &&
+                  !s.startsWith("Screening job")
+                );
+                const lines = [...filtered];
+                if (currentStatusActive && !currentStatusActive.startsWith("Almost done")) {
+                  lines.push(currentStatusActive);
+                }
+                return lines;
+              });
+              setStatusActive("");
+              setProgress(event.progress ?? 50);
+              setContinuationToken(event.continuation);
+              setSearching(false);
+              setVideoFast(false);
               break;
 
             case "complete":
@@ -323,8 +379,8 @@ export default function DashboardPage() {
                   !s.startsWith("Screening job")
                 );
                 const lines = [...filtered];
-                if (statusActive && !statusActive.startsWith("Almost done")) {
-                  lines.push(statusActive);
+                if (currentStatusActive && !currentStatusActive.startsWith("Almost done")) {
+                  lines.push(currentStatusActive);
                 }
                 return lines;
               });
@@ -338,6 +394,7 @@ export default function DashboardPage() {
                 setProgress(0);
                 setVideoFast(false);
                 setPfActive(false);
+                setContinuationToken(null);
                 if (event.results?.length === 0 && event.message) {
                   setResultMessage(event.message);
                 } else if (event.pf_mode && event.pf_rounds) {
@@ -352,6 +409,7 @@ export default function DashboardPage() {
               setProgress(0);
               setVideoFast(false);
               setPfActive(false);
+              setContinuationToken(null);
               setStatusCompleted([]);
               setStatusActive("");
               setResultMessage(event.message ?? "Something went wrong. Please try again.");
@@ -360,12 +418,13 @@ export default function DashboardPage() {
         }
       }
 
-      // Stream ended without complete/error event
+      // Stream ended without complete/error/pause event
       if (!streamComplete) {
         setSearching(false);
         setProgress(0);
         setVideoFast(false);
         setPfActive(false);
+        setContinuationToken(null);
         setStatusCompleted([]);
         setStatusActive("");
         setResultMessage("Connection lost. Please try again.");
@@ -376,12 +435,13 @@ export default function DashboardPage() {
         setProgress(0);
         setVideoFast(false);
         setPfActive(false);
+        setContinuationToken(null);
         setStatusCompleted([]);
         setStatusActive("");
         setResultMessage("Something went wrong. Please try again.");
       }
     }
-  }, [setVideoFast, statusActive]);
+  };
 
   const handleDelete = useCallback((id: string) => {
     setResults((prev) => prev.filter((x) => x.id !== id));
@@ -429,6 +489,18 @@ export default function DashboardPage() {
                 activeLine={statusActive}
                 progress={progress}
               />
+            )}
+
+            {continuationToken && !searching && (
+              <div className="flex justify-center pt-2">
+                <button
+                  onClick={handleContinue}
+                  className="flex items-center justify-center w-8 h-6 rounded-md bg-white/10 border border-white/20 hover:bg-white/40 transition-all"
+                  title="Continue search"
+                >
+                  <ArrowRight size={14} />
+                </button>
+              </div>
             )}
 
             {!searching && results.length > 0 && (

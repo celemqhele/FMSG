@@ -6,7 +6,8 @@ export type SearchEvent =
   | { type: "pf_round"; round: number; max: number; query: string; progress: number }
   | { type: "complete"; results: unknown[]; progress: number; pf_mode?: boolean; pf_rounds?: number; message?: string; filtered_summary?: FilteredSummary }
   | { type: "error"; code: string; message: string; progress: number }
-  | { type: "filtered_summary"; history: number; saved: number; rejected: number; blocked: number; progress: number };
+  | { type: "filtered_summary"; history: number; saved: number; rejected: number; blocked: number; progress: number }
+  | { type: "pause"; message: string; progress: number; continuation: string };
 
 export interface FilteredSummary {
   history: number;
