@@ -1114,6 +1114,14 @@ Return ONLY a JSON array of strings. No explanation.`;
               }
 
               // Pause after round — send continuation to client
+              
+              // Check if we have enough good results to stop early
+              const highQualityResults = allResults.filter(r => r.match_score >= 75);
+              if (highQualityResults.length >= 5) {
+                console.log(`[PF] Found ${highQualityResults.length} high-quality results — stopping early.`);
+                break;
+              }
+
               writer.send({
                 type: "pause",
                 message: roundResults.length > 0
