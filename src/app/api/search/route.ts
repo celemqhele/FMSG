@@ -380,6 +380,14 @@ async function searchRound(
 
   if (rawJobs.length === 0) return { results: [], queryUsed: query, filteredCounts };
 
+  // ATS tracker pre-check on Google snippet (before Jina fetch)
+  rawJobs = rawJobs.filter((j) => {
+    if (j.description && BLOCKED_ATS_TRACKERS.some(t => j.description!.includes(t))) return false;
+    return true;
+  });
+
+  if (rawJobs.length === 0) return { results: [], queryUsed: query, filteredCounts };
+
   // Jina fetch
   let jobUrls = new Map<number, string>();
   let jobFullSpecs = new Map<number, string>();
@@ -470,7 +478,7 @@ async function searchRound(
     job_title: sanitiseForJson(j.title),
     company: sanitiseForJson(j.company_name),
     location: sanitiseForJson(j.location),
-    description_snippet: sanitiseForJson((j.description ?? "").slice(0, 1500)),
+    description_snippet: sanitiseForJson((j.description ?? "").slice(0, 3500)),
     url: jobUrls.get(i) || "",
   }));
 
@@ -479,15 +487,20 @@ async function searchRound(
 
   const batchSystemPrompt = `You are a Recruitment Auditor AI screening job matches. Score each job against the candidate's profile and CV.
 
+CANDIDATE INDUSTRY: ${profileIndustry || "Unknown"}
+
 SCORING:
 - 0–30: Total mismatch in industry, sector, or core capabilities.
 - 31–59: Some transferable skills but significant gaps in industry nuance or scale.
 - 60–74: Good foundation but lacks a critical requirement direct competitors will have.
 - 75–100: Exceptional match — direct industry alignment, matching functional scale.
 
+INDUSTRY MATCH RULES:
+- If the job's industry is clearly different from the candidate's industry (e.g. Healthcare vs Construction, Education vs Fintech), the score MUST NOT exceed 30.
+- Understand that functions like HR, IT, Admin, Finance, or Project Management can span multiple industries — in those cases, assess normally.
+
 RULES:
 - Judge transferable skills and career trajectory, not keywords.
-- If the candidate's industry differs from the job's industry, reduce the score.
 - Reference specifics from the CV and job description.
 
 Return ONLY a JSON array of objects. No markdown, no explanation, no code fences.
@@ -523,15 +536,20 @@ ${blacklistInfo}${bannedInfo}`;
       if (i > 0) await sleep(6000);
       const singlePrompt = `You are a Recruitment Auditor AI scoring a single job match.
 
+CANDIDATE INDUSTRY: ${profileIndustry || "Unknown"}
+
 SCORING:
 - 0–30: Total mismatch in industry, sector, or core capabilities.
 - 31–59: Some transferable skills but significant gaps.
 - 60–74: Good foundation but lacks a critical requirement.
 - 75–100: Exceptional match — direct alignment.
 
+INDUSTRY MATCH RULES:
+- If the job's industry is clearly different from the candidate's industry (e.g. Healthcare vs Construction), the score MUST NOT exceed 30.
+- Understand that functions like HR, IT, Admin, Finance, or Project Management can span multiple industries — in those cases, assess normally.
+
 RULES:
 - Judge transferable skills, not keywords.
-- If the candidate's industry differs from the job's industry, reduce score.
 
 Return ONLY valid JSON (no markdown, no code fences):
 { "score": number (0-100), "reason": string, "estimated_salary": string }`;
@@ -566,6 +584,8 @@ Return ONLY valid JSON (no markdown, no code fences):
 
     const deepSystemPrompt = `You are a strict Recruitment Auditor AI. Evaluate the candidate's CVs against the job description.
 
+CANDIDATE INDUSTRY: ${profileIndustry || "Unknown"}
+
 40% COMPETITOR BENCHMARK:
 Assume 40% of applicants are perfect direct matches who tick every requirement. Only score highly if the candidate can stand out against this competition.
 
@@ -575,9 +595,14 @@ SCORING:
 - 60–74: Good foundation but lacks a critical requirement direct competitors will have.
 - 75–100: Exceptional match — direct industry alignment, matching functional scale, clear competitive advantage.
 
+INDUSTRY MATCH RULES:
+- First, identify the job's industry from the full job specification.
+- If the job's industry is clearly different from the candidate's industry (e.g. Healthcare vs Construction, Education vs Fintech), the score MUST NOT exceed 30.
+- Understand that functions like HR, IT, Admin, Finance, or Project Management can span multiple industries — in those cases, assess normally based on the role itself.
+- Set industry_match to true if the industries are the same, closely related, or the role is a cross-industry function. Set to false for clear mismatches.
+
 RULES:
 - Judge transferable skills and career trajectory, not keywords.
-- If the candidate's industry differs from the job's industry, reduce the score.
 - Reference specifics from the CV and job spec.
 - Choose the CV variation that best matches this role and return its name in suggested_cv_name.
 
@@ -589,6 +614,8 @@ Return ONLY valid JSON (no markdown, no code fences). Exact schema:
   "estimated_salary": string,
   "suggested_cv_name": string,
   "match_summary": string,
+  "job_industry": string,
+  "industry_match": boolean,
   "bullet_points": {
     "industry": string,
     "function": string,
@@ -604,6 +631,10 @@ Return ONLY valid JSON (no markdown, no code fences). Exact schema:
         { responseMimeType: "application/json", temperature: 0.1 }
       );
       const deepResult = JSON.parse(raw);
+
+      if (deepResult.industry_match === false && deepResult.score > 30) {
+        console.warn(`[AI] Industry mismatch: "${job.title}" at ${job.company_name} (candidate: ${profileIndustry}, job: ${deepResult.job_industry ?? "unknown"}, score: ${deepResult.score})`);
+      }
 
       outputs.push({
         user_id: user.id,
@@ -627,15 +658,50 @@ Return ONLY valid JSON (no markdown, no code fences). Exact schema:
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       console.log(`[AI] Pass 2 failed for "${job.title}" at ${job.company_name}: ${errMsg.slice(0, 150)}`);
+      // Retry with simplified prompt
+      let fallbackScore = batchResult?.score ?? 30;
+      let fallbackSummary = batchResult?.reason || "Analysis unavailable";
+      let fallbackSalary = batchResult?.estimated_salary || "";
+      try {
+        const retryPrompt = `You are a Recruitment Auditor AI. Score this job match for the candidate.
+
+CANDIDATE INDUSTRY: ${profileIndustry || "Unknown"}
+
+SCORING:
+- 0–30: Total mismatch in industry, sector, or core capabilities.
+- 31–59: Some transferable skills but significant gaps.
+- 60–74: Good foundation but lacks a critical requirement.
+- 75–100: Exceptional match — direct alignment.
+
+INDUSTRY MATCH RULES:
+- If the job's industry is clearly different from the candidate's industry (e.g. Healthcare vs Construction), the score MUST NOT exceed 30.
+- Functions like HR, IT, Admin, Finance, or Project Management can span multiple industries.
+
+Return ONLY valid JSON (no markdown, no code fences):
+{ "score": number (0-100), "estimated_salary": string, "match_summary": string, "suggested_cv_name": string }`;
+        const retryRaw = await callAIWithFallback(
+          retryPrompt,
+          `Candidate Profile:\n${profileContext}\n\nFull Job Specification:\n${fullSpec.slice(0, 8000)}\n\nJob Title: ${job.title}\nCompany: ${job.company_name}\nLocation: ${job.location}`,
+          `search pass 2 retry${pfRound ? ` (PF round ${pfRound})` : ""}: ${job.title} at ${job.company_name}`,
+          { responseMimeType: "application/json", temperature: 0.1, maxOutputTokens: 1024 }
+        );
+        const retryResult = JSON.parse(retryRaw);
+        fallbackScore = retryResult.score ?? fallbackScore;
+        fallbackSummary = retryResult.match_summary || fallbackSummary;
+        fallbackSalary = retryResult.estimated_salary || fallbackSalary;
+        console.log(`[AI] Pass 2 retry succeeded for "${job.title}" at ${job.company_name}`);
+      } catch {
+        console.log(`[AI] Pass 2 retry also failed for "${job.title}" at ${job.company_name}, using Pass 1 fallback`);
+      }
       outputs.push({
         user_id: user.id,
         search_id: searchId,
         job_title: job.title,
         company: job.company_name,
         location: job.location,
-        estimated_salary: batchResult?.estimated_salary || "",
-        match_score: batchResult?.score ?? 30,
-        match_summary: batchResult?.reason || "Analysis unavailable",
+        estimated_salary: fallbackSalary,
+        match_score: fallbackScore,
+        match_summary: fallbackSummary,
         verdict_bullets: null,
         job_url: jobUrl,
         full_spec: fullSpec,
