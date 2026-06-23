@@ -63,6 +63,26 @@ function extractDomain(url: string): string | null {
   }
 }
 
+function decodeGoogleRedirect(url: string): string {
+  try {
+    const u = new URL(url);
+    if (u.hostname.includes('google') && u.searchParams.has('q')) {
+      const decoded = u.searchParams.get('q')!;
+      if (decoded.startsWith('http://') || decoded.startsWith('https://')) return decoded;
+    }
+  } catch {}
+  return url;
+}
+
+function isBlacklistedByVia(via: string | undefined): boolean {
+  if (!via) return false;
+  const lower = via.toLowerCase();
+  return BLACKLISTED_DOMAINS.some(d => {
+    const name = d.replace(/\..+$/, "");
+    return lower.includes(name);
+  });
+}
+
 function parsePostedAt(posted?: string): number | null {
   if (!posted) return null;
   const val = posted.toLowerCase().replace(/^a[n]?\s+/, "1 ").replace(/^just posted$/, "0 days ago").replace(/\+/, "");
@@ -168,12 +188,14 @@ function buildJobUrl(job: {
   apply_options?: { link: string; title: string }[];
   job_highlights?: { link?: string };
   link?: string;
+  via?: string;
   title: string;
   company_name: string;
 }): string {
-  if (job.apply_options?.[0]?.link) return job.apply_options[0].link;
-  if (job.job_highlights?.link) return job.job_highlights.link;
-  if (job.link) return job.link;
+  const tryDecode = (u: string) => decodeGoogleRedirect(u);
+  if (job.apply_options?.[0]?.link) return tryDecode(job.apply_options[0].link);
+  if (job.job_highlights?.link) return tryDecode(job.job_highlights.link);
+  if (job.link) return tryDecode(job.link);
   return `https://www.google.com/search?q=${encodeURIComponent(`${job.title} ${job.company_name} apply`)}`;
 }
 
@@ -200,8 +222,11 @@ async function searchRound(
   bannedJobs: string[],
   bannedCompanies: string[],
   pfRound?: number,
-  onStatus?: (event: SearchEvent) => void
-): Promise<{ results: JobRow[]; queryUsed: string }> {
+  onStatus?: (event: SearchEvent) => void,
+  dedupSets?: { history: Set<string>; saved: Set<string>; blocked: Set<string> }
+): Promise<{ results: JobRow[]; queryUsed: string; filteredCounts: { history: number; saved: number; rejected: number; blocked: number } }> {
+  const filteredCounts = { history: 0, saved: 0, rejected: 0, blocked: 0 };
+  const aiRejectedJobs: { job: any; reason: string; stage: string }[] = [];
   console.log(`[PF] Round query: "${query}" (location: "${profileLocation}")`);
   console.log(`[PF] lastAITier before searchRound: ${lastAITier}`);
 
@@ -232,15 +257,15 @@ async function searchRound(
       try {
         rawJobs = await searchGoogleJobs(buildSerpParams(undefined));
       } catch {
-        return { results: [], queryUsed: query };
+        return { results: [], queryUsed: query, filteredCounts };
       }
     } else {
-      return { results: [], queryUsed: query };
+      return { results: [], queryUsed: query, filteredCounts };
     }
   }
 
   if (!rawJobs || rawJobs.length === 0) {
-    return { results: [], queryUsed: query };
+    return { results: [], queryUsed: query, filteredCounts };
   }
 
   onStatus?.({ type: "found_results", count: rawJobs.length, progress: 20 });
@@ -256,20 +281,58 @@ async function searchRound(
     (j as any)._postedAtMs = parsePostedAt(postedStr) ?? 0;
   }
 
-  // Blacklist hard-remove
+  // Blacklist hard-remove (domain + via)
+  const blacklistRejected: { job: any; reason: string }[] = [];
   rawJobs = rawJobs.filter((j) => {
     const url = buildJobUrl(j);
     const domain = extractDomain(url);
-    return !BLACKLISTED_DOMAINS.some((d) => domain === d || domain?.endsWith(`.${d}`));
-  });
-
-  // Banned filter
-  rawJobs = rawJobs.filter((j) => {
-    const url = buildJobUrl(j);
-    if (url && bannedJobs.includes(url)) return false;
-    if (bannedCompanies.includes(j.company_name)) return false;
+    const viaBlocked = isBlacklistedByVia(j.via);
+    const domainBlocked = domain && BLACKLISTED_DOMAINS.some((d) => domain === d || domain?.endsWith(`.${d}`) || domain?.includes(d));
+    if (domainBlocked || viaBlocked) {
+      blacklistRejected.push({
+        job: j,
+        reason: viaBlocked ? `blacklisted_via: ${j.via}` : `blacklisted_domain: ${domain}`,
+      });
+      return false;
+    }
     return true;
   });
+  if (blacklistRejected.length > 0) {
+    const rows = blacklistRejected.map(({ job: j, reason }) => ({
+      user_id: user.id, search_id: searchId, search_query: query,
+      job_title: j.title, company: j.company_name, location: j.location ?? '',
+      snippet: (j.description ?? '').slice(0, 500), job_url: buildJobUrl(j),
+      reason,
+      passed_domain_filter: false, passed_banned_filter: false,
+    }));
+    dataClient.from("rejected_jobs").insert(rows).then((r: any) => r.error && console.log('[SEARCH] Failed to log blacklist rejected:', r.error));
+  }
+
+  // Banned filter
+  const bannedRejected: any[] = [];
+  rawJobs = rawJobs.filter((j) => {
+    const url = buildJobUrl(j);
+    if (url && bannedJobs.includes(url)) {
+      bannedRejected.push(j);
+      return false;
+    }
+    const companyLower = (j.company_name ?? "").toLowerCase();
+    if (bannedCompanies.some((bc) => companyLower.includes(bc.toLowerCase()))) {
+      bannedRejected.push(j);
+      return false;
+    }
+    return true;
+  });
+  if (bannedRejected.length > 0) {
+    const rows = bannedRejected.map(j => ({
+      user_id: user.id, search_id: searchId, search_query: query,
+      job_title: j.title, company: j.company_name, location: j.location ?? '',
+      snippet: (j.description ?? '').slice(0, 500), job_url: buildJobUrl(j),
+      reason: `banned_${bannedJobs.includes(buildJobUrl(j)) ? 'job' : 'company'}`,
+      passed_domain_filter: true, passed_banned_filter: false,
+    }));
+    dataClient.from("rejected_jobs").insert(rows).then((r: any) => r.error && console.log('[SEARCH] Failed to log banned rejected:', r.error));
+  }
 
   // Expired snippet check
   rawJobs = rawJobs.filter((j) => {
@@ -277,7 +340,7 @@ async function searchRound(
     return true;
   });
 
-  if (rawJobs.length === 0) return { results: [], queryUsed: query };
+  if (rawJobs.length === 0) return { results: [], queryUsed: query, filteredCounts };
 
   // Jina fetch
   let jobUrls = new Map<number, string>();
@@ -348,7 +411,7 @@ async function searchRound(
     jobUrls = filteredUrls;
   }
 
-  if (rawJobs.length === 0) return { results: [], queryUsed: query };
+  if (rawJobs.length === 0) return { results: [], queryUsed: query, filteredCounts };
 
   // Build profile context
   const profileContext = JSON.stringify({
@@ -370,14 +433,20 @@ async function searchRound(
     url: jobUrls.get(i) || "",
   }));
 
+  const blacklistInfo = `BLACKLISTED_DOMAINS: ${BLACKLISTED_DOMAINS.join(", ")}`;
+  const bannedInfo = bannedCompanies.length > 0 ? `\nUSER-BANNED COMPANIES: ${bannedCompanies.join(", ")}` : "";
+
   const batchSystemPrompt = `You are a recruiter screening job matches for a candidate. 
 Evaluate each job against the candidate's profile and CV.
 Rules:
 - Reject jobs not in South Africa or the candidate's preferred location.
 - Reject expired, filled, or closed positions.
+- Reject jobs from blacklisted domains or user-banned companies listed below.
 - Judge genuine fit — read the CV and job description carefully.
 - Return ONLY a JSON array of objects. No markdown, no explanation, no code fences.
-Each object: { "index": number, "score": number (0-100), "is_valid": boolean, "reason": string, "estimated_salary": string }`;
+Each object: { "index": number, "score": number (0-100), "is_valid": boolean, "reason": string, "estimated_salary": string }
+
+${blacklistInfo}${bannedInfo}`;
 
   let batchResults: { index: number; score: number; is_valid: boolean; reason: string; estimated_salary: string }[] = [];
 
@@ -406,6 +475,11 @@ Each object: { "index": number, "score": number (0-100), "is_valid": boolean, "r
       onStatus?.({ type: "screening_job", current: i + 1, total: rawJobs.length, progress });
       if (i > 0) await sleep(6000);
       const singlePrompt = `You are a recruiter screening a single job match.
+Rules:
+- Reject jobs not in South Africa or the candidate's preferred location.
+- Reject expired, filled, or closed positions.
+- Reject jobs from blacklisted domains or user-banned companies listed below.
+${blacklistInfo}${bannedInfo}
 Return ONLY valid JSON (no markdown, no code fences):
 { "score": number (0-100), "is_valid": boolean, "reason": string, "estimated_salary": string }`;
       try {
@@ -425,7 +499,7 @@ Return ONLY valid JSON (no markdown, no code fences):
 
   // Pass 2
   console.log(`[PF] Starting Pass 2 deep analysis (${rawJobs.length} jobs)`);
-  const outputs: JobRow[] = [];
+  let outputs: JobRow[] = [];
   for (let i = 0; i < rawJobs.length; i++) {
     const job = rawJobs[i];
     const batchResult = batchResults.find((r) => r.index === i);
@@ -442,9 +516,12 @@ You have the candidate's full CV text and profile. You have a full job specifica
 Rules:
 - The job MUST be in South Africa or the candidate's preferred location. Reject if not.
 - Reject if the position is expired, filled, or no longer accepting applications.
+- Reject jobs from blacklisted domains or user-banned companies listed below.
 - Judge like a human recruiter. Consider transferable skills and career trajectory.
 - Do NOT use keyword matching.
 - In match_summary, reference specifics from the CV and job spec.
+
+${blacklistInfo}${bannedInfo}
 
 Return ONLY valid JSON with this exact schema (no markdown, no code fences):
 {
@@ -463,6 +540,10 @@ Return ONLY valid JSON with this exact schema (no markdown, no code fences):
       );
       const deepResult = JSON.parse(raw);
 
+      if (deepResult.is_valid === false) {
+        aiRejectedJobs.push({ job, reason: deepResult.match_summary || "AI rejected", stage: "pass2" });
+        continue;
+      }
       outputs.push({
         user_id: user.id,
         search_id: searchId,
@@ -483,7 +564,10 @@ Return ONLY valid JSON with this exact schema (no markdown, no code fences):
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       console.log(`[AI] Pass 2 failed for "${job.title}" at ${job.company_name}: ${errMsg.slice(0, 150)}`);
-      if (batchResult && batchResult.is_valid && batchResult.score >= 40) {
+      const pass1Failed = !batchResult || !batchResult.is_valid || batchResult.score < 40;
+      if (pass1Failed) {
+        aiRejectedJobs.push({ job, reason: "Pass 2 failed, Pass 1 insufficient", stage: "pass2_fallback" });
+      } else {
         outputs.push({
           user_id: user.id,
           search_id: searchId,
@@ -505,9 +589,40 @@ Return ONLY valid JSON with this exact schema (no markdown, no code fences):
     }
   }
 
+  // Log AI-rejected jobs
+  if (aiRejectedJobs.length > 0) {
+    const rows = aiRejectedJobs.map(({ job, reason, stage }) => ({
+      user_id: user.id, search_id: searchId, search_query: query,
+      job_title: job.title, company: job.company_name, location: job.location ?? '',
+      snippet: (job.description ?? '').slice(0, 500), job_url: buildJobUrl(job),
+      reason: `ai_${stage}: ${reason}`,
+      passed_domain_filter: true, passed_banned_filter: true,
+      passed_pass1: stage !== "pass1", passed_pass2: stage === "pass2",
+    }));
+    dataClient.from("rejected_jobs").insert(rows).then((r: any) => r.error && console.log('[SEARCH] Failed to log AI rejected:', r.error));
+  }
+
+  // Dedup against existing URLs (history, saved, blocked)
+  if (dedupSets) {
+    const allExisting = new Set([...dedupSets.history, ...dedupSets.saved, ...dedupSets.blocked]);
+    if (allExisting.size > 0) {
+      const deduped: JobRow[] = [];
+      for (const r of outputs) {
+        if (allExisting.has(r.job_url)) {
+          if (dedupSets.history.has(r.job_url)) filteredCounts.history++;
+          else if (dedupSets.saved.has(r.job_url)) filteredCounts.saved++;
+          else if (dedupSets.blocked.has(r.job_url)) filteredCounts.blocked++;
+        } else {
+          deduped.push(r);
+        }
+      }
+      outputs = deduped;
+    }
+  }
+
   onStatus?.({ type: "almost_done", progress: 90 });
 
-  return { results: outputs, queryUsed: query };
+  return { results: outputs, queryUsed: query, filteredCounts };
 }
 
 
@@ -620,6 +735,21 @@ export async function POST(request: NextRequest) {
 
     console.log(`[SEARCH] CV text length: ${cvText.length}, titles: ${titles.length}`);
 
+    // Pre-fetch existing job URLs for dedup (history, saved, blocked)
+    const [existingResultsRes, existingSavedRes] = await Promise.all([
+      dataClient.from("job_results").select("job_url, is_deleted").eq("user_id", user.id),
+      dataClient.from("saved_jobs").select("job_url").eq("user_id", user.id),
+    ]);
+    const historyUrls = new Set<string>();
+    const rejectedUrls = new Set<string>();
+    for (const r of existingResultsRes.data ?? []) {
+      if (r.is_deleted) rejectedUrls.add(r.job_url);
+      else historyUrls.add(r.job_url);
+    }
+    const savedUrls = new Set((existingSavedRes.data ?? []).map((r: any) => r.job_url));
+    const blockedUrls = new Set<string>(profile.banned_jobs ?? []);
+    const dedupSets = { history: historyUrls, saved: savedUrls, rejected: rejectedUrls, blocked: blockedUrls };
+
     // === STREAMING SEARCH ===
     const stream = new ReadableStream({
       async start(controller) {
@@ -638,11 +768,17 @@ export async function POST(request: NextRequest) {
               return;
             }
 
-            const { results: outputs } = await searchRound(
+            const { results: outputs, filteredCounts } = await searchRound(
               searchQuery, profileLocation, titles, cvText,
               user, profile, authHeader, dataClient, searchId,
-              bannedJobs, bannedCompanies, undefined, sendStatus
+              bannedJobs, bannedCompanies, undefined, sendStatus,
+              dedupSets
             );
+
+            const totalFiltered = filteredCounts.history + filteredCounts.saved + filteredCounts.rejected + filteredCounts.blocked;
+            if (totalFiltered > 0) {
+              writer.send({ type: "filtered_summary", ...filteredCounts, progress: 50 });
+            }
 
             outputs.sort((a, b) => {
               if (a.domain_verified !== b.domain_verified) return a.domain_verified ? -1 : 1;
@@ -666,7 +802,7 @@ export async function POST(request: NextRequest) {
               }));
 
               const { data: saved } = await dataClient.from("job_results").insert(rows).select("id, job_title, company, location, estimated_salary, match_score, match_summary, job_url, full_spec, domain_verified, domain_unverified_reason, posted_at, created_at");
-              writer.send({ type: "complete", results: (saved ?? outputs).map(normalize), progress: 100 });
+              writer.send({ type: "complete", results: (saved ?? outputs).map(normalize), progress: 100, ...(totalFiltered > 0 ? { filtered_summary: filteredCounts } : {}) });
             } else {
               writer.send({ type: "complete", results: [], progress: 100, message: "No strong matches found. Try broadening your criteria." });
             }
@@ -683,7 +819,8 @@ export async function POST(request: NextRequest) {
           const STOP_COUNT = 5;
 
           let allResults: JobRow[] = [];
-          const seenUrls = new Set<string>();
+          const pfFilteredCounts = { history: 0, saved: 0, rejected: 0, blocked: 0 };
+          const seenUrls = new Set<string>([...dedupSets.history, ...dedupSets.saved, ...dedupSets.blocked]);
           let remainingTitles = [...titles];
           let aiVariations: string[] = [];
           let pfRound = 0;
@@ -758,19 +895,27 @@ export async function POST(request: NextRequest) {
             }
 
             let roundResults: JobRow[];
+            let roundFiltered: typeof pfFilteredCounts;
             try {
               const result = await searchRound(
                 fullQuery, profileLocation, titles, cvText,
                 user, profile, authHeader, dataClient, searchId,
-                bannedJobs, bannedCompanies, pfRound, sendStatus
+                bannedJobs, bannedCompanies, pfRound, sendStatus,
+                dedupSets
               );
               roundResults = result.results;
+              roundFiltered = result.filteredCounts;
             } catch (err) {
               const errMsg = err instanceof Error ? err.message : String(err);
               console.log(`[PF] Round ${pfRound} failed — error: ${errMsg}`);
               pfAborted = true;
               break;
             }
+
+            pfFilteredCounts.history += roundFiltered.history;
+            pfFilteredCounts.saved += roundFiltered.saved;
+            pfFilteredCounts.rejected += roundFiltered.rejected;
+            pfFilteredCounts.blocked += roundFiltered.blocked;
 
             for (const r of roundResults) {
               if (!seenUrls.has(r.job_url)) {
@@ -804,6 +949,11 @@ export async function POST(request: NextRequest) {
             } catch {}
           }
 
+          const pfTotalFiltered = pfFilteredCounts.history + pfFilteredCounts.saved + pfFilteredCounts.rejected + pfFilteredCounts.blocked;
+          if (pfTotalFiltered > 0) {
+            writer.send({ type: "filtered_summary", ...pfFilteredCounts, progress: 50 });
+          }
+
           if (allResults.length > 0) {
             const rows = allResults.map((r) => ({
               user_id: r.user_id, search_id: r.search_id, profile_id: profile_id ?? null,
@@ -818,7 +968,7 @@ export async function POST(request: NextRequest) {
             const pfMessage = pfAborted
               ? `Search stopped early due to high demand — showing ${allResults.length} result${allResults.length === 1 ? "" : "s"} found so far`
               : undefined;
-            writer.send({ type: "complete", results: (saved ?? allResults).map(normalize), progress: 100, pf_mode: true, pf_rounds: pfRound, ...(pfMessage ? { message: pfMessage } : {}) });
+            writer.send({ type: "complete", results: (saved ?? allResults).map(normalize), progress: 100, pf_mode: true, pf_rounds: pfRound, ...(pfTotalFiltered > 0 ? { filtered_summary: pfFilteredCounts } : {}), ...(pfMessage ? { message: pfMessage } : {}) });
           } else {
             const noResultsMessage = pfAborted
               ? "Search stopped early due to high demand — no results were found. Try again later."

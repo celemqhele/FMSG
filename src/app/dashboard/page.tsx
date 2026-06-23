@@ -11,6 +11,7 @@ import { DashboardTabs, type TabId } from "@/components/dashboard/dashboard-tabs
 import { BalanceChips } from "@/components/dashboard/balance-chips";
 import { FilterSortBar, type FilterState, type SortMode } from "@/components/dashboard/filter-sort-bar";
 import { SearchProgress } from "@/components/dashboard/search-progress";
+import type { FilteredSummary } from "@/lib/search-stream";
 import { SavedJobs } from "@/components/dashboard/saved-jobs";
 import { BlockedList } from "@/components/dashboard/blocked-list";
 import { RejectedJobs } from "@/components/dashboard/rejected-jobs";
@@ -82,6 +83,7 @@ export default function DashboardPage() {
   const [resultMessage, setResultMessage] = useState("");
   const [statusCompleted, setStatusCompleted] = useState<string[]>([]);
   const [statusActive, setStatusActive] = useState("");
+  const [filteredSummary, setFilteredSummary] = useState<FilteredSummary | null>(null);
 
   useEffect(() => { endTransition(); }, [endTransition]);
 
@@ -172,6 +174,7 @@ export default function DashboardPage() {
     setResultMessage("");
     setStatusCompleted([]);
     setStatusActive("Searching live job listings");
+    setFilteredSummary(null);
     setVideoFast(true);
     setPfActive(!!pfMode);
 
@@ -263,6 +266,10 @@ export default function DashboardPage() {
               setProgress(event.progress ?? 20);
               break;
 
+            case "filtered_summary":
+              setFilteredSummary({ history: event.history, saved: event.saved, rejected: event.rejected, blocked: event.blocked });
+              break;
+
             case "screening_job":
               setStatusCompleted((prev) => {
                 if (prev[prev.length - 1]?.startsWith("Found")) {
@@ -318,6 +325,9 @@ export default function DashboardPage() {
                 return lines;
               });
               setStatusActive("");
+              if (event.filtered_summary) {
+                setFilteredSummary(event.filtered_summary);
+              }
               setTimeout(() => {
                 setResults(event.results ?? []);
                 setSearching(false);
@@ -396,6 +406,16 @@ export default function DashboardPage() {
                   onFilterChange={setFilterState}
                   onSortChange={setSortMode}
                 />
+              </div>
+            )}
+
+            {filteredSummary && (
+              <div className="flex flex-wrap justify-center gap-x-3 gap-y-1 px-3 py-2 rounded-xl bg-yellow-500/10 border border-yellow-500/30 text-yellow-300 text-xs">
+                <span>⚠</span>
+                {filteredSummary.history > 0 && <span>{filteredSummary.history} filtered — already in history</span>}
+                {filteredSummary.saved > 0 && <span>{filteredSummary.saved} filtered — already saved</span>}
+                {filteredSummary.rejected > 0 && <span>{filteredSummary.rejected} filtered — previously rejected</span>}
+                {filteredSummary.blocked > 0 && <span>{filteredSummary.blocked} filtered — blocked</span>}
               </div>
             )}
 
