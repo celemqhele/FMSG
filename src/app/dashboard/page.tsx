@@ -527,7 +527,7 @@ export default function DashboardPage() {
               </div>
             )}
 
-            {!searching && hasSearched && results.length === 0 && (
+            {!searching && hasSearched && results.length === 0 && !continuationToken && (
               <div className="text-center py-20">
                 <p className="text-[var(--color-text-secondary)] text-sm">{resultMessage || "No matching jobs found. Try updating your profile or search again."}</p>
               </div>
