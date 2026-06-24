@@ -5,7 +5,7 @@ import { checkRateLimit } from "@/lib/rate-limit";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
+const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || process.env.PAYSTACK_TEST_SECRET_KEY;
 
 function getSupabase() {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
@@ -21,13 +21,17 @@ export async function POST(request: NextRequest) {
   }
 
   // Verify webhook signature
-  const hash = request.headers.get("x-paystack-signature");
-  if (!hash) {
-    return NextResponse.json({ error: "Missing signature" }, { status: 401 });
-  }
+if (!PAYSTACK_SECRET_KEY) {
+  return NextResponse.json({ error: "Webhook not configured" }, { status: 500 });
+}
 
-  const body = await request.text();
-  const expectedHash = await createHmac(body, PAYSTACK_SECRET_KEY ?? "");
+const hash = request.headers.get("x-paystack-signature");
+if (!hash) {
+  return NextResponse.json({ error: "Missing signature" }, { status: 401 });
+}
+
+const body = await request.text();
+const expectedHash = await createHmac(body, PAYSTACK_SECRET_KEY);
   if (hash !== expectedHash) {
     return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
   }

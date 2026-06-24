@@ -12,7 +12,7 @@ import { LiquidGlassCard } from "@/components/landing/liquid-glass-card";
 import { PageTransitionWrapper } from "@/components/ui/page-transition-wrapper";
 import { useTransition } from "@/components/providers/transition-provider";
 import { createClient } from "@/lib/supabase/client";
-import { PLAN_PRICES, PLAN_LIMITS, calculatePFPrice, PF_DEFAULT_BY_TIER, formatPlanPrice, formatPFFromPrice, PAYSTACK_PLAN_CODES, PLAN_TIER_NAMES } from "@/lib/plan-limits";
+import { PLAN_PRICES, PLAN_LIMITS, calculatePFPrice, PF_DEFAULT_BY_TIER, formatPlanPrice, formatPFFromPrice, PAYSTACK_PLAN_CODES, PLAN_TIER_NAMES, TIER_FEATURES, TIER_POPULAR } from "@/lib/plan-limits";
 import { PFStepper } from "@/components/pricing/pf-stepper";
 import "@/components/landing/liquid-glass.css";
 
@@ -27,12 +27,16 @@ interface Tier {
   popular: boolean;
 }
 
-const tiers: Tier[] = [
-  { name: "Free", monthlyPrice: "R0", annualPrice: "R0", searches: 1, cvGens: 0, pfBalance: 0, features: ["1 job search per month", "Basic match scoring"], popular: false },
-  { name: "Seeker", monthlyPrice: "R99", annualPrice: "R990", searches: 10, cvGens: 5, pfBalance: 5, features: ["10 job searches per month", "5 tailored CVs per month", "Full match scoring", "Banned company filtering", "5 Persistent Finder rounds"], popular: false },
-  { name: "Hunter", monthlyPrice: "R199", annualPrice: "R1,990", searches: 25, cvGens: 12, pfBalance: 15, features: ["25 job searches per month", "12 tailored CVs per month", "Priority AI processing", "Advanced filtering", "15 Persistent Finder rounds"], popular: true },
-  { name: "Pro", monthlyPrice: "R349", annualPrice: "R3,490", searches: 60, cvGens: 25, pfBalance: 50, features: ["60 job searches per month", "25 tailored CVs per month", "Fastest AI processing", "All features unlocked", "50 Persistent Finder rounds"], popular: false },
-];
+const tiers: Tier[] = PLAN_TIER_NAMES.map((name) => ({
+  name,
+  monthlyPrice: name === "Free" ? "R0" : formatPlanPrice(name, "monthly"),
+  annualPrice: name === "Free" ? "R0" : formatPlanPrice(name, "annual"),
+  searches: PLAN_LIMITS[name]?.searches ?? 0,
+  cvGens: PLAN_LIMITS[name]?.cv_gens ?? 0,
+  pfBalance: PLAN_LIMITS[name]?.pf_balance ?? 0,
+  features: TIER_FEATURES[name] ?? [],
+  popular: TIER_POPULAR[name] ?? false,
+}));
 
 const PAYSTACK_PUBLIC_KEY = process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY;
 
@@ -200,7 +204,7 @@ export default function PricingPage() {
             </div>
 
             <div className="mb-8 liquid-glass rounded-xl p-5 text-center">
-              <p className="text-sm font-semibold text-white">Persistent Finder — from R45/run</p>
+              <p className="text-sm font-semibold text-white">Persistent Finder - from R45/run</p>
               <p className="mt-1 text-xs text-white/50">Multi-round AI search that finds jobs other engines miss. Set the number of search rounds below.</p>
             </div>
 

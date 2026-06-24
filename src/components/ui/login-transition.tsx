@@ -1,16 +1,13 @@
 "use client";
 
 import { useEffect, useState, startTransition } from "react";
-import { useRouter } from "next/navigation";
 
 interface LoginTransitionProps {
   type: "login" | "onboarding";
-  redirectTo?: string;
   onComplete?: () => void;
 }
 
-export function LoginTransition({ type, redirectTo, onComplete }: LoginTransitionProps) {
-  const router = useRouter();
+export function LoginTransition({ type, onComplete }: LoginTransitionProps) {
   const [phase, setPhase] = useState(0);
 
   useEffect(() => {
@@ -19,21 +16,17 @@ export function LoginTransition({ type, redirectTo, onComplete }: LoginTransitio
     if (type === "login") {
       startTransition(() => setPhase(1));
       timers.push(setTimeout(() => setPhase(2), 200));
-      timers.push(setTimeout(() => {
-        setPhase(3);
-        router.push(redirectTo ?? "/dashboard");
-      }, 400));
+      timers.push(setTimeout(() => setPhase(3), 400));
       timers.push(setTimeout(() => setPhase(4), 1000));
       timers.push(setTimeout(() => onComplete?.(), 1700));
     } else {
       startTransition(() => setPhase(3));
-      router.push(redirectTo ?? "/dashboard");
       timers.push(setTimeout(() => setPhase(4), 600));
       timers.push(setTimeout(() => onComplete?.(), 1300));
     }
 
     return () => timers.forEach(clearTimeout);
-  }, [type, redirectTo, router, onComplete]);
+  }, [type, onComplete]);
 
   if (phase === 0) return null;
 

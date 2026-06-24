@@ -1,0 +1,1 @@
+Fixes cv-files storage bucket RLS. The previous "Service role full access to cv-files" policy had no auth.role() check, effectively granting any authenticated user full CRUD access to all CV files across all users. This migration adds auth.role() = 'service_role' to restrict the policy to the actual service role.

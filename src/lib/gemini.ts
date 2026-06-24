@@ -4,7 +4,7 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 
 const GROQ_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions";
-const GROQ_MODEL = "llama-3.3-70b-versatile";
+const GROQ_MODEL = "openai/gpt-oss-120b";
 
 export interface AIConfig {
   maxOutputTokens?: number;
@@ -80,6 +80,7 @@ const OPENROUTER_FALLBACK_MODELS = [
   "nvidia/nemotron-3-super-120b-a12b:free",
   "google/gemma-4-31b-it:free",
   "openai/gpt-oss-20b:free",
+  "qwen/qwen3-235b-a22b:free",
 ];
 
 async function callOpenRouterSingle(model: string, systemPrompt: string, userText: string, apiKey: string, config?: AIConfig): Promise<string> {

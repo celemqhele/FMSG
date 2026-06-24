@@ -74,13 +74,13 @@ export function SearchPill({ onSearch, searching }: SearchPillProps) {
       <button
         onClick={() => setPfMode(!pfMode)}
         className={`ml-2 w-10 h-10 rounded-full flex items-center justify-center transition-colors ${pfMode ? "bg-[var(--color-accent)] text-white" : "text-white/40 hover:text-white/70 hover:bg-white/10"}`}
-        title={pfMode ? "Persistent Finder active — searches multiple rounds across all titles" : "Click to enable Persistent Finder"}
+        title={pfMode ? "Persistent Finder active: searches multiple rounds across all titles" : "Click to enable Persistent Finder"}
       >
         <Crosshair size={16} />
       </button>
 
       <span className="flex-1 text-white/40 text-sm px-3 truncate select-none">
-        {pfMode ? "Persistent Finder — scanning all titles" : displayTitle}
+        {pfMode ? "Persistent Finder: scanning all titles" : displayTitle}
       </span>
 
       <button

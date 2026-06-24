@@ -9,20 +9,13 @@ import { FloatingNavbar } from "@/components/layout/floating-navbar";
 import { PageTransitionWrapper } from "@/components/ui/page-transition-wrapper";
 import { useTransition } from "@/components/providers/transition-provider";
 import { createClient } from "@/lib/supabase/client";
-import { PLAN_LIMITS, PLAN_PRICES, formatPlanPrice, PLAN_TIER_NAMES } from "@/lib/plan-limits";
+import { PLAN_LIMITS, PLAN_PRICES, formatPlanPrice, PLAN_TIER_NAMES, TIER_FEATURES } from "@/lib/plan-limits";
 
 const PLAN_DISPLAY_NAMES: Record<string, string> = {
   free: "Free",
   seeker: "Seeker",
   hunter: "Hunter",
   pro: "Pro",
-};
-
-const PLAN_FEATURES: Record<string, string[]> = {
-  Free: ["1 job search per month", "Basic match scoring"],
-  Seeker: ["10 job searches per month", "5 tailored CVs per month", "Full match scoring", "Banned company filtering", "5 Persistent Finder rounds"],
-  Hunter: ["25 job searches per month", "12 tailored CVs per month", "Priority AI processing", "Advanced filtering", "15 Persistent Finder rounds"],
-  Pro: ["60 job searches per month", "25 tailored CVs per month", "Fastest AI processing", "All features unlocked", "50 Persistent Finder rounds"],
 };
 
 function WelcomeContent() {
@@ -35,7 +28,7 @@ function WelcomeContent() {
   const plan = searchParams.get("plan") ?? "free";
   const displayName = PLAN_DISPLAY_NAMES[plan] ?? "Free";
   const limits = PLAN_LIMITS[displayName] ?? PLAN_LIMITS.Free;
-  const features = PLAN_FEATURES[displayName] ?? PLAN_FEATURES.Free;
+  const features = TIER_FEATURES[displayName] ?? TIER_FEATURES.Free;
 
   useEffect(() => { endTransition(); }, [endTransition]);
 
@@ -77,7 +70,7 @@ function WelcomeContent() {
 
             <div className="mt-8 liquid-glass rounded-xl p-6 text-left">
               <h2 className="text-lg font-semibold text-white mb-4">
-                {displayName} Plan — What you get
+                {displayName} Plan - What you get
               </h2>
 
               <div className="grid grid-cols-3 gap-4 mb-6">

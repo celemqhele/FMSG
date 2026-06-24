@@ -208,7 +208,7 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
               }`}
               placeholder="First name"
             />
-            {!name && <p className="mt-1 text-xs text-yellow-400">Missing — fill in manually</p>}
+            {!name && <p className="mt-1 text-xs text-yellow-400">Missing - fill in manually</p>}
           </div>
           <div className="flex-1">
             <label className="block text-sm font-medium text-white/80 mb-1.5">Surname</label>
@@ -220,7 +220,7 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
               }`}
               placeholder="Last name"
             />
-            {!surname && <p className="mt-1 text-xs text-yellow-400">Missing — fill in manually</p>}
+            {!surname && <p className="mt-1 text-xs text-yellow-400">Missing - fill in manually</p>}
           </div>
         </div>
         <div>
@@ -233,7 +233,7 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
             }`}
             placeholder="+27 12 345 6789"
           />
-          {!phone && <p className="mt-1 text-xs text-yellow-400">Missing — fill in manually</p>}
+          {!phone && <p className="mt-1 text-xs text-yellow-400">Missing - fill in manually</p>}
         </div>
         <div>
           <label className="block text-sm font-medium text-white/80 mb-1.5">Address</label>
@@ -245,7 +245,7 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
             }`}
             placeholder="Street, City, Province"
           />
-          {!address && <p className="mt-1 text-xs text-yellow-400">Missing — fill in manually</p>}
+          {!address && <p className="mt-1 text-xs text-yellow-400">Missing - fill in manually</p>}
         </div>
       </section>
 
@@ -312,18 +312,18 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
             }`}
             placeholder="e.g. Johannesburg, Cape Town, Remote"
           />
-          {!location && <p className="mt-1 text-xs text-yellow-400">Missing — fill in manually</p>}
+          {!location && <p className="mt-1 text-xs text-yellow-400">Missing - fill in manually</p>}
         </div>
       </section>
 
       {/* Pro tip */}
       <div className="liquid-glass rounded-xl p-4 text-center">
         <p className="text-xs text-white/60">
-          <span className="text-[var(--color-accent)] font-medium">Pro tip:</span> After onboarding, try Persistent Finder — it searches multiple rounds of AI-generated title variations to find jobs other engines miss.
+          <span className="text-[var(--color-accent)] font-medium">Pro tip:</span> After onboarding, try Persistent Finder - it searches multiple rounds of AI-generated title variations to find jobs other engines miss.
         </p>
       </div>
 
-      {/* Salary — always manual */}
+      {/* Salary - always manual */}
       <section className="space-y-4">
         <h2 className="text-lg font-semibold text-white">Salary Expectations</h2>
         <p className="text-xs text-white/40">These fields are always filled manually.</p>
@@ -338,7 +338,7 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
               className="w-full px-4 py-2.5 text-sm rounded-lg bg-yellow-500/10 border border-yellow-500/40 text-white placeholder-white/40 focus:outline-none focus:border-white/40"
               placeholder="Annual (ZAR)"
             />
-            <p className="mt-1 text-xs text-yellow-400">Required — enter manually</p>
+            <p className="mt-1 text-xs text-yellow-400">Required - enter manually</p>
           </div>
           <div className="flex-1">
             <label className="block text-sm font-medium text-white/80 mb-1.5">Desired Salary</label>
@@ -350,7 +350,7 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
               className="w-full px-4 py-2.5 text-sm rounded-lg bg-yellow-500/10 border border-yellow-500/40 text-white placeholder-white/40 focus:outline-none focus:border-white/40"
               placeholder="Annual (ZAR)"
             />
-            <p className="mt-1 text-xs text-yellow-400">Required — enter manually</p>
+            <p className="mt-1 text-xs text-yellow-400">Required - enter manually</p>
           </div>
         </div>
       </section>

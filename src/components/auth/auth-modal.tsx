@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, startTransition, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
 import { X } from "lucide-react";
 import { LogInForm } from "./log-in-form";
 import { SignUpForm } from "./sign-up-form";
@@ -17,6 +18,7 @@ interface AuthModalProps {
 type Screen = "login" | "signup" | "signup-sent" | "forgot" | "forgot-sent";
 
 export function AuthModal({ isOpen, onClose, defaultTab = "signup" }: AuthModalProps) {
+  const router = useRouter();
   const [mounted, setMounted] = useState(false);
   const [screen, setScreen] = useState<Screen>(defaultTab);
   const [pendingEmail, setPendingEmail] = useState("");
@@ -51,6 +53,11 @@ export function AuthModal({ isOpen, onClose, defaultTab = "signup" }: AuthModalP
     onClose();
   }, [onClose]);
 
+  const handleSignUpTransitionComplete = useCallback(() => {
+    onClose();
+    router.push("/onboarding");
+  }, [onClose, router]);
+
   const handleLoggedIn = useCallback(() => {
     setTransitionType("login");
     // Failsafe: force close modal if it's stuck after login transition
@@ -62,7 +69,8 @@ export function AuthModal({ isOpen, onClose, defaultTab = "signup" }: AuthModalP
 
   const handleTransitionComplete = useCallback(() => {
     onClose();
-  }, [onClose]);
+    router.push("/dashboard");
+  }, [onClose, router]);
 
   if (!mounted && !isOpen && !transitionType) return null;
 
@@ -175,7 +183,7 @@ export function AuthModal({ isOpen, onClose, defaultTab = "signup" }: AuthModalP
       </div>
 
       {transitionType && (
-        <LoginTransition type={transitionType === "signup" ? "onboarding" : "login"} redirectTo={transitionType === "signup" ? "/onboarding" : undefined} onComplete={handleTransitionComplete} />
+        <LoginTransition type={transitionType === "signup" ? "onboarding" : "login"} onComplete={transitionType === "signup" ? handleSignUpTransitionComplete : handleTransitionComplete} />
       )}
     </>
   );

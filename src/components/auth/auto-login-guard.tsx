@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { usePathname } from "next/navigation";
+import { useState, useEffect, useCallback } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { LoginTransition } from "@/components/ui/login-transition";
 
 export function AutoLoginGuard() {
   const pathname = usePathname();
+  const router = useRouter();
 
   const [guardState, setGuardState] = useState<"loading" | "transition" | "idle">(() => {
     if (
@@ -17,6 +18,11 @@ export function AutoLoginGuard() {
     }
     return "idle";
   });
+
+  const handleAutoLoginComplete = useCallback(() => {
+    setGuardState("idle");
+    window.location.href = "/dashboard";
+  }, []);
 
   useEffect(() => {
     if (guardState !== "loading") return;
@@ -32,10 +38,10 @@ export function AutoLoginGuard() {
       return;
     }
 
-    // Skip redirect if user just logged in via modal — prevents double redirect
-    if (sessionStorage.getItem("just_logged_in")) {
+    const justLoggedIn = sessionStorage.getItem("just_logged_in");
+    if (justLoggedIn) {
       sessionStorage.removeItem("just_logged_in");
-      setGuardState("idle");
+      setGuardState("transition");
       return;
     }
 
@@ -55,7 +61,7 @@ export function AutoLoginGuard() {
   }
 
   if (guardState === "transition") {
-    return <LoginTransition type="login" onComplete={() => setGuardState("idle")} />;
+    return <LoginTransition type="login" onComplete={handleAutoLoginComplete} />;
   }
 
   return null;

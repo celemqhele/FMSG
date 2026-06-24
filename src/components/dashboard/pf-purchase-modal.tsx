@@ -118,7 +118,7 @@ export function PFPurchaseModal({ isOpen, onClose }: PFPurchaseModalProps) {
           <h3 className="text-lg font-semibold text-white">Buy PF Credits</h3>
         </div>
         <p className="text-sm text-[var(--color-text-secondary)] mb-5">
-          Persistent Finder runs — volume discounts apply
+          Persistent Finder runs: volume discounts apply
         </p>
 
         <div className="space-y-3">

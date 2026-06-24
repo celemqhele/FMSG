@@ -5,21 +5,7 @@ import { useRouter } from "next/navigation";
 import { Check } from "lucide-react";
 import { LiquidGlassCard } from "./liquid-glass-card";
 import { useTransition } from "@/components/providers/transition-provider";
-import { PLAN_LIMITS, PLAN_PRICES, formatPlanPrice, PLAN_TIER_NAMES } from "@/lib/plan-limits";
-
-const TIER_FEATURES: Record<string, string[]> = {
-  Free: ["1 job search per month", "Basic match scoring"],
-  Seeker: ["10 job searches per month", "5 tailored CVs per month", "Full match scoring", "Banned company filtering", "5 Persistent Finder rounds"],
-  Hunter: ["25 job searches per month", "12 tailored CVs per month", "Priority AI processing", "Advanced filtering", "15 Persistent Finder rounds"],
-  Pro: ["60 job searches per month", "25 tailored CVs per month", "Fastest AI processing", "All features unlocked", "50 Persistent Finder rounds"],
-};
-
-const TIER_POPULAR: Record<string, boolean> = {
-  Free: false,
-  Seeker: false,
-  Hunter: true,
-  Pro: false,
-};
+import { PLAN_LIMITS, PLAN_PRICES, formatPlanPrice, PLAN_TIER_NAMES, TIER_FEATURES, TIER_POPULAR } from "@/lib/plan-limits";
 
 const tiers = PLAN_TIER_NAMES.map((name) => ({
   name,

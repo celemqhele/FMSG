@@ -335,6 +335,7 @@ async function fetchAndFilterJobs(
       user_id: user.id, search_id: searchId, search_query: query,
       job_title: j.title, company: j.company_name, location: j.location ?? '',
       snippet: (j.description ?? '').slice(0, 500), job_url: buildJobUrl(j), reason,
+      rejection_category: 'domain', rejection_reason: reason,
       passed_domain_filter: false, passed_banned_filter: false,
     }));
     dataClient.from("rejected_jobs").insert(rows).then((r: any) => r.error && debugLog('[SEARCH] Failed to log blacklist rejected:', r.error));
@@ -356,6 +357,7 @@ async function fetchAndFilterJobs(
       job_title: j.title, company: j.company_name, location: j.location ?? '',
       snippet: (j.description ?? '').slice(0, 500), job_url: buildJobUrl(j),
       reason: `banned_${bannedJobs.includes(buildJobUrl(j)) ? 'job' : 'company'}`,
+      rejection_category: 'banned', rejection_reason: bannedJobs.includes(buildJobUrl(j)) ? 'banned_job' : 'banned_company',
       passed_domain_filter: true, passed_banned_filter: false,
     }));
     dataClient.from("rejected_jobs").insert(rows).then((r: any) => r.error && debugLog('[SEARCH] Failed to log banned rejected:', r.error));
@@ -515,7 +517,7 @@ ${blacklistInfo}${bannedInfo}`;
       const job = rawJobs[i];
       const progress = Math.min(20 + ((i + 1) / rawJobs.length) * 35, 55);
       onStatus?.({ type: "screening_job", current: i + 1, total: rawJobs.length, progress });
-      if (i > 0) await sleep(6000);
+    if (i > 0) await sleep(20000);
       const singlePrompt = `You are a Recruitment Auditor AI scoring a single job match.
 
 CANDIDATE INDUSTRY: ${profileIndustry || "Unknown"}
@@ -727,6 +729,7 @@ Return ONLY valid JSON (no markdown, no code fences):
       job_title: job.title, company: job.company_name, location: job.location ?? '',
       snippet: (job.description ?? '').slice(0, 500), job_url: buildJobUrl(job),
       reason: `ai_${stage}: ${reason}`,
+      rejection_category: 'ai', rejection_reason: `${stage}: ${reason}`,
       passed_domain_filter: true, passed_banned_filter: true,
       passed_pass1: stage !== "pass1", passed_pass2: stage === "pass2",
     }));
@@ -880,8 +883,8 @@ export async function POST(request: NextRequest) {
 
       // Load CV texts
       let cvTexts: { name: string; text: string }[] = [];
-      for (const cv of cvVariations) {
-        if (!cv.file_path) continue;
+      const cvDownloads = cvVariations.map(async (cv) => {
+        if (!cv.file_path) return null;
         try {
           const { data: fileData } = await dataClient
             .storage
@@ -890,10 +893,13 @@ export async function POST(request: NextRequest) {
           if (fileData) {
             const buffer = Buffer.from(await fileData.arrayBuffer());
             const text = await extractTextFromPDF(buffer);
-            cvTexts.push({ name: cv.name || "CV", text: text.slice(0, 5000) });
+            return { name: cv.name || "CV", text: text.slice(0, 5000) };
           }
         } catch {}
-      }
+        return null;
+      });
+      const results = await Promise.all(cvDownloads);
+      cvTexts = results.filter((r): r is { name: string; text: string } => r !== null);
 
       const cvText = cvTexts.map(cv => cv.text).join("\n\n---\n\n");
       debugLog(`[SEARCH] CV variations: ${cvTexts.length}, total text length: ${cvText.length}, titles: ${titles.length}`);
@@ -1116,8 +1122,8 @@ export async function POST(request: NextRequest) {
             sendStatus({ type: "pf_round", round: pfRound, max: MAX_ROUNDS, query: fullQuery, progress: Math.min((pfRound / MAX_ROUNDS) * 90, 90) });
 
             if (lastAITier === "openrouter") {
-              debugLog("[PF] On OpenRouter tier — using 12s delay between rounds");
-              await sleep(12000);
+              debugLog("[PF] On OpenRouter tier — using 3s delay between rounds");
+              await sleep(3000);
             }
 
             try {

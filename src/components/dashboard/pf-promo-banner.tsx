@@ -46,8 +46,8 @@ export function PFPromoBanner({ variant, resultsCount, avgScore, onDismiss }: PF
   if (dismissed || !visible) return null;
 
   const message = variant === "low-results"
-    ? "Only {count} jobs found — Persistent Finder searches more rounds to find hidden matches."
-    : "Most scores are below 60% — more PF rounds could surface better matches.";
+    ? "Only {count} jobs found. Persistent Finder searches more rounds to find hidden matches."
+    : "Most scores are below 60%. More PF rounds could surface better matches.";
 
   const displayMessage = message.replace("{count}", String(resultsCount));
 

@@ -58,3 +58,17 @@ export function formatPFFromPrice(): string {
 }
 
 export const PLAN_TIER_NAMES = ["Free", "Seeker", "Hunter", "Pro"] as const;
+
+export const TIER_FEATURES: Record<string, string[]> = {
+  Free: ["1 job search per month", "Basic match scoring"],
+  Seeker: ["10 job searches per month", "5 CV generations", "5 PF search rounds", "Priority AI matching"],
+  Hunter: ["25 job searches per month", "12 CV generations", "15 PF search rounds", "Priority AI matching", "Advanced filtering"],
+  Pro: ["60 job searches per month", "25 CV generations", "50 PF search rounds", "Priority AI matching", "Advanced filtering", "Tailored CV output"],
+};
+
+export const TIER_POPULAR: Record<string, boolean> = {
+  Free: false,
+  Seeker: false,
+  Hunter: true,
+  Pro: false,
+};

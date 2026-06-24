@@ -422,7 +422,7 @@ export default function DashboardPage() {
                 if (event.results?.length === 0 && event.message) {
                   setResultMessage(event.message);
                 } else if (event.pf_mode && event.pf_rounds) {
-                  setResultMessage(`Persistent Finder completed — ${event.results?.length ?? 0} results across ${event.pf_rounds} rounds`);
+                  setResultMessage(`Persistent Finder completed (${event.results?.length ?? 0} results across ${event.pf_rounds} rounds`);
                 }
               }, 500);
               break;
@@ -500,10 +500,10 @@ export default function DashboardPage() {
             {filteredSummary && (
               <div className="flex flex-wrap justify-center gap-x-3 gap-y-1 px-3 py-2 rounded-xl bg-yellow-500/10 border border-yellow-500/30 text-yellow-300 text-xs">
                 <span>⚠</span>
-                {filteredSummary.history > 0 && <span>{filteredSummary.history} filtered — already in history</span>}
-                {filteredSummary.saved > 0 && <span>{filteredSummary.saved} filtered — already saved</span>}
-                {filteredSummary.rejected > 0 && <span>{filteredSummary.rejected} filtered — previously rejected</span>}
-                {filteredSummary.blocked > 0 && <span>{filteredSummary.blocked} filtered — blocked</span>}
+                {filteredSummary.history > 0 && <span>{filteredSummary.history} filtered: already in history</span>}
+                {filteredSummary.saved > 0 && <span>{filteredSummary.saved} filtered: already saved</span>}
+                {filteredSummary.rejected > 0 && <span>{filteredSummary.rejected} filtered: previously rejected</span>}
+                {filteredSummary.blocked > 0 && <span>{filteredSummary.blocked} filtered: blocked</span>}
               </div>
             )}
 
@@ -634,7 +634,7 @@ export default function DashboardPage() {
             </p>
             <p className="text-sm text-[var(--color-text-secondary)]">
               {showLimitModal === "LIMIT_001"
-                ? "You've used all your free searches. Upgrade your plan to continue searching."
+                ? "You've used all your free searches. Paid users receive priority AI processing. Upgrade your plan to continue searching."
                 : showLimitModal === "LIMIT_002"
                 ? "You've used all your CV generations. Upgrade your plan to generate more."
                 : showLimitModal === "LIMIT_003"
