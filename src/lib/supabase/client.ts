@@ -37,7 +37,8 @@ export function createClient() {
         },
         cookieOptions: {
           path: "/",
-          sameSite: "lax",
+          sameSite: "none",
+          secure: true,
           ...(keepSignedIn ? { maxAge: 604800 } : {}),
         },
       }
