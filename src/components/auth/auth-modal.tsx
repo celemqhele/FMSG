@@ -53,7 +53,12 @@ export function AuthModal({ isOpen, onClose, defaultTab = "signup" }: AuthModalP
 
   const handleLoggedIn = useCallback(() => {
     setTransitionType("login");
-  }, []);
+    // Failsafe: force close modal if it's stuck after login transition
+    setTimeout(() => {
+      setTransitionType(null);
+      onClose();
+    }, 5000);
+  }, [onClose]);
 
   const handleTransitionComplete = useCallback(() => {
     onClose();
