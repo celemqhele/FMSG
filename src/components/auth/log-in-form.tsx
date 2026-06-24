@@ -23,6 +23,11 @@ export function LogInForm({ onForgotPassword, onLoggedIn }: LogInFormProps) {
     localStorage.setItem("keep_signed_in", keepSignedIn ? "true" : "false");
 
     const supabase = createClient();
+
+    // Clear any stale session from prior visits to prevent background
+    // session-recovery from overwriting the new session cookie (race condition)
+    await supabase.auth.signOut();
+
     const { data, error: err } = await supabase.auth.signInWithPassword({ email, password });
     setLoading(false);
 
@@ -33,6 +38,9 @@ export function LogInForm({ onForgotPassword, onLoggedIn }: LogInFormProps) {
         setError(err.message);
       }
     } else if (data?.session) {
+      // Force-set the session to ensure the client's internal state matches
+      // and prevent stale-session recovery from clearing our fresh cookie
+      await supabase.auth.setSession(data.session);
       onLoggedIn();
     } else if (data?.user) {
       setError("Please confirm your email before logging in. Check your inbox for the confirmation link.");
