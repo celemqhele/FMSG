@@ -170,7 +170,7 @@ export async function POST(request: NextRequest) {
           .from("subscriptions")
           .select("id, user_id")
           .eq("paystack_subscription_id", paystackSubId)
-          .eq("status", "active")
+          .in("status", ["active", "past_due"])
           .order("created_at", { ascending: false })
           .limit(1)
           .maybeSingle();
@@ -232,6 +232,27 @@ export async function POST(request: NextRequest) {
               console.error("[WEBHOOK] Failed to apply scheduled downgrade:", applyErr.message);
             } else {
               console.log(`[WEBHOOK] Applied scheduled downgrade for user ${existingSub.user_id} to ${nextPlan}`);
+            }
+          } else {
+            // No scheduled plan change — payment failed, downgrade to Free
+            const freeLimits = PLAN_LIMITS["Free"] ?? { searches: 1, cv_gens: 0, pf_balance: 0 };
+            const { error: freeErr } = await supabase
+              .from("profiles")
+              .update({
+                plan: "free",
+                plan_expiry: null,
+                search_balance: freeLimits.searches,
+                cv_generation_balance: freeLimits.cv_gens,
+                persistent_finder_balance: freeLimits.pf_balance,
+                pf_refill: 0,
+                next_pf_refill: null,
+              })
+              .eq("id", existingSub.user_id);
+
+            if (freeErr) {
+              console.error("[WEBHOOK] Failed to downgrade unpaid subscription to Free:", freeErr.message);
+            } else {
+              console.log(`[WEBHOOK] Downgraded user ${existingSub.user_id} to Free (unpaid subscription disabled)`);
             }
           }
         }
