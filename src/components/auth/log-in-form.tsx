@@ -33,7 +33,6 @@ export function LogInForm({ onForgotPassword, onLoggedIn }: LogInFormProps) {
         setError(err.message);
       }
     } else if (data?.session) {
-      await supabase.auth.setSession(data.session);
       onLoggedIn();
     } else if (data?.user) {
       setError("Please confirm your email before logging in. Check your inbox for the confirmation link.");
