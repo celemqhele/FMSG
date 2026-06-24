@@ -22,6 +22,9 @@ export const metadata: Metadata = {
   title: "Find Me Some Jobs",
   description:
     "Find jobs that match your skills. Upload your CV, search live jobs, and get matched with opportunities.",
+  other: {
+    "theme-color": "#0a0a0a",
+  },
 };
 
 export default function RootLayout({
@@ -36,11 +39,8 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <head>
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem("theme")||"system";var d=window.matchMedia("(prefers-color-scheme:dark)").matches;if(t==="dark"||(t==="system"&&d))document.documentElement.classList.add("dark")}catch(e){} try{if(localStorage.getItem("logged_in")==="true")document.documentElement.classList.add("auth-loading")}catch(e){}})()`,
-          }}
-        />
+        <script src="/theme-init.js" />
+        <link rel="sitemap" type="application/xml" href="/sitemap.xml" />
       </head>
       <body className="min-h-dvh flex flex-col">
         <ThemeProvider>

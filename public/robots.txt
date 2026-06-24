@@ -1,2 +1,15 @@
 User-agent: *
 Allow: /
+Allow: /about
+Allow: /pricing
+Allow: /privacy
+Allow: /terms
+Disallow: /dashboard/
+Disallow: /api/
+Disallow: /auth/
+Disallow: /settings/
+Disallow: /profile/
+Disallow: /onboarding/
+Disallow: /upgrade/
+
+Sitemap: https://findmesomejobs.co.za/sitemap.xml

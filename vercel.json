@@ -2,7 +2,8 @@
   "framework": "nextjs",
   "git": {
     "deploymentEnabled": {
-      "beta": true
+      "beta": true,
+      "production": true
     }
   }
 }

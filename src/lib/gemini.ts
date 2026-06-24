@@ -1,3 +1,5 @@
+import { debugLog } from "@/lib/debug";
+
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 
@@ -126,15 +128,15 @@ async function callOpenRouter(systemPrompt: string, userText: string, config?: A
       try {
         const keyLabel = apiKey === keys[0] ? "primary" : "fallback";
         const result = await callOpenRouterSingle(model, systemPrompt, userText, apiKey, config);
-        console.log(`[AI] OpenRouter model used: ${model} (${keyLabel} key)`);
+        debugLog(`[AI] OpenRouter model used: ${model} (${keyLabel} key)`);
         return result;
       } catch (err: any) {
         const msg = err?.message ?? String(err);
-        console.log(`[AI] OpenRouter model ${model} failed: ${msg.slice(0, 100)}`);
+        debugLog(`[AI] OpenRouter model ${model} failed: ${msg.slice(0, 100)}`);
         lastErr.push(err);
       }
     }
-    console.log(`[AI] OpenRouter key exhausted — trying next key`);
+    debugLog(`[AI] OpenRouter key exhausted — trying next key`);
   }
   throw new Error(`OpenRouter — all ${OPENROUTER_FALLBACK_MODELS.length} models failed with all keys. Last error: ${(lastErr.at(-1)?.message ?? "").slice(0, 200)}`);
 }
@@ -150,11 +152,11 @@ export async function callAIWithFallback(
   try {
     const result = await callGemini(systemPrompt, userText, config);
     lastAITier = "gemini";
-    console.log("AI handled by: Gemini");
+    debugLog("AI handled by: Gemini");
     return result;
   } catch (err: any) {
     const msg = err?.message ?? String(err);
-    console.log(`[AI] Gemini error on "${stepName}": ${msg}`);
+    debugLog(`[AI] Gemini error on "${stepName}": ${msg}`);
     const isRetryable = msg.includes("429") || msg.includes("quota") || /5\d{2}/.test(msg) || /UNAVAILABLE/i.test(msg);
     if (!isRetryable) throw err;
   }
@@ -164,11 +166,11 @@ export async function callAIWithFallback(
     try {
       const result = await callGroq(systemPrompt, userText, config);
       lastAITier = "groq";
-      console.log("AI handled by: Groq");
+      debugLog("AI handled by: Groq");
       return result;
     } catch (err: any) {
       const msg = err?.message ?? String(err);
-      console.log(`[AI] Groq error on "${stepName}": ${msg}`);
+      debugLog(`[AI] Groq error on "${stepName}": ${msg}`);
       const isRetryable = msg.includes("429") || msg.includes("quota") || /5\d{2}/.test(msg) || /UNAVAILABLE/i.test(msg);
       if (!isRetryable) throw err;
     }
@@ -178,11 +180,11 @@ export async function callAIWithFallback(
   try {
     const result = await callOpenRouter(systemPrompt, userText, config);
     lastAITier = "openrouter";
-    console.log("AI handled by: OpenRouter");
+    debugLog("AI handled by: OpenRouter");
     return result;
   } catch (err: any) {
     const msg = err?.message ?? String(err);
-    console.log(`[AI] OpenRouter error on "${stepName}": ${msg}`);
+    debugLog(`[AI] OpenRouter error on "${stepName}": ${msg}`);
     throw err;
   }
 }

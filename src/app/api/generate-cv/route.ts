@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { callAIWithFallback } from "@/lib/gemini";
 import { extractTextFromPDF } from "@/lib/pdf";
+import { checkRateLimit } from "@/lib/rate-limit";
 import {
   Document,
   Packer,
@@ -192,6 +193,14 @@ export async function POST(request: NextRequest) {
     const { data: { user }, error: authErr } = await supabase.auth.getUser(authHeader);
     if (authErr || !user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const rl = checkRateLimit(`generate:${user.id}`, "generate");
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { code: "RATE_LIMITED", message: `Too many CV generations. Try again in ${Math.ceil((rl.resetAt - Date.now()) / 1000)}s.` },
+        { status: 429, headers: { "Retry-After": String(Math.ceil((rl.resetAt - Date.now()) / 1000)) } }
+      );
     }
 
     const { data: profile, error: profileErr } = await supabase

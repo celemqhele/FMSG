@@ -35,7 +35,8 @@ export async function searchGoogleJobs(params: SerpParams): Promise<SerpJob[]> {
   if (params.gl) url.searchParams.set("gl", params.gl);
 
   const fullUrl = url.toString();
-  console.log("[SERPAPI] GET", fullUrl);
+  const safeUrl = fullUrl.replace(/api_key=[^&]+/, "api_key=***");
+  console.log("[SERPAPI] GET", safeUrl);
 
   const res = await fetch(fullUrl);
   if (!res.ok) {
@@ -58,7 +59,8 @@ export async function fetchJobDetails(jobId: string, params: SerpParams): Promis
   if (params.gl) url.searchParams.set("gl", params.gl);
 
   const fullUrl = url.toString();
-  console.log("[SERPAPI] GET", fullUrl);
+  const safeUrl = fullUrl.replace(/api_key=[^&]+/, "api_key=***");
+  console.log("[SERPAPI] GET", safeUrl);
 
   const res = await fetch(fullUrl);
   if (!res.ok) {

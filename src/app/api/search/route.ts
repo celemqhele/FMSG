@@ -4,6 +4,8 @@ import { searchGoogleJobs } from "@/lib/serpapi";
 import { extractTextFromPDF } from "@/lib/pdf";
 import { callAIWithFallback, lastAITier } from "@/lib/gemini";
 import { StreamWriter, type SearchEvent } from "@/lib/search-stream";
+import { debugLog } from "@/lib/debug";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -335,7 +337,7 @@ async function fetchAndFilterJobs(
       snippet: (j.description ?? '').slice(0, 500), job_url: buildJobUrl(j), reason,
       passed_domain_filter: false, passed_banned_filter: false,
     }));
-    dataClient.from("rejected_jobs").insert(rows).then((r: any) => r.error && console.log('[SEARCH] Failed to log blacklist rejected:', r.error));
+    dataClient.from("rejected_jobs").insert(rows).then((r: any) => r.error && debugLog('[SEARCH] Failed to log blacklist rejected:', r.error));
   }
 
   const bannedRejected: any[] = [];
@@ -356,7 +358,7 @@ async function fetchAndFilterJobs(
       reason: `banned_${bannedJobs.includes(buildJobUrl(j)) ? 'job' : 'company'}`,
       passed_domain_filter: true, passed_banned_filter: false,
     }));
-    dataClient.from("rejected_jobs").insert(rows).then((r: any) => r.error && console.log('[SEARCH] Failed to log banned rejected:', r.error));
+    dataClient.from("rejected_jobs").insert(rows).then((r: any) => r.error && debugLog('[SEARCH] Failed to log banned rejected:', r.error));
   }
 
   rawJobs = rawJobs.filter((j) => !(j.description && isExpired(j.description)));
@@ -492,7 +494,7 @@ ${blacklistInfo}${bannedInfo}`;
 
   let rawPass1 = "";
   try {
-    console.log(`[SEARCH] Starting Pass 1 batch (${rawJobs.length} jobs)`);
+    debugLog(`[SEARCH] Starting Pass 1 batch (${rawJobs.length} jobs)`);
     rawPass1 = await callAIWithFallback(
       batchSystemPrompt,
       `Candidate Profile:\n${profileContext}\n\nJobs:\n${JSON.stringify(batchInput, null, 2)}`,
@@ -502,13 +504,13 @@ ${blacklistInfo}${bannedInfo}`;
     const parsedPass1 = JSON.parse(rawPass1);
     const unwrappedPass1 = unwrapArray(parsedPass1);
     if (!Array.isArray(unwrappedPass1) || unwrappedPass1.length === 0) {
-      console.log(`[SEARCH] Pass 1 batch returned empty/unexpected format, falling back to individual`);
+      debugLog(`[SEARCH] Pass 1 batch returned empty/unexpected format, falling back to individual`);
       throw new Error("batch empty");
     }
     batchResults = unwrappedPass1 as { index: number; score: number; reason: string; estimated_salary: string }[];
-    console.log(`[SEARCH] Pass 1 batch succeeded via ${lastAITier} (${batchResults.length} results)`);
+    debugLog(`[SEARCH] Pass 1 batch succeeded via ${lastAITier} (${batchResults.length} results)`);
   } catch {
-    console.log(`[SEARCH] Pass 1 batch failed, falling back to individual (${rawJobs.length} jobs)`);
+    debugLog(`[SEARCH] Pass 1 batch failed, falling back to individual (${rawJobs.length} jobs)`);
     for (let i = 0; i < rawJobs.length; i++) {
       const job = rawJobs[i];
       const progress = Math.min(20 + ((i + 1) / rawJobs.length) * 35, 55);
@@ -548,15 +550,15 @@ Return ONLY valid JSON (no markdown, no code fences):
     }
   }
 
-  console.log(`[SEARCH] Starting Pass 2 deep analysis (${rawJobs.length} jobs)`);
+  debugLog(`[SEARCH] Starting Pass 2 deep analysis (${rawJobs.length} jobs)`);
   let outputs: JobRow[] = [];
   let timedOut = false;
   for (let i = 0; i < rawJobs.length; i++) {
     // Time check before each AI call — leave 30s buffer
     if (startTime && Date.now() - startTime > TIME_LIMIT_MS) {
-      console.log(`[SEARCH] Time limit reached after ${i}/${rawJobs.length} jobs — sending partial results`);
+      debugLog(`[SEARCH] Time limit reached after ${i}/${rawJobs.length} jobs — sending partial results`);
       timedOut = true;
-      console.log(`[SEARCH] Time limit hit — ${outputs.length}/${rawJobs.length} jobs analyzed, saving partial results`);
+      debugLog(`[SEARCH] Time limit hit — ${outputs.length}/${rawJobs.length} jobs analyzed, saving partial results`);
       break;
     }
 
@@ -645,7 +647,7 @@ Return ONLY valid JSON (no markdown, no code fences). Exact schema:
       });
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
-      console.log(`[AI] Pass 2 failed for "${job.title}" at ${job.company_name}: ${errMsg.slice(0, 150)}`);
+      debugLog(`[AI] Pass 2 failed for "${job.title}" at ${job.company_name}: ${errMsg.slice(0, 150)}`);
       let fallbackScore = batchResult?.score ?? 30;
       let fallbackSummary = batchResult?.reason || "Analysis unavailable";
       let fallbackSalary = batchResult?.estimated_salary || "";
@@ -676,9 +678,9 @@ Return ONLY valid JSON (no markdown, no code fences):
         fallbackScore = retryResult.score ?? fallbackScore;
         fallbackSummary = retryResult.match_summary || fallbackSummary;
         fallbackSalary = retryResult.estimated_salary || fallbackSalary;
-        console.log(`[AI] Pass 2 retry succeeded for "${job.title}" at ${job.company_name}`);
+        debugLog(`[AI] Pass 2 retry succeeded for "${job.title}" at ${job.company_name}`);
       } catch {
-        console.log(`[AI] Pass 2 retry also failed for "${job.title}" at ${job.company_name}, using Pass 1 fallback`);
+        debugLog(`[AI] Pass 2 retry also failed for "${job.title}" at ${job.company_name}, using Pass 1 fallback`);
       }
       outputs.push({
         user_id: user.id,
@@ -728,7 +730,7 @@ Return ONLY valid JSON (no markdown, no code fences):
       passed_domain_filter: true, passed_banned_filter: true,
       passed_pass1: stage !== "pass1", passed_pass2: stage === "pass2",
     }));
-    dataClient.from("rejected_jobs").insert(rows).then((r: any) => r.error && console.log('[SEARCH] Failed to log AI rejected:', r.error));
+    dataClient.from("rejected_jobs").insert(rows).then((r: any) => r.error && debugLog('[SEARCH] Failed to log AI rejected:', r.error));
   }
 
   if (dedupSets) {
@@ -777,6 +779,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const rl = checkRateLimit(`search:${user.id}`, "search");
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { code: "RATE_LIMITED", message: `Too many searches. Try again in ${Math.ceil((rl.resetAt - Date.now()) / 1000)}s.` },
+        { status: 429, headers: { "Retry-After": String(Math.ceil((rl.resetAt - Date.now()) / 1000)) } }
+      );
+    }
+
     const body = await request.json();
     const { query, profile_id, pf_mode, continuation } = body;
     const isContinuation = !!continuation;
@@ -785,10 +795,10 @@ export async function POST(request: NextRequest) {
       if (!query && !pf_mode) {
         return NextResponse.json({ error: "SEARCH_001" }, { status: 400 });
       }
-      console.log(`[SEARCH] Search started at: ${new Date().toISOString()}`);
-      console.log(`[SEARCH] Query: ${query ?? "(pf_mode)"}, PF mode: ${pf_mode}, Profile: ${profile_id}`);
+      debugLog(`[SEARCH] Search started at: ${new Date().toISOString()}`);
+      debugLog(`[SEARCH] Query: ${query ?? "(pf_mode)"}, PF mode: ${pf_mode}, Profile: ${profile_id}`);
     } else {
-      console.log(`[SEARCH] Continue at: ${new Date().toISOString()}`);
+      debugLog(`[SEARCH] Continue at: ${new Date().toISOString()}`);
     }
 
     const userEmail = user.email ?? "";
@@ -886,7 +896,7 @@ export async function POST(request: NextRequest) {
       }
 
       const cvText = cvTexts.map(cv => cv.text).join("\n\n---\n\n");
-      console.log(`[SEARCH] CV variations: ${cvTexts.length}, total text length: ${cvText.length}, titles: ${titles.length}`);
+      debugLog(`[SEARCH] CV variations: ${cvTexts.length}, total text length: ${cvText.length}, titles: ${titles.length}`);
 
       // Pre-fetch existing job URLs for dedup
       const [existingResultsRes, existingSavedRes] = await Promise.all([
@@ -1089,7 +1099,7 @@ export async function POST(request: NextRequest) {
             pfRound = round + 1;
 
             if (activeTitles.length === 0) {
-              console.log(`[PF] Round ${pfRound}/${MAX_ROUNDS}: no titles to search — stopping`);
+              debugLog(`[PF] Round ${pfRound}/${MAX_ROUNDS}: no titles to search — stopping`);
               break;
             }
 
@@ -1097,16 +1107,16 @@ export async function POST(request: NextRequest) {
             const fullQuery = [orQuery, pfLocation].filter(Boolean).join(" in ");
 
             if (usedQueries.has(fullQuery)) {
-              console.log(`[PF] Round ${pfRound}/${MAX_ROUNDS}: skipping duplicate query "${fullQuery}"`);
+              debugLog(`[PF] Round ${pfRound}/${MAX_ROUNDS}: skipping duplicate query "${fullQuery}"`);
               continue;
             }
             usedQueries.add(fullQuery);
 
-            console.log(`[PF] Round ${pfRound}/${MAX_ROUNDS}: "${fullQuery}"`);
+            debugLog(`[PF] Round ${pfRound}/${MAX_ROUNDS}: "${fullQuery}"`);
             sendStatus({ type: "pf_round", round: pfRound, max: MAX_ROUNDS, query: fullQuery, progress: Math.min((pfRound / MAX_ROUNDS) * 90, 90) });
 
             if (lastAITier === "openrouter") {
-              console.log("[PF] On OpenRouter tier — using 12s delay between rounds");
+              debugLog("[PF] On OpenRouter tier — using 12s delay between rounds");
               await sleep(12000);
             }
 
@@ -1146,11 +1156,11 @@ export async function POST(request: NextRequest) {
                 }
               }
 
-              console.log(`[PF] Round ${pfRound}: ${roundResults.length} valid (total unique: ${allResults.length})`);
+              debugLog(`[PF] Round ${pfRound}: ${roundResults.length} valid (total unique: ${allResults.length})`);
 
               const highScoreCount = allResults.filter((r) => r.match_score >= STOP_THRESHOLD).length;
               if (highScoreCount >= STOP_COUNT) {
-                console.log(`[PF] Stopping early — ${highScoreCount} jobs >= ${STOP_THRESHOLD} (round ${pfRound})`);
+                debugLog(`[PF] Stopping early — ${highScoreCount} jobs >= ${STOP_THRESHOLD} (round ${pfRound})`);
                 break;
               }
 
@@ -1180,12 +1190,12 @@ Return ONLY a JSON array of strings. No explanation.`;
                 if (freshTitles.length > 0) {
                   activeTitles = freshTitles;
                   freshTitles.forEach(t => usedTitles.add(t));
-                  console.log(`[PF] New titles for round ${pfRound + 1}: ${activeTitles.join(", ")}`);
+                  debugLog(`[PF] New titles for round ${pfRound + 1}: ${activeTitles.join(", ")}`);
                 } else {
-                  console.log(`[PF] AI returned only already-tried titles — keeping current`);
+                  debugLog(`[PF] AI returned only already-tried titles — keeping current`);
                 }
               } catch {
-                console.log(`[PF] AI title generation failed — keeping current titles`);
+                debugLog(`[PF] AI title generation failed — keeping current titles`);
               }
 
               // Pause after round — send continuation to client
@@ -1193,7 +1203,7 @@ Return ONLY a JSON array of strings. No explanation.`;
               // Check if we have enough good results to stop early
               const highQualityResults = allResults.filter(r => r.match_score >= 75);
               if (highQualityResults.length >= 5) {
-                console.log(`[PF] Found ${highQualityResults.length} high-quality results — stopping early.`);
+                debugLog(`[PF] Found ${highQualityResults.length} high-quality results — stopping early.`);
                 break;
               }
 
@@ -1227,7 +1237,7 @@ Return ONLY a JSON array of strings. No explanation.`;
               return; // Stream ends here, client resumes via /api/search/continue
             } catch (err) {
               const errMsg = err instanceof Error ? err.message : String(err);
-              console.log(`[PF] Round ${pfRound} failed — error: ${errMsg}`);
+              debugLog(`[PF] Round ${pfRound} failed — error: ${errMsg}`);
               pfAborted = true;
               break;
             }
@@ -1239,7 +1249,7 @@ Return ONLY a JSON array of strings. No explanation.`;
             return b.posted_at_ms - a.posted_at_ms;
           });
 
-          console.log(`[PF] Total unique results: ${allResults.length}`);
+          debugLog(`[PF] Total unique results: ${allResults.length}`);
 
           const pfTotalFiltered = pfFilteredCounts.history + pfFilteredCounts.saved + pfFilteredCounts.rejected + pfFilteredCounts.blocked;
           if (pfTotalFiltered > 0) {
@@ -1278,7 +1288,7 @@ Return ONLY a JSON array of strings. No explanation.`;
           writer.close();
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
-          console.log("[SEARCH] Unhandled error:", msg);
+          debugLog("[SEARCH] Unhandled error:", msg);
           try {
             writer.send({ type: "error", code: "GENERIC_ERROR", message: "Something went wrong. Please try again.", progress: 0 });
             writer.close();
@@ -1292,7 +1302,7 @@ Return ONLY a JSON array of strings. No explanation.`;
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.log("[SEARCH] Unhandled error:", msg);
+    debugLog("[SEARCH] Unhandled error:", msg);
     return NextResponse.json({ results: [], code: "GENERIC_ERROR", message: "Something went wrong. Please try again." });
   }
 }

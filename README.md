@@ -42,7 +42,7 @@ Migrations are in `supabase/migrations/`. Run them in order against your Supabas
 
 ## Deploy
 
-Deployed on Vercel from the `beta` branch.
+Deployed on Vercel from the `production` branch.
 
 ```bash
 vercel --prod

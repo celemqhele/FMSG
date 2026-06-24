@@ -11,7 +11,7 @@ const nextConfig: NextConfig = {
             key: "Content-Security-Policy",
             value: [
               "default-src 'self'",
-              "script-src 'self' 'unsafe-inline' https://js.paystack.co",
+              "script-src 'self' https://js.paystack.co",
               "style-src 'self' 'unsafe-inline' https://paystack.com",
               "connect-src 'self' https://nnebtygloqixibbjxsjr.supabase.co https://api.paystack.co https://generativelanguage.googleapis.com https://api.groq.com https://openrouter.ai https://api.openai.com https://serpapi.com https://r.jina.ai https://www.google.com",
               "frame-src https://js.paystack.co https://checkout.paystack.com",
@@ -19,6 +19,7 @@ const nextConfig: NextConfig = {
               "font-src 'self'",
               "base-uri 'self'",
               "form-action 'self'",
+              "frame-ancestors 'self'",
             ].join("; "),
           },
           {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { PLAN_LIMITS } from "@/lib/plan-limits";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -12,6 +13,12 @@ function getSupabase() {
 
 export async function POST(request: NextRequest) {
   const supabase = getSupabase();
+
+  const ip = request.headers.get("x-forwarded-for") ?? "unknown";
+  const rl = checkRateLimit(`webhook:${ip}`, "webhook");
+  if (!rl.allowed) {
+    return NextResponse.json({ error: "Rate limited" }, { status: 429 });
+  }
 
   // Verify webhook signature
   const hash = request.headers.get("x-paystack-signature");

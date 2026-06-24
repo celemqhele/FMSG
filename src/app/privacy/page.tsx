@@ -53,7 +53,7 @@ const sections = [
   {
     title: "9. Contact",
     content:
-      "For privacy-related inquiries or to exercise your POPIA rights, please contact us at support@fmsg.za.com.",
+      "For privacy-related inquiries or to exercise your POPIA rights, please         contact us at support@findmesomejobs.co.za.",
   },
 ];
 
