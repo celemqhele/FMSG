@@ -31,7 +31,7 @@ export function LoginTransition({ type, onComplete }: LoginTransitionProps) {
   if (phase === 0) return null;
 
   return (
-    <div className="fixed inset-0 z-[200]">
+    <div className={`fixed inset-0 z-[200] ${phase >= 4 ? "pointer-events-none" : ""}`}>
       <div
         className="absolute inset-0 bg-black transition-opacity duration-600"
         style={{

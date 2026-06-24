@@ -55,6 +55,7 @@ export function AuthModal({ isOpen, onClose, defaultTab = "signup" }: AuthModalP
 
   const handleSignUpTransitionComplete = useCallback(() => {
     onClose();
+    setTransitionType(null);
     router.push("/onboarding");
   }, [onClose, router]);
 
@@ -69,6 +70,7 @@ export function AuthModal({ isOpen, onClose, defaultTab = "signup" }: AuthModalP
 
   const handleTransitionComplete = useCallback(() => {
     onClose();
+    setTransitionType(null);
     router.push("/dashboard");
   }, [onClose, router]);
 
