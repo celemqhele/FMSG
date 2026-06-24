@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { PLAN_LIMITS } from "@/lib/plan-limits";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { formatPlanPrice } from "@/lib/plan-limits";
+import { sendSubscriptionConfirmation } from "@/lib/email";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -122,6 +124,8 @@ export async function POST(request: NextRequest) {
     if (pfRefillErr) {
       console.warn("[VERIFY] pf_refill column missing (safe to ignore):", pfRefillErr.message);
     }
+
+    sendSubscriptionConfirmation(email, plan, billing_cycle, formatPlanPrice(plan, billing_cycle)).catch(() => {});
 
     return NextResponse.json({ ok: true, plan: plan.toLowerCase(), balance: limits });
   } catch (err) {

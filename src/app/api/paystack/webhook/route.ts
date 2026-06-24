@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { PLAN_LIMITS } from "@/lib/plan-limits";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { formatPlanPrice } from "@/lib/plan-limits";
+import {
+  sendSubscriptionRenewed,
+  sendPaymentFailed,
+  sendSubscriptionCancelled,
+} from "@/lib/email";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -134,6 +140,9 @@ const expectedHash = await createHmac(body, PAYSTACK_SECRET_KEY);
             console.error("[WEBHOOK] Failed to extend profile:", updateErr.message);
             return NextResponse.json({ error: "DB error" }, { status: 500 });
           }
+
+          const planName = existingSub.plan.charAt(0).toUpperCase() + existingSub.plan.slice(1);
+          sendSubscriptionRenewed(email, planName, formatPlanPrice(planName, billingCycle)).catch(() => {});
         }
         break;
       }
@@ -146,7 +155,7 @@ const expectedHash = await createHmac(body, PAYSTACK_SECRET_KEY);
         // Mark subscription for grace period
         const { data: existingSub, error: subErr } = await supabase
           .from("subscriptions")
-          .select("id, user_id")
+          .select("id, user_id, plan")
           .eq("paystack_subscription_id", paystackSubId)
           .eq("status", "active")
           .order("created_at", { ascending: false })
@@ -168,6 +177,10 @@ const expectedHash = await createHmac(body, PAYSTACK_SECRET_KEY);
             console.error("[WEBHOOK] Failed to update subscription to past_due:", updateErr.message);
             return NextResponse.json({ error: "DB error" }, { status: 500 });
           }
+
+          const planName = existingSub.plan.charAt(0).toUpperCase() + existingSub.plan.slice(1);
+          const customerEmail = subData.customer?.email;
+          if (customerEmail) sendPaymentFailed(customerEmail, planName).catch(() => {});
         }
         break;
       }
@@ -179,7 +192,7 @@ const expectedHash = await createHmac(body, PAYSTACK_SECRET_KEY);
 
         const { data: existingSub, error: subErr } = await supabase
           .from("subscriptions")
-          .select("id, user_id, expiry_date")
+          .select("id, user_id, plan, expiry_date")
           .eq("paystack_subscription_id", paystackSubId)
           .in("status", ["active", "past_due"])
           .order("created_at", { ascending: false })
@@ -202,6 +215,10 @@ const expectedHash = await createHmac(body, PAYSTACK_SECRET_KEY);
             console.error("[WEBHOOK] Failed to cancel subscription:", updateErr.message);
             return NextResponse.json({ error: "DB error" }, { status: 500 });
           }
+
+          const planName = existingSub.plan.charAt(0).toUpperCase() + existingSub.plan.slice(1);
+          const customerEmail = subData.customer?.email;
+          if (customerEmail) sendSubscriptionCancelled(customerEmail, planName).catch(() => {});
 
           // Check if there's a scheduled plan change (downgrade)
           const { data: profile, error: profileErr } = await supabase

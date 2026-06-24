@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { sendPFReceipt } from "@/lib/email";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -80,6 +81,10 @@ export async function POST(request: NextRequest) {
     if (updateErr) {
       return NextResponse.json({ error: "Failed to update balance" }, { status: 500 });
     }
+
+    const amountPaid = (txData.amount ?? 0) / 100;
+    const amountStr = `R${amountPaid}`;
+    sendPFReceipt(user.email ?? "", runs, amountStr).catch(() => {});
 
     return NextResponse.json({ ok: true, pf_balance: newBalance, added: runs });
   } catch (err) {
