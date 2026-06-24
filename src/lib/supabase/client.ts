@@ -4,10 +4,13 @@ let client: ReturnType<typeof createBrowserClient> | null = null;
 
 function clearStaleAuthCookies() {
   if (typeof document === "undefined") return;
+  if (typeof sessionStorage === "undefined") return;
+  if (sessionStorage.getItem("fmsg_cookies_cleared") === "true") return;
+  sessionStorage.setItem("fmsg_cookies_cleared", "true");
   const prefixes = ["fmsg-auth"];
   document.cookie.split(";").forEach((c) => {
     const name = c.trim().split("=")[0];
-    if (prefixes.some((p) => name === p || name.startsWith(p + "."))) {
+    if (prefixes.some((p) => name === p || name.startsWith(p) || name.startsWith(`sb-`))) {
       document.cookie = `${name}=; max-age=0; path=/;`;
     }
   });
