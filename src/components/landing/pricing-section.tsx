@@ -1,39 +1,38 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { Check } from "lucide-react";
 import { LiquidGlassCard } from "./liquid-glass-card";
 import { useTransition } from "@/components/providers/transition-provider";
 import { PLAN_LIMITS, PLAN_PRICES, formatPlanPrice, PLAN_TIER_NAMES } from "@/lib/plan-limits";
 
-function getTierFeatures(name: string, limits: { searches: number; cv_gens: number; pf_balance: number }): string[] {
-  if (name === "Free") {
-    return ["1 job search per month", "Basic match scoring"];
-  }
-  const features = [
-    `${limits.searches} job searches per month`,
-    `${limits.cv_gens} tailored CVs per month`,
-  ];
-  if (name === "Seeker") features.push("Full match scoring", "Banned company filtering");
-  if (name === "Hunter") features.push("Priority AI processing", "Advanced filtering");
-  if (name === "Pro") features.push("Fastest AI processing", "All features unlocked");
-  return features;
-}
+const TIER_FEATURES: Record<string, string[]> = {
+  Free: ["1 job search per month", "Basic match scoring"],
+  Seeker: ["10 job searches per month", "5 tailored CVs per month", "Full match scoring", "Banned company filtering", "5 Persistent Finder rounds"],
+  Hunter: ["25 job searches per month", "12 tailored CVs per month", "Priority AI processing", "Advanced filtering", "15 Persistent Finder rounds"],
+  Pro: ["60 job searches per month", "25 tailored CVs per month", "Fastest AI processing", "All features unlocked", "50 Persistent Finder rounds"],
+};
 
-const tiers = PLAN_TIER_NAMES.map((name) => {
-  const limits = PLAN_LIMITS[name] ?? { searches: 0, cv_gens: 0, pf_balance: 0 };
-  return {
-    name,
-    monthlyPrice: name === "Free" ? "R0" : formatPlanPrice(name, "monthly"),
-    annualPrice: name === "Free" ? "R0" : formatPlanPrice(name, "annual"),
-    searches: limits.searches,
-    cvGens: limits.cv_gens,
-    features: getTierFeatures(name, limits),
-    popular: name === "Hunter",
-  };
-});
+const TIER_POPULAR: Record<string, boolean> = {
+  Free: false,
+  Seeker: false,
+  Hunter: true,
+  Pro: false,
+};
+
+const tiers = PLAN_TIER_NAMES.map((name) => ({
+  name,
+  monthlyPrice: name === "Free" ? "R0" : formatPlanPrice(name, "monthly"),
+  annualPrice: name === "Free" ? "R0" : formatPlanPrice(name, "annual"),
+  searches: PLAN_LIMITS[name]?.searches ?? 0,
+  cvGens: PLAN_LIMITS[name]?.cv_gens ?? 0,
+  features: TIER_FEATURES[name] ?? [],
+  popular: TIER_POPULAR[name] ?? false,
+}));
 
 function PricingCard({ tier, annual, compact }: { tier: typeof tiers[number]; annual: boolean; compact?: boolean }) {
+  const router = useRouter();
   return (
     <LiquidGlassCard
       variant="surface"
@@ -55,16 +54,7 @@ function PricingCard({ tier, annual, compact }: { tier: typeof tiers[number]; an
           /{annual ? "year" : "month"}
         </span>
       </div>
-      <div className="mt-2 text-sm text-white/50">
-        {tier.searches === -1
-          ? "Unlimited searches"
-          : `${tier.searches} searches/mo`}
-        {" / "}
-        {tier.cvGens === -1
-          ? "Unlimited CVs"
-          : `${tier.cvGens} CVs/mo`}
-      </div>
-      <ul className="mt-6 flex-1 flex flex-col gap-3">
+      <ul className="mt-3 flex-1 flex flex-col gap-3">
         {tier.features.map((f) => (
           <li key={f} className="flex items-start gap-2 text-sm text-white/60">
             <Check size={16} className="mt-0.5 text-[var(--color-success)] shrink-0" />
@@ -73,7 +63,8 @@ function PricingCard({ tier, annual, compact }: { tier: typeof tiers[number]; an
         ))}
       </ul>
       <button
-        className={`mt-8 w-full px-5 py-2.5 text-sm font-medium rounded-full transition-colors ${
+        onClick={() => router.push("/pricing")}
+        className={`mt-4 w-full px-5 py-2.5 text-sm font-medium rounded-full transition-colors ${
           tier.name === "Free"
             ? "border border-white/20 text-white hover:bg-white/10"
             : "text-white bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)]"
@@ -224,7 +215,7 @@ export function PricingSection() {
           </div>
         </div>
 
-        <div className="mt-12 md:mt-16 hidden md:grid gap-6 md:grid-cols-4 md:gap-4">
+        <div className="mt-12 md:mt-16 hidden md:grid gap-6 md:grid-cols-2 lg:grid-cols-4 md:gap-4">
           {tiers.map((tier) => (
             <PricingCard key={tier.name} tier={tier} annual={annual} />
           ))}
