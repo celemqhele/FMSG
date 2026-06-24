@@ -63,28 +63,36 @@ export function RejectedJobs() {
 
   useEffect(() => {
     const supabase = createClient();
-    supabase.auth.getSession().then(({ data }: { data: any }) => {
-      const session = data?.session;
-      if (!session) { setLoading(false); return; }
-      Promise.all([
-        supabase
-          .from("job_results")
-          .select("*")
-          .eq("user_id", session.user.id)
-          .eq("is_deleted", true)
-          .order("created_at", { ascending: false }),
-        supabase
-          .from("rejected_jobs")
-          .select("*")
-          .eq("user_id", session.user.id)
-          .order("created_at", { ascending: false })
-          .limit(50),
-      ]).then(([userRes, systemRes]) => {
-        setJobs((userRes.data ?? []) as DeletedJob[]);
-        setSystemRejected((systemRes.data ?? []) as SystemRejected[]);
+    supabase.auth.getSession()
+      .then(({ data }: { data: any }) => {
+        const session = data?.session;
+        if (!session) { setLoading(false); return; }
+        Promise.all([
+          supabase
+            .from("job_results")
+            .select("*")
+            .eq("user_id", session.user.id)
+            .eq("is_deleted", true)
+            .order("created_at", { ascending: false }),
+          supabase
+            .from("rejected_jobs")
+            .select("*")
+            .eq("user_id", session.user.id)
+            .order("created_at", { ascending: false })
+            .limit(50),
+        ]).then(([userRes, systemRes]) => {
+          setJobs((userRes.data ?? []) as DeletedJob[]);
+          setSystemRejected((systemRes.data ?? []) as SystemRejected[]);
+          setLoading(false);
+        }).catch((err: Error) => {
+          console.error("Failed to load rejected jobs:", err.message);
+          setLoading(false);
+        });
+      })
+      .catch((err: Error) => {
+        console.error("Failed to get session:", err.message);
         setLoading(false);
       });
-    });
   }, []);
 
   if (loading) {

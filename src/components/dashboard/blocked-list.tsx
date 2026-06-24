@@ -14,22 +14,31 @@ export function BlockedList() {
 
   useEffect(() => {
     const supabase = createClient();
-    supabase.auth.getUser().then(({ data }: { data: any }) => {
-      const user = data?.user;
-      if (!user) { setLoading(false); return; }
-      supabase
-        .from("profiles")
-        .select("banned_companies, banned_jobs")
-        .eq("id", user.id)
-        .single()
-        .then((res: any) => {
-          if (res.data) {
-            setCompanies(res.data.banned_companies ?? []);
-            setJobs(res.data.banned_jobs ?? []);
-          }
-          setLoading(false);
-        });
-    });
+    supabase.auth.getUser()
+      .then(({ data }: { data: any }) => {
+        const user = data?.user;
+        if (!user) { setLoading(false); return; }
+        supabase
+          .from("profiles")
+          .select("banned_companies, banned_jobs")
+          .eq("id", user.id)
+          .single()
+          .then((res: any) => {
+            if (res.data) {
+              setCompanies(res.data.banned_companies ?? []);
+              setJobs(res.data.banned_jobs ?? []);
+            }
+            setLoading(false);
+          })
+          .catch((err: Error) => {
+            console.error("Failed to load blocked list:", err.message);
+            setLoading(false);
+          });
+      })
+      .catch((err: Error) => {
+        console.error("Failed to get user:", err.message);
+        setLoading(false);
+      });
   }, []);
 
   const handleUnbanCompany = async (company: string) => {

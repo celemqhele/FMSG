@@ -21,6 +21,7 @@ interface SavedJob {
 export function SavedJobs() {
   const [jobs, setJobs] = useState<SavedJob[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     const supabase = createClient();
@@ -36,12 +37,30 @@ export function SavedJobs() {
         .then(({ data }: { data: any }) => {
           setJobs((data ?? []) as SavedJob[]);
           setLoading(false);
+        })
+        .catch((err: Error) => {
+          console.error("Failed to load saved jobs:", err.message);
+          setError("Failed to load saved jobs.");
+          setLoading(false);
         });
+    }).catch((err: Error) => {
+      console.error("Failed to get session:", err.message);
+      setError("Session error.");
+      setLoading(false);
     });
   }, []);
 
   if (loading) {
     return <p className="text-sm text-[var(--color-text-secondary)] text-center py-8">Loading...</p>;
+  }
+
+  if (error) {
+    return (
+      <div className="text-center py-12">
+        <Bookmark size={32} className="mx-auto mb-2 text-[var(--color-text-secondary)] opacity-40" />
+        <p className="text-sm text-red-400">{error}</p>
+      </div>
+    );
   }
 
   if (jobs.length === 0) {

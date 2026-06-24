@@ -40,7 +40,9 @@ export function JobResultCard({
 }: JobResultCardProps) {
   const [showDeleteMenu, setShowDeleteMenu] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const [cvLoading, setCvLoading] = useState(false);
   const [showDomainWarning, setShowDomainWarning] = useState(false);
   const [domainMounted, setDomainMounted] = useState(false);
@@ -76,6 +78,26 @@ export function JobResultCard({
     }
   }, [showVerdict]);
 
+  // Check if this job is already saved
+  useEffect(() => {
+    if (!jobUrl) return;
+    const supabase = createClient();
+    supabase.auth.getSession().then(({ data }: { data: any }) => {
+      const session = data?.session;
+      if (!session) return;
+      supabase
+        .from("saved_jobs")
+        .select("id")
+        .eq("user_id", session.user.id)
+        .eq("job_url", jobUrl)
+        .maybeSingle()
+        .then(({ data }: { data: any }) => {
+          if (data) setSaved(true);
+        })
+        .catch(() => {});
+    }).catch(() => {});
+  }, [jobUrl]);
+
   const scoreLabel =
     matchScore >= 80 ? "Strong Match" :
     matchScore >= 60 ? "Good Match" :
@@ -88,11 +110,13 @@ export function JobResultCard({
 
   const handleDelete = async (banJob: boolean, banCompany: boolean) => {
     setShowDeleteMenu(false);
+    setDeleteError("");
     setDeleting(true);
     const supabase = createClient();
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) {
       setDeleting(false);
+      setDeleteError("You must be signed in.");
       return;
     }
     try {
@@ -105,16 +129,19 @@ export function JobResultCard({
         const errData = await res.json().catch(() => ({}));
         console.error("Failed to hide job:", errData.error || res.statusText);
         setDeleting(false);
+        setDeleteError(errData.error || "Failed to hide job.");
         return;
       }
       setTimeout(() => onDelete(id), 300);
     } catch (err) {
       console.error("Network error hiding job:", err);
       setDeleting(false);
+      setDeleteError("Network error. Please try again.");
     }
   };
 
   const handleSave = async () => {
+    setSaveError("");
     const supabase = createClient();
     const { data: { session } } = await supabase.auth.getSession();
     if (!session || saved) return;
@@ -129,7 +156,12 @@ export function JobResultCard({
       job_url: jobUrl,
       full_spec: fullDescription,
     });
-    if (!error) setSaved(true);
+    if (error) {
+      console.error("Failed to save job:", error.message);
+      setSaveError(error.message);
+    } else {
+      setSaved(true);
+    }
   };
 
   const handleGenerateCv = async () => {
@@ -246,6 +278,13 @@ export function JobResultCard({
       </p>
       {salary && (
         <p className="text-sm text-[var(--color-text-secondary)] opacity-60 mb-4">{salary}</p>
+      )}
+
+      {deleteError && (
+        <p className="text-xs text-red-400 mb-2">{deleteError}</p>
+      )}
+      {saveError && (
+        <p className="text-xs text-red-400 mb-2">{saveError}</p>
       )}
 
       {/* Action row */}

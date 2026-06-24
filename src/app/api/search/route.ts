@@ -259,6 +259,7 @@ async function fetchAndFilterJobs(
   dataClient: any,
   onStatus?: (event: SearchEvent) => void,
   pfRound?: number,
+  hiddenJobKeys?: Set<string>,
 ): Promise<{ rawJobs: any[]; jobSpecs: [number, string][]; jobUrls: [number, string][]; queryUsed: string }> {
   function sanitiseLocation(raw: string): string | undefined {
     if (!raw) return undefined;
@@ -343,6 +344,8 @@ async function fetchAndFilterJobs(
     if (url && bannedJobs.includes(url)) { bannedRejected.push(j); return false; }
     const companyLower = (j.company_name ?? "").toLowerCase();
     if (bannedCompanies.some((bc) => companyLower.includes(bc.toLowerCase()))) { bannedRejected.push(j); return false; }
+    const jobKey = `${j.title ?? ''}|${j.company_name ?? ''}`.toLowerCase().trim();
+    if (jobKey && hiddenJobKeys?.has(jobKey)) { bannedRejected.push(j); return false; }
     return true;
   });
   if (bannedRejected.length > 0) {
@@ -433,7 +436,7 @@ async function screenAndAnalyze(
   bannedCompanies: string[],
   onStatus?: (event: SearchEvent) => void,
   pfRound?: number,
-  dedupSets?: { history: Set<string>; saved: Set<string>; blocked: Set<string> },
+  dedupSets?: { history: Set<string>; saved: Set<string>; blocked: Set<string>; rejected?: Set<string> },
   startTime?: number,
 ): Promise<{ results: JobRow[]; queryUsed: string; filteredCounts: { history: number; saved: number; rejected: number; blocked: number }; timedOut?: boolean }> {
   const filteredCounts = { history: 0, saved: 0, rejected: 0, blocked: 0 };
@@ -729,7 +732,7 @@ Return ONLY valid JSON (no markdown, no code fences):
   }
 
   if (dedupSets) {
-    const allExisting = new Set([...dedupSets.history, ...dedupSets.saved, ...dedupSets.blocked]);
+    const allExisting = new Set([...dedupSets.history, ...dedupSets.saved, ...dedupSets.blocked, ...(dedupSets.rejected ?? [])]);
     if (allExisting.size > 0) {
       const deduped: JobRow[] = [];
       for (const r of outputs) {
@@ -887,14 +890,19 @@ export async function POST(request: NextRequest) {
 
       // Pre-fetch existing job URLs for dedup
       const [existingResultsRes, existingSavedRes] = await Promise.all([
-        dataClient.from("job_results").select("job_url, is_deleted").eq("user_id", user.id),
+        dataClient.from("job_results").select("job_url, is_deleted, job_title, company").eq("user_id", user.id),
         dataClient.from("saved_jobs").select("job_url").eq("user_id", user.id),
       ]);
       const historyUrls = new Set<string>();
       const rejectedUrls = new Set<string>();
+      const hiddenJobKeys = new Set<string>();
       for (const r of existingResultsRes.data ?? []) {
-        if (r.is_deleted) rejectedUrls.add(r.job_url);
-        else historyUrls.add(r.job_url);
+        if (r.is_deleted) {
+          rejectedUrls.add(r.job_url);
+          hiddenJobKeys.add(`${r.job_title ?? ''}|${r.company ?? ''}`.toLowerCase().trim());
+        } else {
+          historyUrls.add(r.job_url);
+        }
       }
       const savedUrls = new Set((existingSavedRes.data ?? []).map((r: any) => r.job_url));
       const blockedUrls = new Set<string>(profile.banned_jobs ?? []);
@@ -909,6 +917,7 @@ export async function POST(request: NextRequest) {
         cvTexts,
         cvText,
         dedupSets: { history: historyUrls, saved: savedUrls, rejected: rejectedUrls, blocked: blockedUrls },
+        hiddenJobKeys: [...hiddenJobKeys],
         bannedJobs: state.bannedJobs,
         bannedCompanies: state.bannedCompanies,
         pf_mode: !!pf_mode,
@@ -956,7 +965,7 @@ export async function POST(request: NextRequest) {
                 state.profileLocation, state.profileIndustry, state.titles, state.cvTexts,
                 user, searchId, dataClient, state.bannedJobs, state.bannedCompanies,
                 sendStatus, undefined,
-                { history: new Set(state.dedupSets.history), saved: new Set(state.dedupSets.saved), blocked: new Set(state.dedupSets.blocked) },
+                { history: new Set(state.dedupSets.history), saved: new Set(state.dedupSets.saved), blocked: new Set(state.dedupSets.blocked), rejected: new Set(state.dedupSets.rejected ?? []) },
                 startTime
               );
 
@@ -975,22 +984,23 @@ export async function POST(request: NextRequest) {
                   type: "partial_complete",
                   results: withIds.map(normalize),
                   progress: 55 + (processedCount / state.rawJobs.length) * 30,
-                  continuation: Buffer.from(JSON.stringify({
-                    mode: "normal",
-                    rawJobs: remainingJobs,
-                    jobSpecs: remainingSpecs,
-                    jobUrls: remainingUrls,
-                    queryUsed: state.queryUsed,
-                    searchId: searchId,
-                    titles: state.titles,
-                    profileLocation: state.profileLocation,
-                    profileIndustry: state.profileIndustry,
-                    cvTexts: state.cvTexts,
-                    bannedJobs: state.bannedJobs,
-                    bannedCompanies: state.bannedCompanies,
-                    query: state.query,
-                    dedupSets: { history: [...state.dedupSets.history], saved: [...state.dedupSets.saved], blocked: [...state.dedupSets.blocked] },
-                  })).toString("base64"),
+                    continuation: Buffer.from(JSON.stringify({
+                      mode: "normal",
+                      rawJobs: remainingJobs,
+                      jobSpecs: remainingSpecs,
+                      jobUrls: remainingUrls,
+                      queryUsed: state.queryUsed,
+                      searchId: searchId,
+                      titles: state.titles,
+                      profileLocation: state.profileLocation,
+                      profileIndustry: state.profileIndustry,
+                      cvTexts: state.cvTexts,
+                      bannedJobs: state.bannedJobs,
+                      bannedCompanies: state.bannedCompanies,
+                      hiddenJobKeys: state.hiddenJobKeys,
+                      query: state.query,
+                      dedupSets: { history: [...state.dedupSets.history], saved: [...state.dedupSets.saved], blocked: [...state.dedupSets.blocked], rejected: [...state.dedupSets.rejected ?? []] },
+                    })).toString("base64"),
                   message: `Analysed ${processedCount} of ${state.rawJobs.length} jobs so far. Continue to screen remaining ${remainingJobs.length} jobs?`,
                 });
                 writer.close();
@@ -1008,9 +1018,11 @@ export async function POST(request: NextRequest) {
             }
 
             // Phase 1: search + filter (no AI) — initial call
+            const hiddenKeys = state.hiddenJobKeys ? new Set<string>(state.hiddenJobKeys as string[]) : undefined;
             const { rawJobs, jobSpecs, jobUrls, queryUsed } = await fetchAndFilterJobs(
               searchQuery, state.profileLocation, user, searchId,
-              state.bannedJobs, state.bannedCompanies, dataClient, sendStatus
+              state.bannedJobs, state.bannedCompanies, dataClient, sendStatus, undefined,
+              hiddenKeys
             );
 
             if (rawJobs.length === 0) {
@@ -1037,8 +1049,9 @@ export async function POST(request: NextRequest) {
                 cvTexts: state.cvTexts,
                 bannedJobs: state.bannedJobs,
                 bannedCompanies: state.bannedCompanies,
+                hiddenJobKeys: state.hiddenJobKeys,
                 query: searchQuery,
-                dedupSets: { history: [...state.dedupSets.history], saved: [...state.dedupSets.saved], blocked: [...state.dedupSets.blocked] },
+                dedupSets: { history: [...state.dedupSets.history], saved: [...state.dedupSets.saved], blocked: [...state.dedupSets.blocked], rejected: [...state.dedupSets.rejected] },
               })).toString("base64"),
             });
             writer.close();
@@ -1098,9 +1111,11 @@ export async function POST(request: NextRequest) {
             }
 
             try {
+              const pfHiddenKeys = state.hiddenJobKeys ? new Set<string>(state.hiddenJobKeys as string[]) : undefined;
               const filtered = await fetchAndFilterJobs(
                 fullQuery, pfLocation, user, searchId,
-                pfBannedJobs, pfBannedCompanies, dataClient, sendStatus, pfRound
+                pfBannedJobs, pfBannedCompanies, dataClient, sendStatus, pfRound,
+                pfHiddenKeys
               );
 
               let roundResults: JobRow[] = [];
@@ -1112,7 +1127,7 @@ export async function POST(request: NextRequest) {
                   pfLocation, pfIndustry, pfTitles, pfCvTexts,
                   user, searchId, dataClient, pfBannedJobs, pfBannedCompanies,
                   sendStatus, pfRound,
-                  { history: new Set(pfDedupSets.history), saved: new Set(pfDedupSets.saved), blocked: new Set(pfDedupSets.blocked) },
+                  { history: new Set(pfDedupSets.history), saved: new Set(pfDedupSets.saved), blocked: new Set(pfDedupSets.blocked), rejected: new Set(pfDedupSets.rejected ?? []) },
                   startTime
                 );
                 roundResults = result.results;
@@ -1188,23 +1203,24 @@ Return ONLY a JSON array of strings. No explanation.`;
                   ? `Round ${pfRound} complete — ${allResults.length} results so far. Continue to round ${pfRound + 1}?`
                   : `Round ${pfRound} found no matches. Continue to round ${pfRound + 1}?`,
                 progress: Math.min((pfRound / MAX_ROUNDS) * 90, 90),
-                continuation: Buffer.from(JSON.stringify({
-                  mode: "pf",
-                  nextRound: pfRound + 1,
-                  allResults,
-                  seenUrls: [...seenUrls],
-                  activeTitles,
-                  usedTitles: [...usedTitles],
-                  usedQueries: [...usedQueries],
-                  pfFilteredCounts,
-                  searchId,
-                  titles: pfTitles,
-                  profileLocation: pfLocation,
-                  profileIndustry: pfIndustry,
-                  cvTexts: pfCvTexts,
-                  bannedJobs: pfBannedJobs,
-                  bannedCompanies: pfBannedCompanies,
-                  dedupSets: { history: [...pfDedupSets.history], saved: [...pfDedupSets.saved], blocked: [...pfDedupSets.blocked] },
+                  continuation: Buffer.from(JSON.stringify({
+                    mode: "pf",
+                    nextRound: pfRound + 1,
+                    allResults,
+                    seenUrls: [...seenUrls],
+                    activeTitles,
+                    usedTitles: [...usedTitles],
+                    usedQueries: [...usedQueries],
+                    pfFilteredCounts,
+                    searchId,
+                    titles: pfTitles,
+                    profileLocation: pfLocation,
+                    profileIndustry: pfIndustry,
+                    cvTexts: pfCvTexts,
+                    bannedJobs: pfBannedJobs,
+                    bannedCompanies: pfBannedCompanies,
+                    hiddenJobKeys: state.hiddenJobKeys ?? [],
+                    dedupSets: { history: [...pfDedupSets.history], saved: [...pfDedupSets.saved], blocked: [...pfDedupSets.blocked] },
                 })).toString("base64"),
               });
               writer.close();

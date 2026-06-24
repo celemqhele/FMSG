@@ -21,16 +21,50 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
 
     const body = await request.json().catch(() => ({}));
 
-    // Get the job result to know which company/job URL to ban
-    const { data: job, error: jobErr } = await supabase
+    // Try job_results first, then saved_jobs
+    let { data: job, error: jobErr } = await supabase
       .from("job_results")
       .select("*")
       .eq("id", id)
       .eq("user_id", user.id)
-      .single();
+      .maybeSingle();
 
-    if (jobErr || !job) {
-      return NextResponse.json({ error: jobErr?.message || "Job result not found." }, { status: jobErr ? 500 : 404 });
+    let isSavedJob = false;
+    if (!job) {
+      // Try saved_jobs
+      const { data: savedJob, error: savedErr } = await supabase
+        .from("saved_jobs")
+        .select("*")
+        .eq("id", id)
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (savedErr || !savedJob) {
+        return NextResponse.json({ error: savedErr?.message || "Job not found." }, { status: savedErr ? 500 : 404 });
+      }
+
+      // Found in saved_jobs — remove it from saved list
+      await supabase.from("saved_jobs").delete().eq("id", id).eq("user_id", user.id);
+
+      // Try to find corresponding job_results entry by URL for deeper banning
+      const { data: matchingJob } = await supabase
+        .from("job_results")
+        .select("*")
+        .eq("job_url", savedJob.job_url)
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (matchingJob) {
+        job = matchingJob;
+      } else {
+        // Build a minimal job-like object from saved_jobs data
+        job = {
+          company: savedJob.company,
+          job_url: savedJob.job_url,
+          job_title: savedJob.job_title,
+        };
+      }
+      isSavedJob = true;
     }
 
     if (body.ban_company) {
@@ -81,15 +115,17 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
       }
     }
 
-    // Mark as deleted
-    const { error: deleteErr } = await supabase
-      .from("job_results")
-      .update({ is_deleted: true })
-      .eq("id", id)
-      .eq("user_id", user.id);
+    // Mark job_results as deleted (if it exists as a job_results entry)
+    if (!isSavedJob) {
+      const { error: deleteErr } = await supabase
+        .from("job_results")
+        .update({ is_deleted: true })
+        .eq("id", id)
+        .eq("user_id", user.id);
 
-    if (deleteErr) {
-      return NextResponse.json({ error: "Failed to mark job as deleted." }, { status: 500 });
+      if (deleteErr) {
+        return NextResponse.json({ error: "Failed to mark job as deleted." }, { status: 500 });
+      }
     }
 
     return NextResponse.json({ success: true });
