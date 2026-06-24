@@ -94,13 +94,17 @@ export default function DashboardPage() {
   useEffect(() => { endTransition(); }, [endTransition]);
 
   useEffect(() => {
+    let cancelled = false;
     const supabase = createClient();
+    const timeout = setTimeout(() => { if (!cancelled) setAuthChecked(true); }, 5000);
+
     supabase.auth.getSession().then(async ({ data }: { data: { session: any } | null }) => {
+      if (cancelled) return;
+      clearTimeout(timeout);
       if (data?.session) {
         setAuthChecked(true);
         return;
       }
-      // Fallback: try getUser which does a network validation
       try {
         const { data: userData } = await supabase.auth.getUser();
         if (userData?.user) {
@@ -108,8 +112,10 @@ export default function DashboardPage() {
           return;
         }
       } catch {}
-      router.replace("/");
+      setAuthChecked(true);
     });
+
+    return () => { cancelled = true; clearTimeout(timeout); };
 
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail;
@@ -480,7 +486,15 @@ export default function DashboardPage() {
     setResults((prev) => prev.filter((x) => x.id !== id));
   }, []);
 
-  if (!authChecked) return null;
+  if (!authChecked) {
+    return (
+      <DashboardLayout>
+        <div className="flex items-center justify-center min-h-[60dvh]">
+          <div className="w-8 h-8 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout>

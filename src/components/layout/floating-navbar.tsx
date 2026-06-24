@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { Menu, X } from "lucide-react";
 import { TransitionLink } from "@/components/ui/transition-link";
 import "../landing/liquid-glass.css";
@@ -17,7 +18,20 @@ const navLinks = [
 ];
 
 export function FloatingNavbar({ onLoginClick, onSignUpClick }: FloatingNavbarProps) {
+  const router = useRouter();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [loggedIn, setLoggedIn] = useState(false);
+
+  useEffect(() => {
+    const check = () => setLoggedIn(localStorage.getItem("logged_in") === "true");
+    check();
+    window.addEventListener("auth-changed", check);
+    window.addEventListener("focus", check);
+    return () => {
+      window.removeEventListener("auth-changed", check);
+      window.removeEventListener("focus", check);
+    };
+  }, []);
 
   return (
     <nav className="fixed bottom-4 left-1/2 -translate-x-1/2 md:top-4 md:bottom-auto z-50 w-[calc(100%-2rem)] max-w-5xl">
@@ -39,22 +53,31 @@ export function FloatingNavbar({ onLoginClick, onSignUpClick }: FloatingNavbarPr
             ))}
           </div>
 
-          {onLoginClick && onSignUpClick && (
-          <div className="hidden md:flex items-center gap-3">
-            <button
-              onClick={onLoginClick}
-              className="px-5 py-2 text-sm font-medium text-white hover:text-white/70 transition-colors"
-            >
-              Log In
-            </button>
-            <button
-              onClick={onSignUpClick}
-              className="px-5 py-2 text-sm font-medium text-white bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] rounded-full transition-colors"
-            >
-              Sign Up
-            </button>
-          </div>
-          )}
+          {loggedIn ? (
+            <div className="hidden md:flex items-center gap-3">
+              <button
+                onClick={() => router.push("/dashboard")}
+                className="px-5 py-2 text-sm font-medium text-white bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] rounded-full transition-colors"
+              >
+                Go to Dashboard
+              </button>
+            </div>
+          ) : (onLoginClick && onSignUpClick && (
+            <div className="hidden md:flex items-center gap-3">
+              <button
+                onClick={onLoginClick}
+                className="px-5 py-2 text-sm font-medium text-white hover:text-white/70 transition-colors"
+              >
+                Log In
+              </button>
+              <button
+                onClick={onSignUpClick}
+                className="px-5 py-2 text-sm font-medium text-white bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] rounded-full transition-colors"
+              >
+                Sign Up
+              </button>
+            </div>
+          ))}
 
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -78,6 +101,14 @@ export function FloatingNavbar({ onLoginClick, onSignUpClick }: FloatingNavbarPr
                   {link.label}
                 </TransitionLink>
               ))}
+              {loggedIn && (
+                <button
+                  onClick={() => { setMobileMenuOpen(false); router.push("/dashboard"); }}
+                  className="w-full mt-2 px-4 py-2.5 text-sm font-medium text-white bg-[var(--color-accent)] rounded-full"
+                >
+                  Go to Dashboard
+                </button>
+              )}
             </div>
           </div>
         )}

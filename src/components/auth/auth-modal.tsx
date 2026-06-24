@@ -69,9 +69,6 @@ export function AuthModal({ isOpen, onClose, defaultTab = "signup" }: AuthModalP
   const handleTransitionComplete = useCallback(() => {
     onClose();
     setTransitionType(null);
-    setTimeout(() => {
-      window.location.href = "/dashboard";
-    }, 300);
   }, [onClose]);
 
   if (!mounted && !isOpen && !transitionType) return null;
