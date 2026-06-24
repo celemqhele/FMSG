@@ -19,7 +19,6 @@ import {
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const ADMIN_EMAIL = process.env.NEXT_PUBLIC_ADMIN_EMAIL;
 
 function getSupabase() {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
@@ -205,7 +204,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Failed to fetch profile." }, { status: 500 });
     }
 
-    const isAdmin = ((profile as any)?.is_admin ?? false) || (ADMIN_EMAIL && user.email === ADMIN_EMAIL);
+    const isAdmin = (profile as any)?.is_admin ?? false;
 
     // Balance check (skip if admin)
     if (!isAdmin) {
@@ -328,28 +327,15 @@ Use the job spec to identify what skills and experience to emphasise. Use the CV
     const doc = buildDoc(parsed);
     const buffer = await Packer.toBuffer(doc);
 
-    // Decrement balance (skip if admin)
+    // Decrement balance atomically (skip if admin)
     if (!isAdmin) {
-      const { data: current, error: curErr } = await supabase
-        .from("profiles")
-        .select("cv_generation_balance")
-        .eq("id", user.id)
-        .maybeSingle();
+      const { error: decErr } = await supabase.rpc("decrement_cv_balance", {
+        p_user_id: user.id,
+        p_amount: 1,
+      });
 
-      if (curErr) {
-        console.error("[GENERATE-CV] Failed to fetch balance:", curErr.message);
-      } else {
-        const curBalance = (current as any)?.cv_generation_balance ?? 0;
-        if (curBalance > 0) {
-          const { error: decErr } = await supabase
-            .from("profiles")
-            .update({ cv_generation_balance: curBalance - 1 })
-            .eq("id", user.id);
-
-          if (decErr) {
-            console.error("[GENERATE-CV] Failed to decrement balance:", decErr.message);
-          }
-        }
+      if (decErr) {
+        console.error("[GENERATE-CV] Failed to decrement balance:", decErr.message);
       }
     }
 

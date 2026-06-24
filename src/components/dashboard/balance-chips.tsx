@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Search, FileText, Crosshair } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -17,11 +17,12 @@ const MAX_BALANCES: Record<string, number> = {
 };
 
 export function BalanceChips() {
-  const supabase = createClient();
+  const supabaseRef = useRef(createClient());
   const [balances, setBalances] = useState<Balances>({ search: 0, cv: 0, pf: 0 });
   const [plan, setPlan] = useState("free");
 
   useEffect(() => {
+    const supabase = supabaseRef.current;
     const load = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
@@ -44,7 +45,7 @@ export function BalanceChips() {
     const handler = () => load();
     window.addEventListener("refresh-balances", handler);
     return () => window.removeEventListener("refresh-balances", handler);
-  }, [supabase]);
+  }, []);
 
   const chip = (type: "search" | "cv" | "pf", icon: React.ReactNode, balance: number) => {
     const empty = balance <= 0;

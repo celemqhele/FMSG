@@ -8,7 +8,7 @@ import { Loader2, Check } from "lucide-react";
 import { PageTransitionWrapper } from "@/components/ui/page-transition-wrapper";
 import { useTransition } from "@/components/providers/transition-provider";
 import { createClient } from "@/lib/supabase/client";
-import { PLAN_PRICES, PLAN_LIMITS, calculatePFPrice, PF_DEFAULT_BY_TIER } from "@/lib/plan-limits";
+import { PLAN_PRICES, PLAN_LIMITS, calculatePFPrice, PF_DEFAULT_BY_TIER, formatPlanPrice, PAYSTACK_PLAN_CODES, PLAN_TIER_NAMES } from "@/lib/plan-limits";
 import { PFStepper } from "@/components/pricing/pf-stepper";
 
 interface Tier {
@@ -22,12 +22,33 @@ interface Tier {
   popular: boolean;
 }
 
-const tiers: Tier[] = [
-  { name: "Free", monthlyPrice: "R0", annualPrice: "R0", searches: 1, cvGens: 0, pfBalance: 0, features: ["1 job search per month", "Basic match scoring"], popular: false },
-  { name: "Seeker", monthlyPrice: "R99", annualPrice: "R990", searches: 10, cvGens: 5, pfBalance: 5, features: ["10 job searches per month", "5 tailored CVs per month", "Full match scoring", "Banned company filtering", "5 Persistent Finder rounds"], popular: false },
-  { name: "Hunter", monthlyPrice: "R199", annualPrice: "R1,990", searches: 25, cvGens: 12, pfBalance: 15, features: ["25 job searches per month", "12 tailored CVs per month", "Priority AI processing", "Advanced filtering", "15 Persistent Finder rounds"], popular: true },
-  { name: "Pro", monthlyPrice: "R349", annualPrice: "R3,490", searches: 60, cvGens: 25, pfBalance: 50, features: ["60 job searches per month", "25 tailored CVs per month", "Fastest AI processing", "All features unlocked", "50 Persistent Finder rounds"], popular: false },
-];
+function getTierFeatures(name: string, limits: { searches: number; cv_gens: number; pf_balance: number }): string[] {
+  if (name === "Free") {
+    return ["1 job search per month", "Basic match scoring"];
+  }
+  const features = [
+    `${limits.searches} job searches per month`,
+    `${limits.cv_gens} tailored CVs per month`,
+  ];
+  if (name === "Seeker") features.push("Full match scoring", "Banned company filtering", `${limits.pf_balance} Persistent Finder rounds`);
+  if (name === "Hunter") features.push("Priority AI processing", "Advanced filtering", `${limits.pf_balance} Persistent Finder rounds`);
+  if (name === "Pro") features.push("Fastest AI processing", "All features unlocked", `${limits.pf_balance} Persistent Finder rounds`);
+  return features;
+}
+
+const tiers: Tier[] = PLAN_TIER_NAMES.map((name) => {
+  const limits = PLAN_LIMITS[name] ?? { searches: 0, cv_gens: 0, pf_balance: 0 };
+  return {
+    name,
+    monthlyPrice: name === "Free" ? "R0" : formatPlanPrice(name, "monthly"),
+    annualPrice: name === "Free" ? "R0" : formatPlanPrice(name, "annual"),
+    searches: limits.searches,
+    cvGens: limits.cv_gens,
+    pfBalance: limits.pf_balance,
+    features: getTierFeatures(name, limits),
+    popular: name === "Hunter",
+  };
+});
 
 const PAYSTACK_PUBLIC_KEY = process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY;
 
@@ -55,14 +76,24 @@ export default function UpgradePage() {
   }, [router, supabase]);
 
   useEffect(() => {
+    // Check if already loaded
     if (typeof window !== "undefined" && (window as any).PaystackPop) {
+      console.log("Paystack already loaded");
       setPaystackReady(true);
       return;
     }
+
+    console.log("Attempting to load Paystack script");
     const script = document.createElement("script");
     script.src = "https://js.paystack.co/v1/inline.js";
     script.async = true;
-    script.onload = () => setPaystackReady(true);
+    script.onload = () => {
+      console.log("Paystack script loaded successfully");
+      setPaystackReady(true);
+    };
+    script.onerror = (err) => {
+      console.error("Failed to load Paystack script", err);
+    };
     document.body.appendChild(script);
   }, []);
 
@@ -73,15 +104,16 @@ export default function UpgradePage() {
     if (tier.name.toLowerCase() === currentPlan) return;
 
     if (!PAYSTACK_PUBLIC_KEY) {
-      console.log("Missing NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY");
-      alert("Paystack not configured.");
+      console.error("Critical: NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY is undefined");
+      alert("Payment system misconfigured. Please contact support.");
       return;
     }
 
-    console.log("typeof PaystackPop:", typeof (window as any).PaystackPop);
+    console.log("PaystackReady state:", paystackReady);
+    console.log("window.PaystackPop exists:", !!(window as any).PaystackPop);
 
     if (!paystackReady || !(window as any).PaystackPop) {
-      alert("Payment system loading. Please try again.");
+      alert("Payment system is still initializing. Please wait a second and try again.");
       return;
     }
 
@@ -100,12 +132,15 @@ export default function UpgradePage() {
 
       console.log("Initializing Paystack popup", { email, amount, key: PAYSTACK_PUBLIC_KEY ? "present" : "missing" });
 
+      const planCode = PAYSTACK_PLAN_CODES[`${tier.name}_${annual ? "annual" : "monthly"}`] || "";
+
       const handler = (window as any).PaystackPop.setup({
         key: PAYSTACK_PUBLIC_KEY,
         email,
         amount,
         currency: "ZAR",
         ref: "FMSG-" + Date.now(),
+        plan: planCode,
         metadata: { plan: tier.name, billing_cycle: annual ? "annual" : "monthly", pf_count: pfCount },
         callback: async (response: { reference: string }) => {
           console.log("Paystack callback fired", response);

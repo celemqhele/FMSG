@@ -40,13 +40,11 @@ export async function POST(request: NextRequest) {
   try {
     switch (event.event) {
       case "charge.success": {
-        // Initial or recurring payment succeeded
+        // Recurring payment renewal
         const reference = subData.reference;
         const subscription = subData.subscription;
-        const metadata = subData.metadata ?? {};
         const paystackSubId = subscription?.subscription_code ?? "";
-        const plan = metadata.plan ?? "";
-        const billingCycle = metadata.billing_cycle ?? "monthly";
+        const billingCycle = subData.metadata?.billing_cycle ?? "monthly";
         const email = subData.customer?.email ?? "";
         const authorizationCode = subData.authorization?.authorization_code ?? "";
         const customerCode = subData.customer?.customer_code ?? "";
@@ -115,67 +113,6 @@ export async function POST(request: NextRequest) {
           if (updateErr) {
             console.error("[WEBHOOK] Failed to extend profile:", updateErr.message);
             return NextResponse.json({ error: "DB error" }, { status: 500 });
-          }
-        } else if (reference) {
-          // First-time payment — find user by email
-          const { data: user, error: userErr } = await supabase
-            .from("profiles")
-            .select("id")
-            .eq("email", email)
-            .maybeSingle();
-
-          if (userErr) {
-            console.error("[WEBHOOK] Failed to find user by email:", userErr.message);
-            return NextResponse.json({ error: "DB error" }, { status: 500 });
-          }
-
-          if (user) {
-            const now = new Date();
-            const expiryDate = new Date(now);
-            if (billingCycle === "annual") {
-              expiryDate.setFullYear(expiryDate.getFullYear() + 1);
-            } else {
-              expiryDate.setMonth(expiryDate.getMonth() + 1);
-            }
-
-            const limits = PLAN_LIMITS[plan] ?? { searches: 1, cv_gens: 0, pf_balance: 0 };
-
-            const { error: insertErr } = await supabase.from("subscriptions").insert({
-              user_id: user.id,
-              plan,
-              billing_cycle: billingCycle,
-              paystack_reference: reference,
-              paystack_subscription_id: paystackSubId,
-              amount: subData.amount,
-              authorization_code: authorizationCode,
-              customer_code: customerCode,
-              email,
-              start_date: now.toISOString(),
-              expiry_date: expiryDate.toISOString(),
-              next_payment_date: subscription?.next_payment_date ?? null,
-              status: "active",
-            });
-
-            if (insertErr) {
-              console.error("[WEBHOOK] Failed to insert first-time subscription:", insertErr.message);
-              return NextResponse.json({ error: "DB error" }, { status: 500 });
-            }
-
-            const { error: profileErr } = await supabase
-              .from("profiles")
-              .update({
-                plan: plan.toLowerCase(),
-                plan_expiry: expiryDate.toISOString(),
-                search_balance: limits.searches,
-                cv_generation_balance: limits.cv_gens,
-                persistent_finder_balance: limits.pf_balance,
-              })
-              .eq("id", user.id);
-
-            if (profileErr) {
-              console.error("[WEBHOOK] Failed to update profile for first-time payment:", profileErr.message);
-              return NextResponse.json({ error: "DB error" }, { status: 500 });
-            }
           }
         }
         break;

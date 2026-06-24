@@ -8,9 +8,10 @@ import { StreamWriter, type SearchEvent } from "@/lib/search-stream";
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const JINA_API_KEY = process.env.JINA_API_KEY;
-const ADMIN_EMAIL = process.env.NEXT_PUBLIC_ADMIN_EMAIL;
+
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const TIME_LIMIT_MS = 270_000; // 270s — stop pass 2 with 30s buffer before 300s Vercel timeout
 
 // --- Domain trust tiers ---
 
@@ -432,8 +433,9 @@ async function screenAndAnalyze(
   bannedCompanies: string[],
   onStatus?: (event: SearchEvent) => void,
   pfRound?: number,
-  dedupSets?: { history: Set<string>; saved: Set<string>; blocked: Set<string> }
-): Promise<{ results: JobRow[]; queryUsed: string; filteredCounts: { history: number; saved: number; rejected: number; blocked: number } }> {
+  dedupSets?: { history: Set<string>; saved: Set<string>; blocked: Set<string> },
+  startTime?: number,
+): Promise<{ results: JobRow[]; queryUsed: string; filteredCounts: { history: number; saved: number; rejected: number; blocked: number }; timedOut?: boolean }> {
   const filteredCounts = { history: 0, saved: 0, rejected: 0, blocked: 0 };
   const aiRejectedJobs: { job: any; reason: string; stage: string }[] = [];
   const jobSpecs = new Map(jobSpecsEntries);
@@ -545,7 +547,16 @@ Return ONLY valid JSON (no markdown, no code fences):
 
   console.log(`[SEARCH] Starting Pass 2 deep analysis (${rawJobs.length} jobs)`);
   let outputs: JobRow[] = [];
+  let timedOut = false;
   for (let i = 0; i < rawJobs.length; i++) {
+    // Time check before each AI call — leave 30s buffer
+    if (startTime && Date.now() - startTime > TIME_LIMIT_MS) {
+      console.log(`[SEARCH] Time limit reached after ${i}/${rawJobs.length} jobs — sending partial results`);
+      timedOut = true;
+      console.log(`[SEARCH] Time limit hit — ${outputs.length}/${rawJobs.length} jobs analyzed, saving partial results`);
+      break;
+    }
+
     const job = rawJobs[i];
     const batchResult = batchResults.find((r) => r.index === i);
     const jobUrl = jobUrls.get(i) || buildJobUrl(job);
@@ -686,6 +697,23 @@ Return ONLY valid JSON (no markdown, no code fences):
         suggested_cv: "",
       });
     }
+
+    // Incremental save: insert each result as it's analyzed
+    const lastResult = outputs[outputs.length - 1];
+    if (lastResult) {
+      const row = {
+        id: crypto.randomUUID(), user_id: lastResult.user_id, search_id: lastResult.search_id, profile_id: null,
+        job_title: lastResult.job_title, company: lastResult.company, location: lastResult.location,
+        estimated_salary: lastResult.estimated_salary, match_score: lastResult.match_score,
+        match_summary: lastResult.match_summary, job_url: lastResult.job_url, full_spec: lastResult.full_spec,
+        search_query: lastResult.search_query, domain_verified: lastResult.domain_verified,
+        domain_unverified_reason: lastResult.domain_unverified_reason, posted_at: lastResult.posted_at,
+        suggested_cv: lastResult.suggested_cv, verdict_bullets: lastResult.verdict_bullets,
+      };
+      dataClient.from("job_results").insert(row).then(({ error }: any) => {
+        if (error) console.error("[SEARCH] Failed to insert incremental result:", error.message);
+      });
+    }
   }
 
   if (aiRejectedJobs.length > 0) {
@@ -717,9 +745,18 @@ Return ONLY valid JSON (no markdown, no code fences):
     }
   }
 
-  onStatus?.({ type: "almost_done", progress: 90 });
+  if (!timedOut) {
+    onStatus?.({ type: "almost_done", progress: 90 });
+  }
 
-  return { results: outputs, queryUsed: query, filteredCounts };
+  return { results: outputs, queryUsed: query, filteredCounts, timedOut };
+}
+
+function insertJobRows(dataClient: any, rows: any[]) {
+  if (rows.length === 0) return;
+  dataClient.from("job_results").insert(rows).then(({ error }: any) => {
+    if (error) console.error("[SEARCH] Failed to insert job results:", error.message);
+  });
 }
 
 
@@ -780,7 +817,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: "PROFILE_NOT_FOUND", message: "Please set up your profile before searching." }, { status: 404 });
       }
 
-      const isAdmin = (profile.is_admin ?? false) || (ADMIN_EMAIL && user.email === ADMIN_EMAIL);
+      const isAdmin = profile.is_admin ?? false;
 
       // Balance check
       if (!isAdmin) {
@@ -884,19 +921,16 @@ export async function POST(request: NextRequest) {
       async start(controller) {
         const writer = new StreamWriter(controller);
         const sendStatus = (event: SearchEvent) => writer.send(event);
+        const startTime = Date.now();
 
         try {
-          // Balance deduction (only at start, not on continuation)
+          // Balance deduction (atomic, only at start, not on continuation)
           if (!isContinuation && !state.isAdmin) {
             if (state.pf_mode) {
-              await dataClient.from("profiles").update({
-                search_balance: (state.profile.search_balance ?? 3) - 1,
-                persistent_finder_balance: (state.profile.persistent_finder_balance ?? 0) - 1,
-              }).eq("id", user.id);
+              await dataClient.rpc("decrement_search_balance", { p_user_id: user.id, p_amount: 1 });
+              await dataClient.rpc("decrement_pf_balance", { p_user_id: user.id, p_amount: 1 });
             } else {
-              await dataClient.from("profiles").update({
-                search_balance: (state.profile.search_balance ?? 3) - 1,
-              }).eq("id", user.id);
+              await dataClient.rpc("decrement_search_balance", { p_user_id: user.id, p_amount: 1 });
             }
           }
 
@@ -922,7 +956,8 @@ export async function POST(request: NextRequest) {
                 state.profileLocation, state.profileIndustry, state.titles, state.cvTexts,
                 user, searchId, dataClient, state.bannedJobs, state.bannedCompanies,
                 sendStatus, undefined,
-                { history: new Set(state.dedupSets.history), saved: new Set(state.dedupSets.saved), blocked: new Set(state.dedupSets.blocked) }
+                { history: new Set(state.dedupSets.history), saved: new Set(state.dedupSets.saved), blocked: new Set(state.dedupSets.blocked) },
+                startTime
               );
 
               const totalFiltered = result.filteredCounts.history + result.filteredCounts.saved + result.filteredCounts.rejected + result.filteredCounts.blocked;
@@ -930,22 +965,41 @@ export async function POST(request: NextRequest) {
                 writer.send({ type: "filtered_summary", ...result.filteredCounts, progress: 50 });
               }
 
+              if (result.timedOut) {
+                const processedCount = result.results.length;
+                const remainingJobs = state.rawJobs.slice(processedCount);
+                const remainingSpecs = state.jobSpecs.slice(processedCount);
+                const remainingUrls = state.jobUrls.slice(processedCount);
+                const withIds = result.results.map((r: JobRow) => ({ ...r, id: crypto.randomUUID() }));
+                writer.send({
+                  type: "partial_complete",
+                  results: withIds.map(normalize),
+                  progress: 55 + (processedCount / state.rawJobs.length) * 30,
+                  continuation: Buffer.from(JSON.stringify({
+                    mode: "normal",
+                    rawJobs: remainingJobs,
+                    jobSpecs: remainingSpecs,
+                    jobUrls: remainingUrls,
+                    queryUsed: state.queryUsed,
+                    searchId: searchId,
+                    titles: state.titles,
+                    profileLocation: state.profileLocation,
+                    profileIndustry: state.profileIndustry,
+                    cvTexts: state.cvTexts,
+                    bannedJobs: state.bannedJobs,
+                    bannedCompanies: state.bannedCompanies,
+                    query: state.query,
+                    dedupSets: { history: [...state.dedupSets.history], saved: [...state.dedupSets.saved], blocked: [...state.dedupSets.blocked] },
+                  })).toString("base64"),
+                  message: `Analysed ${processedCount} of ${state.rawJobs.length} jobs so far. Continue to screen remaining ${remainingJobs.length} jobs?`,
+                });
+                writer.close();
+                return;
+              }
+
               if (result.results.length > 0) {
                 const withIds = result.results.map((r: JobRow) => ({ ...r, id: crypto.randomUUID() }));
                 writer.send({ type: "complete", results: withIds.map(normalize), progress: 100, ...(totalFiltered > 0 ? { filtered_summary: result.filteredCounts } : {}) });
-
-                const rows = withIds.map((r: any) => ({
-                  id: r.id, user_id: r.user_id, search_id: r.search_id, profile_id: null,
-                  job_title: r.job_title, company: r.company, location: r.location,
-                  estimated_salary: r.estimated_salary, match_score: r.match_score,
-                  match_summary: r.match_summary, job_url: r.job_url, full_spec: r.full_spec,
-                  search_query: r.search_query, domain_verified: r.domain_verified,
-                  domain_unverified_reason: r.domain_unverified_reason, posted_at: r.posted_at,
-                  suggested_cv: r.suggested_cv, verdict_bullets: r.verdict_bullets,
-                }));
-                dataClient.from("job_results").insert(rows).then(({ error }: any) => {
-                  if (error) console.error("[SEARCH] Failed to insert job results:", error.message);
-                });
               } else {
                 writer.send({ type: "complete", results: [], progress: 100, message: "No strong matches found. Try broadening your criteria." });
               }
@@ -1058,7 +1112,8 @@ export async function POST(request: NextRequest) {
                   pfLocation, pfIndustry, pfTitles, pfCvTexts,
                   user, searchId, dataClient, pfBannedJobs, pfBannedCompanies,
                   sendStatus, pfRound,
-                  { history: new Set(pfDedupSets.history), saved: new Set(pfDedupSets.saved), blocked: new Set(pfDedupSets.blocked) }
+                  { history: new Set(pfDedupSets.history), saved: new Set(pfDedupSets.saved), blocked: new Set(pfDedupSets.blocked) },
+                  startTime
                 );
                 roundResults = result.results;
                 roundFilteredCounts = result.filteredCounts;

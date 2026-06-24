@@ -20,7 +20,10 @@ export function Footer() {
             Pricing
           </TransitionLink>
           <TransitionLink href="/privacy" className="hover:text-white transition-colors">
-            Privacy Policy
+            Privacy
+          </TransitionLink>
+          <TransitionLink href="/terms" className="hover:text-white transition-colors">
+            Terms
           </TransitionLink>
           <span className="text-white/20 cursor-not-allowed select-none">
             Articles

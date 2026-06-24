@@ -7,7 +7,8 @@ export type SearchEvent =
   | { type: "complete"; results: unknown[]; progress: number; pf_mode?: boolean; pf_rounds?: number; message?: string; filtered_summary?: FilteredSummary }
   | { type: "error"; code: string; message: string; progress: number }
   | { type: "filtered_summary"; history: number; saved: number; rejected: number; blocked: number; progress: number }
-  | { type: "pause"; message: string; progress: number; continuation: string };
+  | { type: "pause"; message: string; progress: number; continuation: string }
+  | { type: "partial_complete"; results: unknown[]; progress: number; continuation: string; message: string };
 
 export interface FilteredSummary {
   history: number;

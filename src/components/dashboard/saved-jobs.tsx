@@ -32,6 +32,7 @@ export function SavedJobs() {
         .select("*")
         .eq("user_id", session.user.id)
         .order("created_at", { ascending: false })
+        .limit(50)
         .then(({ data }: { data: any }) => {
           setJobs((data ?? []) as SavedJob[]);
           setLoading(false);

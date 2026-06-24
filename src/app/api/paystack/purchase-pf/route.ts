@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { calculatePFPrice } from "@/lib/plan-limits";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -47,40 +46,11 @@ export async function POST(request: NextRequest) {
     }
 
     const txData = paystackData.data;
-    const amountKobo = txData.amount;
 
-    // Determine PF runs from amount paid
-    // Try each tier — cap at 25 runs
-    let runs = 0;
-    const tieredPrices = [
-      { price: 59, min: 1, max: 2 },
-      { price: 54, min: 3, max: 5 },
-      { price: 49, min: 6, max: 10 },
-      { price: 45, min: 11, max: 25 },
-    ];
-    for (const tier of tieredPrices) {
-      for (let count = tier.min; count <= tier.max; count++) {
-        if (count * tier.price * 100 === amountKobo) {
-          runs = count;
-          break;
-        }
-      }
-      if (runs > 0) break;
-    }
-
-    // Fallback: reverse-calculate from per-unit price
-    if (runs === 0) {
-      for (const tier of tieredPrices) {
-        const projected = Math.round(amountKobo / 100 / tier.price);
-        if (projected >= tier.min && projected <= tier.max && projected * tier.price * 100 === amountKobo) {
-          runs = projected;
-          break;
-        }
-      }
-    }
-
-    if (runs === 0) {
-      return NextResponse.json({ error: "Invalid amount" }, { status: 400 });
+    // Read PF runs from Paystack transaction metadata
+    const runs = txData.metadata?.pf_runs;
+    if (!runs || typeof runs !== "number" || runs <= 0) {
+      return NextResponse.json({ error: "Invalid PF runs in metadata" }, { status: 400 });
     }
 
     // Add runs to user's PF balance

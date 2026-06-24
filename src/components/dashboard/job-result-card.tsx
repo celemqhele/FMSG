@@ -205,6 +205,11 @@ export function JobResultCard({
               CV: {suggestedCvName}
             </span>
           )}
+          {!verdictBullets && (
+            <span className="text-xs font-medium px-3 py-1 rounded-full bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-400 border border-red-500/30">
+              Unverified Job Spec
+            </span>
+          )}
         </div>
         <div className="relative">
           <button

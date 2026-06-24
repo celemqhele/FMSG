@@ -4,60 +4,34 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { Check } from "lucide-react";
 import { LiquidGlassCard } from "./liquid-glass-card";
 import { useTransition } from "@/components/providers/transition-provider";
+import { PLAN_LIMITS, PLAN_PRICES, formatPlanPrice, PLAN_TIER_NAMES } from "@/lib/plan-limits";
 
-const tiers = [
-  {
-    name: "Free",
-    monthlyPrice: "R0",
-    annualPrice: "R0",
-    searches: 3,
-    cvGens: 1,
-    features: ["3 job searches per month", "1 tailored CV per month", "Basic match scoring"],
-    popular: false,
-  },
-  {
-    name: "Seeker",
-    monthlyPrice: "R79",
-    annualPrice: "R790",
-    searches: 25,
-    cvGens: 5,
-    features: [
-      "25 job searches per month",
-      "5 tailored CVs per month",
-      "Full match scoring",
-      "Banned company filtering",
-    ],
-    popular: false,
-  },
-  {
-    name: "Hunter",
-    monthlyPrice: "R149",
-    annualPrice: "R1,490",
-    searches: 70,
-    cvGens: 15,
-    features: [
-      "70 job searches per month",
-      "15 tailored CVs per month",
-      "Priority AI processing",
-      "Advanced filtering",
-    ],
-    popular: true,
-  },
-  {
-    name: "Pro",
-    monthlyPrice: "R249",
-    annualPrice: "R2,490",
-    searches: 200,
-    cvGens: -1,
-    features: [
-      "200 job searches per month",
-      "Unlimited tailored CVs",
-      "Fastest AI processing",
-      "All features unlocked",
-    ],
-    popular: false,
-  },
-];
+function getTierFeatures(name: string, limits: { searches: number; cv_gens: number; pf_balance: number }): string[] {
+  if (name === "Free") {
+    return ["1 job search per month", "Basic match scoring"];
+  }
+  const features = [
+    `${limits.searches} job searches per month`,
+    `${limits.cv_gens} tailored CVs per month`,
+  ];
+  if (name === "Seeker") features.push("Full match scoring", "Banned company filtering");
+  if (name === "Hunter") features.push("Priority AI processing", "Advanced filtering");
+  if (name === "Pro") features.push("Fastest AI processing", "All features unlocked");
+  return features;
+}
+
+const tiers = PLAN_TIER_NAMES.map((name) => {
+  const limits = PLAN_LIMITS[name] ?? { searches: 0, cv_gens: 0, pf_balance: 0 };
+  return {
+    name,
+    monthlyPrice: name === "Free" ? "R0" : formatPlanPrice(name, "monthly"),
+    annualPrice: name === "Free" ? "R0" : formatPlanPrice(name, "annual"),
+    searches: limits.searches,
+    cvGens: limits.cv_gens,
+    features: getTierFeatures(name, limits),
+    popular: name === "Hunter",
+  };
+});
 
 function PricingCard({ tier, annual, compact }: { tier: typeof tiers[number]; annual: boolean; compact?: boolean }) {
   return (

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import Link from "next/link";
 
 interface SignUpData {
   email: string;
@@ -18,10 +19,22 @@ export function SignUpForm({ onSuccess }: { onSuccess: (data: SignUpData) => voi
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [agreeTos, setAgreeTos] = useState(false);
+  const [agreeAge, setAgreeAge] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+
+    if (!agreeTos) {
+      setError("You must agree to the Terms of Service.");
+      return;
+    }
+    if (!agreeAge) {
+      setError("You must confirm you are 18 or older.");
+      return;
+    }
+
     setLoading(true);
     const supabase = createClient();
 
@@ -112,11 +125,34 @@ export function SignUpForm({ onSuccess }: { onSuccess: (data: SignUpData) => voi
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required
-          minLength={6}
+          minLength={8}
           className="w-full px-3.5 py-2.5 text-sm rounded-lg border border-[var(--color-border)] bg-transparent text-[var(--color-text-primary)] placeholder:text-[var(--color-text-secondary)] focus:outline-none focus:border-[var(--color-accent)] transition-colors"
-          placeholder="At least 6 characters"
+          placeholder="At least 8 characters"
         />
       </div>
+      <label className="flex items-start gap-2 text-xs text-white/60">
+        <input
+          type="checkbox"
+          checked={agreeTos}
+          onChange={(e) => setAgreeTos(e.target.checked)}
+          className="mt-0.5 accent-[var(--color-accent)]"
+        />
+        <span>
+          I agree to the{" "}
+          <Link href="/terms" target="_blank" className="text-[var(--color-accent)] hover:underline">
+            Terms of Service
+          </Link>
+        </span>
+      </label>
+      <label className="flex items-start gap-2 text-xs text-white/60">
+        <input
+          type="checkbox"
+          checked={agreeAge}
+          onChange={(e) => setAgreeAge(e.target.checked)}
+          className="mt-0.5 accent-[var(--color-accent)]"
+        />
+        <span>I confirm that I am 18 years or older</span>
+      </label>
       <button
         type="submit"
         disabled={loading}

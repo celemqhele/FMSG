@@ -6,12 +6,13 @@ import { Check, Loader2 } from "lucide-react";
 import { SpaceVideoBackground } from "@/components/landing/space-video-background";
 import { Footer } from "@/components/layout/footer";
 import { FloatingNavbar } from "@/components/layout/floating-navbar";
-import { AuthModal } from "@/components/auth/auth-modal";
+import dynamic from "next/dynamic";
+const AuthModal = dynamic(() => import("@/components/auth/auth-modal").then((mod) => mod.AuthModal), { ssr: false });
 import { LiquidGlassCard } from "@/components/landing/liquid-glass-card";
 import { PageTransitionWrapper } from "@/components/ui/page-transition-wrapper";
 import { useTransition } from "@/components/providers/transition-provider";
 import { createClient } from "@/lib/supabase/client";
-import { PLAN_PRICES, PLAN_LIMITS, calculatePFPrice, PF_DEFAULT_BY_TIER } from "@/lib/plan-limits";
+import { PLAN_PRICES, PLAN_LIMITS, calculatePFPrice, PF_DEFAULT_BY_TIER, formatPlanPrice, formatPFFromPrice, PAYSTACK_PLAN_CODES, PLAN_TIER_NAMES } from "@/lib/plan-limits";
 import { PFStepper } from "@/components/pricing/pf-stepper";
 import "@/components/landing/liquid-glass.css";
 

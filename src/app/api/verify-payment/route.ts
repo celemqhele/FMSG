@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { PLAN_LIMITS, PAYSTACK_PLAN_CODES } from "@/lib/plan-limits";
+import { PLAN_LIMITS } from "@/lib/plan-limits";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -85,44 +85,6 @@ export async function POST(request: NextRequest) {
     if (subErr) {
       console.error("[VERIFY] Subscription insert error:", subErr.message);
       return NextResponse.json({ error: "Failed to record subscription" }, { status: 500 });
-    }
-
-    // Try to create a Paystack subscription if we have authorization but no sub yet
-    if (!paystackSubId && authorizationCode && customerCode) {
-      const planCode = PAYSTACK_PLAN_CODES[`${plan}_${billing_cycle}`];
-      if (planCode) {
-        try {
-          const subRes = await fetch("https://api.paystack.co/subscription", {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              customer: customerCode,
-              plan: planCode,
-              authorization: authorizationCode,
-              start_date: now.toISOString(),
-            }),
-          });
-          const subData = await subRes.json();
-          if (subData.status && subData.data?.subscription_code) {
-            const { error: updateErr } = await supabase
-              .from("subscriptions")
-              .update({
-                paystack_subscription_id: subData.data.subscription_code,
-                next_payment_date: subData.data.next_payment_date ?? null,
-              })
-              .eq("paystack_reference", reference);
-
-            if (updateErr) {
-              console.error("[VERIFY] Failed to update subscription with sub ID:", updateErr.message);
-            }
-          }
-        } catch (subErr) {
-          console.error("[VERIFY] Failed to create subscription:", subErr);
-        }
-      }
     }
 
     // Determine pf_balance — metadata.pf_count replaces base (user's choice)

@@ -6,7 +6,7 @@ import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } fro
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const ADMIN_EMAIL = process.env.NEXT_PUBLIC_ADMIN_EMAIL;
+
 
 const TAILOR_PROMPT = `You are a professional CV writer. Given the user's CV text and a full job description, rewrite the user's CV to highlight the most relevant experience, skills, and achievements for this specific role. Focus on matching keywords from the job description while keeping all information truthful.
 
@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No CV found. Upload one first." }, { status: 400 });
     }
 
-    const isAdmin = ((profile as any)?.is_admin ?? false) || (ADMIN_EMAIL && user.email === ADMIN_EMAIL);
+    const isAdmin = (profile as any)?.is_admin ?? false;
 
     // Balance check
     if (!isAdmin) {
@@ -65,12 +65,12 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Decrement balance
+    // Decrement balance atomically
     if (!isAdmin) {
-      const { error: decErr } = await supabase
-        .from("profiles")
-        .update({ cv_generation_balance: (profile.cv_generation_balance ?? 5) - 1 })
-        .eq("id", user.id);
+      const { error: decErr } = await supabase.rpc("decrement_cv_balance", {
+        p_user_id: user.id,
+        p_amount: 1,
+      });
 
       if (decErr) {
         console.error("[TAILOR-CV] Failed to decrement balance:", decErr.message);

@@ -36,7 +36,7 @@ export async function DELETE(request: NextRequest) {
   }
 
   // 2. Delete from all tables
-  const tables = ["profiles", "job_results", "subscriptions", "error_logs"];
+  const tables = ["profiles", "job_results", "subscriptions", "error_logs", "saved_jobs", "search_profiles", "rejected_jobs"];
   for (const table of tables) {
     const { error: delErr } = await supabase.from(table).delete().eq("user_id", userId);
     if (delErr) {

@@ -1,30 +1,27 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useTransition } from "@/components/providers/transition-provider";
 import type { ComponentProps, ReactNode } from "react";
 
-interface TransitionLinkProps extends Omit<ComponentProps<"a">, "href"> {
+interface TransitionLinkProps extends Omit<ComponentProps<typeof Link>, "href"> {
   href: string;
   children: ReactNode;
 }
 
 export function TransitionLink({ href, children, onClick, className }: TransitionLinkProps) {
-  const router = useRouter();
   const { startTransition } = useTransition();
 
   return (
-    <a
+    <Link
       href={href}
       className={className}
       onClick={(e) => {
-        e.preventDefault();
         startTransition();
         onClick?.(e);
-        router.push(href);
       }}
     >
       {children}
-    </a>
+    </Link>
   );
 }

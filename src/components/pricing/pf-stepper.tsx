@@ -15,7 +15,8 @@ function getVolumeLabel(count: number): string {
   for (const b of PF_PRICE_BREAKS) {
     if (count >= b.min && count <= b.max) return `R${b.price}/run`;
   }
-  return "R45/run";
+  const last = PF_PRICE_BREAKS[PF_PRICE_BREAKS.length - 1];
+  return `R${last.price}/run`;
 }
 
 export function PFStepper({ planName, value, onChange, annual }: PFStepperProps) {

@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, startTransition } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, startTransition } from "react";
 import { useRouter } from "next/navigation";
 import { X, ArrowRight } from "lucide-react";
 import { DashboardLayout } from "@/components/dashboard/dashboard-layout";
 import { SearchPill } from "@/components/dashboard/search-pill";
 import { JobResultCard } from "@/components/dashboard/job-result-card";
-import { PFPurchaseModal } from "@/components/dashboard/pf-purchase-modal";
+import dynamic from "next/dynamic";
+const PFPurchaseModal = dynamic(() => import("@/components/dashboard/pf-purchase-modal").then((mod) => mod.PFPurchaseModal), { ssr: false });
 import { DashboardTabs, type TabId } from "@/components/dashboard/dashboard-tabs";
 import { BalanceChips } from "@/components/dashboard/balance-chips";
 import { FilterSortBar, type FilterState, type SortMode } from "@/components/dashboard/filter-sort-bar";
@@ -369,6 +370,29 @@ export default function DashboardPage() {
               setVideoFast(false);
               break;
 
+            case "partial_complete":
+              streamComplete = true;
+              setStatusCompleted((prev) => {
+                const filtered = prev.filter((s) =>
+                  !s.startsWith("Analysing fit") &&
+                  !s.startsWith("Almost done") &&
+                  !s.startsWith("Screening job")
+                );
+                const lines = [...filtered];
+                if (currentStatusActive && !currentStatusActive.startsWith("Almost done")) {
+                  lines.push(currentStatusActive);
+                }
+                return lines;
+              });
+              setStatusActive("");
+              setProgress(event.progress ?? 55);
+              setResults(event.results ?? []);
+              setContinuationToken(event.continuation);
+              setSearching(false);
+              setVideoFast(false);
+              setResultMessage(event.message ?? "");
+              break;
+
             case "complete":
               streamComplete = true;
               setProgress(100);
@@ -492,12 +516,18 @@ export default function DashboardPage() {
             )}
 
             {continuationToken && !searching && (
-              <div className="flex justify-center pt-2">
+              <div className="flex flex-col items-center gap-2 pt-2">
+                <p className="text-xs text-[var(--color-text-secondary)]/70 text-center max-w-md">
+                  {results.length > 0
+                    ? `${results.length} results found so far. Click to continue AI screening for remaining jobs.`
+                    : "Ready to screen jobs with AI analysis? This may take a minute."}
+                </p>
                 <button
                   onClick={handleContinue}
-                  className="flex items-center justify-center w-8 h-6 rounded-md bg-white/10 border border-white/20 hover:bg-white/40 transition-all"
+                  className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-white/10 border border-white/20 hover:bg-white/25 transition-all text-sm text-white/80"
                   title="Continue search"
                 >
+                  Continue
                   <ArrowRight size={14} />
                 </button>
               </div>

@@ -40,6 +40,11 @@ yarn-error.log*
 # supabase
 supabase/.temp/
 
+# vercel env files (contain live OIDC tokens)
+.env.vercel
+.env.production
+.env.preview
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

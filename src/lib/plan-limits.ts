@@ -46,3 +46,15 @@ export const PAYSTACK_PLAN_CODES: Record<string, string> = {
   Pro_monthly: process.env.PLAN_CODE_PRO_MONTHLY ?? "",
   Pro_annual: process.env.PLAN_CODE_PRO_ANNUAL ?? "",
 };
+
+export function formatPlanPrice(plan: string, cycle: "monthly" | "annual"): string {
+  const kobo = PLAN_PRICES[plan]?.[cycle] ?? 0;
+  return `R${(kobo / 100).toLocaleString("en-ZA", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+}
+
+export function formatPFFromPrice(): string {
+  const lowest = PF_PRICE_BREAKS[PF_PRICE_BREAKS.length - 1].price;
+  return `R${lowest}/run`;
+}
+
+export const PLAN_TIER_NAMES = ["Free", "Seeker", "Hunter", "Pro"] as const;

@@ -1,41 +1,59 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
+import { PLAN_PRICES, PAYSTACK_PLAN_CODES } from "@/lib/plan-limits";
 
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
 
-const PLANS = [
-  { name: "Seeker Monthly", amount: 7900, interval: "monthly", description: "FMSG Seeker Plan - Monthly" },
-  { name: "Seeker Annual", amount: 79000, interval: "annually", description: "FMSG Seeker Plan - Annual" },
-  { name: "Hunter Monthly", amount: 14900, interval: "monthly", description: "FMSG Hunter Plan - Monthly" },
-  { name: "Hunter Annual", amount: 149000, interval: "annually", description: "FMSG Hunter Plan - Annual" },
-  { name: "Pro Monthly", amount: 24900, interval: "monthly", description: "FMSG Pro Plan - Monthly" },
-  { name: "Pro Annual", amount: 249000, interval: "annually", description: "FMSG Pro Plan - Annual" },
+function getSupabase() {
+  return createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+}
+
+const PLAN_DEFS = [
+  { name: "Seeker Monthly", key: "Seeker_monthly", interval: "monthly" },
+  { name: "Seeker Annual", key: "Seeker_annual", interval: "annually" },
+  { name: "Hunter Monthly", key: "Hunter_monthly", interval: "monthly" },
+  { name: "Hunter Annual", key: "Hunter_annual", interval: "annually" },
+  { name: "Pro Monthly", key: "Pro_monthly", interval: "monthly" },
+  { name: "Pro Annual", key: "Pro_annual", interval: "annually" },
 ];
 
-const PLAN_ENV_MAP: Record<string, string> = {
-  "Seeker Monthly": "PLAN_CODE_SEEKER_MONTHLY",
-  "Seeker Annual": "PLAN_CODE_SEEKER_ANNUAL",
-  "Hunter Monthly": "PLAN_CODE_HUNTER_MONTHLY",
-  "Hunter Annual": "PLAN_CODE_HUNTER_ANNUAL",
-  "Pro Monthly": "PLAN_CODE_PRO_MONTHLY",
-  "Pro Annual": "PLAN_CODE_PRO_ANNUAL",
-};
+export async function POST(request: NextRequest) {
+  const supabase = getSupabase();
+  const authHeader = request.headers.get("Authorization")?.replace("Bearer ", "");
+  if (!authHeader) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const { data: { user }, error: authErr } = await supabase.auth.getUser(authHeader);
+  if (authErr || !user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const { data: profile } = await supabase.from("profiles").select("is_admin").eq("id", user.id).single();
+  if (!profile?.is_admin) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
 
-export async function POST() {
   if (!PAYSTACK_SECRET_KEY) {
     return NextResponse.json({ error: "Paystack not configured" }, { status: 500 });
   }
 
   const results: Record<string, string> = {};
 
-  for (const plan of PLANS) {
-    // Check if already exists in env
-    const envKey = PLAN_ENV_MAP[plan.name];
-    if (envKey && process.env[envKey]) {
-      results[plan.name] = process.env[envKey]!;
+  for (const def of PLAN_DEFS) {
+    const existingCode = PAYSTACK_PLAN_CODES[def.key];
+    if (existingCode) {
+      results[def.name] = existingCode;
       continue;
     }
 
-    // Create via Paystack API
+    const [planName, cycle] = def.key.split("_") as [string, "monthly" | "annual"];
+    const amount = PLAN_PRICES[planName]?.[cycle === "annual" ? "annual" : "monthly"];
+    if (!amount) {
+      console.error(`[PAYSTACK] No price found for ${def.key}`);
+      continue;
+    }
+
     try {
       const res = await fetch("https://api.paystack.co/plan", {
         method: "POST",
@@ -44,29 +62,29 @@ export async function POST() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          name: plan.name,
-          amount: plan.amount,
-          interval: plan.interval,
+          name: def.name,
+          amount,
+          interval: def.interval,
           currency: "ZAR",
-          description: plan.description,
+          description: `FMSG ${def.name} Plan`,
         }),
       });
 
       if (!res.ok) {
         const err = await res.text();
-        console.error(`[PAYSTACK] Failed to create plan ${plan.name}: ${err}`);
+        console.error(`[PAYSTACK] Failed to create plan ${def.name}: ${err}`);
         continue;
       }
 
       const data = await res.json();
       if (data.status && data.data?.plan_code) {
-        results[plan.name] = data.data.plan_code;
-        console.log(`[PAYSTACK] Created plan ${plan.name}: ${data.data.plan_code}`);
+        results[def.name] = data.data.plan_code;
+        console.log(`[PAYSTACK] Created plan ${def.name}: ${data.data.plan_code}`);
       } else {
-        console.error(`[PAYSTACK] Unexpected response for ${plan.name}:`, JSON.stringify(data));
+        console.error(`[PAYSTACK] Unexpected response for ${def.name}:`, JSON.stringify(data));
       }
     } catch (err) {
-      console.error(`[PAYSTACK] Error creating plan ${plan.name}:`, err);
+      console.error(`[PAYSTACK] Error creating plan ${def.name}:`, err);
     }
   }
 

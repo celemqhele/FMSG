@@ -3,8 +3,9 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard/dashboard-layout";
-import { ArrowLeft, Loader2, Check, ExternalLink, Crosshair } from "lucide-react";
-import { PFPurchaseModal } from "@/components/dashboard/pf-purchase-modal";
+import { ArrowLeft, Loader2, Check, ExternalLink, Crosshair, AlertTriangle } from "lucide-react";
+import dynamic from "next/dynamic";
+const PFPurchaseModal = dynamic(() => import("@/components/dashboard/pf-purchase-modal").then((mod) => mod.PFPurchaseModal), { ssr: false });
 import { useTheme } from "@/components/providers/theme-provider";
 import { PageTransitionWrapper } from "@/components/ui/page-transition-wrapper";
 import { useTransition } from "@/components/providers/transition-provider";
