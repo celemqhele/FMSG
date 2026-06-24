@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard/dashboard-layout";
 import { LiquidGlassCard } from "@/components/landing/liquid-glass-card";
-import { Loader2, Check } from "lucide-react";
+import { Loader2, Check, ArrowRight } from "lucide-react";
 import { PageTransitionWrapper } from "@/components/ui/page-transition-wrapper";
 import { useTransition } from "@/components/providers/transition-provider";
 import { createClient } from "@/lib/supabase/client";
@@ -52,14 +52,16 @@ const tiers: Tier[] = PLAN_TIER_NAMES.map((name) => {
 
 const PAYSTACK_PUBLIC_KEY = process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY;
 
-export default function UpgradePage() {
+export default function ManageSubscriptionPage() {
   const router = useRouter();
   const { endTransition } = useTransition();
   const supabase = createClient();
   const [annual, setAnnual] = useState(false);
   const [processing, setProcessing] = useState<string | null>(null);
   const [successToast, setSuccessToast] = useState(false);
+  const [successMsg, setSuccessMsg] = useState("");
   const [currentPlan, setCurrentPlan] = useState("free");
+  const [hasSubscription, setHasSubscription] = useState(false);
   const [paystackReady, setPaystackReady] = useState(false);
   const [pfCounts, setPfCounts] = useState<Record<string, number>>({});
 
@@ -70,108 +72,148 @@ export default function UpgradePage() {
       const u = res.data.user;
       if (!u) { router.push("/"); return; }
       supabase.from("profiles").select("plan").eq("id", u.id).single().then((res: { data: any }) => {
-        if (res.data) setCurrentPlan(res.data.plan ?? "free");
+        if (res.data) {
+          const plan = res.data.plan ?? "free";
+          setCurrentPlan(plan);
+          if (plan !== "free") {
+            supabase
+              .from("subscriptions")
+              .select("id")
+              .eq("user_id", u.id)
+              .eq("status", "active")
+              .limit(1)
+              .maybeSingle()
+              .then((subRes: any) => {
+                setHasSubscription(!!subRes.data);
+              });
+          }
+        }
       });
     });
   }, [router, supabase]);
 
   useEffect(() => {
-    // Check if already loaded
     if (typeof window !== "undefined" && (window as any).PaystackPop) {
-      console.log("Paystack already loaded");
       setPaystackReady(true);
       return;
     }
-
-    console.log("Attempting to load Paystack script");
     const script = document.createElement("script");
     script.src = "https://js.paystack.co/v1/inline.js";
     script.async = true;
-    script.onload = () => {
-      console.log("Paystack script loaded successfully");
-      setPaystackReady(true);
-    };
-    script.onerror = (err) => {
-      console.error("Failed to load Paystack script", err);
-    };
+    script.onload = () => setPaystackReady(true);
     document.body.appendChild(script);
   }, []);
 
   const handleUpgrade = async (tier: Tier) => {
-    console.log("Upgrade clicked", { plan: tier.name, billingCycle: annual ? "annual" : "monthly" });
-
     if (tier.name === "Free") return;
     if (tier.name.toLowerCase() === currentPlan) return;
 
     if (!PAYSTACK_PUBLIC_KEY) {
-      console.error("Critical: NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY is undefined");
       alert("Payment system misconfigured. Please contact support.");
       return;
     }
 
-    console.log("PaystackReady state:", paystackReady);
-    console.log("window.PaystackPop exists:", !!(window as any).PaystackPop);
-
-    if (!paystackReady || !(window as any).PaystackPop) {
-      alert("Payment system is still initializing. Please wait a second and try again.");
-      return;
-    }
-
-    const baseKobo = (PLAN_PRICES[tier.name] ?? { monthly: 0, annual: 0 })[annual ? "annual" : "monthly"];
-    const pfCount = pfCounts[tier.name] ?? PF_DEFAULT_BY_TIER[tier.name] ?? 0;
-    const pfPriceZar = calculatePFPrice(pfCount);
-    const pfKobo = pfCount * pfPriceZar * 100 * (annual ? 12 : 1);
-    const amount = baseKobo + pfKobo;
     setProcessing(tier.name);
 
-    try {
+    if (hasSubscription) {
+      // Use change-plan API for existing subscribers
       const sRes = await supabase.auth.getSession();
       const session = sRes.data.session;
-      const email = session?.user?.email;
-      if (!email) { setProcessing(null); return; }
+      if (!session) { setProcessing(null); return; }
 
-      console.log("Initializing Paystack popup", { email, amount, key: PAYSTACK_PUBLIC_KEY ? "present" : "missing" });
+      try {
+        const res = await fetch("/api/paystack/change-plan", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            plan: tier.name,
+            billing_cycle: annual ? "annual" : "monthly",
+          }),
+        });
 
-      const planCode = PAYSTACK_PLAN_CODES[`${tier.name}_${annual ? "annual" : "monthly"}`] || "";
+        const data = await res.json();
 
-      const handler = (window as any).PaystackPop.setup({
-        key: PAYSTACK_PUBLIC_KEY,
-        email,
-        amount,
-        currency: "ZAR",
-        ref: "FMSG-" + Date.now(),
-        plan: planCode,
-        metadata: { plan: tier.name, billing_cycle: annual ? "annual" : "monthly", pf_count: pfCount },
-        callback: function (response: { reference: string }) {
-          fetch("/api/verify-payment", {
-            method: "POST",
-            headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" },
-            body: JSON.stringify({ reference: response.reference, plan: tier.name, billing_cycle: annual ? "annual" : "monthly" }),
-          }).then((verifyRes) => {
-            if (verifyRes.ok) {
-              setProcessing(null);
-              setSuccessToast(true);
-              setTimeout(() => { setSuccessToast(false); router.push("/dashboard"); }, 2000);
-            } else {
+        if (res.ok && data.ok) {
+          setProcessing(null);
+          if (data.type === "downgrade") {
+            setSuccessMsg(data.message ?? "Plan change scheduled.");
+          } else {
+            setSuccessMsg(`Upgraded to ${tier.name}!`);
+          }
+          setSuccessToast(true);
+          setTimeout(() => {
+            setSuccessToast(false);
+            router.push("/welcome?plan=" + tier.name.toLowerCase());
+          }, 2500);
+        } else {
+          setProcessing(null);
+          alert(data.error ?? "Failed to change plan. Please contact support.");
+        }
+      } catch {
+        setProcessing(null);
+        alert("Failed to change plan. Please contact support.");
+      }
+    } else {
+      // First-time purchase — use Paystack popup
+      if (!paystackReady || !(window as any).PaystackPop) {
+        alert("Payment system is still initializing. Please wait a second and try again.");
+        setProcessing(null);
+        return;
+      }
+
+      const baseKobo = (PLAN_PRICES[tier.name] ?? { monthly: 0, annual: 0 })[annual ? "annual" : "monthly"];
+      const pfCount = pfCounts[tier.name] ?? PF_DEFAULT_BY_TIER[tier.name] ?? 0;
+      const pfPriceZar = calculatePFPrice(pfCount);
+      const pfKobo = pfCount * pfPriceZar * 100 * (annual ? 12 : 1);
+      const amount = baseKobo + pfKobo;
+
+      try {
+        const sRes = await supabase.auth.getSession();
+        const session = sRes.data.session;
+        const email = session?.user?.email;
+        if (!email) { setProcessing(null); return; }
+
+        const planCode = PAYSTACK_PLAN_CODES[`${tier.name}_${annual ? "annual" : "monthly"}`] || "";
+
+        const handler = (window as any).PaystackPop.setup({
+          key: PAYSTACK_PUBLIC_KEY,
+          email,
+          amount,
+          currency: "ZAR",
+          ref: "FMSG-" + Date.now(),
+          plan: planCode,
+          metadata: { plan: tier.name, billing_cycle: annual ? "annual" : "monthly", pf_count: pfCount },
+          callback: function (response: { reference: string }) {
+            fetch("/api/verify-payment", {
+              method: "POST",
+              headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" },
+              body: JSON.stringify({ reference: response.reference, plan: tier.name, billing_cycle: annual ? "annual" : "monthly" }),
+            }).then((verifyRes) => {
+              if (verifyRes.ok) {
+                setProcessing(null);
+                setSuccessMsg("Payment successful!");
+                setSuccessToast(true);
+                setTimeout(() => { setSuccessToast(false); router.push("/welcome?plan=" + tier.name.toLowerCase()); }, 2000);
+              } else {
+                setProcessing(null);
+                alert("Payment verification failed. Please contact support.");
+              }
+            }).catch(() => {
               setProcessing(null);
               alert("Payment verification failed. Please contact support.");
-            }
-          }).catch(() => {
-            setProcessing(null);
-            alert("Payment verification failed. Please contact support.");
-          });
-        },
-        onClose: () => {
-          console.log("Paystack popup closed by user");
-          setProcessing(null);
-        },
-      });
+            });
+          },
+          onClose: () => setProcessing(null),
+        });
 
-      handler.openIframe();
-      console.log("openIframe called");
-    } catch (err) {
-      console.error("Paystack error:", err);
-      setProcessing(null);
+        handler.openIframe();
+      } catch (err) {
+        console.error("Paystack error:", err);
+        setProcessing(null);
+      }
     }
   };
 
@@ -180,8 +222,8 @@ export default function UpgradePage() {
       <PageTransitionWrapper>
       <div className="max-w-6xl mx-auto pt-8 pb-24">
         <div className="text-center mb-10">
-          <h1 className="text-3xl font-bold text-white">Upgrade Your Plan</h1>
-          <p className="mt-2 text-sm text-white/50">Choose the plan that fits your job search needs</p>
+          <h1 className="text-3xl font-bold text-white">Manage Subscription</h1>
+          <p className="mt-2 text-sm text-white/50">Switch plans or upgrade your subscription</p>
           <div className="mt-6 inline-flex items-center gap-1 p-1 rounded-full bg-white/10 border border-white/10">
             <button onClick={() => setAnnual(false)} className={`px-4 py-2 text-sm font-medium rounded-full transition-colors ${!annual ? "bg-white/15 text-white shadow-[var(--shadow-sm)]" : "text-white/60 hover:text-white"}`}>Monthly</button>
             <button onClick={() => setAnnual(true)} className={`px-4 py-2 text-sm font-medium rounded-full transition-colors ${annual ? "bg-white/15 text-white shadow-[var(--shadow-sm)]" : "text-white/60 hover:text-white"}`}>Annual <span className="text-[var(--color-success)]">Save 2 months</span></button>
@@ -259,7 +301,7 @@ export default function UpgradePage() {
                   ) : tier.name === "Free" ? (
                     "Free"
                   ) : (
-                    `Subscribe to ${tier.name}`
+                    `Switch to ${tier.name}`
                   )}
                 </button>
               </LiquidGlassCard>
@@ -270,7 +312,10 @@ export default function UpgradePage() {
 
       {successToast && (
         <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[60] px-6 py-3 rounded-full bg-green-600 text-white text-sm font-medium shadow-lg animate-[auth-screen-in_300ms_ease-out]">
-          Payment successful! Redirecting to dashboard...
+          <div className="flex items-center gap-2">
+            <Check size={16} />
+            {successMsg ?? "Success!"}
+          </div>
         </div>
       )}
       </PageTransitionWrapper>

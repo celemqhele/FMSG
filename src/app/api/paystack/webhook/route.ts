@@ -153,7 +153,7 @@ export async function POST(request: NextRequest) {
       }
 
       case "subscription.disable": {
-        // Subscription cancelled/disabled
+        // Subscription cancelled/disabled — check for scheduled downgrade
         const paystackSubId = subData.subscription_code ?? subData.subscription?.subscription_code ?? "";
         if (!paystackSubId) break;
 
@@ -172,6 +172,7 @@ export async function POST(request: NextRequest) {
         }
 
         if (existingSub) {
+          // Mark subscription as cancelled
           const { error: updateErr } = await supabase
             .from("subscriptions")
             .update({ status: "cancelled", cancelled_at: new Date().toISOString() })
@@ -180,6 +181,41 @@ export async function POST(request: NextRequest) {
           if (updateErr) {
             console.error("[WEBHOOK] Failed to cancel subscription:", updateErr.message);
             return NextResponse.json({ error: "DB error" }, { status: 500 });
+          }
+
+          // Check if there's a scheduled plan change (downgrade)
+          const { data: profile, error: profileErr } = await supabase
+            .from("profiles")
+            .select("next_plan")
+            .eq("id", existingSub.user_id)
+            .single();
+
+          if (!profileErr && profile?.next_plan) {
+            const nextPlan = profile.next_plan;
+            const limits = PLAN_LIMITS[nextPlan.charAt(0).toUpperCase() + nextPlan.slice(1)] ?? { searches: 1, cv_gens: 0, pf_balance: 0 };
+            const now = new Date();
+            const newExpiry = new Date(now);
+            // Set a reasonable initial expiry (1 month from now — user can renew)
+            newExpiry.setMonth(newExpiry.getMonth() + 1);
+
+            // Apply the scheduled plan change
+            const { error: applyErr } = await supabase
+              .from("profiles")
+              .update({
+                plan: nextPlan,
+                plan_expiry: newExpiry.toISOString(),
+                search_balance: limits.searches,
+                cv_generation_balance: limits.cv_gens,
+                persistent_finder_balance: limits.pf_balance,
+                next_plan: null,
+              })
+              .eq("id", existingSub.user_id);
+
+            if (applyErr) {
+              console.error("[WEBHOOK] Failed to apply scheduled downgrade:", applyErr.message);
+            } else {
+              console.log(`[WEBHOOK] Applied scheduled downgrade for user ${existingSub.user_id} to ${nextPlan}`);
+            }
           }
         }
         break;

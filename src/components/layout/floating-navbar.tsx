@@ -6,8 +6,8 @@ import { TransitionLink } from "@/components/ui/transition-link";
 import "../landing/liquid-glass.css";
 
 interface FloatingNavbarProps {
-  onLoginClick: () => void;
-  onSignUpClick: () => void;
+  onLoginClick?: () => void;
+  onSignUpClick?: () => void;
 }
 
 const navLinks = [
@@ -39,6 +39,7 @@ export function FloatingNavbar({ onLoginClick, onSignUpClick }: FloatingNavbarPr
             ))}
           </div>
 
+          {onLoginClick && onSignUpClick && (
           <div className="hidden md:flex items-center gap-3">
             <button
               onClick={onLoginClick}
@@ -53,6 +54,7 @@ export function FloatingNavbar({ onLoginClick, onSignUpClick }: FloatingNavbarPr
               Sign Up
             </button>
           </div>
+          )}
 
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}

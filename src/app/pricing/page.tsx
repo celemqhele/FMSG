@@ -55,9 +55,12 @@ export default function PricingPage() {
 
   useEffect(() => {
     supabase.auth.getUser().then((res: any) => {
-      if (res.data?.user) setLoggedIn(true);
+      if (res.data?.user) {
+        setLoggedIn(true);
+        router.push("/upgrade");
+      }
     });
-  }, [supabase]);
+  }, [supabase, router]);
 
   useEffect(() => {
     if (typeof window !== "undefined" && (window as any).PaystackPop) {
@@ -133,7 +136,7 @@ export default function PricingPage() {
           if (verifyRes.ok) {
             setProcessing(null);
             setSuccessToast(true);
-            setTimeout(() => { setSuccessToast(false); router.push("/dashboard"); }, 2000);
+            setTimeout(() => { setSuccessToast(false); router.push("/welcome?plan=" + planName.toLowerCase()); }, 2000);
           } else {
             setProcessing(null);
             alert("Payment verification failed. Please contact support.");

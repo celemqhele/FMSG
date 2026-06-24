@@ -115,14 +115,14 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
   return (
     <div
-      className={`fixed inset-0 z-[110] flex items-center justify-center transition-opacity duration-200 ${
+      className={`fixed inset-0 z-[110] flex items-start justify-center pt-10 md:items-center transition-opacity duration-200 ${
         isOpen ? "opacity-100" : "opacity-0"
       }`}
     >
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={handleClose} />
 
       <div
-        className={`relative w-full max-w-md mx-4 p-6 rounded-2xl liquid-glass transition-all duration-200 ${
+        className={`relative w-full max-w-md mx-4 p-6 rounded-2xl liquid-glass transition-all duration-200 max-h-[85vh] overflow-y-auto ${
           isOpen ? "opacity-100 scale-100" : "opacity-0 scale-95"
         }`}
         onClick={(e) => e.stopPropagation()}
