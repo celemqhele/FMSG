@@ -14,6 +14,7 @@ export function AuthHandler() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event: string, session: any) => {
       if (event === "SIGNED_IN" && session) {
         localStorage.setItem("logged_in", "true");
+        sessionStorage.setItem("just_logged_in", "true");
       } else if (event === "SIGNED_OUT") {
         localStorage.removeItem("logged_in");
       }

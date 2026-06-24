@@ -93,6 +93,11 @@ export default function PricingPage() {
     });
   }, [supabase]);
 
+  const handleClose = useCallback(() => {
+    setAuthOpen(false);
+    setPendingPlan(null);
+  }, []);
+
   const startPayment = async (planName: string, cycle: string) => {
     if (planName === "Free") return;
     setProcessing(planName);
@@ -281,7 +286,7 @@ export default function PricingPage() {
 
       <AuthModal
         isOpen={authOpen}
-        onClose={() => { setAuthOpen(false); setPendingPlan(null); }}
+        onClose={handleClose}
         defaultTab={authTab}
       />
 

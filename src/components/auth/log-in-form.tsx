@@ -34,6 +34,8 @@ export function LogInForm({ onForgotPassword, onLoggedIn }: LogInFormProps) {
       }
     } else if (data?.session) {
       onLoggedIn();
+    } else if (data?.user) {
+      setError("Please confirm your email before logging in. Check your inbox for the confirmation link.");
     } else {
       setError("Sign in succeeded but no session was returned. Please try again.");
     }

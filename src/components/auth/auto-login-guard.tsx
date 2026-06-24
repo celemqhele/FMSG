@@ -32,6 +32,13 @@ export function AutoLoginGuard() {
       return;
     }
 
+    // Skip redirect if user just logged in via modal — prevents double redirect
+    if (sessionStorage.getItem("just_logged_in")) {
+      sessionStorage.removeItem("just_logged_in");
+      setGuardState("idle");
+      return;
+    }
+
     const supabase = createClient();
     supabase.auth.getSession().then(({ data: { session } }: { data: { session: any } }) => {
       if (session) {

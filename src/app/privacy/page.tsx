@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { FloatingNavbar } from "@/components/layout/floating-navbar";
 import { Footer } from "@/components/layout/footer";
 import { SpaceVideoBackground } from "@/components/landing/space-video-background";
@@ -79,6 +79,8 @@ export default function PrivacyPage() {
     setAuthOpen(true);
   };
 
+  const handleClose = useCallback(() => setAuthOpen(false), []);
+
   return (
     <>
       <SpaceVideoBackground src="/videos/space.mp4" />
@@ -114,7 +116,7 @@ export default function PrivacyPage() {
       <Footer />
       <AuthModal
         isOpen={authOpen}
-        onClose={() => setAuthOpen(false)}
+        onClose={handleClose}
         defaultTab={authTab}
       />
     </>
