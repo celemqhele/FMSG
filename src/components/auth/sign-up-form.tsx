@@ -45,7 +45,7 @@ export function SignUpForm({ onSuccess }: { onSuccess: (data: SignUpData) => voi
       password,
       options: {
         data: fullName ? { full_name: fullName } : undefined,
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
+        emailRedirectTo: `${window.location.origin}/auth/confirm`,
       },
     });
 
