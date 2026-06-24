@@ -51,6 +51,11 @@ const BLACKLISTED_DOMAINS = [
   'jobleads.ae',
   'jobleads.fr',
   'jobleads.it',
+  'talent.com',
+  'talent.co.za',
+  'talent.co.uk',
+  'talent.ca',
+  'talent.au',
 ];
 
 function extractDomain(url: string): string | null {
