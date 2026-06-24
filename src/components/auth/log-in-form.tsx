@@ -33,7 +33,6 @@ export function LogInForm({ onForgotPassword, onLoggedIn }: LogInFormProps) {
         setError(err.message);
       }
     } else if (data?.session) {
-      console.log("[LOGIN] Session set:", data.session);
       await supabase.auth.setSession(data.session);
       onLoggedIn();
     } else if (data?.user) {
