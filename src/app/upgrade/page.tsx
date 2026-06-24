@@ -134,9 +134,10 @@ export default function ManageSubscriptionPage() {
   }, []);
 
   // --- PF Refill Adjustment ---
-  const handlePfRefillChange = async (newCount: number) => {
+  const handlePfRefillChange = (newCount: number) => {
     const clamped = Math.max(0, Math.min(25, newCount));
-    if (clamped === currentPfRefill) return;
+    const effectiveRefill = pendingPfRefill ?? currentPfRefill;
+    if (clamped === effectiveRefill) return;
     setPendingPfRefill(clamped);
   };
 
@@ -448,8 +449,8 @@ export default function ManageSubscriptionPage() {
               <div className="flex items-center gap-4 flex-wrap">
                 <div className="flex items-center gap-3">
                   <button
-                    onClick={() => handlePfRefillChange(currentPfRefill - 1)}
-                    disabled={currentPfRefill <= 0 || adjustingPf}
+                    onClick={() => handlePfRefillChange((pendingPfRefill ?? currentPfRefill) - 1)}
+                    disabled={(pendingPfRefill ?? currentPfRefill) <= 0 || adjustingPf}
                     className="w-10 h-10 flex items-center justify-center rounded-lg border border-white/20 text-white/70 hover:text-white hover:border-white/40 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                   >
                     <Minus size={16} />
@@ -459,8 +460,8 @@ export default function ManageSubscriptionPage() {
                     <span className="ml-1 text-sm text-white/50">runs</span>
                   </div>
                   <button
-                    onClick={() => handlePfRefillChange(currentPfRefill + 1)}
-                    disabled={currentPfRefill >= 25 || adjustingPf}
+                    onClick={() => handlePfRefillChange((pendingPfRefill ?? currentPfRefill) + 1)}
+                    disabled={(pendingPfRefill ?? currentPfRefill) >= 25 || adjustingPf}
                     className="w-10 h-10 flex items-center justify-center rounded-lg border border-white/20 text-white/70 hover:text-white hover:border-white/40 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                   >
                     <Plus size={16} />
