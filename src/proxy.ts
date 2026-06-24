@@ -26,12 +26,7 @@ export async function proxy(request: NextRequest) {
     }
   );
 
-  const allCookies = request.cookies.getAll();
-  const cookieNames = allCookies.map((c) => c.name).join(",");
-  console.log(`[PROXY] ${request.nextUrl.pathname} — cookies: [${cookieNames}]`);
-
   const { data: { session } } = await supabase.auth.getSession();
-  console.log(`[PROXY] ${request.nextUrl.pathname} — session: ${session ? "FOUND" : "NONE"}`);
 
   // Protected routes — redirect to landing if not authenticated
   const protectedPaths = ["/dashboard", "/settings", "/profile", "/onboarding", "/upgrade"];
@@ -40,10 +35,8 @@ export async function proxy(request: NextRequest) {
   );
 
   if (isProtected && !session) {
-    console.log(`[PROXY] ${request.nextUrl.pathname} — REDIRECTING to / (no session, cookies: ${cookieNames || "none"})`);
     const url = request.nextUrl.clone();
     url.pathname = "/";
-    url.searchParams.set("proxy", cookieNames ? `cookies=[${cookieNames}]` : "no-cookies");
     return NextResponse.redirect(url);
   }
 
