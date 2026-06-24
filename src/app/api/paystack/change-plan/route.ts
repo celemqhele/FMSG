@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { PLAN_LIMITS, PLAN_TIER_NAMES, PAYSTACK_PLAN_CODES } from "@/lib/plan-limits";
+import { PLAN_LIMITS, PLAN_TIER_NAMES, PAYSTACK_PLAN_CODES, calculatePFPrice } from "@/lib/plan-limits";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json();
-  const { plan: newPlanRaw, billing_cycle } = body;
+  const { plan: newPlanRaw, billing_cycle, pf_count } = body;
   if (!newPlanRaw || !billing_cycle) {
     return NextResponse.json({ error: "Missing fields" }, { status: 400 });
   }
@@ -86,6 +86,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "New plan code not configured" }, { status: 500 });
     }
 
+    // Get user's profile for current pf_refill
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("pf_refill")
+      .eq("id", user.id)
+      .single();
+
+    const currentPfRefill = profile?.pf_refill ?? 0;
+    const newPfCount = pf_count != null ? pf_count : PLAN_LIMITS[newPlan]?.pf_balance ?? 0;
+
     if (isUpgrade) {
       // Upgrade: immediate prorated charge via manage/plan
       const psRes = await fetch(`https://api.paystack.co/subscription/${paystackSubId}/manage/plan`, {
@@ -112,6 +122,35 @@ export async function POST(request: NextRequest) {
         newExpiry.setFullYear(newExpiry.getFullYear() + 1);
       } else {
         newExpiry.setMonth(newExpiry.getMonth() + 1);
+      }
+
+      // Calculate PF prorated charge
+      const billingMonths = billing_cycle === "annual" ? 12 : 1;
+      const totalMs = newExpiry.getTime() - now.getTime();
+      const oldPricePerRun = calculatePFPrice(currentPfRefill);
+      const newPricePerRun = calculatePFPrice(newPfCount);
+      const oldPfTotalKobo = currentPfRefill * oldPricePerRun * 100 * billingMonths;
+      const newPfTotalKobo = newPfCount * newPricePerRun * 100 * billingMonths;
+      const pfDiffKobo = Math.round((newPfTotalKobo - oldPfTotalKobo));
+
+      if (pfDiffKobo > 0 && sub.authorization_code) {
+        const chargeRes = await fetch("https://api.paystack.co/transaction/charge_authorization", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            authorization_code: sub.authorization_code,
+            email: sub.email,
+            amount: pfDiffKobo,
+            metadata: { reason: "pf_change_on_upgrade", user_id: user.id },
+          }),
+        });
+        const chargeData = await chargeRes.json();
+        if (!chargeRes.ok || !chargeData.status) {
+          console.error("[CHANGE_PLAN] PF charge failed:", chargeData);
+        }
       }
 
       // Update subscription record
@@ -141,7 +180,8 @@ export async function POST(request: NextRequest) {
           plan_expiry: newExpiry.toISOString(),
           search_balance: limits.searches,
           cv_generation_balance: limits.cv_gens,
-          persistent_finder_balance: limits.pf_balance,
+          persistent_finder_balance: newPfCount,
+          pf_refill: newPfCount,
         })
         .eq("id", user.id);
 
@@ -150,6 +190,8 @@ export async function POST(request: NextRequest) {
         type: "upgrade",
         plan: newPlan.toLowerCase(),
         prorated_amount: psData.data?.prorated_amount ?? 0,
+        pf_charged_kobo: pfDiffKobo > 0 ? pfDiffKobo : 0,
+        pf_refill: newPfCount,
       });
     } else {
       // Downgrade: cancel current subscription at period end, schedule switch
@@ -206,10 +248,14 @@ export async function POST(request: NextRequest) {
         .update({ status: "cancelled", cancelled_at: new Date().toISOString() })
         .eq("id", sub.id);
 
-      // Schedule the downgrade in profiles.next_plan
+      // Schedule the downgrade in profiles.next_plan and optionally next_pf_refill
+      const downgradeUpdate: Record<string, any> = { next_plan: newPlan.toLowerCase() };
+      if (pf_count != null) {
+        downgradeUpdate.next_pf_refill = pf_count;
+      }
       await supabase
         .from("profiles")
-        .update({ next_plan: newPlan.toLowerCase() })
+        .update(downgradeUpdate)
         .eq("id", user.id);
 
       return NextResponse.json({

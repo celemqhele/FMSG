@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard/dashboard-layout";
 import { LiquidGlassCard } from "@/components/landing/liquid-glass-card";
-import { Loader2, Check, ArrowRight } from "lucide-react";
+import { Loader2, Check, ArrowRight, CreditCard, Ban, Minus, Plus, Crosshair } from "lucide-react";
 import { PageTransitionWrapper } from "@/components/ui/page-transition-wrapper";
 import { useTransition } from "@/components/providers/transition-provider";
 import { createClient } from "@/lib/supabase/client";
@@ -52,6 +52,12 @@ const tiers: Tier[] = PLAN_TIER_NAMES.map((name) => {
 
 const PAYSTACK_PUBLIC_KEY = process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY;
 
+function daysRemaining(expiryDate: string): number {
+  const now = new Date();
+  const expiry = new Date(expiryDate);
+  return Math.max(0, Math.ceil((expiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
+}
+
 export default function ManageSubscriptionPage() {
   const router = useRouter();
   const { endTransition } = useTransition();
@@ -65,32 +71,55 @@ export default function ManageSubscriptionPage() {
   const [paystackReady, setPaystackReady] = useState(false);
   const [pfCounts, setPfCounts] = useState<Record<string, number>>({});
 
+  // Subscription overview state
+  const [loading, setLoading] = useState(true);
+  const [subscription, setSubscription] = useState<any>(null);
+  const [profile, setProfile] = useState<any>(null);
+  const [cancelling, setCancelling] = useState(false);
+  const [generatingLink, setGeneratingLink] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
+
+  // PF refill adjustment
+  const [adjustingPf, setAdjustingPf] = useState(false);
+  const [currentPfRefill, setCurrentPfRefill] = useState(0);
+  const [pendingPfRefill, setPendingPfRefill] = useState<number | null>(null);
+
   useEffect(() => { endTransition(); }, [endTransition]);
 
-  useEffect(() => {
-    supabase.auth.getUser().then((res: { data: { user: { id: string } | null } }) => {
-      const u = res.data.user;
-      if (!u) { router.push("/"); return; }
-      supabase.from("profiles").select("plan").eq("id", u.id).single().then((res: { data: any }) => {
-        if (res.data) {
-          const plan = res.data.plan ?? "free";
-          setCurrentPlan(plan);
-          if (plan !== "free") {
-            supabase
-              .from("subscriptions")
-              .select("id")
-              .eq("user_id", u.id)
-              .eq("status", "active")
-              .limit(1)
-              .maybeSingle()
-              .then((subRes: any) => {
-                setHasSubscription(!!subRes.data);
-              });
-          }
-        }
-      });
-    });
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { router.push("/"); return; }
+
+    const [profileRes, subRes] = await Promise.all([
+      supabase.from("profiles").select("*").eq("id", user.id).single(),
+      supabase
+        .from("subscriptions")
+        .select("*")
+        .eq("user_id", user.id)
+        .in("status", ["active", "past_due", "cancelled"])
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]);
+
+    if (profileRes.data) {
+      setProfile(profileRes.data);
+      const plan = profileRes.data.plan ?? "free";
+      setCurrentPlan(plan);
+      setCurrentPfRefill(profileRes.data.pf_refill ?? 0);
+    }
+
+    if (subRes.data) {
+      setSubscription(subRes.data);
+      setHasSubscription(subRes.data.status === "active");
+    }
+    setLoading(false);
   }, [router, supabase]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   useEffect(() => {
     if (typeof window !== "undefined" && (window as any).PaystackPop) {
@@ -104,6 +133,109 @@ export default function ManageSubscriptionPage() {
     document.body.appendChild(script);
   }, []);
 
+  // --- PF Refill Adjustment ---
+  const handlePfRefillChange = async (newCount: number) => {
+    const clamped = Math.max(0, Math.min(25, newCount));
+    if (clamped === currentPfRefill) return;
+    setPendingPfRefill(clamped);
+  };
+
+  const confirmPfRefillChange = async () => {
+    if (pendingPfRefill == null) return;
+    setAdjustingPf(true);
+    setErrorMsg("");
+
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) { setAdjustingPf(false); return; }
+
+    try {
+      const res = await fetch("/api/paystack/adjust-pf-refill", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ pfCount: pendingPfRefill }),
+      });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        setCurrentPfRefill(pendingPfRefill);
+        setPendingPfRefill(null);
+        setSuccessMsg(data.message ?? "PF refill updated.");
+        setSuccessToast(true);
+        setTimeout(() => { setSuccessToast(false); }, 3000);
+        // Reload data for fresh balances
+        loadData();
+      } else {
+        setErrorMsg(data.error ?? "Failed to adjust PF refill.");
+      }
+    } catch {
+      setErrorMsg("Failed to adjust PF refill.");
+    }
+    setAdjustingPf(false);
+  };
+
+  // --- Cancel Subscription ---
+  const handleCancel = async () => {
+    if (!subscription) return;
+    setCancelling(true);
+    setErrorMsg("");
+
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) { setCancelling(false); return; }
+
+    try {
+      const res = await fetch("/api/cancel-subscription", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          "Content-Type": "application/json",
+        },
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSuccessMsg(data.message ?? "Subscription cancelled.");
+        setSuccessToast(true);
+        setTimeout(() => { setSuccessToast(false); }, 3000);
+        loadData();
+      } else {
+        setErrorMsg(data.error ?? "Failed to cancel.");
+      }
+    } catch {
+      setErrorMsg("Failed to cancel subscription.");
+    }
+    setCancelling(false);
+  };
+
+  // --- Update Card ---
+  const handleUpdateCard = async () => {
+    setGeneratingLink(true);
+    setErrorMsg("");
+
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) { setGeneratingLink(false); return; }
+
+    try {
+      const res = await fetch("/api/update-payment-method", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          "Content-Type": "application/json",
+        },
+      });
+      const data = await res.json();
+      if (res.ok && data.link) {
+        window.open(data.link, "_blank");
+      } else {
+        setErrorMsg(data.error ?? "Failed to generate update link.");
+      }
+    } catch {
+      setErrorMsg("Failed to generate update link.");
+    }
+    setGeneratingLink(false);
+  };
+
+  // --- Switch Plan ---
   const handleUpgrade = async (tier: Tier) => {
     if (tier.name === "Free") return;
     if (tier.name.toLowerCase() === currentPlan) return;
@@ -116,12 +248,12 @@ export default function ManageSubscriptionPage() {
     setProcessing(tier.name);
 
     if (hasSubscription) {
-      // Use change-plan API for existing subscribers
       const sRes = await supabase.auth.getSession();
       const session = sRes.data.session;
       if (!session) { setProcessing(null); return; }
 
       try {
+        const pfCount = pfCounts[tier.name] ?? PF_DEFAULT_BY_TIER[tier.name] ?? PLAN_LIMITS[tier.name]?.pf_balance ?? 0;
         const res = await fetch("/api/paystack/change-plan", {
           method: "POST",
           headers: {
@@ -131,6 +263,7 @@ export default function ManageSubscriptionPage() {
           body: JSON.stringify({
             plan: tier.name,
             billing_cycle: annual ? "annual" : "monthly",
+            pf_count: pfCount,
           }),
         });
 
@@ -146,7 +279,7 @@ export default function ManageSubscriptionPage() {
           setSuccessToast(true);
           setTimeout(() => {
             setSuccessToast(false);
-            router.push("/welcome?plan=" + tier.name.toLowerCase());
+            loadData();
           }, 2500);
         } else {
           setProcessing(null);
@@ -157,7 +290,6 @@ export default function ManageSubscriptionPage() {
         alert("Failed to change plan. Please contact support.");
       }
     } else {
-      // First-time purchase — use Paystack popup
       if (!paystackReady || !(window as any).PaystackPop) {
         alert("Payment system is still initializing. Please wait a second and try again.");
         setProcessing(null);
@@ -196,7 +328,7 @@ export default function ManageSubscriptionPage() {
                 setProcessing(null);
                 setSuccessMsg("Payment successful!");
                 setSuccessToast(true);
-                setTimeout(() => { setSuccessToast(false); router.push("/welcome?plan=" + tier.name.toLowerCase()); }, 2000);
+                setTimeout(() => { setSuccessToast(false); loadData(); }, 2000);
               } else {
                 setProcessing(null);
                 alert("Payment verification failed. Please contact support.");
@@ -217,17 +349,221 @@ export default function ManageSubscriptionPage() {
     }
   };
 
+  const statusColor = (status: string) => {
+    switch (status) {
+      case "active": return "text-green-400";
+      case "past_due": return "text-yellow-400";
+      default: return "text-red-400";
+    }
+  };
+
+  const statusLabel = (status: string) => {
+    switch (status) {
+      case "active": return "Active";
+      case "past_due": return "Past Due";
+      default: return "Cancelled";
+    }
+  };
+
   return (
     <DashboardLayout>
       <PageTransitionWrapper>
       <div className="max-w-6xl mx-auto pt-8 pb-24">
-        <div className="text-center mb-10">
-          <h1 className="text-3xl font-bold text-white">Manage Subscription</h1>
-          <p className="mt-2 text-sm text-white/50">Switch plans or upgrade your subscription</p>
-          <div className="mt-6 inline-flex items-center gap-1 p-1 rounded-full bg-white/10 border border-white/10">
-            <button onClick={() => setAnnual(false)} className={`px-4 py-2 text-sm font-medium rounded-full transition-colors ${!annual ? "bg-white/15 text-white shadow-[var(--shadow-sm)]" : "text-white/60 hover:text-white"}`}>Monthly</button>
-            <button onClick={() => setAnnual(true)} className={`px-4 py-2 text-sm font-medium rounded-full transition-colors ${annual ? "bg-white/15 text-white shadow-[var(--shadow-sm)]" : "text-white/60 hover:text-white"}`}>Annual <span className="text-[var(--color-success)]">Save 2 months</span></button>
+        <h1 className="text-3xl font-bold text-white mb-8">Manage Subscription</h1>
+
+        {!loading && subscription && subscription.status !== "cancelled" && (
+          <div className="liquid-glass rounded-xl p-6 mb-8">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-white">Your Subscription</h2>
+              <span className={`inline-flex items-center gap-1.5 px-3 py-1 text-xs font-semibold rounded-full ${
+                subscription.status === "active" ? "bg-green-400/10 text-green-400" :
+                subscription.status === "past_due" ? "bg-yellow-400/10 text-yellow-400" :
+                "bg-red-400/10 text-red-400"
+              }`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${
+                  subscription.status === "active" ? "bg-green-400" :
+                  subscription.status === "past_due" ? "bg-yellow-400" : "bg-red-400"
+                }`} />
+                {statusLabel(subscription.status)}
+              </span>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              <div>
+                <span className="text-xs text-white/50 block mb-1">Plan</span>
+                <span className="text-xl font-bold text-white capitalize">{subscription.plan}</span>
+              </div>
+
+              <div>
+                <span className="text-xs text-white/50 block mb-1">Billing</span>
+                <span className="text-lg font-semibold text-white capitalize">
+                  {subscription.billing_cycle === "annual" ? "Annual" : "Monthly"}
+                </span>
+                {subscription.amount && (
+                  <span className="text-xs text-white/40 ml-2">
+                    R{(subscription.amount / 100).toLocaleString("en-ZA")}/{subscription.billing_cycle === "annual" ? "yr" : "mo"}
+                  </span>
+                )}
+              </div>
+
+              {subscription.next_payment_date && (
+                <div>
+                  <span className="text-xs text-white/50 block mb-1">Next payment</span>
+                  <span className="text-lg font-semibold text-white">
+                    {new Date(subscription.next_payment_date).toLocaleDateString("en-ZA", { day: "numeric", month: "short", year: "numeric" })}
+                  </span>
+                </div>
+              )}
+
+              {subscription.expiry_date && (
+                <div>
+                  <span className="text-xs text-white/50 block mb-1">
+                    {subscription.status === "cancelled" ? "Access ends" : "Period ends"}
+                  </span>
+                  <span className="text-lg font-semibold text-white">
+                    {new Date(subscription.expiry_date).toLocaleDateString("en-ZA", { day: "numeric", month: "short", year: "numeric" })}
+                  </span>
+                  {subscription.status === "active" && (
+                    <span className="text-xs text-white/40 ml-2">
+                      ({daysRemaining(subscription.expiry_date)} days left)
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {subscription.created_at && (
+                <div>
+                  <span className="text-xs text-white/50 block mb-1">Started</span>
+                  <span className="text-lg font-semibold text-white">
+                    {new Date(subscription.created_at).toLocaleDateString("en-ZA", { day: "numeric", month: "short", year: "numeric" })}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* PF Refill Stepper for current plan */}
+            <div className="mt-6 pt-6 border-t border-white/10">
+              <h3 className="text-sm font-medium text-white mb-3">PF Refill Per Cycle</h3>
+              <p className="text-xs text-white/50 mb-3">Adjust how many Persistent Finder rounds you get each billing cycle.</p>
+              <div className="flex items-center gap-4 flex-wrap">
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => handlePfRefillChange(currentPfRefill - 1)}
+                    disabled={currentPfRefill <= 0 || adjustingPf}
+                    className="w-10 h-10 flex items-center justify-center rounded-lg border border-white/20 text-white/70 hover:text-white hover:border-white/40 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    <Minus size={16} />
+                  </button>
+                  <div className="text-center min-w-[60px]">
+                    <span className="text-2xl font-bold text-white tabular-nums">{pendingPfRefill ?? currentPfRefill}</span>
+                    <span className="ml-1 text-sm text-white/50">runs</span>
+                  </div>
+                  <button
+                    onClick={() => handlePfRefillChange(currentPfRefill + 1)}
+                    disabled={currentPfRefill >= 25 || adjustingPf}
+                    className="w-10 h-10 flex items-center justify-center rounded-lg border border-white/20 text-white/70 hover:text-white hover:border-white/40 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    <Plus size={16} />
+                  </button>
+                </div>
+                {pendingPfRefill != null && (
+                  <button
+                    onClick={confirmPfRefillChange}
+                    disabled={adjustingPf}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-[var(--color-accent)] rounded-full hover:bg-[var(--color-accent-hover)] transition-colors disabled:opacity-50"
+                  >
+                    {adjustingPf ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                    {adjustingPf ? "Applying..." : `Change to ${pendingPfRefill} runs`}
+                  </button>
+                )}
+                {pendingPfRefill == null && (
+                  <span className="text-xs text-white/40">
+                    Price per run: R{calculatePFPrice(currentPfRefill)}
+                  </span>
+                )}
+              </div>
+              {subscription.status === "cancelled" && currentPfRefill > 0 && (
+                <p className="mt-2 text-xs text-yellow-400">Changes take effect on next subscription.</p>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div className="mt-6 pt-6 border-t border-white/10 flex flex-wrap gap-3">
+              <button
+                onClick={handleUpdateCard}
+                disabled={generatingLink || !hasSubscription}
+                className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium text-white bg-white/10 hover:bg-white/20 rounded-full transition-colors disabled:opacity-50"
+              >
+                {generatingLink ? <Loader2 size={14} className="animate-spin" /> : <CreditCard size={14} />}
+                {generatingLink ? "Opening Paystack..." : "Update Card"}
+              </button>
+              <button
+                onClick={handleCancel}
+                disabled={cancelling || !hasSubscription}
+                className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium text-red-400 bg-red-400/10 hover:bg-red-400/20 rounded-full transition-colors disabled:opacity-50"
+              >
+                {cancelling ? <Loader2 size={14} className="animate-spin" /> : <Ban size={14} />}
+                {cancelling ? "Cancelling..." : "Cancel Subscription"}
+              </button>
+            </div>
+
+            {/* Usage Balances */}
+            {profile && (
+              <div className="mt-6 pt-6 border-t border-white/10">
+                <h3 className="text-sm font-medium text-white mb-3">Current Usage</h3>
+                <div className="flex flex-wrap gap-6">
+                  <div>
+                    <span className="text-xs text-white/50 block">Searches</span>
+                    <span className="text-lg font-semibold text-white">{profile.search_balance ?? 0}</span>
+                  </div>
+                  <div>
+                    <span className="text-xs text-white/50 block">CV Generations</span>
+                    <span className="text-lg font-semibold text-white">{profile.cv_generation_balance ?? 0}</span>
+                  </div>
+                  <div>
+                    <span className="text-xs text-white/50 block">PF Balance</span>
+                    <span className="text-lg font-semibold text-white">{profile.persistent_finder_balance ?? 0}</span>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
+        )}
+
+        {!loading && (!subscription || subscription.status === "cancelled") && (
+          <div className="liquid-glass rounded-xl p-6 mb-8">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center">
+                <Crosshair size={18} className="text-white/60" />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-white">You&apos;re on the <span className="capitalize">{currentPlan}</span> plan</h2>
+                <p className="text-sm text-white/50">Choose a plan below to unlock more features.</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {errorMsg && (
+          <div className="mb-6 p-4 rounded-xl bg-red-400/10 border border-red-400/20 text-sm text-red-400">
+            {errorMsg}
+          </div>
+        )}
+
+        {/* Switch Plan Section */}
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-bold text-white">Switch Plan</h2>
+            <div className="inline-flex items-center gap-1 p-1 rounded-full bg-white/10 border border-white/10">
+              <button onClick={() => setAnnual(false)} className={`px-4 py-2 text-sm font-medium rounded-full transition-colors ${!annual ? "bg-white/15 text-white shadow-[var(--shadow-sm)]" : "text-white/60 hover:text-white"}`}>Monthly</button>
+              <button onClick={() => setAnnual(true)} className={`px-4 py-2 text-sm font-medium rounded-full transition-colors ${annual ? "bg-white/15 text-white shadow-[var(--shadow-sm)]" : "text-white/60 hover:text-white"}`}>Annual <span className="text-[var(--color-success)]">Save 2 months</span></button>
+            </div>
+          </div>
+          <p className="text-sm text-white/50 mb-6">
+            {hasSubscription
+              ? "Upgrades take effect immediately. Downgrades apply at the end of your current billing period."
+              : "Select a plan to start your subscription."}
+          </p>
         </div>
 
         <div className="grid gap-6 md:grid-cols-4 md:gap-4">

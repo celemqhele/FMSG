@@ -99,6 +99,7 @@ export async function POST(request: NextRequest) {
         search_balance: limits.searches,
         cv_generation_balance: limits.cv_gens,
         persistent_finder_balance: pfCount,
+        pf_refill: pfCount,
       })
       .eq("id", user.id);
 

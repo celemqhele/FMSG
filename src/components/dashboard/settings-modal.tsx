@@ -115,7 +115,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
   return (
     <div
-      className={`fixed inset-0 z-[110] flex items-start justify-center pt-10 md:items-center transition-opacity duration-200 ${
+      className={`fixed inset-0 z-[110] flex items-center justify-center p-4 transition-opacity duration-200 ${
         isOpen ? "opacity-100" : "opacity-0"
       }`}
     >

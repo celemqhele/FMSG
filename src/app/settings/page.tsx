@@ -3,9 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard/dashboard-layout";
-import { ArrowLeft, Loader2, Check, ExternalLink, Crosshair, AlertTriangle } from "lucide-react";
-import dynamic from "next/dynamic";
-const PFPurchaseModal = dynamic(() => import("@/components/dashboard/pf-purchase-modal").then((mod) => mod.PFPurchaseModal), { ssr: false });
+import { ArrowLeft, Loader2, Check, Save } from "lucide-react";
 import { useTheme } from "@/components/providers/theme-provider";
 import { PageTransitionWrapper } from "@/components/ui/page-transition-wrapper";
 import { useTransition } from "@/components/providers/transition-provider";
@@ -27,23 +25,22 @@ export default function SettingsPage() {
   const [passwordSaving, setPasswordSaving] = useState(false);
   const [passwordMsg, setPasswordMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
-  // Plan
-  const [plan, setPlan] = useState("free");
-  const [searchBalance, setSearchBalance] = useState(0);
-  const [cvBalance, setCvBalance] = useState(0);
-  const [pfBalance, setPfBalance] = useState(0);
-  const [pfModalOpen, setPfModalOpen] = useState(false);
+  // Profile
+  const [email, setEmail] = useState("");
+  const [nameValue, setNameValue] = useState("");
+  const [surnameValue, setSurnameValue] = useState("");
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileMsg, setProfileMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   useEffect(() => {
     const loadProfile = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push("/"); return; }
-      const { data } = await supabase.from("profiles").select("plan, search_balance, cv_generation_balance, persistent_finder_balance").eq("id", user.id).single();
+      setEmail(user.email ?? "");
+      const { data } = await supabase.from("profiles").select("name, surname").eq("id", user.id).single();
       if (data) {
-        setPlan(data.plan ?? "free");
-        setSearchBalance(data.search_balance ?? 0);
-        setCvBalance(data.cv_generation_balance ?? 0);
-        setPfBalance(data.persistent_finder_balance ?? 0);
+        setNameValue(data.name ?? "");
+        setSurnameValue(data.surname ?? "");
       }
     };
     loadProfile();
@@ -76,7 +73,31 @@ export default function SettingsPage() {
     }
   };
 
-  const planLabel = plan.charAt(0).toUpperCase() + plan.slice(1);
+  const handleProfileSave = async () => {
+    setProfileMsg(null);
+    if (!nameValue.trim() || !surnameValue.trim()) {
+      setProfileMsg({ ok: false, text: "Name and surname are required." });
+      return;
+    }
+    setProfileSaving(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setProfileSaving(false); return; }
+
+    const { error: profileErr } = await supabase
+      .from("profiles")
+      .update({ name: nameValue.trim(), surname: surnameValue.trim() })
+      .eq("id", user.id);
+
+    if (profileErr) {
+      setProfileMsg({ ok: false, text: profileErr.message });
+      setProfileSaving(false);
+      return;
+    }
+
+    setProfileMsg({ ok: true, text: "Profile updated successfully." });
+    setTimeout(() => setProfileMsg(null), 3000);
+    setProfileSaving(false);
+  };
 
   return (
     <DashboardLayout>
@@ -89,7 +110,43 @@ export default function SettingsPage() {
           <h1 className="text-2xl font-bold text-white">Settings</h1>
         </div>
 
-        {/* Section 1: Appearance */}
+        {/* Section 1: Profile */}
+        <div className="liquid-glass rounded-xl p-6 space-y-5">
+          <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">Profile</h2>
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <label className="text-sm text-[var(--color-text-secondary)]">Email</label>
+              <input type="email" value={email} readOnly className="w-full px-3 py-2 text-sm rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)] text-[var(--color-text-primary)] opacity-60 cursor-not-allowed" />
+              <p className="text-xs text-[var(--color-text-secondary)]">Email cannot be changed here.</p>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-sm text-[var(--color-text-secondary)]">Name</label>
+                <input type="text" value={nameValue} onChange={(e) => setNameValue(e.target.value)} className="w-full px-3 py-2 text-sm rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)]" />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm text-[var(--color-text-secondary)]">Surname</label>
+                <input type="text" value={surnameValue} onChange={(e) => setSurnameValue(e.target.value)} className="w-full px-3 py-2 text-sm rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)]" />
+              </div>
+            </div>
+            {profileMsg && (
+              <p className={`text-xs flex items-center gap-1 ${profileMsg.ok ? "text-green-500" : "text-red-500"}`}>
+                {profileMsg.ok && <Check size={12} />}
+                {profileMsg.text}
+              </p>
+            )}
+            <button
+              onClick={handleProfileSave}
+              disabled={profileSaving}
+              className="px-5 py-2.5 text-sm font-medium text-white bg-[var(--color-accent)] rounded-full hover:bg-[var(--color-accent-hover)] transition-colors disabled:opacity-50 flex items-center gap-2"
+            >
+              {profileSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+              Save Changes
+            </button>
+          </div>
+        </div>
+
+        {/* Section 2: Appearance */}
         <div className="liquid-glass rounded-xl p-6 space-y-5">
           <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">Appearance</h2>
           <div className="flex flex-wrap gap-3">
@@ -109,7 +166,7 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        {/* Section 2: Notifications */}
+        {/* Section 3: Notifications */}
         <div className="liquid-glass rounded-xl p-6 space-y-5 opacity-60">
           <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">Notifications</h2>
           <label className="flex items-center justify-between">
@@ -122,7 +179,7 @@ export default function SettingsPage() {
           </label>
         </div>
 
-        {/* Section 3: Account */}
+        {/* Section 4: Account */}
         <div className="liquid-glass rounded-xl p-6 space-y-5">
           <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">Account</h2>
           <div className="space-y-4">
@@ -155,41 +212,7 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        {/* Section 4: Plan and Usage */}
-        <div className="liquid-glass rounded-xl p-6 space-y-5">
-          <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">Plan and Usage</h2>
-          <div className="space-y-3">
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-[var(--color-text-secondary)]">Current plan</span>
-              <span className="text-sm font-medium text-[var(--color-text-primary)]">{planLabel}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-[var(--color-text-secondary)]">Search balance remaining</span>
-              <span className="text-sm font-medium text-[var(--color-text-primary)]">{searchBalance}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-[var(--color-text-secondary)]">CV generations remaining</span>
-              <span className="text-sm font-medium text-[var(--color-text-primary)]">{cvBalance === -1 ? "Unlimited" : cvBalance}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-[var(--color-text-secondary)]">Persistent Finder balance</span>
-              <span className="text-sm font-medium text-[var(--color-text-primary)]">{pfBalance}</span>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-3">
-            <button onClick={() => { startTransition(); router.push("/upgrade"); }} className="inline-flex items-center gap-1.5 px-5 py-2.5 text-sm font-medium text-white bg-[var(--color-accent)] rounded-full hover:bg-[var(--color-accent-hover)] transition-colors">
-              Upgrade Plan
-              <ExternalLink size={14} />
-            </button>
-            <button onClick={() => setPfModalOpen(true)} className="inline-flex items-center gap-1.5 px-5 py-2.5 text-sm font-medium text-white bg-white/10 border border-white/20 rounded-full hover:bg-white/20 transition-colors">
-              <Crosshair size={14} />
-              Buy PF Credits
-            </button>
-          </div>
-        </div>
       </div>
-
-      <PFPurchaseModal isOpen={pfModalOpen} onClose={() => setPfModalOpen(false)} />
       </PageTransitionWrapper>
     </DashboardLayout>
   );

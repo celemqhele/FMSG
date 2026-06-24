@@ -99,6 +99,15 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: "DB error" }, { status: 500 });
           }
 
+          // Fetch user's pf_refill (custom PF refill count)
+          const { data: profile } = await supabase
+            .from("profiles")
+            .select("pf_refill")
+            .eq("id", existingSub.user_id)
+            .single();
+
+          const pfRefill = profile?.pf_refill ?? limits.pf_balance;
+
           // Extend user's plan
           const { error: updateErr } = await supabase
             .from("profiles")
@@ -106,7 +115,7 @@ export async function POST(request: NextRequest) {
               plan_expiry: newExpiry.toISOString(),
               search_balance: limits.searches,
               cv_generation_balance: limits.cv_gens,
-              persistent_finder_balance: limits.pf_balance,
+              persistent_finder_balance: pfRefill,
             })
             .eq("id", existingSub.user_id);
 
@@ -185,8 +194,8 @@ export async function POST(request: NextRequest) {
 
           // Check if there's a scheduled plan change (downgrade)
           const { data: profile, error: profileErr } = await supabase
-            .from("profiles")
-            .select("next_plan")
+              .from("profiles")
+              .select("next_plan, next_pf_refill")
             .eq("id", existingSub.user_id)
             .single();
 
@@ -198,18 +207,26 @@ export async function POST(request: NextRequest) {
             // Set a reasonable initial expiry (1 month from now — user can renew)
             newExpiry.setMonth(newExpiry.getMonth() + 1);
 
-            // Apply the scheduled plan change
-            const { error: applyErr } = await supabase
-              .from("profiles")
-              .update({
+              // Apply the scheduled plan change
+              const updateData: Record<string, any> = {
                 plan: nextPlan,
                 plan_expiry: newExpiry.toISOString(),
                 search_balance: limits.searches,
                 cv_generation_balance: limits.cv_gens,
                 persistent_finder_balance: limits.pf_balance,
                 next_plan: null,
-              })
-              .eq("id", existingSub.user_id);
+              };
+
+              // Apply scheduled PF refill change if present
+              if (profile.next_pf_refill != null) {
+                updateData.pf_refill = profile.next_pf_refill;
+                updateData.next_pf_refill = null;
+              }
+
+              const { error: applyErr } = await supabase
+                .from("profiles")
+                .update(updateData)
+                .eq("id", existingSub.user_id);
 
             if (applyErr) {
               console.error("[WEBHOOK] Failed to apply scheduled downgrade:", applyErr.message);
