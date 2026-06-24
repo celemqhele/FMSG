@@ -95,12 +95,20 @@ export default function DashboardPage() {
 
   useEffect(() => {
     const supabase = createClient();
-    supabase.auth.getSession().then(({ data }: { data: { session: any } | null }) => {
-      if (!data?.session) {
-        router.push("/");
+    supabase.auth.getSession().then(async ({ data }: { data: { session: any } | null }) => {
+      if (data?.session) {
+        setAuthChecked(true);
         return;
       }
-      setAuthChecked(true);
+      // Fallback: try getUser which does a network validation
+      try {
+        const { data: userData } = await supabase.auth.getUser();
+        if (userData?.user) {
+          setAuthChecked(true);
+          return;
+        }
+      } catch {}
+      router.replace("/");
     });
 
     const handler = (e: Event) => {
