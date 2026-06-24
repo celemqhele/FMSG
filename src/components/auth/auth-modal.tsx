@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useCallback, startTransition, type ReactNode } from "react";
-import { useRouter } from "next/navigation";
 import { X } from "lucide-react";
 import { LogInForm } from "./log-in-form";
 import { SignUpForm } from "./sign-up-form";
@@ -18,7 +17,6 @@ interface AuthModalProps {
 type Screen = "login" | "signup" | "signup-sent" | "forgot" | "forgot-sent";
 
 export function AuthModal({ isOpen, onClose, defaultTab = "signup" }: AuthModalProps) {
-  const router = useRouter();
   const [mounted, setMounted] = useState(false);
   const [screen, setScreen] = useState<Screen>(defaultTab);
   const [pendingEmail, setPendingEmail] = useState("");
@@ -56,8 +54,8 @@ export function AuthModal({ isOpen, onClose, defaultTab = "signup" }: AuthModalP
   const handleSignUpTransitionComplete = useCallback(() => {
     onClose();
     setTransitionType(null);
-    router.push("/onboarding");
-  }, [onClose, router]);
+    window.location.href = "/onboarding";
+  }, [onClose]);
 
   const handleLoggedIn = useCallback(() => {
     setTransitionType("login");
@@ -71,8 +69,8 @@ export function AuthModal({ isOpen, onClose, defaultTab = "signup" }: AuthModalP
   const handleTransitionComplete = useCallback(() => {
     onClose();
     setTransitionType(null);
-    router.push("/dashboard");
-  }, [onClose, router]);
+    window.location.href = "/dashboard";
+  }, [onClose]);
 
   if (!mounted && !isOpen && !transitionType) return null;
 

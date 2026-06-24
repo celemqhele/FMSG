@@ -1,13 +1,12 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { LoginTransition } from "@/components/ui/login-transition";
 
 export function AutoLoginGuard() {
   const pathname = usePathname();
-  const router = useRouter();
 
   const [guardState, setGuardState] = useState<"loading" | "transition" | "idle">(() => {
     if (
