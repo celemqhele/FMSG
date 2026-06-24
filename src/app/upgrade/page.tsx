@@ -142,14 +142,12 @@ export default function UpgradePage() {
         ref: "FMSG-" + Date.now(),
         plan: planCode,
         metadata: { plan: tier.name, billing_cycle: annual ? "annual" : "monthly", pf_count: pfCount },
-        callback: async (response: { reference: string }) => {
-          console.log("Paystack callback fired", response);
-          try {
-            const verifyRes = await fetch("/api/verify-payment", {
-              method: "POST",
-              headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" },
-              body: JSON.stringify({ reference: response.reference, plan: tier.name, billing_cycle: annual ? "annual" : "monthly" }),
-            });
+        callback: function (response: { reference: string }) {
+          fetch("/api/verify-payment", {
+            method: "POST",
+            headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ reference: response.reference, plan: tier.name, billing_cycle: annual ? "annual" : "monthly" }),
+          }).then((verifyRes) => {
             if (verifyRes.ok) {
               setProcessing(null);
               setSuccessToast(true);
@@ -158,10 +156,10 @@ export default function UpgradePage() {
               setProcessing(null);
               alert("Payment verification failed. Please contact support.");
             }
-          } catch {
+          }).catch(() => {
             setProcessing(null);
             alert("Payment verification failed. Please contact support.");
-          }
+          });
         },
         onClose: () => {
           console.log("Paystack popup closed by user");

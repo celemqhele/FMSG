@@ -124,13 +124,12 @@ export default function PricingPage() {
       ref: "FMSG-" + Date.now(),
       plan: "",
       metadata: { plan: planName, billing_cycle: cycle, pf_count: pfCount },
-      callback: async (response: { reference: string }) => {
-        try {
-          const verifyRes = await fetch("/api/verify-payment", {
-            method: "POST",
-            headers: { Authorization: `Bearer ${session!.access_token}`, "Content-Type": "application/json" },
-            body: JSON.stringify({ reference: response.reference, plan: planName, billing_cycle: cycle }),
-          });
+      callback: function (response: { reference: string }) {
+        fetch("/api/verify-payment", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${session!.access_token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ reference: response.reference, plan: planName, billing_cycle: cycle }),
+        }).then((verifyRes) => {
           if (verifyRes.ok) {
             setProcessing(null);
             setSuccessToast(true);
@@ -139,10 +138,10 @@ export default function PricingPage() {
             setProcessing(null);
             alert("Payment verification failed. Please contact support.");
           }
-        } catch {
+        }).catch(() => {
           setProcessing(null);
           alert("Payment verification failed. Please contact support.");
-        }
+        });
       },
       onClose: () => setProcessing(null),
     });
