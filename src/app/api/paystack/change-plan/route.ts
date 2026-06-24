@@ -89,7 +89,7 @@ export async function POST(request: NextRequest) {
     // Get user's profile for current pf_refill
     const { data: profile } = await supabase
       .from("profiles")
-      .select("pf_refill")
+      .select("*")
       .eq("id", user.id)
       .single();
 
@@ -181,9 +181,18 @@ export async function POST(request: NextRequest) {
           search_balance: limits.searches,
           cv_generation_balance: limits.cv_gens,
           persistent_finder_balance: newPfCount,
-          pf_refill: newPfCount,
         })
         .eq("id", user.id);
+
+      // Set pf_refill separately (may not exist yet — warn, not fatal)
+      const { error: pfRefillErr } = await supabase
+        .from("profiles")
+        .update({ pf_refill: newPfCount })
+        .eq("id", user.id);
+
+      if (pfRefillErr) {
+        console.warn("[CHANGE_PLAN] pf_refill update skipped (column may not exist):", pfRefillErr.message);
+      }
 
       return NextResponse.json({
         ok: true,
@@ -249,14 +258,20 @@ export async function POST(request: NextRequest) {
         .eq("id", sub.id);
 
       // Schedule the downgrade in profiles.next_plan and optionally next_pf_refill
-      const downgradeUpdate: Record<string, any> = { next_plan: newPlan.toLowerCase() };
-      if (pf_count != null) {
-        downgradeUpdate.next_pf_refill = pf_count;
-      }
       await supabase
         .from("profiles")
-        .update(downgradeUpdate)
+        .update({ next_plan: newPlan.toLowerCase() })
         .eq("id", user.id);
+
+      if (pf_count != null) {
+        const { error: nprErr } = await supabase
+          .from("profiles")
+          .update({ next_pf_refill: pf_count })
+          .eq("id", user.id);
+        if (nprErr) {
+          console.warn("[CHANGE_PLAN] next_pf_refill update skipped (column may not exist):", nprErr.message);
+        }
+      }
 
       return NextResponse.json({
         ok: true,

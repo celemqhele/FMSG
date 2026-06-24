@@ -46,26 +46,59 @@ export async function POST(request: NextRequest) {
 
   // Generate a Paystack managed page for updating payment method
   try {
-    const res = await fetch("https://api.paystack.co/subscription/manage/link", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        subscription: sub.paystack_subscription_id,
-      }),
-    });
+    let link = "";
 
-    const data = await res.json();
+    if (sub.paystack_subscription_id) {
+      const res = await fetch("https://api.paystack.co/subscription/manage/link", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          subscription: sub.paystack_subscription_id,
+        }),
+      });
 
-    if (data.status && data.data?.link) {
-      return NextResponse.json({ link: data.data.link });
-    } else {
-      return NextResponse.json({ error: "Failed to generate update link" }, { status: 500 });
+      const data = await res.json();
+
+      if (data.status && data.data?.link) {
+        link = data.data.link;
+      } else {
+        console.error("[UPDATE_PAYMENT] Paystack manage/link failed:", JSON.stringify(data));
+      }
     }
+
+    // Fallback: use customer code if subscription link failed or missing
+    if (!link && sub.customer_code) {
+      const custRes = await fetch(`https://api.paystack.co/customer/${sub.customer_code}/payment_method`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({}),
+      });
+      const custData = await custRes.json();
+      if (custData.status && custData.data?.link) {
+        link = custData.data.link;
+      } else {
+        console.error("[UPDATE_PAYMENT] Customer payment_method failed:", JSON.stringify(custData));
+      }
+    }
+
+    if (link) {
+      return NextResponse.json({ link });
+    }
+
+    const reason = sub.paystack_subscription_id
+      ? "Payment provider returned an error."
+      : "No subscription code on record.";
+    return NextResponse.json({
+      error: `Unable to generate update link. ${reason} Try again or contact support.`,
+    }, { status: 500 });
   } catch (err) {
     console.error("[UPDATE_PAYMENT] Error:", err);
-    return NextResponse.json({ error: "Failed to generate update link" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to generate update link. Try again or contact support." }, { status: 500 });
   }
 }

@@ -37,12 +37,13 @@ export async function POST(request: NextRequest) {
     // Get profile for current pf_refill
     const { data: profile, error: profileErr } = await supabase
       .from("profiles")
-      .select("plan, pf_refill")
+      .select("*")
       .eq("id", user.id)
       .single();
 
     if (profileErr || !profile) {
-      return NextResponse.json({ error: "Profile not found" }, { status: 404 });
+      console.error("[ADJUST_PF] Profile fetch error:", profileErr?.message ?? "No profile row");
+      return NextResponse.json({ error: "User profile not found." }, { status: 404 });
     }
 
     const currentPfRefill = profile.pf_refill ?? 0;
@@ -126,7 +127,8 @@ export async function POST(request: NextRequest) {
         .eq("id", user.id);
 
       if (updateErr) {
-        return NextResponse.json({ error: "Failed to update PF refill" }, { status: 500 });
+        console.error("[ADJUST_PF] pf_refill update error:", updateErr.message);
+        return NextResponse.json({ error: `Failed to update PF refill: ${updateErr.message}` }, { status: 500 });
       }
 
       return NextResponse.json({
@@ -146,7 +148,8 @@ export async function POST(request: NextRequest) {
         .eq("id", user.id);
 
       if (updateErr) {
-        return NextResponse.json({ error: "Failed to schedule PF refill change" }, { status: 500 });
+        console.error("[ADJUST_PF] next_pf_refill update error:", updateErr.message);
+        return NextResponse.json({ error: `Failed to schedule PF refill change: ${updateErr.message}` }, { status: 500 });
       }
 
       return NextResponse.json({

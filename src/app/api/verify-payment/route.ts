@@ -90,7 +90,7 @@ export async function POST(request: NextRequest) {
     // Determine pf_balance — metadata.pf_count replaces base (user's choice)
     const pfCount = txData.metadata?.pf_count ?? limits.pf_balance;
 
-    // Update profile
+    // Update profile (core fields)
     const { error: profileErr } = await supabase
       .from("profiles")
       .update({
@@ -99,12 +99,22 @@ export async function POST(request: NextRequest) {
         search_balance: limits.searches,
         cv_generation_balance: limits.cv_gens,
         persistent_finder_balance: pfCount,
-        pf_refill: pfCount,
       })
       .eq("id", user.id);
 
     if (profileErr) {
+      console.error("[VERIFY] Profile update error:", profileErr.message);
       return NextResponse.json({ error: "Failed to update profile" }, { status: 500 });
+    }
+
+    // Set pf_refill separately (column may not exist yet — not fatal)
+    const { error: pfRefillErr } = await supabase
+      .from("profiles")
+      .update({ pf_refill: pfCount })
+      .eq("id", user.id);
+
+    if (pfRefillErr) {
+      console.warn("[VERIFY] pf_refill column missing (safe to ignore):", pfRefillErr.message);
     }
 
     return NextResponse.json({ ok: true, plan: plan.toLowerCase(), balance: limits });
