@@ -26,7 +26,7 @@ export async function proxy(request: NextRequest) {
     }
   );
 
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { session } } = await supabase.auth.getSession();
 
   // Protected routes — redirect to landing if not authenticated
   const protectedPaths = ["/dashboard", "/settings", "/profile", "/onboarding", "/upgrade"];
@@ -34,7 +34,7 @@ export async function proxy(request: NextRequest) {
     request.nextUrl.pathname.startsWith(p)
   );
 
-  if (isProtected && !user) {
+  if (isProtected && !session) {
     const url = request.nextUrl.clone();
     url.pathname = "/";
     return NextResponse.redirect(url);
