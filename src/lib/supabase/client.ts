@@ -27,7 +27,6 @@ export function createClient() {
       ? localStorage.getItem("keep_signed_in") !== "false"
       : true;
 
-    const isPreviewDomain = typeof window !== "undefined" && window.location.hostname.includes("vercel.app");
     client = createBrowserClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -37,7 +36,6 @@ export function createClient() {
           storageKey: "fmsg-auth",
         },
         cookieOptions: {
-          ...(!isPreviewDomain ? { domain: "findmesomejobs.co.za" } : {}),
           path: "/",
           sameSite: "lax",
           ...(keepSignedIn ? { maxAge: 604800 } : {}),
