@@ -26,6 +26,7 @@ export async function proxy(request: NextRequest) {
     }
   );
 
+  const rawCookieHeader = request.headers.get("cookie") ?? "";
   const { data: { session } } = await supabase.auth.getSession();
 
   // Protected routes — redirect to landing if not authenticated
@@ -37,9 +38,13 @@ export async function proxy(request: NextRequest) {
   if (isProtected && !session) {
     const url = request.nextUrl.clone();
     url.pathname = "/";
+    // Surface what the proxy saw so you can debug in the address bar
+    url.searchParams.set("dbg", session ? "ok" : rawCookieHeader ? `cookies-present-but-no-session` : "no-cookies-at-all");
     return NextResponse.redirect(url);
   }
 
+  // Expose what the proxy sees via response header so you can check in DevTools
+  supabaseResponse.headers.set("X-Proxy-Debug", `cookies:${rawCookieHeader.length}chars|session:${session ? "yes" : "no"}`);
   return supabaseResponse;
 }
 
