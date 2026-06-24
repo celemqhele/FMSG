@@ -2,12 +2,6 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 export async function proxy(request: NextRequest) {
-  const pathname = request.nextUrl.pathname;
-
-  if (request.nextUrl.searchParams.has("_rsc")) {
-    return NextResponse.next();
-  }
-
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(
@@ -32,12 +26,15 @@ export async function proxy(request: NextRequest) {
     }
   );
 
-  const { data: { session } } = await supabase.auth.getSession();
+  const { data: { user } } = await supabase.auth.getUser();
 
-  const protectedPaths = ["/settings", "/profile", "/onboarding", "/upgrade"];
-  const isProtected = protectedPaths.some((p) => pathname.startsWith(p));
+  // Protected routes — redirect to landing if not authenticated
+  const protectedPaths = ["/dashboard", "/settings", "/profile", "/onboarding", "/upgrade"];
+  const isProtected = protectedPaths.some((p) =>
+    request.nextUrl.pathname.startsWith(p)
+  );
 
-  if (isProtected && !session) {
+  if (isProtected && !user) {
     const url = request.nextUrl.clone();
     url.pathname = "/";
     return NextResponse.redirect(url);

@@ -51,12 +51,6 @@ export function AuthModal({ isOpen, onClose, defaultTab = "signup" }: AuthModalP
     onClose();
   }, [onClose]);
 
-  const handleSignUpTransitionComplete = useCallback(() => {
-    onClose();
-    setTransitionType(null);
-    window.location.href = "/onboarding";
-  }, [onClose]);
-
   const handleLoggedIn = useCallback(() => {
     setTransitionType("login");
     // Failsafe: force close modal if it's stuck after login transition
@@ -68,7 +62,6 @@ export function AuthModal({ isOpen, onClose, defaultTab = "signup" }: AuthModalP
 
   const handleTransitionComplete = useCallback(() => {
     onClose();
-    setTransitionType(null);
   }, [onClose]);
 
   if (!mounted && !isOpen && !transitionType) return null;
@@ -182,7 +175,7 @@ export function AuthModal({ isOpen, onClose, defaultTab = "signup" }: AuthModalP
       </div>
 
       {transitionType && (
-        <LoginTransition type={transitionType === "signup" ? "onboarding" : "login"} onComplete={transitionType === "signup" ? handleSignUpTransitionComplete : handleTransitionComplete} />
+        <LoginTransition type={transitionType === "signup" ? "onboarding" : "login"} redirectTo={transitionType === "signup" ? "/onboarding" : undefined} onComplete={handleTransitionComplete} />
       )}
     </>
   );

@@ -15,10 +15,8 @@ export function AuthHandler() {
       if (event === "SIGNED_IN" && session) {
         localStorage.setItem("logged_in", "true");
         sessionStorage.setItem("just_logged_in", "true");
-        window.dispatchEvent(new Event("auth-changed"));
       } else if (event === "SIGNED_OUT") {
         localStorage.removeItem("logged_in");
-        window.dispatchEvent(new Event("auth-changed"));
       }
     });
 
