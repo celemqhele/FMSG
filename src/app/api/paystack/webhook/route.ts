@@ -168,7 +168,7 @@ export async function POST(request: NextRequest) {
 
         const { data: existingSub, error: subErr } = await supabase
           .from("subscriptions")
-          .select("id, user_id")
+          .select("id, user_id, expiry_date")
           .eq("paystack_subscription_id", paystackSubId)
           .in("status", ["active", "past_due"])
           .order("created_at", { ascending: false })
@@ -230,23 +230,29 @@ export async function POST(request: NextRequest) {
 
               console.log(`[WEBHOOK] Applied scheduled downgrade for user ${existingSub.user_id} to ${nextPlan}`);
           } else {
-            // No scheduled plan change — payment failed, downgrade to Free
-            const freeLimits = PLAN_LIMITS["Free"] ?? { searches: 1, cv_gens: 0, pf_balance: 0 };
-            const { error: freeErr } = await supabase
-              .from("profiles")
-              .update({
-                plan: "free",
-                plan_expiry: null,
-                search_balance: freeLimits.searches,
-                cv_generation_balance: freeLimits.cv_gens,
-                persistent_finder_balance: freeLimits.pf_balance,
-              })
-              .eq("id", existingSub.user_id);
-
-            if (freeErr) {
-              console.error("[WEBHOOK] Failed to downgrade unpaid subscription to Free:", freeErr.message);
+            // Check if billing period still has time remaining
+            const stillActive = existingSub.expiry_date && new Date(existingSub.expiry_date) > new Date();
+            if (stillActive) {
+              console.log(`[WEBHOOK] Subscription disabled for user ${existingSub.user_id} but expiry_date (${existingSub.expiry_date}) still in future — deferring Free downgrade.`);
             } else {
-              console.log(`[WEBHOOK] Downgraded user ${existingSub.user_id} to Free (unpaid subscription disabled)`);
+              // No remaining time — downgrade to Free
+              const freeLimits = PLAN_LIMITS["Free"] ?? { searches: 1, cv_gens: 0, pf_balance: 0 };
+              const { error: freeErr } = await supabase
+                .from("profiles")
+                .update({
+                  plan: "free",
+                  plan_expiry: null,
+                  search_balance: freeLimits.searches,
+                  cv_generation_balance: freeLimits.cv_gens,
+                  persistent_finder_balance: freeLimits.pf_balance,
+                })
+                .eq("id", existingSub.user_id);
+
+              if (freeErr) {
+                console.error("[WEBHOOK] Failed to downgrade to Free:", freeErr.message);
+              } else {
+                console.log(`[WEBHOOK] Downgraded user ${existingSub.user_id} to Free (subscription expired).`);
+              }
             }
           }
         }

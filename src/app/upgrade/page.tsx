@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard/dashboard-layout";
 import { LiquidGlassCard } from "@/components/landing/liquid-glass-card";
-import { Loader2, Check, ArrowRight, CreditCard, Ban, Minus, Plus, Crosshair } from "lucide-react";
+import { Loader2, Check, ArrowRight, CreditCard, Ban, Crosshair, ShoppingCart } from "lucide-react";
 import { PageTransitionWrapper } from "@/components/ui/page-transition-wrapper";
 import { useTransition } from "@/components/providers/transition-provider";
 import { createClient } from "@/lib/supabase/client";
@@ -79,10 +79,9 @@ export default function ManageSubscriptionPage() {
   const [generatingLink, setGeneratingLink] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
-  // PF refill adjustment
-  const [adjustingPf, setAdjustingPf] = useState(false);
-  const [currentPfRefill, setCurrentPfRefill] = useState(0);
-  const [pendingPfRefill, setPendingPfRefill] = useState<number | null>(null);
+  // Buy PF credits
+  const [buyPfQty, setBuyPfQty] = useState(1);
+  const [buyingPf, setBuyingPf] = useState(false);
 
   useEffect(() => { endTransition(); }, [endTransition]);
 
@@ -107,7 +106,6 @@ export default function ManageSubscriptionPage() {
       setProfile(profileRes.data);
       const plan = profileRes.data.plan ?? "free";
       setCurrentPlan(plan);
-      setCurrentPfRefill(profileRes.data.pf_refill ?? 0);
     }
 
     if (subRes.data) {
@@ -133,47 +131,57 @@ export default function ManageSubscriptionPage() {
     document.body.appendChild(script);
   }, []);
 
-  // --- PF Refill Adjustment ---
-  const handlePfRefillChange = (newCount: number) => {
-    const clamped = Math.max(0, Math.min(25, newCount));
-    const effectiveRefill = pendingPfRefill ?? currentPfRefill;
-    if (clamped === effectiveRefill) return;
-    setPendingPfRefill(clamped);
-  };
+  // --- Buy PF Credits ---
+  const handleBuyPf = async () => {
+    if (buyPfQty <= 0 || !PAYSTACK_PUBLIC_KEY) return;
+    if (!paystackReady || !(window as any).PaystackPop) {
+      alert("Payment system initializing. Try again.");
+      return;
+    }
 
-  const confirmPfRefillChange = async () => {
-    if (pendingPfRefill == null) return;
-    setAdjustingPf(true);
-    setErrorMsg("");
+    setBuyingPf(true);
 
     const { data: { session } } = await supabase.auth.getSession();
-    if (!session) { setAdjustingPf(false); return; }
+    if (!session) { setBuyingPf(false); return; }
+
+    const amount = buyPfQty * calculatePFPrice(buyPfQty) * 100;
 
     try {
-      const res = await fetch("/api/paystack/adjust-pf-refill", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-          "Content-Type": "application/json",
+      const handler = (window as any).PaystackPop.setup({
+        key: PAYSTACK_PUBLIC_KEY,
+        email: session.user?.email ?? "",
+        amount,
+        currency: "ZAR",
+        ref: "PFTOPUP-" + Date.now(),
+        metadata: { pf_runs: buyPfQty },
+        callback: function (response: { reference: string }) {
+          fetch("/api/paystack/purchase-pf", {
+            method: "POST",
+            headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ reference: response.reference }),
+          }).then(async (verifyRes) => {
+            const data = await verifyRes.json();
+            if (verifyRes.ok) {
+              setSuccessMsg(`Added ${buyPfQty} PF run${buyPfQty > 1 ? "s" : ""} to your balance!`);
+              setSuccessToast(true);
+              setTimeout(() => { setSuccessToast(false); }, 3000);
+              loadData();
+            } else {
+              alert(data.error ?? "Verification failed. Contact support.");
+            }
+          }).catch(() => {
+            alert("Verification failed. Contact support.");
+          }).finally(() => {
+            setBuyingPf(false);
+          });
         },
-        body: JSON.stringify({ pfCount: pendingPfRefill }),
+        onClose: () => setBuyingPf(false),
       });
-      const data = await res.json();
-      if (res.ok && data.ok) {
-        setCurrentPfRefill(pendingPfRefill);
-        setPendingPfRefill(null);
-        setSuccessMsg(data.message ?? "PF refill updated.");
-        setSuccessToast(true);
-        setTimeout(() => { setSuccessToast(false); }, 3000);
-        // Reload data for fresh balances
-        loadData();
-      } else {
-        setErrorMsg(data.error ?? "Failed to adjust PF refill.");
-      }
-    } catch {
-      setErrorMsg("Failed to adjust PF refill.");
+      handler.openIframe();
+    } catch (err) {
+      console.error("[BUY_PF] Paystack error:", err);
+      setBuyingPf(false);
     }
-    setAdjustingPf(false);
   };
 
   // --- Cancel Subscription ---
@@ -372,7 +380,7 @@ export default function ManageSubscriptionPage() {
       <div className="max-w-6xl mx-auto pt-8 pb-24">
         <h1 className="text-3xl font-bold text-white mb-8">Manage Subscription</h1>
 
-        {!loading && subscription && subscription.status !== "cancelled" && (
+        {!loading && subscription && (subscription.status !== "cancelled" || (subscription.expiry_date && new Date(subscription.expiry_date) > new Date())) && (
           <div className="liquid-glass rounded-xl p-6 mb-8">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-white">Your Subscription</h2>
@@ -416,7 +424,7 @@ export default function ManageSubscriptionPage() {
                 </div>
               )}
 
-              {subscription.expiry_date && (
+                  {subscription.expiry_date && (
                 <div>
                   <span className="text-xs text-white/50 block mb-1">
                     {subscription.status === "cancelled" ? "Access ends" : "Period ends"}
@@ -424,11 +432,9 @@ export default function ManageSubscriptionPage() {
                   <span className="text-lg font-semibold text-white">
                     {new Date(subscription.expiry_date).toLocaleDateString("en-ZA", { day: "numeric", month: "short", year: "numeric" })}
                   </span>
-                  {subscription.status === "active" && (
-                    <span className="text-xs text-white/40 ml-2">
-                      ({daysRemaining(subscription.expiry_date)} days left)
-                    </span>
-                  )}
+                  <span className="text-xs text-white/40 ml-2">
+                    ({daysRemaining(subscription.expiry_date)} days left)
+                  </span>
                 </div>
               )}
 
@@ -442,50 +448,43 @@ export default function ManageSubscriptionPage() {
               )}
             </div>
 
-            {/* PF Refill Stepper for current plan */}
+            {/* Buy PF Credits */}
             <div className="mt-6 pt-6 border-t border-white/10">
-              <h3 className="text-sm font-medium text-white mb-3">PF Refill Per Cycle</h3>
-              <p className="text-xs text-white/50 mb-3">Adjust how many Persistent Finder rounds you get each billing cycle.</p>
+              <h3 className="text-sm font-medium text-white mb-3">Buy Extra PF Runs</h3>
+              <p className="text-xs text-white/50 mb-3">Purchase one-time Persistent Finder runs that are added to your balance immediately. To change your monthly refill amount, switch to a different plan.</p>
               <div className="flex items-center gap-4 flex-wrap">
                 <div className="flex items-center gap-3">
                   <button
-                    onClick={() => handlePfRefillChange((pendingPfRefill ?? currentPfRefill) - 1)}
-                    disabled={(pendingPfRefill ?? currentPfRefill) <= 0 || adjustingPf}
+                    onClick={() => setBuyPfQty(Math.max(1, buyPfQty - 1))}
+                    disabled={buyPfQty <= 1 || buyingPf}
                     className="w-10 h-10 flex items-center justify-center rounded-lg border border-white/20 text-white/70 hover:text-white hover:border-white/40 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                   >
-                    <Minus size={16} />
+                    <span className="text-lg font-bold">−</span>
                   </button>
                   <div className="text-center min-w-[60px]">
-                    <span className="text-2xl font-bold text-white tabular-nums">{pendingPfRefill ?? currentPfRefill}</span>
+                    <span className="text-2xl font-bold text-white tabular-nums">{buyPfQty}</span>
                     <span className="ml-1 text-sm text-white/50">runs</span>
                   </div>
                   <button
-                    onClick={() => handlePfRefillChange((pendingPfRefill ?? currentPfRefill) + 1)}
-                    disabled={(pendingPfRefill ?? currentPfRefill) >= 25 || adjustingPf}
+                    onClick={() => setBuyPfQty(Math.min(25, buyPfQty + 1))}
+                    disabled={buyPfQty >= 25 || buyingPf}
                     className="w-10 h-10 flex items-center justify-center rounded-lg border border-white/20 text-white/70 hover:text-white hover:border-white/40 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                   >
-                    <Plus size={16} />
+                    <span className="text-lg font-bold">+</span>
                   </button>
                 </div>
-                {pendingPfRefill != null && (
-                  <button
-                    onClick={confirmPfRefillChange}
-                    disabled={adjustingPf}
-                    className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-[var(--color-accent)] rounded-full hover:bg-[var(--color-accent-hover)] transition-colors disabled:opacity-50"
-                  >
-                    {adjustingPf ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-                    {adjustingPf ? "Applying..." : `Change to ${pendingPfRefill} runs`}
-                  </button>
-                )}
-                {pendingPfRefill == null && (
-                  <span className="text-xs text-white/40">
-                    Price per run: R{calculatePFPrice(currentPfRefill)}
-                  </span>
-                )}
+                <span className="text-xs text-white/40">
+                  R{(buyPfQty * calculatePFPrice(buyPfQty)).toLocaleString("en-ZA", { minimumFractionDigits: 0 })} total
+                </span>
+                <button
+                  onClick={handleBuyPf}
+                  disabled={buyingPf || buyPfQty <= 0}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-[var(--color-accent)] rounded-full hover:bg-[var(--color-accent-hover)] transition-colors disabled:opacity-50"
+                >
+                  {buyingPf ? <Loader2 size={14} className="animate-spin" /> : <ShoppingCart size={14} />}
+                  {buyingPf ? "Processing..." : "Buy Now"}
+                </button>
               </div>
-              {subscription.status === "cancelled" && currentPfRefill > 0 && (
-                <p className="mt-2 text-xs text-yellow-400">Changes take effect on next subscription.</p>
-              )}
             </div>
 
             {/* Actions */}
@@ -531,7 +530,7 @@ export default function ManageSubscriptionPage() {
           </div>
         )}
 
-        {!loading && (!subscription || subscription.status === "cancelled") && (
+        {!loading && (!subscription || (subscription.status === "cancelled" && subscription.expiry_date && new Date(subscription.expiry_date) <= new Date())) && (
           <div className="liquid-glass rounded-xl p-6 mb-8">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center">
@@ -561,7 +560,9 @@ export default function ManageSubscriptionPage() {
             </div>
           </div>
           <p className="text-sm text-white/50 mb-6">
-            {hasSubscription
+            {subscription && subscription.status === "cancelled" && subscription.expiry_date && new Date(subscription.expiry_date) > new Date()
+              ? "Your subscription is cancelled. You can switch to a new plan or re-subscribe."
+              : hasSubscription
               ? "Upgrades take effect immediately. Downgrades apply at the end of your current billing period."
               : "Select a plan to start your subscription."}
           </p>
