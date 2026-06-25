@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { PLAN_LIMITS, PLAN_TIER_NAMES, calculatePFPrice } from "@/lib/plan-limits";
+import { PLAN_LIMITS, PLAN_TIER_NAMES, PLAN_PRICES, calculatePFPrice } from "@/lib/plan-limits";
 import { sendPlanUpgraded, sendPlanDowngraded } from "@/lib/email";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -99,17 +99,37 @@ export async function POST(request: NextRequest) {
     }
 
     const limits = PLAN_LIMITS[newPlan] ?? { searches: 1, cv_gens: 0, pf_balance: 0 };
-    const billingMonths = billing_cycle === "annual" ? 12 : 1;
 
     if (isUpgrade) {
-      // Calculate PF prorated charge for upgrade
+      // Calculate prorated upgrade charge
       const oldPricePerRun = calculatePFPrice(currentPfRefill);
       const newPricePerRun = calculatePFPrice(newPfCount);
+      const billingMonths = billing_cycle === "annual" ? 12 : 1;
       const oldPfTotalKobo = currentPfRefill * oldPricePerRun * 100 * billingMonths;
       const newPfTotalKobo = newPfCount * newPricePerRun * 100 * billingMonths;
-      const pfDiffKobo = Math.round(newPfTotalKobo - oldPfTotalKobo);
 
-      if (pfDiffKobo > 0 && sub.authorization_code) {
+      const oldBaseKobo = PLAN_PRICES[currentPlan]?.[sub.billing_cycle as "monthly" | "annual"] ?? 0;
+      const newBaseKobo = PLAN_PRICES[newPlan]?.[billing_cycle as "monthly" | "annual"] ?? 0;
+      const newFullAmount = newBaseKobo + newPfTotalKobo;
+
+      let chargeAmount = newFullAmount; // default: full new price
+
+      // Prorate only when billing cycle stays the same
+      if (sub.billing_cycle === billing_cycle && sub.start_date) {
+        const msPerDay = 1000 * 60 * 60 * 24;
+        const nowMs = now.getTime();
+        const startMs = new Date(sub.start_date).getTime();
+        const expiryMs = new Date(sub.expiry_date).getTime();
+        const totalDays = Math.max(1, Math.ceil((expiryMs - startMs) / msPerDay));
+        const daysRemaining = Math.max(1, Math.ceil((expiryMs - nowMs) / msPerDay));
+
+        const baseDiffKobo = Math.round((newBaseKobo - oldBaseKobo) * daysRemaining / totalDays);
+        const pfDiffKobo = Math.round((newPfTotalKobo - oldPfTotalKobo) * daysRemaining / totalDays);
+        chargeAmount = Math.max(0, baseDiffKobo + pfDiffKobo);
+      }
+
+      let charged = 0;
+      if (chargeAmount > 0 && sub.authorization_code) {
         try {
           const chargeRes = await fetch("https://api.paystack.co/transaction/charge_authorization", {
             method: "POST",
@@ -120,26 +140,30 @@ export async function POST(request: NextRequest) {
             body: JSON.stringify({
               authorization_code: sub.authorization_code,
               email: sub.email,
-              amount: pfDiffKobo,
-              metadata: { reason: "pf_change_on_upgrade", user_id: user.id },
+              amount: chargeAmount,
+              metadata: { reason: "plan_upgrade", user_id: user.id },
             }),
           });
           const chargeData = await chargeRes.json();
-          if (!chargeRes.ok || !chargeData.status) {
-            console.error("[CHANGE_PLAN] PF charge failed:", chargeData);
+          if (chargeRes.ok && chargeData.status) {
+            charged = chargeAmount;
+          } else {
+            console.error("[CHANGE_PLAN] Upgrade charge failed:", chargeData);
+            return NextResponse.json({ error: "Payment for upgrade failed. Please try again or contact support." }, { status: 402 });
           }
         } catch (err) {
-          console.error("[CHANGE_PLAN] PF charge error:", err);
+          console.error("[CHANGE_PLAN] Upgrade charge error:", err);
+          return NextResponse.json({ error: "Payment for upgrade failed. Please try again." }, { status: 500 });
         }
       }
 
-      // Insert new subscription record
+      // Insert new subscription record with the full recurring amount
       await supabase.from("subscriptions").insert({
         user_id: user.id,
         plan: newPlan,
         billing_cycle,
         paystack_reference: "CHANGE-" + Date.now(),
-        amount: 0, // will be calculated by cron on next charge
+        amount: newFullAmount,
         authorization_code: sub.authorization_code,
         customer_code: sub.customer_code,
         email: sub.email,
@@ -173,7 +197,7 @@ export async function POST(request: NextRequest) {
         .update({ pf_refill: newPfCount })
         .eq("id", user.id);
 
-      sendPlanUpgraded(user.email ?? "", currentPlan, newPlan, `R${(pfDiffKobo / 100).toFixed(2)}`).catch((err) =>
+      sendPlanUpgraded(user.email ?? "", currentPlan, newPlan, `R${(charged / 100).toFixed(2)}`).catch((err) =>
         console.error("[CHANGE_PLAN] Upgrade email failed:", err)
       );
 
@@ -181,7 +205,8 @@ export async function POST(request: NextRequest) {
         ok: true,
         type: "upgrade",
         plan: newPlan.toLowerCase(),
-        pf_charged_kobo: pfDiffKobo > 0 ? pfDiffKobo : 0,
+        charged_kobo: charged,
+        new_amount_kobo: newFullAmount,
         pf_refill: newPfCount,
       });
     } else {

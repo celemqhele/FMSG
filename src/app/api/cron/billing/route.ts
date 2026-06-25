@@ -52,11 +52,16 @@ export async function GET(request: NextRequest) {
   for (const sub of dueSubs) {
     if (!sub.email || !sub.authorization_code) continue;
 
-    // Calculate amount: base plan price + PF total
-    // The stored amount already includes base + PF from initial purchase
-    const chargeAmount = sub.amount;
+    // Calculate amount: stored amount minus any card update credit
+    const credit = sub.update_card_credit ?? 0;
+    const chargeAmount = Math.max(0, (sub.amount ?? 0) - credit);
 
-    if (chargeAmount <= 0) continue;
+    if (chargeAmount <= 0) {
+      if (credit > 0) {
+        await supabase.from("subscriptions").update({ update_card_credit: 0 }).eq("id", sub.id);
+      }
+      continue;
+    }
 
     try {
       const chargeRes = await fetch("https://api.paystack.co/transaction/charge_authorization", {
@@ -120,6 +125,7 @@ export async function GET(request: NextRequest) {
             expiry_date: newExpiry.toISOString(),
             next_payment_date: newNextPayment.toISOString(),
             failed_charge_count: 0,
+            update_card_credit: 0,
           })
           .eq("id", sub.id);
 

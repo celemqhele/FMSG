@@ -78,7 +78,10 @@ export async function POST(request: NextRequest) {
           if (activeSub) {
             await supabase
               .from("subscriptions")
-              .update({ authorization_code: authorizationCode })
+              .update({
+                authorization_code: authorizationCode,
+                update_card_credit: subData.amount ?? 100,
+              })
               .eq("id", activeSub.id);
             console.log(`[WEBHOOK] Updated authorization_code for user ${metadata.user_id}`);
           }

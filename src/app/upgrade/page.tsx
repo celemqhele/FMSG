@@ -242,6 +242,11 @@ export default function ManageSubscriptionPage() {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) { setGeneratingLink(false); return; }
 
+    if (!window.confirm("A R1.00 verification charge will be placed on your card. This will be credited toward your next bill.")) {
+      setGeneratingLink(false);
+      return;
+    }
+
     try {
       const res = await fetch("/api/update-payment-method", {
         method: "POST",
@@ -252,7 +257,7 @@ export default function ManageSubscriptionPage() {
       });
       const data = await res.json();
       if (res.ok && data.link) {
-        window.open(data.link, "_blank");
+        window.open(data.link, "paystack-card-update", "width=500,height=700");
       } else {
         setErrorMsg(data.error ?? "Failed to generate update link.");
       }
