@@ -78,6 +78,8 @@ export default function ManageSubscriptionPage() {
   const [cancelling, setCancelling] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [cancelMounted, setCancelMounted] = useState(false);
+  const [showUpdateCardConfirm, setShowUpdateCardConfirm] = useState(false);
+  const [updateCardMounted, setUpdateCardMounted] = useState(false);
   const [generatingLink, setGeneratingLink] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
@@ -235,36 +237,69 @@ export default function ManageSubscriptionPage() {
   };
 
   // --- Update Card ---
-  const handleUpdateCard = async () => {
-    setGeneratingLink(true);
-    setErrorMsg("");
+  const closeUpdateCardConfirm = () => {
+    setUpdateCardMounted(false);
+    setTimeout(() => setShowUpdateCardConfirm(false), 200);
+    setGeneratingLink(false);
+  };
+
+  const confirmUpdateCard = async () => {
+    closeUpdateCardConfirm();
 
     const { data: { session } } = await supabase.auth.getSession();
-    if (!session) { setGeneratingLink(false); return; }
+    if (!session) { return; }
 
-    if (!window.confirm("A R1.00 verification charge will be placed on your card. This will be credited toward your next bill.")) {
-      setGeneratingLink(false);
+    if (!paystackReady || !(window as any).PaystackPop) {
+      alert("Payment system is still initializing. Please wait a second and try again.");
       return;
     }
 
-    try {
-      const res = await fetch("/api/update-payment-method", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-          "Content-Type": "application/json",
-        },
-      });
-      const data = await res.json();
-      if (res.ok && data.link) {
-        window.open(data.link, "paystack-card-update", "width=500,height=700");
-      } else {
-        setErrorMsg(data.error ?? "Failed to generate update link.");
-      }
-    } catch {
-      setErrorMsg("Failed to generate update link.");
-    }
-    setGeneratingLink(false);
+    const email = session.user?.email;
+    if (!email) { return; }
+
+    setGeneratingLink(true);
+    setErrorMsg("");
+
+    const handler = (window as any).PaystackPop.setup({
+      key: PAYSTACK_PUBLIC_KEY,
+      email,
+      amount: 100,
+      currency: "ZAR",
+      ref: "FMSG-CARD-" + Date.now(),
+      channels: ["card"],
+      metadata: { purpose: "card_update" },
+      onClose: () => setGeneratingLink(false),
+      callback: (response: { reference: string }) => {
+        fetch("/api/paystack/verify-card-update", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ reference: response.reference }),
+        }).then(async (verifyRes) => {
+          const data = await verifyRes.json();
+          if (verifyRes.ok && data.ok) {
+            setSuccessMsg("Card updated successfully.");
+            setSuccessToast(true);
+            setTimeout(() => setSuccessToast(false), 3000);
+          } else {
+            setErrorMsg(data.error ?? "Failed to verify card update.");
+          }
+          setGeneratingLink(false);
+        }).catch(() => {
+          setErrorMsg("Failed to verify card update.");
+          setGeneratingLink(false);
+        });
+      },
+    });
+
+    handler.openIframe();
+  };
+
+  const handleUpdateCard = () => {
+    setShowUpdateCardConfirm(true);
+    setTimeout(() => setUpdateCardMounted(true), 10);
   };
 
   // --- Switch Plan ---
@@ -689,6 +724,46 @@ export default function ManageSubscriptionPage() {
           <div className="flex items-center gap-2">
             <Check size={16} />
             {successMsg ?? "Success!"}
+          </div>
+        </div>
+      )}
+
+      {/* Update card confirmation modal */}
+      {showUpdateCardConfirm && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center transition-opacity duration-300" style={{ opacity: updateCardMounted ? 1 : 0 }}>
+          <div className="absolute inset-0 bg-black/60" onClick={closeUpdateCardConfirm} />
+          <div className="relative">
+            <button
+              onClick={closeUpdateCardConfirm}
+              className="absolute -top-4 -right-4 z-10 p-1.5 bg-white border border-gray-300 rounded-full text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors shadow-lg"
+            >
+              <X size={20} />
+            </button>
+            <div
+              className="bg-white border border-gray-200 rounded-2xl p-6 max-w-sm mx-4 text-center transition-all duration-300 ease-out shadow-xl"
+              style={{ opacity: updateCardMounted ? 1 : 0, transform: updateCardMounted ? "translateY(0) scale(1)" : "translateY(8px) scale(0.97)" }}
+            >
+              <p className="text-gray-900 font-semibold mb-2">Update Card</p>
+              <p className="text-sm text-gray-500 mb-4">
+                A <strong className="text-gray-700">R1.00</strong> verification charge
+                will be placed on your card. This amount will be credited toward
+                your next bill.
+              </p>
+              <div className="flex justify-center gap-3">
+                <button
+                  onClick={closeUpdateCardConfirm}
+                  className="px-5 py-2.5 text-sm font-medium text-gray-600 bg-gray-100 border border-gray-200 rounded-full hover:bg-gray-200 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmUpdateCard}
+                  className="px-5 py-2.5 text-sm font-semibold text-white bg-[var(--color-success)] rounded-full hover:brightness-110 transition-colors"
+                >
+                  Continue
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

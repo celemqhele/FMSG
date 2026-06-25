@@ -16,10 +16,10 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const [subscription, setSubscription] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [cancelling, setCancelling] = useState(false);
-  const [updateLink, setUpdateLink] = useState<string | null>(null);
   const [generatingLink, setGeneratingLink] = useState(false);
   const [successMsg, setSuccessMsg] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
+  const [showUpdateCardConfirm, setShowUpdateCardConfirm] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -79,37 +79,67 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     setCancelling(false);
   };
 
-  const handleUpdateCard = async () => {
-    setGeneratingLink(true);
-    setErrorMsg("");
+  const handleUpdateCard = () => {
+    setShowUpdateCardConfirm(true);
+  };
+
+  const confirmUpdateCard = async () => {
+    setShowUpdateCardConfirm(false);
 
     const { data: { session } } = await supabase.auth.getSession();
-    if (!session) { setGeneratingLink(false); return; }
+    if (!session) { return; }
 
-    if (!window.confirm("A R1.00 verification charge will be placed on your card. This will be credited toward your next bill.")) {
-      setGeneratingLink(false);
+    const PAYSTACK_PUBLIC_KEY = process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY;
+    if (!PAYSTACK_PUBLIC_KEY) {
+      setErrorMsg("Payment system not configured.");
       return;
     }
 
-    try {
-      const res = await fetch("/api/update-payment-method", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-          "Content-Type": "application/json",
-        },
-      });
-      const data = await res.json();
-      if (res.ok && data.link) {
-        setUpdateLink(data.link);
-        window.open(data.link, "paystack-card-update", "width=500,height=700");
-      } else {
-        setErrorMsg(data.error ?? "Failed to generate update link.");
-      }
-    } catch {
-      setErrorMsg("Failed to generate update link.");
+    if (!(window as any).PaystackPop) {
+      setErrorMsg("Payment system could not load. Try refreshing the page.");
+      return;
     }
-    setGeneratingLink(false);
+
+    const email = session.user?.email;
+    if (!email) { return; }
+
+    setGeneratingLink(true);
+    setErrorMsg("");
+
+    const handler = (window as any).PaystackPop.setup({
+      key: PAYSTACK_PUBLIC_KEY,
+      email,
+      amount: 100,
+      currency: "ZAR",
+      ref: "FMSG-CARD-" + Date.now(),
+      channels: ["card"],
+      metadata: { purpose: "card_update" },
+      onClose: () => setGeneratingLink(false),
+      callback: (response: { reference: string }) => {
+        fetch("/api/paystack/verify-card-update", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ reference: response.reference }),
+        }).then(async (verifyRes) => {
+          const data = await verifyRes.json();
+          if (verifyRes.ok && data.ok) {
+            setSuccessMsg(data.message ?? "Card updated successfully.");
+            await loadSubscription();
+          } else {
+            setErrorMsg(data.error ?? "Failed to verify card update.");
+          }
+          setGeneratingLink(false);
+        }).catch(() => {
+          setErrorMsg("Failed to verify card update.");
+          setGeneratingLink(false);
+        });
+      },
+    });
+
+    handler.openIframe();
   };
 
   const handleClose = useCallback(() => {
@@ -182,17 +212,40 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
                   {subscription.status === "active" && (
                     <div className="flex flex-col gap-2 pt-2">
-                      <button
-                        onClick={handleUpdateCard}
-                        disabled={generatingLink}
-                        className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-white bg-white/10 hover:bg-white/20 rounded-full transition-colors disabled:opacity-50"
-                      >
-                        {generatingLink ? (
-                          <><Loader2 size={14} className="animate-spin" /> Opening Paystack...</>
-                        ) : (
-                          <><CreditCard size={14} /> Update Card</>
-                        )}
-                      </button>
+                      {showUpdateCardConfirm ? (
+                        <div className="bg-white/5 border border-white/10 rounded-xl p-4">
+                          <p className="text-sm text-white/80 mb-3">
+                            A <strong className="text-white">R1.00</strong> verification charge
+                            will be placed on your card. This will be credited toward your next bill.
+                          </p>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => setShowUpdateCardConfirm(false)}
+                              className="flex-1 px-3 py-2 text-sm font-medium text-white/80 bg-white/10 hover:bg-white/15 rounded-full transition-colors"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              onClick={confirmUpdateCard}
+                              className="flex-1 px-3 py-2 text-sm font-semibold text-white bg-[var(--color-success)] hover:brightness-110 rounded-full transition-colors"
+                            >
+                              Continue
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={handleUpdateCard}
+                          disabled={generatingLink}
+                          className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-white bg-white/10 hover:bg-white/20 rounded-full transition-colors disabled:opacity-50"
+                        >
+                          {generatingLink ? (
+                            <><Loader2 size={14} className="animate-spin" /> Opening Paystack...</>
+                          ) : (
+                            <><CreditCard size={14} /> Update Card</>
+                          )}
+                        </button>
+                      )}
                       <button
                         onClick={handleCancel}
                         disabled={cancelling}
