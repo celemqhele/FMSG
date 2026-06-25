@@ -123,7 +123,7 @@ export function JobResultCard({
       const res = await fetch(`/api/job-results/${id}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ ban_job: banJob, ban_company: banCompany }),
+        body: JSON.stringify({ ban_job: banJob, ban_company: banCompany, job_url: jobUrl, company }),
       });
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));

@@ -30,6 +30,7 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
       .maybeSingle();
 
     let isSavedJob = false;
+    let useBodyFallback = false;
     if (!job) {
       // Try saved_jobs
       const { data: savedJob, error: savedErr } = await supabase
@@ -39,32 +40,42 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
         .eq("user_id", user.id)
         .maybeSingle();
 
-      if (savedErr || !savedJob) {
-        return NextResponse.json({ error: savedErr?.message || "Job not found." }, { status: savedErr ? 500 : 404 });
-      }
+      if (savedJob) {
+        // Found in saved_jobs — remove it from saved list
+        await supabase.from("saved_jobs").delete().eq("id", id).eq("user_id", user.id);
 
-      // Found in saved_jobs — remove it from saved list
-      await supabase.from("saved_jobs").delete().eq("id", id).eq("user_id", user.id);
+        // Try to find corresponding job_results entry by URL for deeper banning
+        const { data: matchingJob } = await supabase
+          .from("job_results")
+          .select("*")
+          .eq("job_url", savedJob.job_url)
+          .eq("user_id", user.id)
+          .maybeSingle();
 
-      // Try to find corresponding job_results entry by URL for deeper banning
-      const { data: matchingJob } = await supabase
-        .from("job_results")
-        .select("*")
-        .eq("job_url", savedJob.job_url)
-        .eq("user_id", user.id)
-        .maybeSingle();
-
-      if (matchingJob) {
-        job = matchingJob;
-      } else {
-        // Build a minimal job-like object from saved_jobs data
+        if (matchingJob) {
+          job = matchingJob;
+        } else {
+          // Build a minimal job-like object from saved_jobs data
+          job = {
+            company: savedJob.company,
+            job_url: savedJob.job_url,
+            job_title: savedJob.job_title,
+          };
+        }
+        isSavedJob = true;
+      } else if (body.job_url || body.company) {
+        // UUID not in DB — use job_url / company from request body for ban actions
         job = {
-          company: savedJob.company,
-          job_url: savedJob.job_url,
-          job_title: savedJob.job_title,
+          company: body.company || "Unknown",
+          job_url: body.job_url || "",
+          job_title: "",
         };
+        useBodyFallback = true;
+      } else if (savedErr) {
+        return NextResponse.json({ error: savedErr.message }, { status: 500 });
+      } else {
+        return NextResponse.json({ error: "Job not found." }, { status: 404 });
       }
-      isSavedJob = true;
     }
 
     if (body.ban_company) {
@@ -117,14 +128,34 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
 
     // Mark job_results as deleted (if it exists as a job_results entry)
     if (!isSavedJob) {
-      const { error: deleteErr } = await supabase
-        .from("job_results")
-        .update({ is_deleted: true })
-        .eq("id", id)
-        .eq("user_id", user.id);
+      if (useBodyFallback) {
+        // Try finding the row by job_url since UUID didn't match
+        const { data: urlMatch } = await supabase
+          .from("job_results")
+          .select("id")
+          .eq("job_url", body.job_url)
+          .eq("user_id", user.id)
+          .maybeSingle();
+        if (urlMatch) {
+          const { error: deleteErr } = await supabase
+            .from("job_results")
+            .update({ is_deleted: true })
+            .eq("id", urlMatch.id)
+            .eq("user_id", user.id);
+          if (deleteErr) {
+            console.error("Failed to mark job as deleted by URL:", deleteErr.message);
+          }
+        }
+      } else {
+        const { error: deleteErr } = await supabase
+          .from("job_results")
+          .update({ is_deleted: true })
+          .eq("id", id)
+          .eq("user_id", user.id);
 
-      if (deleteErr) {
-        return NextResponse.json({ error: "Failed to mark job as deleted." }, { status: 500 });
+        if (deleteErr) {
+          return NextResponse.json({ error: "Failed to mark job as deleted." }, { status: 500 });
+        }
       }
     }
 
