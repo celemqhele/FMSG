@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
       .maybeSingle();
 
     if (fetchErr || !profile?.email_verification_hash) {
-      return NextResponse.json({ error: "No verification code found. Request a new one." }, { status: 400 });
+      return NextResponse.json({ error: "Code expired or not requested. Please request a new one." }, { status: 400 });
     }
 
     const valid = await verifyCode(code, email, profile.email_verification_hash);
