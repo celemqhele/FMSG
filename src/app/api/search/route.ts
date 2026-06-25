@@ -1159,7 +1159,7 @@ export async function POST(request: NextRequest) {
           let pfRound = isContinuation ? (state.nextRound - 1) : 0;
           let pfAborted = isContinuation ? (state.pfAborted || false) : false;
 
-          for (let round = 0; round < MAX_ROUNDS; round++) {
+          for (let round = pfRound; round < MAX_ROUNDS; round++) {
             pfRound = round + 1;
 
             if (activeTitles.length === 0) {
