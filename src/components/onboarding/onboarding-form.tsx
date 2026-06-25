@@ -111,6 +111,9 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
       job_types: jobTypes,
       onboarding_completed: true,
       cv_file_path: cvFilePath,
+      search_balance: 1,
+      cv_generation_balance: 0,
+      persistent_finder_balance: 0,
     });
 
     if (profileErr) { setError(profileErr.message); setSaving(false); return; }
