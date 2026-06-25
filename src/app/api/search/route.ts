@@ -835,6 +835,16 @@ export async function POST(request: NextRequest) {
 
       const isAdmin = profile.is_admin ?? false;
 
+      // Account security gates
+      if (!isAdmin) {
+        if (profile.account_status === "blocked") {
+          return NextResponse.json({ code: "ACCOUNT_BLOCKED", message: "Your account has been disabled due to suspicious activity." }, { status: 403 });
+        }
+        if (!profile.email_verified) {
+          return NextResponse.json({ code: "EMAIL_NOT_VERIFIED", message: "Please verify your email before searching." }, { status: 403 });
+        }
+      }
+
       // Balance check
       if (!isAdmin) {
         const searchBalance = profile.search_balance ?? 0;

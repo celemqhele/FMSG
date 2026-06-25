@@ -20,6 +20,9 @@ import { RejectedJobs } from "@/components/dashboard/rejected-jobs";
 import { PageTransitionWrapper } from "@/components/ui/page-transition-wrapper";
 import { useTransition } from "@/components/providers/transition-provider";
 import { createClient } from "@/lib/supabase/client";
+import { BlockedAccountPage } from "@/components/dashboard/blocked-account";
+import { VerifyEmailBanner } from "@/components/dashboard/verify-email-banner";
+import { VerifyCodeModal } from "@/components/dashboard/verify-code-modal";
 
 interface JobResult {
   id: string;
@@ -95,6 +98,10 @@ export default function DashboardPage() {
   const [onboardingStep, setOnboardingStep] = useState<"prompt" | "form" | "done">("prompt");
   const [onboardingMounted, setOnboardingMounted] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  const [accountStatus, setAccountStatus] = useState<string>("active");
+  const [emailVerified, setEmailVerified] = useState<boolean | null>(null);
+  const [showVerifyModal, setShowVerifyModal] = useState(false);
+  const [userEmail, setUserEmail] = useState("");
 
   useEffect(() => { endTransition(); }, [endTransition]);
 
@@ -113,14 +120,18 @@ export default function DashboardPage() {
         return;
       }
       setAuthChecked(true);
+      setUserEmail(data.session.user?.email ?? "");
       supabase
         .from("profiles")
-        .select("onboarding_completed")
+        .select("onboarding_completed, account_status, email_verified")
         .maybeSingle()
         .then(({ data: profile }: { data: any }) => {
           if (!profile) {
             setNeedsOnboarding(true);
             requestAnimationFrame(() => setOnboardingMounted(true));
+          } else {
+            if (profile.account_status) setAccountStatus(profile.account_status);
+            setEmailVerified(profile.email_verified ?? false);
           }
         });
     });
@@ -302,6 +313,24 @@ export default function DashboardPage() {
         setProgress(0);
         setVideoFast(false);
         setPfActive(false);
+        return;
+      }
+
+      if (res.status === 403 && data.code === "ACCOUNT_BLOCKED") {
+        setAccountStatus("blocked");
+        setSearching(false);
+        setProgress(0);
+        setVideoFast(false);
+        setPfActive(false);
+        return;
+      }
+
+      if (res.status === 403 && data.code === "EMAIL_NOT_VERIFIED") {
+        setSearching(false);
+        setProgress(0);
+        setVideoFast(false);
+        setPfActive(false);
+        setResultMessage("Please verify your email before searching.");
         return;
       }
 
@@ -550,7 +579,14 @@ export default function DashboardPage() {
     <DashboardLayout>
       <PageTransitionWrapper>
       <div className="max-w-4xl mx-auto pt-8 space-y-6">
-        <DashboardTabs active={activeTab} onChange={setActiveTab} />
+        {accountStatus === "blocked" ? (
+          <BlockedAccountPage />
+        ) : (
+          <>
+            {emailVerified === false && authChecked && (
+              <VerifyEmailBanner onOpenModal={() => setShowVerifyModal(true)} />
+            )}
+            <DashboardTabs active={activeTab} onChange={setActiveTab} />
 
         {activeTab === "search" && (
           <>
@@ -681,6 +717,8 @@ export default function DashboardPage() {
         {activeTab === "saved" && <SavedJobs />}
 
         {activeTab === "rejected" && <RejectedJobs />}
+              </>
+            )}
       </div>
 
       {showLimitModal && (
@@ -737,6 +775,13 @@ export default function DashboardPage() {
       )}
 
       <PFPurchaseModal isOpen={pfModalOpen} onClose={() => setPfModalOpen(false)} />
+
+      <VerifyCodeModal
+        isOpen={showVerifyModal}
+        email={userEmail}
+        onClose={() => setShowVerifyModal(false)}
+        onVerified={() => { setEmailVerified(true); window.dispatchEvent(new Event("refresh-balances")); }}
+      />
 
       {needsOnboarding && onboardingMounted && (
         <div
