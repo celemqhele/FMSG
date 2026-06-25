@@ -785,7 +785,7 @@ export default function DashboardPage() {
 
       {needsOnboarding && onboardingMounted && (
         <div
-          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm transition-opacity duration-500"
+          className="fixed inset-0 z-[200] flex items-start justify-center pt-24 bg-black/60 backdrop-blur-sm transition-opacity duration-500"
           style={{ opacity: onboardingStep === "done" ? 1 : 1 }}
         >
           <div
