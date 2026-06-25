@@ -123,12 +123,34 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
       cv_file_path: cvFilePath,
       onboarding_completed: true,
     });
-    setSaving(false);
     if (err) {
+      setSaving(false);
       setError(err.message);
-    } else {
-      onOnboarded?.();
+      return;
     }
+
+    const { data: existing } = await supabase
+      .from("search_profiles")
+      .select("id")
+      .eq("user_id", user.user.id)
+      .limit(1);
+
+    if (!existing || existing.length === 0) {
+      const profileName = jobTitles.length > 0 ? `${jobTitles[0]} Profile` : "Main Profile";
+      const variations = cvFilePath ? [{ name: "CV", file_path: cvFilePath }] : [];
+      await supabase.from("search_profiles").insert({
+        user_id: user.user.id,
+        name: profileName,
+        job_titles: jobTitles,
+        job_types: jobTypes,
+        location,
+        cv_variations: variations,
+        is_default: true,
+      });
+    }
+
+    setSaving(false);
+    onOnboarded?.();
   };
 
   if (step === "upload") {
