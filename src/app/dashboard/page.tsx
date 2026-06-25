@@ -94,6 +94,7 @@ export default function DashboardPage() {
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState<"prompt" | "form" | "done">("prompt");
   const [onboardingMounted, setOnboardingMounted] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => { endTransition(); }, [endTransition]);
 
@@ -208,16 +209,23 @@ export default function DashboardPage() {
       return;
     }
 
-    const res = await fetch("/api/search", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${session.access_token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ query, profile_id: profileId, pf_mode: pfMode }),
-    });
+    abortRef.current = new AbortController();
 
-    await handleStreamResponse(res);
+    try {
+      const res = await fetch("/api/search", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ query, profile_id: profileId, pf_mode: pfMode }),
+        signal: abortRef.current.signal,
+      });
+
+      await handleStreamResponse(res);
+    } catch (err) {
+      if ((err as DOMException)?.name !== "AbortError") throw err;
+    }
   }, [setVideoFast]);
 
   const handleContinue = useCallback(async () => {
@@ -231,18 +239,40 @@ export default function DashboardPage() {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return;
 
-    const res = await fetch("/api/search", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${session.access_token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ continuation: continuationToken }),
-    });
+    abortRef.current = new AbortController();
 
-    setContinuationToken(null);
-    await handleStreamResponse(res);
+    try {
+      const res = await fetch("/api/search", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ continuation: continuationToken }),
+        signal: abortRef.current.signal,
+      });
+
+      setContinuationToken(null);
+      await handleStreamResponse(res);
+    } catch (err) {
+      if ((err as DOMException)?.name !== "AbortError") throw err;
+    }
   }, [continuationToken, setVideoFast]);
+
+  const handleAbort = useCallback(() => {
+    if (abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
+    }
+    setSearching(false);
+    setProgress(0);
+    setVideoFast(false);
+    setPfActive(false);
+    setContinuationToken(null);
+    setStatusCompleted([]);
+    setStatusActive("");
+    setResultMessage("");
+  }, []);
 
   const handleStreamResponse = async (res: Response) => {
     const contentType = res.headers.get("Content-Type") || "";
@@ -468,7 +498,8 @@ export default function DashboardPage() {
         setStatusActive("");
         setResultMessage("Connection lost. Please try again.");
       }
-    } catch {
+    } catch (err) {
+      if ((err as DOMException)?.name === "AbortError") return;
       if (!streamComplete) {
         setSearching(false);
         setProgress(0);
@@ -516,7 +547,7 @@ export default function DashboardPage() {
 
         {activeTab === "search" && (
           <>
-            <SearchPill onSearch={handleSearch} searching={searching} />
+            <SearchPill onSearch={handleSearch} onAbort={handleAbort} searching={searching} />
             <div className="flex flex-wrap justify-center gap-1.5">
               <BalanceChips />
             </div>

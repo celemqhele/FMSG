@@ -1,20 +1,23 @@
 ﻿"use client";
 
 import { useState } from "react";
-import { Search, Crosshair } from "lucide-react";
+import { Search, Crosshair, Square, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useActiveProfile } from "@/components/dashboard/dashboard-layout";
 
 interface SearchPillProps {
   onSearch: (query: string, profileId?: string | null, pfMode?: boolean) => void;
+  onAbort: () => void;
   searching: boolean;
 }
 
-export function SearchPill({ onSearch, searching }: SearchPillProps) {
+export function SearchPill({ onSearch, onAbort, searching }: SearchPillProps) {
   const { activeProfileId } = useActiveProfile();
   const [displayTitle, setDisplayTitle] = useState("Search for jobs");
   const [bouncing, setBouncing] = useState(false);
   const [pfMode, setPfMode] = useState(false);
+  const [showAbortConfirm, setShowAbortConfirm] = useState(false);
+  const [abortMounted, setAbortMounted] = useState(false);
 
   const handleSearch = async () => {
     if (searching) return;
@@ -69,8 +72,61 @@ export function SearchPill({ onSearch, searching }: SearchPillProps) {
     onSearch(query, usedProfileId, pfMode);
   };
 
+  const openAbortConfirm = () => {
+    setShowAbortConfirm(true);
+    setTimeout(() => setAbortMounted(true), 10);
+  };
+
+  const closeAbortConfirm = () => {
+    setAbortMounted(false);
+    setTimeout(() => setShowAbortConfirm(false), 200);
+  };
+
+  const confirmAbort = () => {
+    closeAbortConfirm();
+    onAbort();
+  };
+
   return (
-    <div className={`w-full max-w-2xl mx-auto flex items-center h-14 rounded-full bg-white/10 border border-white/20 backdrop-blur-xl overflow-hidden transition-transform duration-200 ${bouncing ? "scale-[1.02]" : "scale-100"}`}>
+    <>
+      {showAbortConfirm && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center transition-opacity duration-300" style={{ opacity: abortMounted ? 1 : 0 }}>
+          <div className="absolute inset-0 bg-black/60" onClick={closeAbortConfirm} />
+          <div className="relative">
+            <button
+              onClick={closeAbortConfirm}
+              className="absolute -top-4 -right-4 z-10 p-1.5 bg-white border border-gray-300 rounded-full text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors shadow-lg"
+            >
+              <X size={20} />
+            </button>
+            <div
+              className="bg-white border border-gray-200 rounded-2xl p-6 max-w-sm mx-4 text-center transition-all duration-300 ease-out shadow-xl"
+              style={{ opacity: abortMounted ? 1 : 0, transform: abortMounted ? "translateY(0) scale(1)" : "translateY(8px) scale(0.97)" }}
+            >
+              <p className="text-gray-900 font-semibold mb-2">Abort search?</p>
+              <p className="text-sm text-gray-500 mb-5">
+                Credits already used will not be refunded. The search will stop immediately.
+              </p>
+              <div className="flex justify-center gap-3">
+                <button
+                  onClick={closeAbortConfirm}
+                  className="px-5 py-2.5 text-sm font-medium text-gray-600 bg-gray-100 border border-gray-200 rounded-full hover:bg-gray-200 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmAbort}
+                  className="px-5 py-2.5 text-sm font-semibold text-white bg-[var(--color-error)] rounded-full hover:bg-red-600 transition-colors"
+                >
+                  Stop Search
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className={`w-full max-w-2xl mx-auto flex items-center h-14 rounded-full bg-white/10 border border-white/20 backdrop-blur-xl overflow-hidden transition-transform duration-200 ${bouncing ? "scale-[1.02]" : "scale-100"}`}>
       <button
         onClick={() => setPfMode(!pfMode)}
         className={`ml-2 w-10 h-10 rounded-full flex items-center justify-center transition-colors ${pfMode ? "bg-[var(--color-accent)] text-white" : "text-white/60 hover:text-white/90 hover:bg-white/10"}`}
@@ -83,6 +139,15 @@ export function SearchPill({ onSearch, searching }: SearchPillProps) {
         {pfMode ? "Persistent Finder: scanning all titles" : displayTitle}
       </span>
 
+      {searching && (
+        <button
+          onClick={openAbortConfirm}
+          className="flex items-center gap-2 px-4 h-10 rounded-full bg-white/10 border border-white/20 hover:bg-white/20 transition-colors mr-1"
+          title="Abort search"
+        >
+          <Square size={16} className="text-[var(--color-error)]" />
+        </button>
+      )}
       <button
         onClick={handleSearch}
         disabled={searching}
@@ -92,5 +157,6 @@ export function SearchPill({ onSearch, searching }: SearchPillProps) {
         {searching ? (pfMode ? "Finding..." : "Searching...") : "Search"}
       </button>
     </div>
+    </>
   );
 }

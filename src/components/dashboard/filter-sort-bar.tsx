@@ -74,7 +74,7 @@ export function FilterSortBar({ filter, sort, onFilterChange, onSortChange }: Fi
   return (
     <div className="flex items-center gap-2">
       {/* Filter Pill */}
-      <div className="relative">
+      <div className="relative" style={{ zIndex: filterOpen ? 50 : undefined }}>
         <button
           onClick={filterOpen ? closeFilter : openFilter}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-colors ${
@@ -96,10 +96,17 @@ export function FilterSortBar({ filter, sort, onFilterChange, onSortChange }: Fi
           <>
             <div className="fixed inset-0 z-40" onClick={closeFilter} />
             <div
-              className={`absolute left-0 top-8 z-50 w-52 rounded-xl liquid-glass border border-white/10 p-2 transition-all duration-200 ${
+              className={`absolute left-0 top-8 z-50 w-52 rounded-xl p-2 transition-all duration-200 ${
                 filterMounted ? "opacity-100 scale-100" : "opacity-0 scale-95"
               }`}
-              style={{ pointerEvents: filterMounted ? "auto" : "none" }}
+              style={{
+                background: "rgba(255, 255, 255, 0.05)",
+                backdropFilter: "blur(24px) saturate(1.4)",
+                WebkitBackdropFilter: "blur(24px) saturate(1.4)",
+                border: "1px solid rgba(255, 255, 255, 0.1)",
+                boxShadow: "0 8px 32px rgba(0, 0, 0, 0.08), inset 0 0 30px rgba(255, 255, 255, 0.05)",
+                pointerEvents: filterMounted ? "auto" as any : "none",
+              }}
             >
               {(Object.keys(FILTER_LABELS) as (keyof FilterState)[]).map((key) => (
                 <button
@@ -123,7 +130,7 @@ export function FilterSortBar({ filter, sort, onFilterChange, onSortChange }: Fi
       </div>
 
       {/* Sort Pill */}
-      <div className="relative">
+      <div className="relative" style={{ zIndex: sortOpen ? 50 : undefined }}>
         <button
           onClick={sortOpen ? closeSort : openSort}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-white/20 text-xs font-medium text-white/80 hover:text-white hover:bg-white/10 transition-colors"
@@ -136,10 +143,17 @@ export function FilterSortBar({ filter, sort, onFilterChange, onSortChange }: Fi
           <>
             <div className="fixed inset-0 z-40" onClick={closeSort} />
             <div
-              className={`absolute left-0 top-8 z-50 w-44 rounded-xl liquid-glass border border-white/10 p-2 transition-all duration-200 ${
+              className={`absolute left-0 top-8 z-50 w-44 rounded-xl p-2 transition-all duration-200 ${
                 sortMounted ? "opacity-100 scale-100" : "opacity-0 scale-95"
               }`}
-              style={{ pointerEvents: sortMounted ? "auto" : "none" }}
+              style={{
+                background: "rgba(255, 255, 255, 0.05)",
+                backdropFilter: "blur(24px) saturate(1.4)",
+                WebkitBackdropFilter: "blur(24px) saturate(1.4)",
+                border: "1px solid rgba(255, 255, 255, 0.1)",
+                boxShadow: "0 8px 32px rgba(0, 0, 0, 0.08), inset 0 0 30px rgba(255, 255, 255, 0.05)",
+                pointerEvents: sortMounted ? "auto" as any : "none",
+              }}
             >
               {SORT_OPTIONS.map((opt) => (
                 <button
