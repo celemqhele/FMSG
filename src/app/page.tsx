@@ -26,6 +26,10 @@ export default function HomePage() {
     supabase.auth.getSession().then(({ data: { session } }: { data: { session: any } }) => {
       setIsLoggedIn(!!session);
     });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: string, session: any) => {
+      setIsLoggedIn(!!session);
+    });
+    return () => { subscription.unsubscribe(); };
   }, []);
 
   useEffect(() => {

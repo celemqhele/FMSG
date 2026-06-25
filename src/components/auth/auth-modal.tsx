@@ -14,7 +14,7 @@ interface AuthModalProps {
   defaultTab?: "login" | "signup";
 }
 
-type Screen = "login" | "signup" | "forgot" | "forgot-sent";
+type Screen = "login" | "signup" | "forgot" | "forgot-sent" | "signup-no-session";
 
 export function AuthModal({ isOpen, onClose, defaultTab = "signup" }: AuthModalProps) {
   const [mounted, setMounted] = useState(false);
@@ -38,8 +38,12 @@ export function AuthModal({ isOpen, onClose, defaultTab = "signup" }: AuthModalP
     setScreen(s);
   }, []);
 
-  const handleSignUpSubmit = useCallback(() => {
-    setTransitionType("login");
+  const handleSignUpSubmit = useCallback(({ autoConfirmed }: { autoConfirmed: boolean }) => {
+    if (autoConfirmed) {
+      setTransitionType("login");
+    } else {
+      setScreen("signup-no-session");
+    }
   }, []);
 
   const handleLoggedIn = useCallback(() => {
@@ -86,7 +90,7 @@ export function AuthModal({ isOpen, onClose, defaultTab = "signup" }: AuthModalP
           }}
           onClick={(e) => e.stopPropagation()}
         >
-          {screen !== "forgot-sent" && (
+          {screen !== "forgot-sent" && screen !== "signup-no-session" && (
             <div className="flex gap-1 mb-6 p-1 rounded-lg bg-[var(--color-surface)]">
               <button
                 onClick={() => switchScreen("login")}
@@ -116,6 +120,22 @@ export function AuthModal({ isOpen, onClose, defaultTab = "signup" }: AuthModalP
               <LogInForm onForgotPassword={() => switchScreen("forgot")} onLoggedIn={handleLoggedIn} />
             )}
             {screen === "signup" && <SignUpForm onSuccess={handleSignUpSubmit} />}
+            {screen === "signup-no-session" && (
+              <div className="flex flex-col items-center gap-4 text-center">
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                  Almost there
+                </div>
+                <p className="text-sm text-white/80">
+                  Account created. Check your email for a confirmation link, then come back and log in.
+                </p>
+                <button
+                  onClick={() => switchScreen("login")}
+                  className="text-sm text-[var(--color-accent)] hover:underline transition-colors"
+                >
+                  Go to Log In
+                </button>
+              </div>
+            )}
             {screen === "forgot" && (
               <ForgotPasswordForm
                 onBack={() => switchScreen("login")}
