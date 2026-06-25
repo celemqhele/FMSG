@@ -848,6 +848,17 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ code: "LIMIT_003", message: "No Persistent Finder rounds remaining. Upgrade your plan." }, { status: 403 });
           }
         }
+
+        // Atomic balance deduction — before any search work
+        if (pf_mode) {
+          const { error: sErr } = await dataClient.rpc("decrement_search_balance", { p_user_id: user.id, p_amount: 1 });
+          if (sErr) debugLog("[SEARCH] RPC decrement_search_balance failed:", sErr);
+          const { error: pfErr } = await dataClient.rpc("decrement_pf_balance", { p_user_id: user.id, p_amount: 1 });
+          if (pfErr) debugLog("[SEARCH] RPC decrement_pf_balance failed:", pfErr);
+        } else {
+          const { error: sErr } = await dataClient.rpc("decrement_search_balance", { p_user_id: user.id, p_amount: 1 });
+          if (sErr) debugLog("[SEARCH] RPC decrement_search_balance failed:", sErr);
+        }
       }
 
       // Banned lists
@@ -949,19 +960,6 @@ export async function POST(request: NextRequest) {
         const startTime = Date.now();
 
         try {
-          // Balance deduction (atomic, only at start, not on continuation)
-          if (!isContinuation && !state.isAdmin) {
-            if (state.pf_mode) {
-              const { error: sErr } = await dataClient.rpc("decrement_search_balance", { p_user_id: user.id, p_amount: 1 });
-              if (sErr) debugLog("[SEARCH] RPC decrement_search_balance failed:", sErr);
-              const { error: pfErr } = await dataClient.rpc("decrement_pf_balance", { p_user_id: user.id, p_amount: 1 });
-              if (pfErr) debugLog("[SEARCH] RPC decrement_pf_balance failed:", pfErr);
-            } else {
-              const { error: sErr } = await dataClient.rpc("decrement_search_balance", { p_user_id: user.id, p_amount: 1 });
-              if (sErr) debugLog("[SEARCH] RPC decrement_search_balance failed:", sErr);
-            }
-          }
-
           const effectivePfMode = state.pf_mode ?? (state.mode === "pf");
 
           if (!effectivePfMode) {
