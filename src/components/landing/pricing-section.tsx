@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
@@ -36,13 +36,13 @@ function PricingCard({ tier, annual, compact }: { tier: typeof tiers[number]; an
         <span className="text-3xl font-bold text-white">
           {annual ? tier.annualPrice : tier.monthlyPrice}
         </span>
-        <span className="ml-1 text-sm text-white/50">
+        <span className="ml-1 text-sm text-white/70">
           /{annual ? "year" : "month"}
         </span>
       </div>
       <ul className="mt-3 flex-1 flex flex-col gap-3">
         {tier.features.map((f) => (
-          <li key={f} className="flex items-start gap-2 text-sm text-white/60">
+          <li key={f} className="flex items-start gap-2 text-sm text-white/80">
             <Check size={16} className="mt-0.5 text-[var(--color-success)] shrink-0" />
             {f}
           </li>
@@ -173,7 +173,7 @@ export function PricingSection() {
           <h2 className="text-3xl md:text-4xl font-semibold text-white tracking-tight">
             Simple pricing
           </h2>
-          <p className="mt-4 text-white/60">
+          <p className="mt-4 text-white/80">
             All plans include AI-powered job matching. Upgrade anytime.
           </p>
           <div className="mt-8 inline-flex flex-wrap items-center justify-center gap-3 p-1 rounded-full bg-white/10 border border-white/10">
@@ -182,7 +182,7 @@ export function PricingSection() {
               className={`px-4 py-2 text-sm font-medium rounded-full transition-colors whitespace-nowrap ${
                 !annual
                   ? "bg-white/15 text-white shadow-[var(--shadow-sm)]"
-                  : "text-white/60 hover:text-white"
+                  : "text-white/80 hover:text-white"
               }`}
             >
               Monthly
@@ -192,7 +192,7 @@ export function PricingSection() {
               className={`px-4 py-2 text-sm font-medium rounded-full transition-colors whitespace-nowrap ${
                 annual
                   ? "bg-white/15 text-white shadow-[var(--shadow-sm)]"
-                  : "text-white/60 hover:text-white"
+                  : "text-white/80 hover:text-white"
               }`}
             >
               Annual{" "}

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useCallback, startTransition, type ReactNode } from "react";
 import { X } from "lucide-react";
@@ -167,7 +167,7 @@ export function AuthModal({ isOpen, onClose, defaultTab = "signup" }: AuthModalP
 
         <button
           onClick={onClose}
-          className="fixed top-6 right-6 z-[111] p-2 text-white/60 hover:text-white transition-colors"
+          className="fixed top-6 right-6 z-[111] p-2 text-white/80 hover:text-white transition-colors"
           aria-label="Close modal"
         >
           <X size={24} />

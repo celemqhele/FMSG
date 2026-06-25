@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useCallback, createContext, useContext, type ReactNode } from "react";
 import { Pencil } from "lucide-react";
@@ -81,7 +81,7 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
             {activeProfileId && (
               <button
                 onClick={() => handleOpenEdit(activeProfileId)}
-                className="w-7 h-7 rounded-full bg-white/10 border border-white/20 flex items-center justify-center text-white/60 hover:text-white hover:bg-white/20 transition-colors"
+                className="w-7 h-7 rounded-full bg-white/10 border border-white/20 flex items-center justify-center text-white/80 hover:text-white hover:bg-white/20 transition-colors"
                 title="Edit profile"
               >
                 <Pencil size={12} />

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
@@ -74,7 +74,7 @@ export function ProfileSwitcher({ activeProfileId, onSelect, onProfileCreated, r
     return (
       <button
         onClick={handleCreate}
-        className="flex items-center gap-1.5 px-3 h-8 text-xs font-medium text-white/60 hover:text-white rounded-full border border-white/10 hover:border-white/20 transition-colors"
+        className="flex items-center gap-1.5 px-3 h-8 text-xs font-medium text-white/80 hover:text-white rounded-full border border-white/10 hover:border-white/20 transition-colors"
       >
         <Plus size={14} />
         New Profile
@@ -86,7 +86,7 @@ export function ProfileSwitcher({ activeProfileId, onSelect, onProfileCreated, r
     <div className="relative">
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-1.5 px-3 h-8 text-xs font-medium text-white/80 hover:text-white rounded-full border border-white/10 hover:border-white/20 transition-colors"
+        className="flex items-center gap-1.5 px-3 h-8 text-xs font-medium text-white hover:text-white rounded-full border border-white/10 hover:border-white/20 transition-colors"
       >
         <span className="max-w-[120px] truncate">{active?.name ?? "Profile"}</span>
         <ChevronDown size={12} />
@@ -107,7 +107,7 @@ export function ProfileSwitcher({ activeProfileId, onSelect, onProfileCreated, r
               <button
                 key={p.id}
                 onClick={() => { onSelect(p.id); setOpen(false); }}
-                className="w-full flex items-center gap-2 px-3 py-2 text-xs text-white/80 hover:bg-white/5 transition-colors"
+                className="w-full flex items-center gap-2 px-3 py-2 text-xs text-white hover:bg-white/5 transition-colors"
               >
                 <span className="flex-1 text-left truncate">{p.name}</span>
                 {p.id === activeProfileId && <Check size={12} className="text-[var(--color-accent)] shrink-0" />}
@@ -116,7 +116,7 @@ export function ProfileSwitcher({ activeProfileId, onSelect, onProfileCreated, r
             <div className="h-px bg-white/10 mx-2 my-1" />
             <button
               onClick={handleCreate}
-              className="w-full flex items-center gap-2 px-3 py-2 text-xs text-white/60 hover:text-white hover:bg-white/5 transition-colors"
+              className="w-full flex items-center gap-2 px-3 py-2 text-xs text-white/80 hover:text-white hover:bg-white/5 transition-colors"
             >
               <Plus size={12} />
               New Profile

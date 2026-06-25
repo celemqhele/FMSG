@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
@@ -414,7 +414,7 @@ export function JobResultCard({
               </span>
               <button
                 onClick={() => setShowVerdict(false)}
-                className="text-white/40 hover:text-white transition-colors"
+                className="text-white/60 hover:text-white transition-colors"
               >
                 <X size={18} />
               </button>
@@ -446,7 +446,7 @@ export function JobResultCard({
             {suggestedCvName && (
               <div className="mt-4 pt-3 border-t border-white/[0.06]">
                 <p className="text-xs text-[var(--color-text-secondary)]/60">
-                  Suggested CV: <span className="text-white/80 font-medium">{suggestedCvName}</span>
+                  Suggested CV: <span className="text-white font-medium">{suggestedCvName}</span>
                 </p>
               </div>
             )}

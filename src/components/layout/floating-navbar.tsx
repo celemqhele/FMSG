@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState } from "react";
 import { Menu, X } from "lucide-react";
@@ -32,7 +32,7 @@ export function FloatingNavbar({ onLoginClick, onSignUpClick }: FloatingNavbarPr
               <TransitionLink
                 key={link.href}
                 href={link.href}
-                className="text-sm font-medium text-white/70 hover:text-white transition-colors"
+                className="text-sm font-medium text-white/90 hover:text-white transition-colors"
               >
                 {link.label}
               </TransitionLink>
@@ -43,7 +43,7 @@ export function FloatingNavbar({ onLoginClick, onSignUpClick }: FloatingNavbarPr
           <div className="hidden md:flex items-center gap-3">
             <button
               onClick={onLoginClick}
-              className="px-5 py-2 text-sm font-medium text-white hover:text-white/70 transition-colors"
+              className="px-5 py-2 text-sm font-medium text-white hover:text-white/90 transition-colors"
             >
               Log In
             </button>
@@ -72,7 +72,7 @@ export function FloatingNavbar({ onLoginClick, onSignUpClick }: FloatingNavbarPr
                 <TransitionLink
                   key={link.href}
                   href={link.href}
-                  className="w-full px-4 py-2.5 text-sm font-medium text-white/70 hover:text-white transition-colors rounded-lg hover:bg-white/5"
+                  className="w-full px-4 py-2.5 text-sm font-medium text-white/90 hover:text-white transition-colors rounded-lg hover:bg-white/5"
                   onClick={() => setMobileMenuOpen(false)}
                 >
                   {link.label}

@@ -1,4 +1,4 @@
-import { TransitionLink } from "@/components/ui/transition-link";
+﻿import { TransitionLink } from "@/components/ui/transition-link";
 
 export function Footer() {
   return (
@@ -8,11 +8,11 @@ export function Footer() {
           <span className="text-lg font-semibold text-white select-none">
             FMSG
           </span>
-          <p className="text-sm text-white/50">
+          <p className="text-sm text-white/70">
             Find Me Some Jobs
           </p>
         </div>
-        <div className="flex items-center gap-6 text-sm text-white/50">
+        <div className="flex items-center gap-6 text-sm text-white/70">
           <TransitionLink href="/about" className="hover:text-white transition-colors">
             About
           </TransitionLink>
@@ -29,7 +29,7 @@ export function Footer() {
             Articles
           </span>
         </div>
-        <p className="text-sm text-white/50">
+        <p className="text-sm text-white/70">
           &copy; {new Date().getFullYear()} Find Me Some Jobs
         </p>
       </div>

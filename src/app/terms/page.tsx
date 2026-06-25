@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useCallback } from "react";
 import { FloatingNavbar } from "@/components/layout/floating-navbar";
@@ -122,11 +122,11 @@ export default function TermsPage() {
       <PageTransitionWrapper>
         <main className="flex-1 px-6 py-24 md:py-32">
           <div className="max-w-3xl mx-auto text-center">
-            <Scale size={40} className="mx-auto text-white/40" />
+            <Scale size={40} className="mx-auto text-white/60" />
             <h1 className="mt-6 text-4xl md:text-5xl font-semibold text-white tracking-tight">
               Terms of Service
             </h1>
-            <p className="mt-4 text-lg text-white/60">
+            <p className="mt-4 text-lg text-white/80">
               Last updated June 2026.
             </p>
           </div>
@@ -137,7 +137,7 @@ export default function TermsPage() {
                 className="rounded-2xl p-6 bg-white/[0.03] border border-white/[0.06]"
               >
                 <h2 className="text-lg font-semibold text-white mb-3">{s.title}</h2>
-                <p className="text-sm text-white/60 leading-relaxed">{s.content}</p>
+                <p className="text-sm text-white/80 leading-relaxed">{s.content}</p>
               </div>
             ))}
           </div>

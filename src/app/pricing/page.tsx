@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
@@ -196,16 +196,16 @@ export default function PricingPage() {
           <div className="max-w-6xl mx-auto">
             <div className="text-center mb-10">
               <h1 className="text-3xl font-bold text-white">Find the right plan</h1>
-              <p className="mt-2 text-sm text-white/50">All plans include AI-powered job matching. Upgrade anytime.</p>
+              <p className="mt-2 text-sm text-white/70">All plans include AI-powered job matching. Upgrade anytime.</p>
               <div className="mt-6 inline-flex items-center gap-1 p-1 rounded-full bg-white/10 border border-white/10">
-                <button onClick={() => setAnnual(false)} className={`px-4 py-2 text-sm font-medium rounded-full transition-colors ${!annual ? "bg-white/15 text-white shadow-[var(--shadow-sm)]" : "text-white/60 hover:text-white"}`}>Monthly</button>
-                <button onClick={() => setAnnual(true)} className={`px-4 py-2 text-sm font-medium rounded-full transition-colors ${annual ? "bg-white/15 text-white shadow-[var(--shadow-sm)]" : "text-white/60 hover:text-white"}`}>Annual <span className="text-[var(--color-success)]">Save 2 months</span></button>
+                <button onClick={() => setAnnual(false)} className={`px-4 py-2 text-sm font-medium rounded-full transition-colors ${!annual ? "bg-white/15 text-white shadow-[var(--shadow-sm)]" : "text-white/80 hover:text-white"}`}>Monthly</button>
+                <button onClick={() => setAnnual(true)} className={`px-4 py-2 text-sm font-medium rounded-full transition-colors ${annual ? "bg-white/15 text-white shadow-[var(--shadow-sm)]" : "text-white/80 hover:text-white"}`}>Annual <span className="text-[var(--color-success)]">Save 2 months</span></button>
               </div>
             </div>
 
             <div className="mb-8 liquid-glass rounded-xl p-5 text-center">
               <p className="text-sm font-semibold text-white">Persistent Finder - from R45/run</p>
-              <p className="mt-1 text-xs text-white/50">Multi-round AI search that finds jobs other engines miss. Set the number of search rounds below.</p>
+              <p className="mt-1 text-xs text-white/70">Multi-round AI search that finds jobs other engines miss. Set the number of search rounds below.</p>
             </div>
 
             <div className="grid gap-6 md:grid-cols-4 md:gap-4">
@@ -230,9 +230,9 @@ export default function PricingPage() {
                   <h3 className="text-lg font-semibold text-white">{tier.name}</h3>
                   <div className="mt-4">
                     <span className="text-3xl font-bold text-white">{tier.name === "Free" ? "R0" : grandTotal}</span>
-                    <span className="ml-1 text-sm text-white/50">/{annual ? "year" : "month"}</span>
+                    <span className="ml-1 text-sm text-white/70">/{annual ? "year" : "month"}</span>
                   </div>
-                  <div className="mt-1 flex items-center gap-1.5 text-xs text-white/40">
+                  <div className="mt-1 flex items-center gap-1.5 text-xs text-white/60">
                     <span>{basePrice}/{annual ? "yr" : "mo"}</span>
                     {pfCount > 0 && (
                       <>
@@ -241,7 +241,7 @@ export default function PricingPage() {
                       </>
                     )}
                   </div>
-                  <div className="mt-2 text-sm text-white/50">
+                  <div className="mt-2 text-sm text-white/70">
                     {tier.searches} searches / {tier.cvGens} CVs{/* / {tier.pfBalance} PF runs */}
                   </div>
                   {tier.name !== "Free" && (
@@ -256,7 +256,7 @@ export default function PricingPage() {
                   )}
                   <ul className="mt-3 flex-1 flex flex-col gap-3">
                     {tier.features.map((f) => (
-                      <li key={f} className="flex items-start gap-2 text-sm text-white/60">
+                      <li key={f} className="flex items-start gap-2 text-sm text-white/80">
                         <Check size={16} className="mt-0.5 text-[var(--color-success)] shrink-0" />
                         {f}
                       </li>

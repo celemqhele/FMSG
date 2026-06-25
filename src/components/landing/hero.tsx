@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 interface HeroProps {
   onCtaClick: () => void;
@@ -12,7 +12,7 @@ export function Hero({ onCtaClick }: HeroProps) {
         <span className="text-[var(--color-accent)]">your skills</span>, not
         just your keywords
       </h1>
-      <p className="mt-5 md:mt-6 max-w-xl text-base md:text-xl text-white/60 leading-relaxed">
+      <p className="mt-5 md:mt-6 max-w-xl text-base md:text-xl text-white/80 leading-relaxed">
         Upload your CV once. AI matches you to live job listings that fit your
         experience, salary expectations, and career goals.
       </p>

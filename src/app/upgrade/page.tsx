@@ -1,10 +1,10 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard/dashboard-layout";
 import { LiquidGlassCard } from "@/components/landing/liquid-glass-card";
-import { Loader2, Check, ArrowRight, CreditCard, Ban, Crosshair, ShoppingCart } from "lucide-react";
+import { Loader2, Check, ArrowRight, ArrowLeft, CreditCard, Ban, Crosshair, ShoppingCart } from "lucide-react";
 import { PageTransitionWrapper } from "@/components/ui/page-transition-wrapper";
 import { useTransition } from "@/components/providers/transition-provider";
 import { createClient } from "@/lib/supabase/client";
@@ -60,7 +60,7 @@ function daysRemaining(expiryDate: string): number {
 
 export default function ManageSubscriptionPage() {
   const router = useRouter();
-  const { endTransition } = useTransition();
+  const { startTransition, endTransition } = useTransition();
   const supabase = createClient();
   const [annual, setAnnual] = useState(false);
   const [processing, setProcessing] = useState<string | null>(null);
@@ -378,7 +378,12 @@ export default function ManageSubscriptionPage() {
     <DashboardLayout>
       <PageTransitionWrapper>
       <div className="max-w-6xl mx-auto pt-8 pb-24">
-        <h1 className="text-3xl font-bold text-white mb-8">Manage Subscription</h1>
+        <div className="flex items-center gap-4 mb-8">
+          <button onClick={() => { startTransition(); router.push("/dashboard"); }} className="p-2 text-white/80 hover:text-white transition-colors">
+            <ArrowLeft size={20} />
+          </button>
+          <h1 className="text-2xl font-bold text-white">Manage Subscription</h1>
+        </div>
 
         {!loading && subscription && (subscription.status !== "cancelled" || (subscription.expiry_date && new Date(subscription.expiry_date) > new Date())) && (
           <div className="liquid-glass rounded-xl p-6 mb-8">
@@ -399,17 +404,17 @@ export default function ManageSubscriptionPage() {
 
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               <div>
-                <span className="text-xs text-white/50 block mb-1">Plan</span>
+                <span className="text-xs text-white/70 block mb-1">Plan</span>
                 <span className="text-xl font-bold text-white capitalize">{subscription.plan}</span>
               </div>
 
               <div>
-                <span className="text-xs text-white/50 block mb-1">Billing</span>
+                <span className="text-xs text-white/70 block mb-1">Billing</span>
                 <span className="text-lg font-semibold text-white capitalize">
                   {subscription.billing_cycle === "annual" ? "Annual" : "Monthly"}
                 </span>
                 {subscription.amount && (
-                  <span className="text-xs text-white/40 ml-2">
+                  <span className="text-xs text-white/60 ml-2">
                     R{(subscription.amount / 100).toLocaleString("en-ZA")}/{subscription.billing_cycle === "annual" ? "yr" : "mo"}
                   </span>
                 )}
@@ -417,7 +422,7 @@ export default function ManageSubscriptionPage() {
 
               {subscription.next_payment_date && (
                 <div>
-                  <span className="text-xs text-white/50 block mb-1">Next payment</span>
+                  <span className="text-xs text-white/70 block mb-1">Next payment</span>
                   <span className="text-lg font-semibold text-white">
                     {new Date(subscription.next_payment_date).toLocaleDateString("en-ZA", { day: "numeric", month: "short", year: "numeric" })}
                   </span>
@@ -426,13 +431,13 @@ export default function ManageSubscriptionPage() {
 
                   {subscription.expiry_date && (
                 <div>
-                  <span className="text-xs text-white/50 block mb-1">
+                  <span className="text-xs text-white/70 block mb-1">
                     {subscription.status === "cancelled" ? "Access ends" : "Period ends"}
                   </span>
                   <span className="text-lg font-semibold text-white">
                     {new Date(subscription.expiry_date).toLocaleDateString("en-ZA", { day: "numeric", month: "short", year: "numeric" })}
                   </span>
-                  <span className="text-xs text-white/40 ml-2">
+                  <span className="text-xs text-white/60 ml-2">
                     ({daysRemaining(subscription.expiry_date)} days left)
                   </span>
                 </div>
@@ -440,7 +445,7 @@ export default function ManageSubscriptionPage() {
 
               {subscription.created_at && (
                 <div>
-                  <span className="text-xs text-white/50 block mb-1">Started</span>
+                  <span className="text-xs text-white/70 block mb-1">Started</span>
                   <span className="text-lg font-semibold text-white">
                     {new Date(subscription.created_at).toLocaleDateString("en-ZA", { day: "numeric", month: "short", year: "numeric" })}
                   </span>
@@ -451,29 +456,29 @@ export default function ManageSubscriptionPage() {
             {/* Buy PF Credits */}
             <div className="mt-6 pt-6 border-t border-white/10">
               <h3 className="text-sm font-medium text-white mb-3">Buy Extra PF Runs</h3>
-              <p className="text-xs text-white/50 mb-3">Purchase one-time Persistent Finder runs that are added to your balance immediately. To change your monthly refill amount, switch to a different plan.</p>
+              <p className="text-xs text-white/70 mb-3">Purchase one-time Persistent Finder runs that are added to your balance immediately. To change your monthly refill amount, switch to a different plan.</p>
               <div className="flex items-center gap-4 flex-wrap">
                 <div className="flex items-center gap-3">
                   <button
                     onClick={() => setBuyPfQty(Math.max(1, buyPfQty - 1))}
                     disabled={buyPfQty <= 1 || buyingPf}
-                    className="w-10 h-10 flex items-center justify-center rounded-lg border border-white/20 text-white/70 hover:text-white hover:border-white/40 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                    className="w-10 h-10 flex items-center justify-center rounded-lg border border-white/20 text-white/90 hover:text-white hover:border-white/40 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                   >
                     <span className="text-lg font-bold">−</span>
                   </button>
                   <div className="text-center min-w-[60px]">
                     <span className="text-2xl font-bold text-white tabular-nums">{buyPfQty}</span>
-                    <span className="ml-1 text-sm text-white/50">runs</span>
+                    <span className="ml-1 text-sm text-white/70">runs</span>
                   </div>
                   <button
                     onClick={() => setBuyPfQty(Math.min(25, buyPfQty + 1))}
                     disabled={buyPfQty >= 25 || buyingPf}
-                    className="w-10 h-10 flex items-center justify-center rounded-lg border border-white/20 text-white/70 hover:text-white hover:border-white/40 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                    className="w-10 h-10 flex items-center justify-center rounded-lg border border-white/20 text-white/90 hover:text-white hover:border-white/40 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                   >
                     <span className="text-lg font-bold">+</span>
                   </button>
                 </div>
-                <span className="text-xs text-white/40">
+                <span className="text-xs text-white/60">
                   R{(buyPfQty * calculatePFPrice(buyPfQty)).toLocaleString("en-ZA", { minimumFractionDigits: 0 })} total
                 </span>
                 <button
@@ -513,15 +518,15 @@ export default function ManageSubscriptionPage() {
                 <h3 className="text-sm font-medium text-white mb-3">Current Usage</h3>
                 <div className="flex flex-wrap gap-6">
                   <div>
-                    <span className="text-xs text-white/50 block">Searches</span>
+                    <span className="text-xs text-white/70 block">Searches</span>
                     <span className="text-lg font-semibold text-white">{profile.search_balance ?? 0}</span>
                   </div>
                   <div>
-                    <span className="text-xs text-white/50 block">CV Generations</span>
+                    <span className="text-xs text-white/70 block">CV Generations</span>
                     <span className="text-lg font-semibold text-white">{profile.cv_generation_balance ?? 0}</span>
                   </div>
                   <div>
-                    <span className="text-xs text-white/50 block">PF Balance</span>
+                    <span className="text-xs text-white/70 block">PF Balance</span>
                     <span className="text-lg font-semibold text-white">{profile.persistent_finder_balance ?? 0}</span>
                   </div>
                 </div>
@@ -534,11 +539,11 @@ export default function ManageSubscriptionPage() {
           <div className="liquid-glass rounded-xl p-6 mb-8">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center">
-                <Crosshair size={18} className="text-white/60" />
+                <Crosshair size={18} className="text-white/80" />
               </div>
               <div>
                 <h2 className="text-lg font-semibold text-white">You&apos;re on the <span className="capitalize">{currentPlan}</span> plan</h2>
-                <p className="text-sm text-white/50">Choose a plan below to unlock more features.</p>
+                <p className="text-sm text-white/70">Choose a plan below to unlock more features.</p>
               </div>
             </div>
           </div>
@@ -555,11 +560,11 @@ export default function ManageSubscriptionPage() {
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-bold text-white">Switch Plan</h2>
             <div className="inline-flex items-center gap-1 p-1 rounded-full bg-white/10 border border-white/10">
-              <button onClick={() => setAnnual(false)} className={`px-4 py-2 text-sm font-medium rounded-full transition-colors ${!annual ? "bg-white/15 text-white shadow-[var(--shadow-sm)]" : "text-white/60 hover:text-white"}`}>Monthly</button>
-              <button onClick={() => setAnnual(true)} className={`px-4 py-2 text-sm font-medium rounded-full transition-colors ${annual ? "bg-white/15 text-white shadow-[var(--shadow-sm)]" : "text-white/60 hover:text-white"}`}>Annual <span className="text-[var(--color-success)]">Save 2 months</span></button>
+              <button onClick={() => setAnnual(false)} className={`px-4 py-2 text-sm font-medium rounded-full transition-colors ${!annual ? "bg-white/15 text-white shadow-[var(--shadow-sm)]" : "text-white/80 hover:text-white"}`}>Monthly</button>
+              <button onClick={() => setAnnual(true)} className={`px-4 py-2 text-sm font-medium rounded-full transition-colors ${annual ? "bg-white/15 text-white shadow-[var(--shadow-sm)]" : "text-white/80 hover:text-white"}`}>Annual <span className="text-[var(--color-success)]">Save 2 months</span></button>
             </div>
           </div>
-          <p className="text-sm text-white/50 mb-6">
+          <p className="text-sm text-white/70 mb-6">
             {subscription && subscription.status === "cancelled" && subscription.expiry_date && new Date(subscription.expiry_date) > new Date()
               ? "Your subscription is cancelled. You can switch to a new plan or re-subscribe."
               : hasSubscription
@@ -591,9 +596,9 @@ export default function ManageSubscriptionPage() {
                 <h3 className="text-lg font-semibold text-white">{tier.name}</h3>
                 <div className="mt-4">
                   <span className="text-3xl font-bold text-white">{tier.name === "Free" ? "R0" : grandTotal}</span>
-                  <span className="ml-1 text-sm text-white/50">/{annual ? "year" : "month"}</span>
+                  <span className="ml-1 text-sm text-white/70">/{annual ? "year" : "month"}</span>
                 </div>
-                <div className="mt-1 flex items-center gap-1.5 text-xs text-white/40">
+                <div className="mt-1 flex items-center gap-1.5 text-xs text-white/60">
                   <span>{basePrice}/{annual ? "yr" : "mo"}</span>
                   {pfCount > 0 && (
                     <>
@@ -602,7 +607,7 @@ export default function ManageSubscriptionPage() {
                     </>
                   )}
                 </div>
-                <div className="mt-2 text-sm text-white/50">
+                <div className="mt-2 text-sm text-white/70">
                   {tier.searches} searches / {tier.cvGens} CVs
                 </div>
                 {tier.name !== "Free" && (
@@ -617,7 +622,7 @@ export default function ManageSubscriptionPage() {
                 )}
                 <ul className="mt-3 flex-1 flex flex-col gap-3">
                   {tier.features.map((f) => (
-                    <li key={f} className="flex items-start gap-2 text-sm text-white/60">
+                    <li key={f} className="flex items-start gap-2 text-sm text-white/80">
                       <Check size={16} className="mt-0.5 text-[var(--color-success)] shrink-0" />
                       {f}
                     </li>

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
@@ -159,7 +159,7 @@ export default function ProfilePage() {
   if (loading) {
     return (
       <DashboardLayout>
-        <div className="flex items-center justify-center py-32"><Loader2 size={24} className="animate-spin text-white/40" /></div>
+        <div className="flex items-center justify-center py-32"><Loader2 size={24} className="animate-spin text-white/60" /></div>
       </DashboardLayout>
     );
   }
@@ -169,7 +169,7 @@ export default function ProfilePage() {
       <PageTransitionWrapper>
       <div className="max-w-2xl mx-auto pt-8 pb-24 space-y-8">
         <div className="flex items-center gap-4">
-          <button onClick={() => { startTransition(); router.push("/dashboard"); }} className="p-2 text-white/60 hover:text-white transition-colors">
+          <button onClick={() => { startTransition(); router.push("/dashboard"); }} className="p-2 text-white/80 hover:text-white transition-colors">
             <ArrowLeft size={20} />
           </button>
           <h1 className="text-2xl font-bold text-white">My Profile</h1>

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
@@ -351,7 +351,7 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
       >
         <div className="flex items-center justify-between px-6 py-4 border-b border-white/[0.06]">
           <h2 className="text-lg font-semibold text-white">{editMode ? "Edit Search Profile" : "Set Up Search Profile"}</h2>
-          <button onClick={onClose} className="text-white/40 hover:text-white transition-colors">
+          <button onClick={onClose} className="text-white/60 hover:text-white transition-colors">
             <X size={18} />
           </button>
         </div>
@@ -369,12 +369,12 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
               className="flex flex-col items-center justify-center gap-3 p-10 rounded-xl border-2 border-dashed border-white/10 hover:border-[var(--color-accent)]/40 cursor-pointer transition-colors"
             >
               <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center">
-                <Upload size={22} className="text-white/40" />
+                <Upload size={22} className="text-white/60" />
               </div>
-              <p className="text-sm text-white/60 text-center">
+              <p className="text-sm text-white/80 text-center">
                 Upload your CV (PDF) to auto-fill job titles and location
               </p>
-              <p className="text-xs text-white/30">Max 10MB</p>
+              <p className="text-xs text-white/50">Max 10MB</p>
               <input
                 ref={inputRef}
                 type="file"
@@ -388,14 +388,14 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
           {step === "extracting" && (
             <div className="flex flex-col items-center gap-3 py-10">
               <Loader2 size={28} className="text-[var(--color-accent)] animate-spin" />
-              <p className="text-sm text-white/60">Extracting info from your CV...</p>
+              <p className="text-sm text-white/80">Extracting info from your CV...</p>
             </div>
           )}
 
           {step === "form" && (
             <div className="flex flex-col gap-4">
               <div>
-                <label className="text-sm font-medium text-white/80 mb-1.5 block">Profile Name</label>
+                <label className="text-sm font-medium text-white mb-1.5 block">Profile Name</label>
                 <input
                   value={name}
                   onChange={(e) => setName(e.target.value)}
@@ -405,7 +405,7 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
               </div>
 
               <div>
-                <label className="text-sm font-medium text-white/80 mb-1.5 block">Job Titles</label>
+                <label className="text-sm font-medium text-white mb-1.5 block">Job Titles</label>
                 <div className="flex flex-col gap-2">
                   {jobTitles.map((t, i) => (
                     <div key={i} className="flex items-center gap-2">
@@ -416,7 +416,7 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
                         className="flex-1 px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-white placeholder-white/30 focus:outline-none focus:border-[var(--color-accent)] transition-colors"
                       />
                       {jobTitles.length > 1 && (
-                        <button onClick={() => removeTitle(i)} className="text-white/30 hover:text-red-400 transition-colors p-1">
+                        <button onClick={() => removeTitle(i)} className="text-white/50 hover:text-red-400 transition-colors p-1">
                           <X size={14} />
                         </button>
                       )}
@@ -432,18 +432,18 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
               </div>
 
               <div>
-                <label className="text-sm font-medium text-white/80 mb-1.5 block">Preferred Location</label>
+                <label className="text-sm font-medium text-white mb-1.5 block">Preferred Location</label>
                 <input
                   value={location}
                   onChange={(e) => setLocation(e.target.value)}
                   placeholder="e.g. Johannesburg, Cape Town"
                   className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-white placeholder-white/30 focus:outline-none focus:border-[var(--color-accent)] transition-colors"
                 />
-                <p className="mt-1 text-xs text-white/30">City or country only. Select work type below.</p>
+                <p className="mt-1 text-xs text-white/50">City or country only. Select work type below.</p>
               </div>
 
               <div>
-                <label className="text-sm font-medium text-white/80 mb-1.5 block">Industry</label>
+                <label className="text-sm font-medium text-white mb-1.5 block">Industry</label>
                 <div className="flex items-center gap-2">
                   <input
                     value={industry}
@@ -453,11 +453,11 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
                   />
                   {suggestingIndustry && <Loader2 size={16} className="text-[var(--color-accent)] animate-spin shrink-0" />}
                 </div>
-                <p className="mt-1 text-xs text-white/30">Your target industry. Used in search queries and scoring.</p>
+                <p className="mt-1 text-xs text-white/50">Your target industry. Used in search queries and scoring.</p>
               </div>
 
               <div>
-                <label className="text-sm font-medium text-white/80 mb-1.5 block">Work Type</label>
+                <label className="text-sm font-medium text-white mb-1.5 block">Work Type</label>
                 <div className="flex gap-2">
                   {["On-site", "Hybrid", "Remote"].map((type) => (
                     <button
@@ -471,7 +471,7 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
                       className={`px-4 py-2 rounded-lg text-sm border transition-colors ${
                         jobTypes.includes(type)
                           ? "bg-[var(--color-accent)]/20 border-[var(--color-accent)] text-white"
-                          : "bg-white/5 border-white/10 text-white/50 hover:border-white/20"
+                          : "bg-white/5 border-white/10 text-white/70 hover:border-white/20"
                       }`}
                     >
                       {type}
@@ -482,14 +482,14 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
 
               {/* CV Variations */}
               <div>
-                <label className="text-sm font-medium text-white/80 mb-1.5 block">
-                  CV Variations <span className="text-white/30 font-normal">(max 4)</span>
+                <label className="text-sm font-medium text-white mb-1.5 block">
+                  CV Variations <span className="text-white/50 font-normal">(max 4)</span>
                 </label>
                 <div className="flex flex-col gap-2">
                   {cvVariations.map((cv, i) => (
                     <div key={i} className="flex flex-col gap-1.5 p-3 rounded-lg bg-white/5 border border-white/10">
                       <div className="flex items-center gap-2">
-                        <FileText size={14} className="text-white/30 shrink-0" />
+                        <FileText size={14} className="text-white/50 shrink-0" />
                         <input
                           value={cv.name}
                           onChange={(e) => handleCvNameChange(i, e.target.value)}
@@ -497,7 +497,7 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
                           className="flex-1 px-2 py-1.5 rounded-lg bg-white/5 border border-white/10 text-sm text-white placeholder-white/30 focus:outline-none focus:border-[var(--color-accent)] transition-colors"
                         />
                       </div>
-                      <div className="flex items-center gap-2 text-xs text-white/40 pl-6">
+                      <div className="flex items-center gap-2 text-xs text-white/60 pl-6">
                         <span className="truncate flex-1">{cv.file_path.split('/').pop()}</span>
                         <button
                           onClick={() => handleReplaceCv(i)}
@@ -562,7 +562,7 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
                       </button>
                       <button
                         onClick={() => setConfirmDelete(false)}
-                        className="px-3 py-1.5 text-xs font-medium text-white/60 hover:text-white transition-colors"
+                        className="px-3 py-1.5 text-xs font-medium text-white/80 hover:text-white transition-colors"
                       >
                         Cancel
                       </button>

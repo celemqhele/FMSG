@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { Suspense, useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -57,7 +57,7 @@ function ConfirmContent() {
           <h1 className="text-2xl font-semibold text-white">
             Thanks for confirming your email
           </h1>
-          <p className="text-sm text-white/60">
+          <p className="text-sm text-white/80">
             Your account is ready to go.
           </p>
         </div>

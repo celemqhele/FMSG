@@ -1,4 +1,4 @@
-import { LiquidGlassCard } from "./liquid-glass-card";
+﻿import { LiquidGlassCard } from "./liquid-glass-card";
 
 const steps = [
   {
@@ -31,7 +31,7 @@ export function HowItWorks() {
 
         <div className="mt-10 md:hidden">
           <LiquidGlassCard className="text-center p-8">
-            <p className="text-base text-white/70 leading-relaxed">
+            <p className="text-base text-white/90 leading-relaxed">
               Upload your CV or fill in your details. AI reads your experience
               and preferences so every search is personal. It searches live job
               listings, filters out mismatches, and scores each role against
@@ -50,7 +50,7 @@ export function HowItWorks() {
               <h3 className="mt-4 text-xl font-medium text-white">
                 {step.title}
               </h3>
-              <p className="mt-3 text-base text-white/60 leading-relaxed">
+              <p className="mt-3 text-base text-white/80 leading-relaxed">
                 {step.description}
               </p>
             </LiquidGlassCard>

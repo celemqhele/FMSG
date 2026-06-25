@@ -5,7 +5,7 @@
   --color-surface: #1C1C1E;
   --color-border: #2C2C2E;
   --color-text-primary: #F5F5F7;
-  --color-text-secondary: #8E8E93;
+  --color-text-secondary: #D1D1D6;
   --color-accent: #0071E3;
   --color-accent-hover: #0077ED;
   --color-success: #34C759;
@@ -21,7 +21,7 @@
   --color-surface: #1C1C1E;
   --color-border: #2C2C2E;
   --color-text-primary: #F5F5F7;
-  --color-text-secondary: #8E8E93;
+  --color-text-secondary: #D1D1D6;
 }
 
 @theme inline {

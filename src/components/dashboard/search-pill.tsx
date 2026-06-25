@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState } from "react";
 import { Search, Crosshair } from "lucide-react";
@@ -73,13 +73,13 @@ export function SearchPill({ onSearch, searching }: SearchPillProps) {
     <div className={`w-full max-w-2xl mx-auto flex items-center h-14 rounded-full bg-white/10 border border-white/20 backdrop-blur-xl overflow-hidden transition-transform duration-200 ${bouncing ? "scale-[1.02]" : "scale-100"}`}>
       <button
         onClick={() => setPfMode(!pfMode)}
-        className={`ml-2 w-10 h-10 rounded-full flex items-center justify-center transition-colors ${pfMode ? "bg-[var(--color-accent)] text-white" : "text-white/40 hover:text-white/70 hover:bg-white/10"}`}
+        className={`ml-2 w-10 h-10 rounded-full flex items-center justify-center transition-colors ${pfMode ? "bg-[var(--color-accent)] text-white" : "text-white/60 hover:text-white/90 hover:bg-white/10"}`}
         title={pfMode ? "Persistent Finder active: searches multiple rounds across all titles" : "Click to enable Persistent Finder"}
       >
         <Crosshair size={16} />
       </button>
 
-      <span className="flex-1 text-white/40 text-sm px-3 truncate select-none">
+      <span className="flex-1 text-white/60 text-sm px-3 truncate select-none">
         {pfMode ? "Persistent Finder: scanning all titles" : displayTitle}
       </span>
 

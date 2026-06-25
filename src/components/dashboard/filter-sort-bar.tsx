@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useCallback } from "react";
 import { Filter, ArrowUpDown, Check } from "lucide-react";
@@ -79,7 +79,7 @@ export function FilterSortBar({ filter, sort, onFilterChange, onSortChange }: Fi
           onClick={filterOpen ? closeFilter : openFilter}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-colors ${
             allSelected
-              ? "border-white/20 text-white/60 hover:text-white hover:bg-white/10"
+              ? "border-white/20 text-white/80 hover:text-white hover:bg-white/10"
               : "border-[var(--color-accent)] text-[var(--color-accent)] bg-[var(--color-accent)]/10"
           }`}
         >
@@ -105,7 +105,7 @@ export function FilterSortBar({ filter, sort, onFilterChange, onSortChange }: Fi
                 <button
                   key={key}
                   onClick={() => toggleFilter(key)}
-                  className="w-full flex items-center gap-3 px-3 py-2 text-sm text-white/80 hover:bg-white/5 rounded-lg transition-colors"
+                  className="w-full flex items-center gap-3 px-3 py-2 text-sm text-white hover:bg-white/5 rounded-lg transition-colors"
                 >
                   <span className={`w-4 h-4 rounded flex items-center justify-center border transition-colors ${
                     filter[key]
@@ -126,7 +126,7 @@ export function FilterSortBar({ filter, sort, onFilterChange, onSortChange }: Fi
       <div className="relative">
         <button
           onClick={sortOpen ? closeSort : openSort}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-white/20 text-xs font-medium text-white/60 hover:text-white hover:bg-white/10 transition-colors"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-white/20 text-xs font-medium text-white/80 hover:text-white hover:bg-white/10 transition-colors"
         >
           <ArrowUpDown size={13} />
           {SORT_OPTIONS.find((o) => o.value === sort)?.label ?? "Best Match"}
@@ -148,7 +148,7 @@ export function FilterSortBar({ filter, sort, onFilterChange, onSortChange }: Fi
                   className={`w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg transition-colors ${
                     sort === opt.value
                       ? "text-[var(--color-accent)] bg-[var(--color-accent)]/10"
-                      : "text-white/80 hover:bg-white/5"
+                      : "text-white hover:bg-white/5"
                   }`}
                 >
                   <span className={`w-4 h-4 rounded-full border flex items-center justify-center transition-colors ${

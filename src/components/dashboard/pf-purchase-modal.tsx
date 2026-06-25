@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useRef } from "react";
 import { X, Loader2, Crosshair } from "lucide-react";
@@ -108,7 +108,7 @@ export function PFPurchaseModal({ isOpen, onClose }: PFPurchaseModalProps) {
       >
         <button
           onClick={onClose}
-          className="absolute top-3 right-3 p-1 text-white/40 hover:text-white transition-colors"
+          className="absolute top-3 right-3 p-1 text-white/60 hover:text-white transition-colors"
         >
           <X size={18} />
         </button>
@@ -133,7 +133,7 @@ export function PFPurchaseModal({ isOpen, onClose }: PFPurchaseModalProps) {
               >
                 <span className="text-sm font-medium text-white">{runs} run{runs > 1 ? "s" : ""}</span>
                 <span className="flex items-center gap-2">
-                  <span className="text-xs text-white/50">R{calculatePFPrice(runs)}/run</span>
+                  <span className="text-xs text-white/70">R{calculatePFPrice(runs)}/run</span>
                   <span className="text-sm font-bold text-white">
                     {processing === runs ? (
                       <Loader2 size={16} className="animate-spin" />

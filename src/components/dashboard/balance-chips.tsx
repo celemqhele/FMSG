@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useRef } from "react";
 import { Search, FileText, Crosshair } from "lucide-react";
@@ -50,7 +50,7 @@ export function BalanceChips() {
   const chip = (type: "search" | "cv" | "pf", icon: React.ReactNode, balance: number) => {
     const empty = balance <= 0;
     const low = balance > 0 && balance <= Math.ceil((MAX_BALANCES[type] ?? 10) * 0.2);
-    const color = empty ? "text-red-400 border-red-400/30" : low ? "text-amber-400 border-amber-400/30" : "text-white/70 border-white/20";
+    const color = empty ? "text-red-400 border-red-400/30" : low ? "text-amber-400 border-amber-400/30" : "text-white/90 border-white/20";
 
     return (
       <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-medium ${color}`}>

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -45,7 +45,7 @@ function WelcomeContent() {
   if (checking) {
     return (
       <div className="flex-1 flex items-center justify-center">
-        <Loader2 size={24} className="animate-spin text-white/60" />
+        <Loader2 size={24} className="animate-spin text-white/80" />
       </div>
     );
   }
@@ -64,7 +64,7 @@ function WelcomeContent() {
             <h1 className="text-3xl font-bold text-white">
               Welcome to {displayName}!
             </h1>
-            <p className="mt-2 text-sm text-white/50">
+            <p className="mt-2 text-sm text-white/70">
               Your plan is active and you&apos;re ready to find your next opportunity.
             </p>
 
@@ -76,21 +76,21 @@ function WelcomeContent() {
               <div className="grid grid-cols-3 gap-4 mb-6">
                 <div className="text-center p-3 rounded-lg bg-white/5">
                   <div className="text-2xl font-bold text-white">{limits.searches}</div>
-                  <div className="text-xs text-white/50 mt-1">Searches / mo</div>
+                  <div className="text-xs text-white/70 mt-1">Searches / mo</div>
                 </div>
                 <div className="text-center p-3 rounded-lg bg-white/5">
                   <div className="text-2xl font-bold text-white">{limits.cv_gens}</div>
-                  <div className="text-xs text-white/50 mt-1">CVs / mo</div>
+                  <div className="text-xs text-white/70 mt-1">CVs / mo</div>
                 </div>
                 <div className="text-center p-3 rounded-lg bg-white/5">
                   <div className="text-2xl font-bold text-white">{limits.pf_balance}</div>
-                  <div className="text-xs text-white/50 mt-1">PF Rounds / mo</div>
+                  <div className="text-xs text-white/70 mt-1">PF Rounds / mo</div>
                 </div>
               </div>
 
               <ul className="space-y-3">
                 {features.map((f) => (
-                  <li key={f} className="flex items-start gap-3 text-sm text-white/70">
+                  <li key={f} className="flex items-start gap-3 text-sm text-white/90">
                     <Check size={18} className="mt-0.5 text-[var(--color-success)] shrink-0" />
                     {f}
                   </li>
@@ -116,7 +116,7 @@ export default function WelcomePage() {
   return (
     <Suspense fallback={
       <div className="flex-1 flex items-center justify-center">
-        <Loader2 size={24} className="animate-spin text-white/60" />
+        <Loader2 size={24} className="animate-spin text-white/80" />
       </div>
     }>
       <WelcomeContent />

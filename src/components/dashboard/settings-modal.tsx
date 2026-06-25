@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useCallback } from "react";
 import { X, Loader2, CreditCard, Ban, Check } from "lucide-react";
@@ -131,7 +131,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
           <h2 className="text-lg font-semibold text-white">Settings</h2>
           <button
             onClick={handleClose}
-            className="p-1 text-white/60 hover:text-white transition-colors"
+            className="p-1 text-white/80 hover:text-white transition-colors"
           >
             <X size={20} />
           </button>
@@ -139,21 +139,21 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
         {loading ? (
           <div className="flex items-center justify-center py-8">
-            <Loader2 size={20} className="animate-spin text-white/60" />
+            <Loader2 size={20} className="animate-spin text-white/80" />
           </div>
         ) : (
           <div className="space-y-6">
             {/* Subscription Info */}
             <div>
-              <h3 className="text-sm font-medium text-white/60 mb-2">Subscription</h3>
+              <h3 className="text-sm font-medium text-white/80 mb-2">Subscription</h3>
               {subscription ? (
                 <div className="space-y-3">
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-white/80">Plan</span>
+                    <span className="text-white">Plan</span>
                     <span className="text-white font-medium capitalize">{subscription.plan}</span>
                   </div>
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-white/80">Status</span>
+                    <span className="text-white">Status</span>
                     <span className={`font-medium capitalize ${
                       subscription.status === "active" ? "text-green-400" :
                       subscription.status === "past_due" ? "text-yellow-400" :
@@ -165,12 +165,12 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                     </span>
                   </div>
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-white/80">Billing</span>
+                    <span className="text-white">Billing</span>
                     <span className="text-white capitalize">{subscription.billing_cycle}</span>
                   </div>
                   {subscription.expiry_date && (
                     <div className="flex items-center justify-between text-sm">
-                      <span className="text-white/80">Expires</span>
+                      <span className="text-white">Expires</span>
                       <span className="text-white">{new Date(subscription.expiry_date).toLocaleDateString()}</span>
                     </div>
                   )}
@@ -203,7 +203,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                   )}
                 </div>
               ) : (
-                <div className="text-sm text-white/50 text-center py-4">
+                <div className="text-sm text-white/70 text-center py-4">
                   No active subscription.
                 </div>
               )}

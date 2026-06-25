@@ -1,4 +1,4 @@
-import { LiquidGlassCard } from "./liquid-glass-card";
+﻿import { LiquidGlassCard } from "./liquid-glass-card";
 
 export function DataPrivacy() {
   return (
@@ -8,12 +8,12 @@ export function DataPrivacy() {
           <h2 className="text-3xl md:text-4xl font-semibold text-white tracking-tight">
             Your data is yours
           </h2>
-          <p className="mt-6 text-base md:text-lg text-white/70 leading-relaxed">
+          <p className="mt-6 text-base md:text-lg text-white/90 leading-relaxed">
             We store your CV and profile information only to match you to relevant
             jobs. Your data is encrypted in transit and at rest via Supabase, and
             we never share or sell your information to third parties.
           </p>
-          <p className="mt-4 text-base md:text-lg text-white/70 leading-relaxed">
+          <p className="mt-4 text-base md:text-lg text-white/90 leading-relaxed">
             FMSG operates in full compliance with POPIA (South Africa&#39;s
             Protection of Personal Information Act). You can request deletion of
             all your data at any time from your profile settings.

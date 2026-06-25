@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
@@ -131,7 +131,7 @@ export function SignUpForm({ onSuccess }: { onSuccess: (data: SignUpData) => voi
           placeholder="At least 8 characters"
         />
       </div>
-      <label className="flex items-start gap-2 text-xs text-white/60">
+      <label className="flex items-start gap-2 text-xs text-white/80">
         <input
           type="checkbox"
           checked={agreeTos}
@@ -145,7 +145,7 @@ export function SignUpForm({ onSuccess }: { onSuccess: (data: SignUpData) => voi
           </Link>
         </span>
       </label>
-      <label className="flex items-start gap-2 text-xs text-white/60">
+      <label className="flex items-start gap-2 text-xs text-white/80">
         <input
           type="checkbox"
           checked={agreeAge}

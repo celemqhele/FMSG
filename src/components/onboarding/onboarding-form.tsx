@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useRef, type ReactNode } from "react";
 import { Upload, Loader2, Plus, X } from "lucide-react";
@@ -138,7 +138,7 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
           <h1 className="text-3xl md:text-4xl font-semibold text-white tracking-tight">
             Upload your CV
           </h1>
-          <p className="mt-3 text-white/60">
+          <p className="mt-3 text-white/80">
             PDF only, max 10MB. Your file is stored securely.
           </p>
         </div>
@@ -154,11 +154,11 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
               : "border-white/20 hover:border-white/40 bg-white/5"
           }`}
         >
-          <Upload size={36} className="mx-auto text-white/40" />
-          <p className="mt-4 text-sm text-white/60">
+          <Upload size={36} className="mx-auto text-white/60" />
+          <p className="mt-4 text-sm text-white/80">
             Drag and drop your CV here, or click to browse
           </p>
-          <p className="mt-1 text-xs text-white/40">PDF only (max 10MB)</p>
+          <p className="mt-1 text-xs text-white/60">PDF only (max 10MB)</p>
           <input
             ref={inputRef}
             type="file"
@@ -174,10 +174,10 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
   if (step === "extracting") {
     return (
       <div className="flex flex-col items-center justify-center gap-6 py-20">
-        <Loader2 size={32} className="animate-spin text-white/60" />
+        <Loader2 size={32} className="animate-spin text-white/80" />
         <div className="text-center">
           <p className="text-lg font-medium text-white">Analyzing your CV...</p>
-          <p className="mt-1 text-sm text-white/40">Extracting your details with AI</p>
+          <p className="mt-1 text-sm text-white/60">Extracting your details with AI</p>
         </div>
       </div>
     );
@@ -187,7 +187,7 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
     <div className="w-full max-w-2xl mx-auto space-y-8 pb-16">
       <div className="text-center">
         <h1 className="text-2xl md:text-3xl font-semibold text-white">Review your profile</h1>
-        <p className="mt-2 text-sm text-white/60">
+        <p className="mt-2 text-sm text-white/80">
           Edit anything AI got wrong, then save.
         </p>
       </div>
@@ -199,7 +199,7 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
         <h2 className="text-lg font-semibold text-white">Personal Information</h2>
         <div className="flex gap-4">
           <div className="flex-1">
-            <label className="block text-sm font-medium text-white/80 mb-1.5">Name</label>
+            <label className="block text-sm font-medium text-white mb-1.5">Name</label>
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -211,7 +211,7 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
             {!name && <p className="mt-1 text-xs text-yellow-400">Missing - fill in manually</p>}
           </div>
           <div className="flex-1">
-            <label className="block text-sm font-medium text-white/80 mb-1.5">Surname</label>
+            <label className="block text-sm font-medium text-white mb-1.5">Surname</label>
             <input
               value={surname}
               onChange={(e) => setSurname(e.target.value)}
@@ -224,7 +224,7 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
           </div>
         </div>
         <div>
-          <label className="block text-sm font-medium text-white/80 mb-1.5">Phone</label>
+          <label className="block text-sm font-medium text-white mb-1.5">Phone</label>
           <input
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
@@ -236,7 +236,7 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
           {!phone && <p className="mt-1 text-xs text-yellow-400">Missing - fill in manually</p>}
         </div>
         <div>
-          <label className="block text-sm font-medium text-white/80 mb-1.5">Address</label>
+          <label className="block text-sm font-medium text-white mb-1.5">Address</label>
           <input
             value={address}
             onChange={(e) => setAddress(e.target.value)}
@@ -253,12 +253,12 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
       <section className="space-y-4">
         <h2 className="text-lg font-semibold text-white">Career Information</h2>
         <div>
-          <label className="block text-sm font-medium text-white/80 mb-1.5">Desired Job Titles</label>
+          <label className="block text-sm font-medium text-white mb-1.5">Desired Job Titles</label>
           <div className="flex flex-wrap gap-2 mb-3">
             {jobTitles.map((t) => (
               <span key={t} className="inline-flex items-center gap-1 px-3 py-1 text-xs font-medium text-white bg-white/10 rounded-full">
                 {t}
-                <button onClick={() => removeJobTitle(t)} className="text-white/50 hover:text-white">
+                <button onClick={() => removeJobTitle(t)} className="text-white/70 hover:text-white">
                   <X size={12} />
                 </button>
               </span>
@@ -284,7 +284,7 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
           {jobTitles.length === 0 && <p className="mt-1 text-xs text-yellow-400">Add at least one job title</p>}
         </div>
         <div>
-          <label className="block text-sm font-medium text-white/80 mb-2">Job Types</label>
+          <label className="block text-sm font-medium text-white mb-2">Job Types</label>
           <div className="flex flex-wrap gap-2">
             {JOB_TYPE_OPTIONS.map((opt) => (
               <button
@@ -293,7 +293,7 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
                 className={`px-3 py-1.5 text-xs font-medium rounded-full border transition-colors ${
                   jobTypes.includes(opt)
                     ? "bg-[var(--color-accent)] border-[var(--color-accent)] text-white"
-                    : "bg-white/10 border-white/20 text-white/60 hover:text-white hover:border-white/40"
+                    : "bg-white/10 border-white/20 text-white/80 hover:text-white hover:border-white/40"
                 }`}
               >
                 {opt}
@@ -303,7 +303,7 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
           {jobTypes.length === 0 && <p className="mt-1 text-xs text-yellow-400">Select at least one job type</p>}
         </div>
         <div>
-          <label className="block text-sm font-medium text-white/80 mb-1.5">Preferred Location</label>
+          <label className="block text-sm font-medium text-white mb-1.5">Preferred Location</label>
           <input
             value={location}
             onChange={(e) => setLocation(e.target.value)}
@@ -318,7 +318,7 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
 
       {/* Pro tip */}
       <div className="liquid-glass rounded-xl p-4 text-center">
-        <p className="text-xs text-white/60">
+        <p className="text-xs text-white/80">
           <span className="text-[var(--color-accent)] font-medium">Pro tip:</span> After onboarding, try Persistent Finder - it searches multiple rounds of AI-generated title variations to find jobs other engines miss.
         </p>
       </div>
@@ -326,10 +326,10 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
       {/* Salary - always manual */}
       <section className="space-y-4">
         <h2 className="text-lg font-semibold text-white">Salary Expectations</h2>
-        <p className="text-xs text-white/40">These fields are always filled manually.</p>
+        <p className="text-xs text-white/60">These fields are always filled manually.</p>
         <div className="flex gap-4">
           <div className="flex-1">
-            <label className="block text-sm font-medium text-white/80 mb-1.5">Current Salary</label>
+            <label className="block text-sm font-medium text-white mb-1.5">Current Salary</label>
             <input
               type="number"
               value={currentSalary ?? ""}
@@ -341,7 +341,7 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
             <p className="mt-1 text-xs text-yellow-400">Required - enter manually</p>
           </div>
           <div className="flex-1">
-            <label className="block text-sm font-medium text-white/80 mb-1.5">Desired Salary</label>
+            <label className="block text-sm font-medium text-white mb-1.5">Desired Salary</label>
             <input
               type="number"
               value={desiredSalary ?? ""}

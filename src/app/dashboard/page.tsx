@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef, startTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -545,7 +545,7 @@ export default function DashboardPage() {
                 </p>
                 <button
                   onClick={handleContinue}
-                  className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-white/10 border border-white/20 hover:bg-white/25 transition-all text-sm text-white/80"
+                  className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-white/10 border border-white/20 hover:bg-white/25 transition-all text-sm text-white"
                   title="Continue search"
                 >
                   Continue
@@ -640,7 +640,7 @@ export default function DashboardPage() {
           >
             <button
               onClick={() => setShowLimitModal(null)}
-              className="absolute top-3 right-3 p-1 text-white/40 hover:text-white transition-colors"
+              className="absolute top-3 right-3 p-1 text-white/60 hover:text-white transition-colors"
             >
               <X size={18} />
             </button>

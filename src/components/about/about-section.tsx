@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { LiquidGlassCard } from "@/components/landing/liquid-glass-card";
 import { Target, Zap, Shield, Users } from "lucide-react";
@@ -37,7 +37,7 @@ export function AboutSection() {
         <h1 className="text-4xl md:text-5xl font-semibold text-white tracking-tight">
           About FMSG
         </h1>
-        <p className="mt-4 text-lg text-white/60 max-w-2xl mx-auto">
+        <p className="mt-4 text-lg text-white/80 max-w-2xl mx-auto">
           Find Me Some Jobs is an AI-powered job matching platform. Upload your CV, and
           we find the roles that fit, no wasted applications, no spam.
         </p>
@@ -52,7 +52,7 @@ export function AboutSection() {
               </div>
               <h2 className="text-xl font-semibold text-white">{item.title}</h2>
             </div>
-            <p className="mt-4 text-white/60 leading-relaxed">{item.description}</p>
+            <p className="mt-4 text-white/80 leading-relaxed">{item.description}</p>
           </LiquidGlassCard>
         ))}
       </div>
