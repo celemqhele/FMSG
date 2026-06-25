@@ -1095,7 +1095,7 @@ export async function POST(request: NextRequest) {
           }
 
           // === PERSISTENT FINDER MODE (adaptive OR, per-round checkpoint) ===
-          const MAX_ROUNDS = 8;
+          const MAX_ROUNDS = 3;
           const STOP_THRESHOLD = 80;
           const STOP_COUNT = 5;
 
