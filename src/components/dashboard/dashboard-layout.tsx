@@ -5,6 +5,7 @@ import { Pencil } from "lucide-react";
 import { SpaceVideoBackground } from "@/components/landing/space-video-background";
 import { ProfileSwitcher } from "./profile-switcher";
 import { ProfileDropdown } from "./profile-dropdown";
+import { EmailConfirmationBanner } from "./email-confirmation-banner";
 import dynamic from "next/dynamic";
 const ProfileOnboardingModal = dynamic(
   () => import("./profile-onboarding-modal").then((mod) => mod.ProfileOnboardingModal),
@@ -93,7 +94,12 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
           <ProfileDropdown />
         </div>
       </header>
-      <main className="relative z-10 flex-1 px-6 pb-12 pt-24">{children}</main>
+      <main className="relative z-10 flex-1 px-6 pb-12 pt-24">
+        <div className="max-w-4xl mx-auto mb-6">
+          <EmailConfirmationBanner />
+        </div>
+        {children}
+      </main>
       {editProfileId && (
         <ProfileOnboardingModal
           profileId={editProfileId}

@@ -11,13 +11,22 @@ import { SpaceVideoBackground } from "@/components/landing/space-video-backgroun
 import { AuthModal } from "@/components/auth/auth-modal";
 import { PageTransitionWrapper } from "@/components/ui/page-transition-wrapper";
 import { useTransition } from "@/components/providers/transition-provider";
+import { createClient } from "@/lib/supabase/client";
 
 export default function HomePage() {
   const [authOpen, setAuthOpen] = useState(false);
   const [authTab, setAuthTab] = useState<"login" | "signup">("signup");
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
   const { startTransition, endTransition } = useTransition();
 
   useEffect(() => { endTransition(); }, [endTransition]);
+
+  useEffect(() => {
+    const supabase = createClient();
+    supabase.auth.getSession().then(({ data: { session } }: { data: { session: any } }) => {
+      setIsLoggedIn(!!session);
+    });
+  }, []);
 
   useEffect(() => {
     if (authOpen) {
@@ -42,10 +51,11 @@ export default function HomePage() {
       <FloatingNavbar
         onLoginClick={() => openAuth("login")}
         onSignUpClick={() => openAuth("signup")}
+        isLoggedIn={isLoggedIn}
       />
       <PageTransitionWrapper>
         <main className="flex-1">
-          <Hero onCtaClick={() => openAuth("signup")} />
+          <Hero onCtaClick={() => openAuth("signup")} isLoggedIn={isLoggedIn} />
           <HowItWorks />
           <DataPrivacy />
           <PricingSection />
