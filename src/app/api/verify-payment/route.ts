@@ -100,8 +100,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Failed to record subscription" }, { status: 500 });
     }
 
-    // Determine pf_balance — metadata.pf_count replaces base (user's choice)
-    const pfCount = txData.metadata?.pf_count ?? limits.pf_balance;
+    // Determine pf_balance — metadata.pf_count is total PF (base + extra)
+    const metadataPf = txData.metadata?.pf_count;
+    const pfCount = (metadataPf != null && metadataPf > 0) ? metadataPf : limits.pf_balance;
 
     // Update profile (core fields)
     const { error: profileErr } = await supabase

@@ -280,7 +280,9 @@ export default function ManageSubscriptionPage() {
       if (!session) { setProcessing(null); alert("Session expired. Please refresh and try again."); return; }
 
       try {
-        const pfCount = pfCounts[tier.name] ?? PF_DEFAULT_BY_TIER[tier.name] ?? PLAN_LIMITS[tier.name]?.pf_balance ?? 0;
+        const extraPf = pfCounts[tier.name] ?? PF_DEFAULT_BY_TIER[tier.name] ?? 0;
+        const basePf = PLAN_LIMITS[tier.name]?.pf_balance ?? 0;
+        const totalPf = basePf + extraPf;
         const res = await fetch("/api/paystack/change-plan", {
           method: "POST",
           headers: {
@@ -290,7 +292,7 @@ export default function ManageSubscriptionPage() {
           body: JSON.stringify({
             plan: tier.name,
             billing_cycle: annual ? "annual" : "monthly",
-            pf_count: pfCount,
+            pf_count: totalPf,
           }),
         });
 
@@ -324,9 +326,11 @@ export default function ManageSubscriptionPage() {
       }
 
       const baseKobo = (PLAN_PRICES[tier.name] ?? { monthly: 0, annual: 0 })[annual ? "annual" : "monthly"];
-      const pfCount = pfCounts[tier.name] ?? PF_DEFAULT_BY_TIER[tier.name] ?? 0;
-      const pfPriceZar = calculatePFPrice(pfCount);
-      const pfKobo = pfCount * pfPriceZar * 100 * (annual ? 12 : 1);
+      const extraPf = pfCounts[tier.name] ?? PF_DEFAULT_BY_TIER[tier.name] ?? 0;
+      const basePf = PLAN_LIMITS[tier.name]?.pf_balance ?? 0;
+      const totalPf = basePf + extraPf;
+      const pfPriceZar = calculatePFPrice(extraPf);
+      const pfKobo = extraPf * pfPriceZar * 100 * (annual ? 12 : 1);
       const amount = baseKobo + pfKobo;
 
       try {
@@ -348,7 +352,7 @@ export default function ManageSubscriptionPage() {
           amount,
           currency: "ZAR",
           ref: "FMSG-" + Date.now(),
-          metadata: { plan: tier.name, billing_cycle: annual ? "annual" : "monthly", pf_count: pfCount },
+          metadata: { plan: tier.name, billing_cycle: annual ? "annual" : "monthly", pf_count: totalPf },
           callback: function (response: { reference: string }) {
             fetch("/api/verify-payment", {
               method: "POST",
