@@ -791,7 +791,7 @@ export default function DashboardPage() {
           <div
             className="w-full max-w-lg mx-4 rounded-2xl bg-white shadow-2xl overflow-hidden transition-all duration-500 ease-out"
           >
-            <div className="relative z-10 px-6 py-6 max-h-[80vh] overflow-y-auto">
+            <div className="relative z-10 px-6 py-6 max-h-[80vh] overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
               {onboardingStep === "prompt" && (
                 <div className="flex flex-col items-center gap-5 py-8">
                   <div className="w-16 h-16 rounded-full bg-[var(--color-accent)]/10 flex items-center justify-center">
