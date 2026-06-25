@@ -128,21 +128,26 @@ export default function ManageSubscriptionPage() {
     script.src = "https://js.paystack.co/v1/inline.js";
     script.async = true;
     script.onload = () => setPaystackReady(true);
+    script.onerror = () => setPaystackReady(false);
     document.body.appendChild(script);
+    const timeout = setTimeout(() => {
+      if (!(window as any).PaystackPop) setPaystackReady(false);
+    }, 10000);
+    return () => clearTimeout(timeout);
   }, []);
 
   // --- Buy PF Credits ---
   const handleBuyPf = async () => {
     if (buyPfQty <= 0 || !PAYSTACK_PUBLIC_KEY) return;
     if (!paystackReady || !(window as any).PaystackPop) {
-      alert("Payment system initializing. Try again.");
+      alert("Payment system could not load. Try refreshing the page.");
       return;
     }
 
     setBuyingPf(true);
 
     const { data: { session } } = await supabase.auth.getSession();
-    if (!session) { setBuyingPf(false); return; }
+    if (!session) { setBuyingPf(false); alert("Session expired. Please refresh and try again."); return; }
 
     const amount = buyPfQty * calculatePFPrice(buyPfQty) * 100;
 
@@ -259,7 +264,7 @@ export default function ManageSubscriptionPage() {
     if (hasSubscription) {
       const sRes = await supabase.auth.getSession();
       const session = sRes.data.session;
-      if (!session) { setProcessing(null); return; }
+      if (!session) { setProcessing(null); alert("Session expired. Please refresh and try again."); return; }
 
       try {
         const pfCount = pfCounts[tier.name] ?? PF_DEFAULT_BY_TIER[tier.name] ?? PLAN_LIMITS[tier.name]?.pf_balance ?? 0;
@@ -315,7 +320,7 @@ export default function ManageSubscriptionPage() {
         const sRes = await supabase.auth.getSession();
         const session = sRes.data.session;
         const email = session?.user?.email;
-        if (!email) { setProcessing(null); return; }
+        if (!email) { setProcessing(null); alert("Session expired. Please refresh and try again."); return; }
 
         const planCode = PAYSTACK_PLAN_CODES[`${tier.name}_${annual ? "annual" : "monthly"}`] || "";
 

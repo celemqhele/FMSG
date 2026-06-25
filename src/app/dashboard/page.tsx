@@ -648,49 +648,51 @@ export default function DashboardPage() {
       {showLimitModal && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center transition-opacity duration-300" style={{ opacity: limitModalMounted ? 1 : 0 }}>
           <div className="absolute inset-0 bg-black/60" onClick={() => setShowLimitModal(null)} />
-          <div
-            className="relative liquid-glass border rounded-2xl p-6 max-w-sm mx-4 text-center space-y-4 transition-all duration-300 ease-out"
-            style={{ opacity: limitModalMounted ? 1 : 0, transform: limitModalMounted ? "translateY(0) scale(1)" : "translateY(8px) scale(0.97)" }}
-          >
+          <div className="relative">
             <button
               onClick={() => setShowLimitModal(null)}
-              className="absolute top-3 right-3 p-1 text-white/60 hover:text-white transition-colors"
+              className="absolute -top-3 -right-3 z-10 p-1.5 bg-red-800 rounded-full text-white/80 hover:text-white hover:bg-red-900 transition-colors shadow-lg"
             >
-              <X size={18} />
+              <X size={20} />
             </button>
-            <p className="text-[var(--color-error)] font-semibold">
-              {showLimitModal === "LIMIT_001"
-                ? "No searches remaining"
-                : showLimitModal === "LIMIT_002"
-                ? "No CV generations remaining"
-                : showLimitModal === "LIMIT_003"
-                ? "No Persistent Finder rounds remaining"
-                : "No remaining credits"}
-            </p>
-            <p className="text-sm text-[var(--color-text-secondary)]">
-              {showLimitModal === "LIMIT_001"
-                ? "You've used all your free searches. Paid users receive priority AI processing. Upgrade your plan to continue searching."
-                : showLimitModal === "LIMIT_002"
-                ? "You've used all your CV generations. Upgrade your plan to generate more."
-                : showLimitModal === "LIMIT_003"
-                ? "You've used all your Persistent Finder rounds. Upgrade your plan or buy more PF credits."
-                : "You've run out of credits. Upgrade your plan."}
-            </p>
-            <div className="flex flex-wrap justify-center gap-3">
-              <button
-                onClick={() => { setShowLimitModal(null); router.push("/upgrade"); }}
-                className="px-5 py-2.5 text-sm font-medium text-white bg-[var(--color-accent)] rounded-full hover:bg-[var(--color-accent-hover)] transition-colors"
-              >
-                Upgrade Plan
-              </button>
-              {showLimitModal === "LIMIT_003" && (
+            <div
+              className="bg-[var(--color-error)] rounded-2xl p-6 max-w-sm mx-4 text-center space-y-4 transition-all duration-300 ease-out shadow-2xl"
+              style={{ opacity: limitModalMounted ? 1 : 0, transform: limitModalMounted ? "translateY(0) scale(1)" : "translateY(8px) scale(0.97)" }}
+            >
+              <p className="text-white font-semibold">
+                {showLimitModal === "LIMIT_001"
+                  ? "No searches remaining"
+                  : showLimitModal === "LIMIT_002"
+                  ? "No CV generations remaining"
+                  : showLimitModal === "LIMIT_003"
+                  ? "No Persistent Finder rounds remaining"
+                  : "No remaining credits"}
+              </p>
+              <p className="text-sm text-white/90">
+                {showLimitModal === "LIMIT_001"
+                  ? "You've used all your free searches. Paid users receive priority AI processing. Upgrade your plan to continue searching."
+                  : showLimitModal === "LIMIT_002"
+                  ? "You've used all your CV generations. Upgrade your plan to generate more."
+                  : showLimitModal === "LIMIT_003"
+                  ? "You've used all your Persistent Finder rounds. Upgrade your plan or buy more PF credits."
+                  : "You've run out of credits. Upgrade your plan."}
+              </p>
+              <div className="flex flex-wrap justify-center gap-3">
                 <button
-                  onClick={() => { setShowLimitModal(null); setPfModalOpen(true); }}
-                  className="px-5 py-2.5 text-sm font-medium text-white bg-white/10 border border-white/20 rounded-full hover:bg-white/20 transition-colors"
+                  onClick={() => { setShowLimitModal(null); router.push("/upgrade"); }}
+                  className="px-5 py-2.5 text-sm font-semibold text-[var(--color-error)] bg-white rounded-full hover:bg-white/90 transition-colors"
                 >
-                  Buy PF Credits
+                  Upgrade Plan
                 </button>
-              )}
+                {showLimitModal === "LIMIT_003" && (
+                  <button
+                    onClick={() => { setShowLimitModal(null); setPfModalOpen(true); }}
+                    className="px-5 py-2.5 text-sm font-medium text-white bg-transparent border border-white/50 rounded-full hover:bg-white/20 transition-colors"
+                  >
+                    Buy PF Credits
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>

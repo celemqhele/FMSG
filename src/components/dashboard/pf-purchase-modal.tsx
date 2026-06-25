@@ -40,12 +40,21 @@ export function PFPurchaseModal({ isOpen, onClose }: PFPurchaseModalProps) {
     script.src = "https://js.paystack.co/v1/inline.js";
     script.async = true;
     script.onload = () => setPaystackReady(true);
+    script.onerror = () => setPaystackReady(false);
     document.body.appendChild(script);
+    const timeout = setTimeout(() => {
+      if (!(window as any).PaystackPop) setPaystackReady(false);
+    }, 10000);
+    return () => clearTimeout(timeout);
   }, []);
 
   const handlePurchase = async (runs: number) => {
-    if (!PAYSTACK_PUBLIC_KEY || !paystackReady || !(window as any).PaystackPop) {
-      alert("Payment system loading. Please try again.");
+    if (!PAYSTACK_PUBLIC_KEY) {
+      alert("Paystack public key not configured. Please contact support.");
+      return;
+    }
+    if (!paystackReady || !(window as any).PaystackPop) {
+      alert("Payment system could not load. Try refreshing the page.");
       return;
     }
 
@@ -55,7 +64,7 @@ export function PFPurchaseModal({ isOpen, onClose }: PFPurchaseModalProps) {
     const sRes = await supabase.auth.getSession();
     const session = sRes.data.session;
     const email = session?.user?.email;
-    if (!email) { setProcessing(null); return; }
+    if (!email) { setProcessing(null); alert("Session expired. Please refresh and try again."); return; }
 
     const pricePerRun = calculatePFPrice(runs);
     const amount = runs * pricePerRun * 100;
@@ -102,54 +111,55 @@ export function PFPurchaseModal({ isOpen, onClose }: PFPurchaseModalProps) {
       style={{ opacity: mounted ? 1 : 0 }}
     >
       <div className="absolute inset-0 bg-black/60" onClick={onClose} />
-      <div
-        className="relative liquid-glass border border-white/10 rounded-2xl p-6 max-w-sm mx-4 text-center transition-all duration-300 ease-out"
-        style={{ opacity: mounted ? 1 : 0, transform: mounted ? "translateY(0) scale(1)" : "translateY(8px) scale(0.97)" }}
-      >
+      <div className="relative">
         <button
           onClick={onClose}
-          className="absolute top-3 right-3 p-1 text-white/60 hover:text-white transition-colors"
+          className="absolute -top-3 -right-3 z-10 p-1.5 bg-gray-800 rounded-full text-white/80 hover:text-white hover:bg-gray-700 transition-colors shadow-lg"
         >
-          <X size={18} />
+          <X size={20} />
         </button>
+        <div
+          className="liquid-glass border border-white/10 rounded-2xl p-6 max-w-sm mx-4 text-center transition-all duration-300 ease-out"
+          style={{ opacity: mounted ? 1 : 0, transform: mounted ? "translateY(0) scale(1)" : "translateY(8px) scale(0.97)" }}
+        >
+          <div className="flex items-center justify-center gap-2 mb-1">
+            <Crosshair size={20} className="text-[var(--color-accent)]" />
+            <h3 className="text-lg font-semibold text-white">Buy PF Credits</h3>
+          </div>
+          <p className="text-sm text-[var(--color-text-secondary)] mb-5">
+            Persistent Finder runs: volume discounts apply
+          </p>
 
-        <div className="flex items-center justify-center gap-2 mb-1">
-          <Crosshair size={20} className="text-[var(--color-accent)]" />
-          <h3 className="text-lg font-semibold text-white">Buy PF Credits</h3>
-        </div>
-        <p className="text-sm text-[var(--color-text-secondary)] mb-5">
-          Persistent Finder runs: volume discounts apply
-        </p>
-
-        <div className="space-y-3">
-          {PURCHASE_OPTIONS.map((runs) => {
-            const price = calculatePFPrice(runs) * runs;
-            return (
-              <button
-                key={runs}
-                onClick={() => handlePurchase(runs)}
-                disabled={processing !== null}
-                className="w-full flex items-center justify-between px-5 py-3 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition-colors disabled:opacity-50"
-              >
-                <span className="text-sm font-medium text-white">{runs} run{runs > 1 ? "s" : ""}</span>
-                <span className="flex items-center gap-2">
-                  <span className="text-xs text-white/70">R{calculatePFPrice(runs)}/run</span>
-                  <span className="text-sm font-bold text-white">
-                    {processing === runs ? (
-                      <Loader2 size={16} className="animate-spin" />
-                    ) : (
-                      `R${price}`
-                    )}
+          <div className="space-y-3">
+            {PURCHASE_OPTIONS.map((runs) => {
+              const price = calculatePFPrice(runs) * runs;
+              return (
+                <button
+                  key={runs}
+                  onClick={() => handlePurchase(runs)}
+                  disabled={processing !== null}
+                  className="w-full flex items-center justify-between px-5 py-3 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition-colors disabled:opacity-50"
+                >
+                  <span className="text-sm font-medium text-white">{runs} run{runs > 1 ? "s" : ""}</span>
+                  <span className="flex items-center gap-2">
+                    <span className="text-xs text-white/70">R{calculatePFPrice(runs)}/run</span>
+                    <span className="text-sm font-bold text-white">
+                      {processing === runs ? (
+                        <Loader2 size={16} className="animate-spin" />
+                      ) : (
+                        `R${price}`
+                      )}
+                    </span>
                   </span>
-                </span>
-              </button>
-            );
-          })}
-        </div>
+                </button>
+              );
+            })}
+          </div>
 
-        {successMessage && (
-          <p className="mt-4 text-sm text-[var(--color-success)]">{successMessage}</p>
-        )}
+          {successMessage && (
+            <p className="mt-4 text-sm text-[var(--color-success)]">{successMessage}</p>
+          )}
+        </div>
       </div>
     </div>
   );
