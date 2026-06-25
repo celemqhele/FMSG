@@ -98,6 +98,13 @@ export default function DashboardPage() {
 
   useEffect(() => { endTransition(); }, [endTransition]);
 
+  // Refresh balance chips whenever a search completes
+  useEffect(() => {
+    if (!searching && hasSearched) {
+      window.dispatchEvent(new Event("refresh-balances"));
+    }
+  }, [searching, hasSearched]);
+
   useEffect(() => {
     const supabase = createClient();
     supabase.auth.getSession().then(({ data }: { data: { session: any } | null }) => {
