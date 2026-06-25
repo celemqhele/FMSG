@@ -59,12 +59,21 @@ export function SignUpForm({ onSuccess }: { onSuccess: (data: SignUpData) => voi
       return;
     }
 
+    let hasSession = !!data.session;
+
+    if (!hasSession && data.user) {
+      const { error: signInErr } = await supabase.auth.signInWithPassword({ email, password });
+      if (!signInErr) {
+        hasSession = true;
+      }
+    }
+
     onSuccess({
       email,
       password,
       name,
       surname,
-      autoConfirmed: !!data.session,
+      autoConfirmed: hasSession,
     });
   };
 

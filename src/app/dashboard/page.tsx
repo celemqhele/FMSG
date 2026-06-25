@@ -2,12 +2,13 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef, startTransition } from "react";
 import { useRouter } from "next/navigation";
-import { X, ArrowRight } from "lucide-react";
+import { X, ArrowRight, Mail, Upload } from "lucide-react";
 import { DashboardLayout } from "@/components/dashboard/dashboard-layout";
 import { SearchPill } from "@/components/dashboard/search-pill";
 import { JobResultCard } from "@/components/dashboard/job-result-card";
 import dynamic from "next/dynamic";
 const PFPurchaseModal = dynamic(() => import("@/components/dashboard/pf-purchase-modal").then((mod) => mod.PFPurchaseModal), { ssr: false });
+const OnboardingForm = dynamic(() => import("@/components/onboarding/onboarding-form").then((mod) => mod.OnboardingForm), { ssr: false });
 import { DashboardTabs, type TabId } from "@/components/dashboard/dashboard-tabs";
 import { BalanceChips } from "@/components/dashboard/balance-chips";
 import { FilterSortBar, type FilterState, type SortMode } from "@/components/dashboard/filter-sort-bar";
@@ -90,6 +91,9 @@ export default function DashboardPage() {
   const [statusActive, setStatusActive] = useState("");
   const [filteredSummary, setFilteredSummary] = useState<FilteredSummary | null>(null);
   const [continuationToken, setContinuationToken] = useState<string | null>(null);
+  const [needsOnboarding, setNeedsOnboarding] = useState(false);
+  const [onboardingStep, setOnboardingStep] = useState<"prompt" | "form" | "done">("prompt");
+  const [onboardingMounted, setOnboardingMounted] = useState(false);
 
   useEffect(() => { endTransition(); }, [endTransition]);
 
@@ -101,6 +105,16 @@ export default function DashboardPage() {
         return;
       }
       setAuthChecked(true);
+      supabase
+        .from("profiles")
+        .select("onboarding_completed")
+        .maybeSingle()
+        .then(({ data: profile }: { data: any }) => {
+          if (!profile) {
+            setNeedsOnboarding(true);
+            requestAnimationFrame(() => setOnboardingMounted(true));
+          }
+        });
     });
 
     const handler = (e: Event) => {
@@ -683,6 +697,64 @@ export default function DashboardPage() {
       )}
 
       <PFPurchaseModal isOpen={pfModalOpen} onClose={() => setPfModalOpen(false)} />
+
+      {needsOnboarding && onboardingMounted && (
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm transition-opacity duration-500"
+          style={{ opacity: onboardingStep === "done" ? 1 : 1 }}
+        >
+          <div
+            className="w-full max-w-lg mx-4 rounded-2xl bg-[#1C1C1E] border border-white/10 shadow-2xl overflow-hidden transition-all duration-500 ease-out"
+          >
+            <div className="px-6 py-6 max-h-[80vh] overflow-y-auto">
+              {onboardingStep === "prompt" && (
+                <div className="flex flex-col items-center gap-5 py-8">
+                  <div className="w-16 h-16 rounded-full bg-[var(--color-accent)]/20 flex items-center justify-center">
+                    <Upload size={28} className="text-[var(--color-accent)]" />
+                  </div>
+                  <div className="text-center space-y-2">
+                    <h2 className="text-xl font-semibold text-white">Set Up Your Account</h2>
+                    <p className="text-sm text-white/60 max-w-xs">
+                      Upload your CV and let AI fill in your profile details automatically.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setOnboardingStep("form")}
+                    className="px-6 py-2.5 text-sm font-medium text-white bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] rounded-full transition-colors"
+                  >
+                    Set up account
+                  </button>
+                </div>
+              )}
+
+              {onboardingStep === "form" && (
+                <OnboardingForm
+                  onOnboarded={() => setOnboardingStep("done")}
+                />
+              )}
+
+              {onboardingStep === "done" && (
+                <div className="flex flex-col items-center gap-5 py-8">
+                  <div className="w-16 h-16 rounded-full bg-emerald-500/20 flex items-center justify-center">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-400"><polyline points="20 6 9 17 4 12" /></svg>
+                  </div>
+                  <div className="text-center space-y-2">
+                    <h2 className="text-xl font-semibold text-white">Account set up!</h2>
+                    <p className="text-sm text-white/60">Your profile is ready to go.</p>
+                  </div>
+                  <button
+                    onClick={() => { setNeedsOnboarding(false); setOnboardingMounted(false); }}
+                    className="px-6 py-2.5 text-sm font-medium text-white bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] rounded-full transition-colors"
+                  >
+                    Go to Dashboard
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       </PageTransitionWrapper>
     </DashboardLayout>
   );
