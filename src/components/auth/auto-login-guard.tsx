@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { LoginTransition } from "@/components/ui/login-transition";
 
 export function AutoLoginGuard() {
   const pathname = usePathname();
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [guardState, setGuardState] = useState<"loading" | "transition" | "idle">(() => {
     if (
@@ -39,8 +40,23 @@ export function AutoLoginGuard() {
       return;
     }
 
+    let settled = false;
+    const forceIdle = () => {
+      if (!settled) {
+        settled = true;
+        document.documentElement.classList.remove("auth-loading");
+        localStorage.removeItem("logged_in");
+        setGuardState("idle");
+      }
+    };
+
+    timerRef.current = setTimeout(forceIdle, 5000);
+
     const supabase = createClient();
     supabase.auth.getSession().then(({ data: { session } }: { data: { session: any } }) => {
+      if (settled) return;
+      settled = true;
+      if (timerRef.current) clearTimeout(timerRef.current);
       if (session) {
         setGuardState("transition");
       } else {
@@ -48,7 +64,17 @@ export function AutoLoginGuard() {
         setGuardState("idle");
       }
     });
+
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
   }, [guardState, pathname]);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, []);
 
   if (guardState === "loading") {
     return null;

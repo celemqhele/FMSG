@@ -22,14 +22,14 @@ export function LoginTransition({ type, redirectTo, onComplete }: LoginTransitio
       timers.push(setTimeout(() => setPhase(3), 400));
       timers.push(setTimeout(() => {
         setPhase(4);
-        window.location.href = redirectTo ?? "/dashboard";
+        router.push(redirectTo ?? "/dashboard");
       }, 1200));
       timers.push(setTimeout(() => onComplete?.(), 1700));
     } else {
       startTransition(() => setPhase(3));
       timers.push(setTimeout(() => {
         setPhase(4);
-        window.location.href = redirectTo ?? "/dashboard";
+        router.push(redirectTo ?? "/dashboard");
       }, 800));
       timers.push(setTimeout(() => onComplete?.(), 1300));
     }
