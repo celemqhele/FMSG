@@ -852,12 +852,21 @@ export async function POST(request: NextRequest) {
         // Atomic balance deduction — before any search work
         if (pf_mode) {
           const { error: sErr } = await dataClient.rpc("decrement_search_balance", { p_user_id: user.id, p_amount: 1 });
-          if (sErr) debugLog("[SEARCH] RPC decrement_search_balance failed:", sErr);
+          if (sErr) {
+            console.error("[SEARCH] RPC decrement_search_balance failed:", sErr);
+            return NextResponse.json({ code: "GENERIC_ERROR", message: "Failed to deduct search credit. Please try again." }, { status: 500 });
+          }
           const { error: pfErr } = await dataClient.rpc("decrement_pf_balance", { p_user_id: user.id, p_amount: 1 });
-          if (pfErr) debugLog("[SEARCH] RPC decrement_pf_balance failed:", pfErr);
+          if (pfErr) {
+            console.error("[SEARCH] RPC decrement_pf_balance failed:", pfErr);
+            return NextResponse.json({ code: "GENERIC_ERROR", message: "Failed to deduct PF credit. Please try again." }, { status: 500 });
+          }
         } else {
           const { error: sErr } = await dataClient.rpc("decrement_search_balance", { p_user_id: user.id, p_amount: 1 });
-          if (sErr) debugLog("[SEARCH] RPC decrement_search_balance failed:", sErr);
+          if (sErr) {
+            console.error("[SEARCH] RPC decrement_search_balance failed:", sErr);
+            return NextResponse.json({ code: "GENERIC_ERROR", message: "Failed to deduct search credit. Please try again." }, { status: 500 });
+          }
         }
       }
 
