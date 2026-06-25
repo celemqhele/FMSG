@@ -7,13 +7,32 @@ export async function sendVerificationEmail(to: string, code: string) {
     return { ok: false, error: "Email service not configured" };
   }
 
-  const maskedKey = MAILTRAP_API.length > 8
-    ? MAILTRAP_API.slice(0, 4) + "..." + MAILTRAP_API.slice(-4)
-    : "???";
-  console.log(`[MAILTRAP] Sending to ${to} with key prefix: ${maskedKey}`);
-
   try {
+    // Try template-based email first
     const res = await fetch("https://send.api.mailtrap.io/api/send", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${MAILTRAP_API}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: { email: "hello@findmesomejobs.co.za", name: "FMSG" },
+        to: [{ email: to }],
+        template_uuid: VERIFY_TEMPLATE_UUID,
+        template_variables: { code },
+        category: "Verification",
+      }),
+    });
+
+    if (res.ok) {
+      console.log("[MAILTRAP] Sent template email to", to);
+      return { ok: true };
+    }
+
+    console.warn("[MAILTRAP] Template failed (status", res.status, "), falling back to plain text");
+
+    // Fallback: plain text email
+    const fallbackRes = await fetch("https://send.api.mailtrap.io/api/send", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${MAILTRAP_API}`,
@@ -28,17 +47,13 @@ export async function sendVerificationEmail(to: string, code: string) {
       }),
     });
 
-    if (!res.ok) {
-      const text = await res.text();
-      console.error("[MAILTRAP] Send failed:", res.status, text);
-
-      if (res.status === 401) {
-        return { ok: false, error: "Mailtrap authentication failed. Check MAILTRAP_API is a Sending API token (not Testing token)." };
-      }
+    if (!fallbackRes.ok) {
+      const text = await fallbackRes.text();
+      console.error("[MAILTRAP] Plain text also failed:", fallbackRes.status, text);
       return { ok: false, error: "Failed to send email" };
     }
 
-    console.log("[MAILTRAP] Sent successfully to", to);
+    console.log("[MAILTRAP] Sent plain text email to", to);
     return { ok: true };
   } catch (err) {
     console.error("[MAILTRAP] Error:", err);
