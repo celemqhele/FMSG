@@ -704,9 +704,9 @@ export default function DashboardPage() {
           style={{ opacity: onboardingStep === "done" ? 1 : 1 }}
         >
           <div
-            className="w-full max-w-lg mx-4 rounded-2xl bg-[#1C1C1E] border border-white/10 shadow-2xl overflow-hidden transition-all duration-500 ease-out"
+            className="w-full max-w-lg mx-4 rounded-2xl liquid-glass shadow-2xl overflow-hidden transition-all duration-500 ease-out"
           >
-            <div className="px-6 py-6 max-h-[80vh] overflow-y-auto">
+            <div className="relative z-10 px-6 py-6 max-h-[80vh] overflow-y-auto">
               {onboardingStep === "prompt" && (
                 <div className="flex flex-col items-center gap-5 py-8">
                   <div className="w-16 h-16 rounded-full bg-[var(--color-accent)]/20 flex items-center justify-center">
