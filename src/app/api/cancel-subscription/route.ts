@@ -46,22 +46,62 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "No active subscription found" }, { status: 404 });
   }
 
-  // Disable on Paystack if we have a subscription ID
-  if (sub.paystack_subscription_id && PAYSTACK_SECRET_KEY) {
-    try {
-      const paystackRes = await fetch(`https://api.paystack.co/subscription/${sub.paystack_subscription_id}/disable`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ code: sub.paystack_subscription_id, token: sub.email }),
-      });
-      if (!paystackRes.ok) {
-        console.error("[CANCEL_SUB] Paystack returned non-OK:", paystackRes.status);
+  // Disable on Paystack — try by subscription ID first, then by customer code
+  if (PAYSTACK_SECRET_KEY) {
+    let disabled = false;
+
+    // Try 1: disable by subscription code
+    if (sub.paystack_subscription_id) {
+      try {
+        const paystackRes = await fetch(`https://api.paystack.co/subscription/${sub.paystack_subscription_id}/disable`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ code: sub.paystack_subscription_id, token: sub.email }),
+        });
+        if (paystackRes.ok) {
+          disabled = true;
+          console.log("[CANCEL_SUB] Paystack subscription disabled");
+        } else {
+          const text = await paystackRes.text();
+          console.error("[CANCEL_SUB] Paystack disable failed:", paystackRes.status, text);
+        }
+      } catch (err) {
+        console.error("[CANCEL_SUB] Paystack disable error:", err);
       }
-    } catch (err) {
-      console.error("[CANCEL_SUB] Paystack disable error:", err);
+    }
+
+    // Try 2: if no subscription code, try listing by customer email and disabling all
+    if (!disabled && sub.email) {
+      try {
+        const listRes = await fetch(`https://api.paystack.co/subscription?customer=${encodeURIComponent(sub.email)}`, {
+          headers: {
+            Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+            "Content-Type": "application/json",
+          },
+        });
+        if (listRes.ok) {
+          const listData = await listRes.json();
+          const subs: Array<{ subscription_code: string; status: string }> = listData.data ?? [];
+          for (const ps of subs) {
+            if (ps.status === "active" || ps.status === "non-renewing") {
+              await fetch(`https://api.paystack.co/subscription/${ps.subscription_code}/disable`, {
+                method: "POST",
+                headers: {
+                  Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ code: ps.subscription_code, token: sub.email }),
+              });
+              console.log("[CANCEL_SUB] Disabled Paystack sub:", ps.subscription_code);
+            }
+          }
+        }
+      } catch (err) {
+        console.error("[CANCEL_SUB] Paystack list/disable error:", err);
+      }
     }
   }
 
