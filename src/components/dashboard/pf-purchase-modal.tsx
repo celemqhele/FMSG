@@ -1,7 +1,7 @@
 ﻿"use client";
 
-import { useState, useEffect, useRef } from "react";
-import { X, Loader2, Crosshair } from "lucide-react";
+import { useState, useEffect } from "react";
+import { X, Loader2, Crosshair, Minus, Plus, ShoppingCart } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { calculatePFPrice } from "@/lib/plan-limits";
 
@@ -10,24 +10,23 @@ interface PFPurchaseModalProps {
   onClose: () => void;
 }
 
-const PURCHASE_OPTIONS = [1, 3, 5] as const;
-
 const PAYSTACK_PUBLIC_KEY = process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY;
 
 export function PFPurchaseModal({ isOpen, onClose }: PFPurchaseModalProps) {
   const supabase = createClient();
   const [mounted, setMounted] = useState(false);
-  const [processing, setProcessing] = useState<number | null>(null);
+  const [quantity, setQuantity] = useState(4);
+  const [processing, setProcessing] = useState(false);
   const [paystackReady, setPaystackReady] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
-  const mountedRef = useRef(false);
 
   useEffect(() => {
     if (isOpen) {
+      setQuantity(4);
+      setSuccessMessage("");
       requestAnimationFrame(() => setMounted(true));
     } else {
       setMounted(false);
-      setSuccessMessage("");
     }
   }, [isOpen]);
 
@@ -48,7 +47,8 @@ export function PFPurchaseModal({ isOpen, onClose }: PFPurchaseModalProps) {
     return () => clearTimeout(timeout);
   }, []);
 
-  const handlePurchase = async (runs: number) => {
+  const handlePurchase = async () => {
+    const runs = quantity;
     if (!PAYSTACK_PUBLIC_KEY) {
       alert("Paystack public key not configured. Please contact support.");
       return;
@@ -58,13 +58,13 @@ export function PFPurchaseModal({ isOpen, onClose }: PFPurchaseModalProps) {
       return;
     }
 
-    setProcessing(runs);
+    setProcessing(true);
     setSuccessMessage("");
 
     const sRes = await supabase.auth.getSession();
     const session = sRes.data.session;
     const email = session?.user?.email;
-    if (!email) { setProcessing(null); alert("Session expired. Please refresh and try again."); return; }
+    if (!email) { setProcessing(false); alert("Session expired. Please refresh and try again."); return; }
 
     const pricePerRun = calculatePFPrice(runs);
     const amount = runs * pricePerRun * 100;
@@ -76,28 +76,29 @@ export function PFPurchaseModal({ isOpen, onClose }: PFPurchaseModalProps) {
       currency: "ZAR",
       ref: "PF-" + Date.now(),
       metadata: { pf_runs: runs },
-      callback: async (response: { reference: string }) => {
-        try {
-          const verifyRes = await fetch("/api/paystack/purchase-pf", {
-            method: "POST",
-            headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" },
-            body: JSON.stringify({ reference: response.reference }),
-          });
+      onClose: function () {
+        setProcessing(false);
+      },
+      callback: function (response: { reference: string }) {
+        fetch("/api/paystack/purchase-pf", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ reference: response.reference }),
+        }).then(async (verifyRes) => {
           if (verifyRes.ok) {
-            setProcessing(null);
+            setProcessing(false);
             setSuccessMessage(`Added ${runs} Persistent Finder run${runs > 1 ? "s" : ""}!`);
             window.dispatchEvent(new Event("refresh-balances"));
             setTimeout(() => { onClose(); }, 1500);
           } else {
-            setProcessing(null);
+            setProcessing(false);
             alert("Verification failed. Please contact support.");
           }
-        } catch {
-          setProcessing(null);
+        }).catch(() => {
+          setProcessing(false);
           alert("Verification failed. Please contact support.");
-        }
+        });
       },
-      onClose: () => setProcessing(null),
     });
 
     handler.openIframe();
@@ -130,31 +131,48 @@ export function PFPurchaseModal({ isOpen, onClose }: PFPurchaseModalProps) {
             Persistent Finder runs: volume discounts apply
           </p>
 
-          <div className="space-y-3">
-            {PURCHASE_OPTIONS.map((runs) => {
-              const price = calculatePFPrice(runs) * runs;
-              return (
-                <button
-                  key={runs}
-                  onClick={() => handlePurchase(runs)}
-                  disabled={processing !== null}
-                  className="w-full flex items-center justify-between px-5 py-3 rounded-xl border border-gray-200 bg-gray-50 hover:bg-gray-100 transition-colors disabled:opacity-50"
-                >
-                  <span className="text-sm font-medium text-gray-900">{runs} run{runs > 1 ? "s" : ""}</span>
-                  <span className="flex items-center gap-2">
-                    <span className="text-xs text-gray-400">R{calculatePFPrice(runs)}/run</span>
-                    <span className="text-sm font-bold text-gray-900">
-                      {processing === runs ? (
-                        <Loader2 size={16} className="animate-spin" />
-                      ) : (
-                        `R${price}`
-                      )}
-                    </span>
-                  </span>
-                </button>
-              );
-            })}
+          <div className="flex items-center gap-3 mb-5">
+            <button
+              onClick={() => setQuantity(Math.max(1, quantity - 1))}
+              disabled={quantity <= 1 || processing}
+              className="w-10 h-10 flex items-center justify-center rounded-lg border border-gray-300 text-gray-700 hover:text-gray-900 hover:border-gray-400 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              <Minus size={16} />
+            </button>
+            <div className="flex-1 text-center">
+              <span className="text-2xl font-bold text-gray-900 tabular-nums">{quantity}</span>
+              <span className="ml-1 text-sm text-gray-500">runs</span>
+            </div>
+            <button
+              onClick={() => setQuantity(Math.min(25, quantity + 1))}
+              disabled={quantity >= 25 || processing}
+              className="w-10 h-10 flex items-center justify-center rounded-lg border border-gray-300 text-gray-700 hover:text-gray-900 hover:border-gray-400 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              <Plus size={16} />
+            </button>
           </div>
+
+          <div className="text-xs text-gray-400 mb-4">
+            R{calculatePFPrice(quantity)}/run &middot; R{(quantity * calculatePFPrice(quantity)).toLocaleString("en-ZA", { minimumFractionDigits: 0 })} total
+          </div>
+
+          <button
+            onClick={handlePurchase}
+            disabled={processing || quantity <= 0}
+            className="w-full flex items-center justify-center gap-2 px-5 py-3 text-sm font-medium text-white bg-[var(--color-accent)] rounded-xl hover:bg-[var(--color-accent-hover)] transition-colors disabled:opacity-50"
+          >
+            {processing ? (
+              <>
+                <Loader2 size={16} className="animate-spin" />
+                Processing...
+              </>
+            ) : (
+              <>
+                <ShoppingCart size={16} />
+                Buy Now
+              </>
+            )}
+          </button>
 
           {successMessage && (
             <p className="mt-4 text-sm text-[var(--color-success)]">{successMessage}</p>
