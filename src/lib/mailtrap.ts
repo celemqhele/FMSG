@@ -7,6 +7,11 @@ export async function sendVerificationEmail(to: string, code: string) {
     return { ok: false, error: "Email service not configured" };
   }
 
+  const maskedKey = MAILTRAP_API.length > 8
+    ? MAILTRAP_API.slice(0, 4) + "..." + MAILTRAP_API.slice(-4)
+    : "???";
+  console.log(`[MAILTRAP] Sending to ${to} with key prefix: ${maskedKey}`);
+
   try {
     const res = await fetch("https://send.api.mailtrap.io/api/send", {
       method: "POST",
@@ -15,19 +20,25 @@ export async function sendVerificationEmail(to: string, code: string) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        from: { email: "noreply@fmsg.co.za", name: "FMSG" },
+        from: { email: "hello@findmesomejobs.co.za", name: "FMSG" },
         to: [{ email: to }],
-        template_uuid: VERIFY_TEMPLATE_UUID,
-        template_variables: { code },
+        subject: "Verify your email — FMSG",
+        text: `Your verification code is: ${code}\n\nEnter this code on the FMSG dashboard to unlock job search.\n\nIf you didn't create an account, ignore this email.`,
+        category: "Verification",
       }),
     });
 
     if (!res.ok) {
       const text = await res.text();
       console.error("[MAILTRAP] Send failed:", res.status, text);
+
+      if (res.status === 401) {
+        return { ok: false, error: "Mailtrap authentication failed. Check MAILTRAP_API is a Sending API token (not Testing token)." };
+      }
       return { ok: false, error: "Failed to send email" };
     }
 
+    console.log("[MAILTRAP] Sent successfully to", to);
     return { ok: true };
   } catch (err) {
     console.error("[MAILTRAP] Error:", err);
