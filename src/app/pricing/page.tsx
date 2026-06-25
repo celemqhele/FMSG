@@ -130,9 +130,16 @@ export default function PricingPage() {
     const email = session?.user?.email;
     if (!email) { setProcessing(null); return; }
 
+    const fullName = (session?.user?.user_metadata?.full_name as string) || "";
+    const nameParts = fullName.split(" ");
+    const firstName = nameParts[0] || "";
+    const lastName = nameParts.slice(1).join(" ") || "";
+
     const handler = (window as any).PaystackPop.setup({
       key: PAYSTACK_PUBLIC_KEY,
       email,
+      first_name: firstName,
+      last_name: lastName,
       amount,
       currency: "ZAR",
       ref: "FMSG-" + Date.now(),

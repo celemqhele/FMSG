@@ -335,6 +335,11 @@ export default function ManageSubscriptionPage() {
         const email = session?.user?.email;
         if (!email) { setProcessing(null); alert("Session expired. Please refresh and try again."); return; }
 
+        const fullName = (session?.user?.user_metadata?.full_name as string) || "";
+        const nameParts = fullName.split(" ");
+        const firstName = nameParts[0] || "";
+        const lastName = nameParts.slice(1).join(" ") || "";
+
         const planCode = PAYSTACK_PLAN_CODES[`${tier.name}_${annual ? "annual" : "monthly"}`] || "";
 
         if (!planCode) {
@@ -344,6 +349,8 @@ export default function ManageSubscriptionPage() {
         const handler = (window as any).PaystackPop.setup({
           key: PAYSTACK_PUBLIC_KEY,
           email,
+          first_name: firstName,
+          last_name: lastName,
           amount,
           currency: "ZAR",
           ref: "FMSG-" + Date.now(),
