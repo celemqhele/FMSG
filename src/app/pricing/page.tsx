@@ -136,7 +136,7 @@ export default function PricingPage() {
       amount,
       currency: "ZAR",
       ref: "FMSG-" + Date.now(),
-      plan: "",
+      plan: PAYSTACK_PLAN_CODES[`${planName}_${cycle}`] || "",
       metadata: { plan: planName, billing_cycle: cycle, pf_count: totalPf },
       callback: function (response: { reference: string }) {
         fetch("/api/verify-payment", {

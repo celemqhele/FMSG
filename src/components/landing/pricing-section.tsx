@@ -8,7 +8,7 @@ import { useTransition } from "@/components/providers/transition-provider";
 import dynamic from "next/dynamic";
 const AuthModal = dynamic(() => import("@/components/auth/auth-modal").then((mod) => mod.AuthModal), { ssr: false });
 import { createClient } from "@/lib/supabase/client";
-import { PLAN_LIMITS, PLAN_PRICES, calculatePFPrice, PF_DEFAULT_BY_TIER, formatPlanPrice, PLAN_TIER_NAMES, TIER_FEATURES, TIER_POPULAR } from "@/lib/plan-limits";
+import { PLAN_LIMITS, PLAN_PRICES, calculatePFPrice, PF_DEFAULT_BY_TIER, formatPlanPrice, PAYSTACK_PLAN_CODES, PLAN_TIER_NAMES, TIER_FEATURES, TIER_POPULAR } from "@/lib/plan-limits";
 import { PFStepper } from "@/components/pricing/pf-stepper";
 
 interface Tier {
@@ -332,7 +332,7 @@ export function PricingSection() {
       amount,
       currency: "ZAR",
       ref: "FMSG-" + Date.now(),
-      plan: "",
+      plan: PAYSTACK_PLAN_CODES[`${planName}_${cycle}`] || "",
       metadata: { plan: planName, billing_cycle: cycle, pf_count: totalPf },
       callback: function (response: { reference: string }) {
         fetch("/api/verify-payment", {

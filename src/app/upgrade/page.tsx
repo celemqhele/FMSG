@@ -337,6 +337,10 @@ export default function ManageSubscriptionPage() {
 
         const planCode = PAYSTACK_PLAN_CODES[`${tier.name}_${annual ? "annual" : "monthly"}`] || "";
 
+        if (!planCode) {
+          console.warn("[UPGRADE] No Paystack plan code for", tier.name, annual ? "annual" : "monthly", "- payment will be one-time, not a subscription");
+        }
+
         const handler = (window as any).PaystackPop.setup({
           key: PAYSTACK_PUBLIC_KEY,
           email,
