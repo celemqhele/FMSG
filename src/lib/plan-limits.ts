@@ -18,22 +18,22 @@ export const PLAN_PRICES: Record<string, { monthly: number; annual: number }> = 
 };
 
 export const PF_DEFAULT_BY_TIER: Record<string, number> = {
-  Seeker: 5,
-  Hunter: 15,
-  Pro:    50,
+  Seeker: 0,
+  Hunter: 0,
+  Pro:    0,
 };
 
-export const PF_PRICE_BREAKS = [
+export const PF_PRICE_BREAKS: { min: number; max?: number; price: number }[] = [
   { min: 1, max: 2, price: 59 },
   { min: 3, max: 5, price: 54 },
   { min: 6, max: 10, price: 49 },
-  { min: 11, max: 25, price: 45 },
-] as const;
+  { min: 11, price: 45 },
+];
 
 export function calculatePFPrice(count: number): number {
   if (count <= 0) return 0;
   for (const b of PF_PRICE_BREAKS) {
-    if (count >= b.min && count <= b.max) return b.price;
+    if (count >= b.min && (!b.max || count <= b.max)) return b.price;
   }
   return 45;
 }

@@ -489,8 +489,8 @@ export default function ManageSubscriptionPage() {
                     <span className="ml-1 text-sm text-white/70">runs</span>
                   </div>
                   <button
-                    onClick={() => setBuyPfQty(Math.min(25, buyPfQty + 1))}
-                    disabled={buyPfQty >= 25 || buyingPf}
+                    onClick={() => setBuyPfQty(buyPfQty + 1)}
+                    disabled={buyingPf}
                     className="w-10 h-10 flex items-center justify-center rounded-lg border border-white/20 text-white/90 hover:text-white hover:border-white/40 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                   >
                     <span className="text-lg font-bold">+</span>
