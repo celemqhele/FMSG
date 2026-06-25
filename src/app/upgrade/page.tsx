@@ -114,7 +114,9 @@ export default function ManageSubscriptionPage() {
 
     if (subRes.data) {
       setSubscription(subRes.data);
-      setHasSubscription(subRes.data.status === "active");
+      const hasActive = subRes.data.status === "active";
+      const hasCancelledWithTime = subRes.data.status === "cancelled" && subRes.data.expiry_date && new Date(subRes.data.expiry_date) > new Date();
+      setHasSubscription(hasActive || hasCancelledWithTime);
     }
     setLoading(false);
   }, [router, supabase]);

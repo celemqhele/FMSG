@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
       .from("subscriptions")
       .select("*")
       .eq("user_id", user.id)
-      .eq("status", "active")
+      .or("status.eq.active,and(status.eq.cancelled,expiry_date.gt.now())")
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();

@@ -4,7 +4,6 @@ import { checkRateLimit } from "@/lib/rate-limit";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || process.env.PAYSTACK_TEST_SECRET_KEY;
 
 function getSupabase() {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
@@ -46,24 +45,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "No active subscription found" }, { status: 404 });
   }
 
-  // Optionally deactivate the authorization on Paystack to prevent unintended charges
-  if (PAYSTACK_SECRET_KEY && sub.authorization_code) {
-    try {
-      await fetch("https://api.paystack.co/customer/authorization/deactivate", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ authorization_code: sub.authorization_code }),
-      });
-      console.log("[CANCEL_SUB] Paystack authorization deactivated");
-    } catch (err) {
-      console.error("[CANCEL_SUB] Paystack deactivate error:", err);
-    }
-  }
-
-  // Mark as cancelled in DB — user retains access until expiry_date
+  // Mark as cancelled in DB — user retains access until expiry_date.
+  // Authorization stays active so the cron can still charge if needed.
   const { error: updateErr } = await supabase
     .from("subscriptions")
     .update({ status: "cancelled", cancelled_at: new Date().toISOString() })
