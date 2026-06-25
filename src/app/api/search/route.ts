@@ -952,10 +952,13 @@ export async function POST(request: NextRequest) {
           // Balance deduction (atomic, only at start, not on continuation)
           if (!isContinuation && !state.isAdmin) {
             if (state.pf_mode) {
-              await dataClient.rpc("decrement_search_balance", { p_user_id: user.id, p_amount: 1 });
-              await dataClient.rpc("decrement_pf_balance", { p_user_id: user.id, p_amount: 1 });
+              const { error: sErr } = await dataClient.rpc("decrement_search_balance", { p_user_id: user.id, p_amount: 1 });
+              if (sErr) debugLog("[SEARCH] RPC decrement_search_balance failed:", sErr);
+              const { error: pfErr } = await dataClient.rpc("decrement_pf_balance", { p_user_id: user.id, p_amount: 1 });
+              if (pfErr) debugLog("[SEARCH] RPC decrement_pf_balance failed:", pfErr);
             } else {
-              await dataClient.rpc("decrement_search_balance", { p_user_id: user.id, p_amount: 1 });
+              const { error: sErr } = await dataClient.rpc("decrement_search_balance", { p_user_id: user.id, p_amount: 1 });
+              if (sErr) debugLog("[SEARCH] RPC decrement_search_balance failed:", sErr);
             }
           }
 
