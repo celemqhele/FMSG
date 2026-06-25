@@ -828,7 +828,7 @@ export default function DashboardPage() {
                     <p className="text-sm text-gray-500">Your profile is ready to go.</p>
                   </div>
                   <button
-                    onClick={() => { setNeedsOnboarding(false); setOnboardingMounted(false); }}
+                    onClick={() => { setNeedsOnboarding(false); setOnboardingMounted(false); window.location.reload(); }}
                     className="px-6 py-2.5 text-sm font-medium text-white bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] rounded-full transition-colors"
                   >
                     Go to Dashboard
