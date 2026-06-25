@@ -95,9 +95,10 @@ export default function DashboardPage() {
 
   useEffect(() => {
     const supabase = createClient();
-    supabase.auth.getUser().then(({ data }: { data: { user: any } | null }) => {
-      if (!data?.user) {
+    supabase.auth.getSession().then(({ data }: { data: { session: any } | null }) => {
+      if (!data?.session) {
         router.push("/");
+        return;
       }
       setAuthChecked(true);
     });

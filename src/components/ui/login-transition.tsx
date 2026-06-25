@@ -19,16 +19,18 @@ export function LoginTransition({ type, redirectTo, onComplete }: LoginTransitio
     if (type === "login") {
       startTransition(() => setPhase(1));
       timers.push(setTimeout(() => setPhase(2), 200));
+      timers.push(setTimeout(() => setPhase(3), 400));
       timers.push(setTimeout(() => {
-        setPhase(3);
-        router.push(redirectTo ?? "/dashboard");
-      }, 400));
-      timers.push(setTimeout(() => setPhase(4), 1000));
+        setPhase(4);
+        window.location.href = redirectTo ?? "/dashboard";
+      }, 1200));
       timers.push(setTimeout(() => onComplete?.(), 1700));
     } else {
       startTransition(() => setPhase(3));
-      router.push(redirectTo ?? "/dashboard");
-      timers.push(setTimeout(() => setPhase(4), 600));
+      timers.push(setTimeout(() => {
+        setPhase(4);
+        window.location.href = redirectTo ?? "/dashboard";
+      }, 800));
       timers.push(setTimeout(() => onComplete?.(), 1300));
     }
 
