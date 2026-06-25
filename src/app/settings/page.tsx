@@ -4,7 +4,6 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard/dashboard-layout";
 import { ArrowLeft, Loader2, Check, Save } from "lucide-react";
-import { useTheme } from "@/components/providers/theme-provider";
 import { PageTransitionWrapper } from "@/components/ui/page-transition-wrapper";
 import { useTransition } from "@/components/providers/transition-provider";
 import { createClient } from "@/lib/supabase/client";
@@ -13,7 +12,6 @@ import "@/components/landing/liquid-glass.css";
 export default function SettingsPage() {
   const router = useRouter();
   const { startTransition, endTransition } = useTransition();
-  const { theme, setTheme } = useTheme();
   const supabase = createClient();
 
   useEffect(() => { endTransition(); }, [endTransition]);
@@ -146,27 +144,7 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        {/* Section 2: Appearance */}
-        <div className="liquid-glass rounded-xl p-6 space-y-5">
-          <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">Appearance</h2>
-          <div className="flex flex-wrap gap-3">
-            {(["light", "dark", "system"] as const).map((t) => (
-              <button
-                key={t}
-                onClick={() => setTheme(t)}
-                className={`px-4 py-2 text-sm font-medium rounded-full transition-colors ${
-                  theme === t
-                    ? "bg-[var(--color-accent)] text-white"
-                    : "bg-[var(--color-bg)] border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
-                }`}
-              >
-                {t === "light" ? "Light" : t === "dark" ? "Dark" : "System"}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Section 3: Notifications */}
+        {/* Section 2: Notifications */}
         <div className="liquid-glass rounded-xl p-6 space-y-5 opacity-60">
           <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">Notifications</h2>
           <label className="flex items-center justify-between">
@@ -179,7 +157,7 @@ export default function SettingsPage() {
           </label>
         </div>
 
-        {/* Section 4: Account */}
+        {/* Section 3: Account */}
         <div className="liquid-glass rounded-xl p-6 space-y-5">
           <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">Account</h2>
           <div className="space-y-4">

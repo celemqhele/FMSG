@@ -1,1 +1,1 @@
-(function(){try{var t=localStorage.getItem("theme")||"system";var d=window.matchMedia("(prefers-color-scheme:dark)").matches;if(t==="dark"||(t==="system"&&d))document.documentElement.classList.add("dark")}catch(e){}try{if(localStorage.getItem("logged_in")==="true")document.documentElement.classList.add("auth-loading")}catch(e){}})();
+(function(){document.documentElement.classList.add("dark");try{if(localStorage.getItem("logged_in")==="true")document.documentElement.classList.add("auth-loading")}catch(e){}})();
