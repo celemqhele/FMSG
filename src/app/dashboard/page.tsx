@@ -651,7 +651,7 @@ export default function DashboardPage() {
           <div className="relative">
             <button
               onClick={() => setShowLimitModal(null)}
-              className="absolute -top-3 -right-3 z-10 p-1.5 bg-red-800 rounded-full text-white/80 hover:text-white hover:bg-red-900 transition-colors shadow-lg"
+              className="absolute -top-4 -right-4 z-10 p-1.5 bg-red-800 rounded-full text-white/80 hover:text-white hover:bg-red-900 transition-colors shadow-lg"
             >
               <X size={20} />
             </button>

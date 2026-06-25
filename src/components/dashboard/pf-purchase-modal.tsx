@@ -114,19 +114,19 @@ export function PFPurchaseModal({ isOpen, onClose }: PFPurchaseModalProps) {
       <div className="relative">
         <button
           onClick={onClose}
-          className="absolute -top-3 -right-3 z-10 p-1.5 bg-gray-800 rounded-full text-white/80 hover:text-white hover:bg-gray-700 transition-colors shadow-lg"
+          className="absolute -top-4 -right-4 z-10 p-1.5 bg-white border border-gray-300 rounded-full text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors shadow-lg"
         >
           <X size={20} />
         </button>
         <div
-          className="liquid-glass border border-white/10 rounded-2xl p-6 max-w-sm mx-4 text-center transition-all duration-300 ease-out"
+          className="bg-white border border-gray-200 rounded-2xl p-6 max-w-sm mx-4 text-center transition-all duration-300 ease-out shadow-xl"
           style={{ opacity: mounted ? 1 : 0, transform: mounted ? "translateY(0) scale(1)" : "translateY(8px) scale(0.97)" }}
         >
           <div className="flex items-center justify-center gap-2 mb-1">
             <Crosshair size={20} className="text-[var(--color-accent)]" />
-            <h3 className="text-lg font-semibold text-white">Buy PF Credits</h3>
+            <h3 className="text-lg font-semibold text-gray-900">Buy PF Credits</h3>
           </div>
-          <p className="text-sm text-[var(--color-text-secondary)] mb-5">
+          <p className="text-sm text-gray-500 mb-5">
             Persistent Finder runs: volume discounts apply
           </p>
 
@@ -138,12 +138,12 @@ export function PFPurchaseModal({ isOpen, onClose }: PFPurchaseModalProps) {
                   key={runs}
                   onClick={() => handlePurchase(runs)}
                   disabled={processing !== null}
-                  className="w-full flex items-center justify-between px-5 py-3 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition-colors disabled:opacity-50"
+                  className="w-full flex items-center justify-between px-5 py-3 rounded-xl border border-gray-200 bg-gray-50 hover:bg-gray-100 transition-colors disabled:opacity-50"
                 >
-                  <span className="text-sm font-medium text-white">{runs} run{runs > 1 ? "s" : ""}</span>
+                  <span className="text-sm font-medium text-gray-900">{runs} run{runs > 1 ? "s" : ""}</span>
                   <span className="flex items-center gap-2">
-                    <span className="text-xs text-white/70">R{calculatePFPrice(runs)}/run</span>
-                    <span className="text-sm font-bold text-white">
+                    <span className="text-xs text-gray-400">R{calculatePFPrice(runs)}/run</span>
+                    <span className="text-sm font-bold text-gray-900">
                       {processing === runs ? (
                         <Loader2 size={16} className="animate-spin" />
                       ) : (
