@@ -11,7 +11,7 @@ const nextConfig: NextConfig = {
             key: "Content-Security-Policy",
             value: [
               "default-src 'self'",
-              "script-src 'self' https://js.paystack.co",
+              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.paystack.co",
               "style-src 'self' 'unsafe-inline' https://paystack.com",
               "connect-src 'self' https://nnebtygloqixibbjxsjr.supabase.co https://api.paystack.co",
               "frame-src https://js.paystack.co https://checkout.paystack.com",
