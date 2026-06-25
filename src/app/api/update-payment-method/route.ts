@@ -60,12 +60,13 @@ export async function POST(request: NextRequest) {
         }),
       });
 
-      const data = await res.json();
+      const text = await res.text();
+      const data = text ? JSON.parse(text) : {};
 
       if (data.status && data.data?.link) {
         link = data.data.link;
       } else {
-        console.error("[UPDATE_PAYMENT] Paystack manage/link failed:", JSON.stringify(data));
+        console.error("[UPDATE_PAYMENT] Paystack manage/link failed:", text || "(empty body)");
       }
     }
 
@@ -79,11 +80,12 @@ export async function POST(request: NextRequest) {
         },
         body: JSON.stringify({}),
       });
-      const custData = await custRes.json();
+      const custText = await custRes.text();
+      const custData = custText ? JSON.parse(custText) : {};
       if (custData.status && custData.data?.link) {
         link = custData.data.link;
       } else {
-        console.error("[UPDATE_PAYMENT] Customer payment_method failed:", JSON.stringify(custData));
+        console.error("[UPDATE_PAYMENT] Customer payment_method failed:", custText || "(empty body)");
       }
     }
 

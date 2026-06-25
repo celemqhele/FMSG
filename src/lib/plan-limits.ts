@@ -18,9 +18,9 @@ export const PLAN_PRICES: Record<string, { monthly: number; annual: number }> = 
 };
 
 export const PF_DEFAULT_BY_TIER: Record<string, number> = {
-  Seeker: 1,
-  Hunter: 3,
-  Pro: 6,
+  Seeker: 5,
+  Hunter: 15,
+  Pro:    50,
 };
 
 export const PF_PRICE_BREAKS = [

@@ -19,7 +19,7 @@ const MAILTRAP_TEMPLATES: Record<string, string | undefined> = {
 let resend: Resend | null = null;
 
 function getResend(): Resend | null {
-  if (!RESEND_API_KEY) return null;
+  if (!RESEND_API_KEY) { console.warn("[EMAIL] RESEND_API_KEY not set — Resend unavailable"); return null; }
   if (!resend) resend = new Resend(RESEND_API_KEY);
   return resend;
 }

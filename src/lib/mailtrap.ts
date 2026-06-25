@@ -1,10 +1,11 @@
 const MAILTRAP_API = process.env.MAILTRAP_API;
 const VERIFY_TEMPLATE_UUID = "04c4e962-fb93-467e-a3d2-cc17139f9b15";
+const DELETION_TEMPLATE_UUID = "c6e38ffd-b1c6-4fae-b259-7aedc1e26bf3";
 const DEFAULT_FROM = { email: "hello@findmesomejobs.co.za", name: "FMSG" };
 
 async function mailtrapSend(body: Record<string, unknown>) {
   if (!MAILTRAP_API) {
-    console.error("[MAILTRAP] MAILTRAP_API not set");
+    console.warn("[MAILTRAP] MAILTRAP_API not set — email sending unavailable");
     return { ok: false, error: "Email service not configured" };
   }
   try {
@@ -72,5 +73,30 @@ export async function sendAppealEmail(userEmail: string, userId: string, ip: str
       "Reason:",
       reason,
     ].join("\n"),
+  });
+}
+
+export async function sendDeletionCodeEmail(to: string, code: string) {
+  const tplRes = await mailtrapSend({
+    from: DEFAULT_FROM,
+    to: [{ email: to }],
+    template_uuid: DELETION_TEMPLATE_UUID,
+    template_variables: { code },
+    category: "Account Deletion",
+  });
+
+  if (tplRes.ok) {
+    console.log("[MAILTRAP] Sent deletion code to", to);
+    return tplRes;
+  }
+
+  console.warn("[MAILTRAP] Deletion template failed, falling back to plain text");
+
+  return mailtrapSend({
+    from: DEFAULT_FROM,
+    to: [{ email: to }],
+    subject: "Account Deletion Request — FMSG",
+    text: `Your account deletion code is: ${code}\n\nEnter this code on the FMSG settings page to confirm deletion.\n\nIf you did not request this, your account may be compromised — change your password immediately.`,
+    category: "Account Deletion",
   });
 }

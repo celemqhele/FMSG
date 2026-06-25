@@ -78,7 +78,7 @@ export async function POST(request: NextRequest) {
 
     const paystackSubId = sub.paystack_subscription_id;
     if (!paystackSubId) {
-      return NextResponse.json({ error: "No Paystack subscription code found" }, { status: 400 });
+      return NextResponse.json({ error: "Subscription needs to be re-linked. Please re-subscribe from the pricing page or contact support." }, { status: 400 });
     }
 
     const isUpgrade = newTierIndex > currentTierIndex;
@@ -196,7 +196,7 @@ export async function POST(request: NextRequest) {
       }
 
       const upgradeAmount = `R${((psData.data?.prorated_amount ?? 0) / 100).toFixed(2)}`;
-      sendPlanUpgraded(user.email ?? "", currentPlan, newPlan, upgradeAmount).catch(() => {});
+      sendPlanUpgraded(user.email ?? "", currentPlan, newPlan, upgradeAmount).catch((err) => console.error("[CHANGE_PLAN] Upgrade email failed:", err));
 
       return NextResponse.json({
         ok: true,
@@ -280,7 +280,7 @@ export async function POST(request: NextRequest) {
       const effectiveDate = sub.expiry_date
         ? new Date(sub.expiry_date).toLocaleDateString("en-ZA", { year: "numeric", month: "long", day: "numeric" })
         : "the end of your billing period";
-      sendPlanDowngraded(user.email ?? "", currentPlan, newPlan, effectiveDate).catch(() => {});
+      sendPlanDowngraded(user.email ?? "", currentPlan, newPlan, effectiveDate).catch((err) => console.error("[CHANGE_PLAN] Downgrade email failed:", err));
 
       return NextResponse.json({
         ok: true,

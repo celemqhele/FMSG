@@ -142,7 +142,7 @@ const expectedHash = await createHmac(body, PAYSTACK_SECRET_KEY);
           }
 
           const planName = existingSub.plan.charAt(0).toUpperCase() + existingSub.plan.slice(1);
-          sendSubscriptionRenewed(email, planName, formatPlanPrice(planName, billingCycle)).catch(() => {});
+          sendSubscriptionRenewed(email, planName, formatPlanPrice(planName, billingCycle)).catch((err) => console.error("[WEBHOOK] Renewal email failed:", err));
         }
         break;
       }
@@ -180,7 +180,7 @@ const expectedHash = await createHmac(body, PAYSTACK_SECRET_KEY);
 
           const planName = existingSub.plan.charAt(0).toUpperCase() + existingSub.plan.slice(1);
           const customerEmail = subData.customer?.email;
-          if (customerEmail) sendPaymentFailed(customerEmail, planName).catch(() => {});
+          if (customerEmail) sendPaymentFailed(customerEmail, planName).catch((err) => console.error("[WEBHOOK] Payment failed email error:", err));
         }
         break;
       }
@@ -218,7 +218,7 @@ const expectedHash = await createHmac(body, PAYSTACK_SECRET_KEY);
 
           const planName = existingSub.plan.charAt(0).toUpperCase() + existingSub.plan.slice(1);
           const customerEmail = subData.customer?.email;
-          if (customerEmail) sendSubscriptionCancelled(customerEmail, planName).catch(() => {});
+          if (customerEmail) sendSubscriptionCancelled(customerEmail, planName).catch((err) => console.error("[WEBHOOK] Cancellation email failed:", err));
 
           // Check if there's a scheduled plan change (downgrade)
           const { data: profile, error: profileErr } = await supabase

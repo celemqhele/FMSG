@@ -125,7 +125,7 @@ export async function POST(request: NextRequest) {
       console.warn("[VERIFY] pf_refill column missing (safe to ignore):", pfRefillErr.message);
     }
 
-    sendSubscriptionConfirmation(email, plan, billing_cycle, formatPlanPrice(plan, billing_cycle)).catch(() => {});
+    sendSubscriptionConfirmation(email, plan, billing_cycle, formatPlanPrice(plan, billing_cycle)).catch((err) => console.error("[VERIFY] Email failed:", err));
 
     return NextResponse.json({ ok: true, plan: plan.toLowerCase(), balance: limits });
   } catch (err) {
