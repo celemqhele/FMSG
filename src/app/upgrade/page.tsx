@@ -8,7 +8,7 @@ import { Loader2, Check, ArrowRight, ArrowLeft, CreditCard, Ban, Crosshair, Shop
 import { PageTransitionWrapper } from "@/components/ui/page-transition-wrapper";
 import { useTransition } from "@/components/providers/transition-provider";
 import { createClient } from "@/lib/supabase/client";
-import { PLAN_PRICES, PLAN_LIMITS, calculatePFPrice, PF_DEFAULT_BY_TIER, formatPlanPrice, PAYSTACK_PLAN_CODES, PLAN_TIER_NAMES } from "@/lib/plan-limits";
+import { PLAN_PRICES, PLAN_LIMITS, calculatePFPrice, PF_DEFAULT_BY_TIER, formatPlanPrice, PLAN_TIER_NAMES } from "@/lib/plan-limits";
 import { PFStepper } from "@/components/pricing/pf-stepper";
 
 interface Tier {
@@ -340,12 +340,6 @@ export default function ManageSubscriptionPage() {
         const firstName = nameParts[0] || "";
         const lastName = nameParts.slice(1).join(" ") || "";
 
-        const planCode = PAYSTACK_PLAN_CODES[`${tier.name}_${annual ? "annual" : "monthly"}`] || "";
-
-        if (!planCode) {
-          console.warn("[UPGRADE] No Paystack plan code for", tier.name, annual ? "annual" : "monthly", "- payment will be one-time, not a subscription");
-        }
-
         const handler = (window as any).PaystackPop.setup({
           key: PAYSTACK_PUBLIC_KEY,
           email,
@@ -354,7 +348,6 @@ export default function ManageSubscriptionPage() {
           amount,
           currency: "ZAR",
           ref: "FMSG-" + Date.now(),
-          plan: planCode,
           metadata: { plan: tier.name, billing_cycle: annual ? "annual" : "monthly", pf_count: pfCount },
           callback: function (response: { reference: string }) {
             fetch("/api/verify-payment", {

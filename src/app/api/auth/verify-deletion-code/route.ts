@@ -55,25 +55,32 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid code. Please try again." }, { status: 400 });
     }
 
-    // Cancel Paystack subscription if exists
+    // Cancel active subscriptions and deactivate authorizations
     if (PAYSTACK_SECRET_KEY) {
       try {
         const { data: subs } = await supabase
           .from("subscriptions")
-          .select("paystack_subscription_id")
+          .select("authorization_code, id")
           .eq("user_id", user.id)
           .in("status", ["active", "past_due"]);
 
         if (subs) {
           for (const s of subs) {
-            if (s.paystack_subscription_id) {
-              await fetch(`https://api.paystack.co/subscription/${s.paystack_subscription_id}/disable`, {
+            // Mark as cancelled in DB
+            await supabase
+              .from("subscriptions")
+              .update({ status: "cancelled", cancelled_at: new Date().toISOString() })
+              .eq("id", s.id);
+
+            // Deactivate authorization on Paystack
+            if (s.authorization_code) {
+              await fetch("https://api.paystack.co/customer/authorization/deactivate", {
                 method: "POST",
                 headers: {
                   Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
                   "Content-Type": "application/json",
                 },
-                body: JSON.stringify({ code: s.paystack_subscription_id, token: "" }),
+                body: JSON.stringify({ authorization_code: s.authorization_code }),
               });
             }
           }

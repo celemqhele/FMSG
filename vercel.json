@@ -5,5 +5,11 @@
       "beta": true,
       "production": true
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/billing",
+      "schedule": "0 6 * * *"
+    }
+  ]
 }

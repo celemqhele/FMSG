@@ -12,7 +12,7 @@ import { LiquidGlassCard } from "@/components/landing/liquid-glass-card";
 import { PageTransitionWrapper } from "@/components/ui/page-transition-wrapper";
 import { useTransition } from "@/components/providers/transition-provider";
 import { createClient } from "@/lib/supabase/client";
-import { PLAN_PRICES, PLAN_LIMITS, calculatePFPrice, PF_DEFAULT_BY_TIER, formatPlanPrice, formatPFFromPrice, PAYSTACK_PLAN_CODES, PLAN_TIER_NAMES, TIER_FEATURES, TIER_POPULAR } from "@/lib/plan-limits";
+import { PLAN_PRICES, PLAN_LIMITS, calculatePFPrice, PF_DEFAULT_BY_TIER, formatPlanPrice, formatPFFromPrice, PLAN_TIER_NAMES, TIER_FEATURES, TIER_POPULAR } from "@/lib/plan-limits";
 import { PFStepper } from "@/components/pricing/pf-stepper";
 import "@/components/landing/liquid-glass.css";
 
@@ -143,7 +143,6 @@ export default function PricingPage() {
       amount,
       currency: "ZAR",
       ref: "FMSG-" + Date.now(),
-      plan: PAYSTACK_PLAN_CODES[`${planName}_${cycle}`] || "",
       metadata: { plan: planName, billing_cycle: cycle, pf_count: totalPf },
       callback: function (response: { reference: string }) {
         fetch("/api/verify-payment", {

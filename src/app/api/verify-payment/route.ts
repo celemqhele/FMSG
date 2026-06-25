@@ -60,15 +60,21 @@ export async function POST(request: NextRequest) {
     const authorizationCode = txData.authorization?.authorization_code ?? "";
     const customerCode = txData.customer?.customer_code ?? "";
     const email = txData.customer?.email ?? "";
-    const paystackSubId = txData.subscription?.subscription_code ?? "";
 
-    // Calculate expiry
+    if (!authorizationCode) {
+      return NextResponse.json({ error: "No authorization code returned. Ensure card payment was used (not bank transfer)." }, { status: 400 });
+    }
+
+    // Calculate expiry and next payment date
     const now = new Date();
     const expiryDate = new Date(now);
+    const nextPaymentDate = new Date(now);
     if (billing_cycle === "annual") {
       expiryDate.setFullYear(expiryDate.getFullYear() + 1);
+      nextPaymentDate.setFullYear(nextPaymentDate.getFullYear() + 1);
     } else {
       expiryDate.setMonth(expiryDate.getMonth() + 1);
+      nextPaymentDate.setMonth(nextPaymentDate.getMonth() + 1);
     }
 
     const limits = PLAN_LIMITS[plan] ?? { searches: 1, cv_gens: 0, pf_balance: 0 };
@@ -79,14 +85,13 @@ export async function POST(request: NextRequest) {
       plan,
       billing_cycle,
       paystack_reference: reference,
-      paystack_subscription_id: paystackSubId,
       amount: txData.amount,
       authorization_code: authorizationCode,
       customer_code: customerCode,
       email,
       start_date: now.toISOString(),
       expiry_date: expiryDate.toISOString(),
-      next_payment_date: txData.subscription?.next_payment_date ?? null,
+      next_payment_date: nextPaymentDate.toISOString(),
       status: "active",
     });
 
