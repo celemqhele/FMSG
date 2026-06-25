@@ -845,6 +845,10 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      // Live balances to send back to frontend in streaming events
+      let liveBalances: { search: number; cv: number; pf: number } | undefined;
+      let livePlan: string | undefined;
+
       // Balance check
       if (!isAdmin) {
         const searchBalance = profile.search_balance ?? 0;
@@ -878,6 +882,31 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ code: "GENERIC_ERROR", message: "Failed to deduct search credit. Please try again." }, { status: 500 });
           }
         }
+
+        // Fetch fresh balances after atomic deduction so frontend gets live values
+        const { data: freshBalances } = await dataClient
+          .from("profiles")
+          .select("search_balance, cv_generation_balance, persistent_finder_balance, plan")
+          .eq("id", user.id)
+          .maybeSingle();
+        if (freshBalances) {
+          liveBalances = {
+            search: freshBalances.search_balance ?? 0,
+            cv: freshBalances.cv_generation_balance ?? 0,
+            pf: freshBalances.persistent_finder_balance ?? 0,
+          };
+        }
+        livePlan = freshBalances?.plan ?? profile.plan;
+      }
+
+      // Admin: use profile values (no deduction happened)
+      if (!liveBalances) {
+        liveBalances = {
+          search: profile.search_balance ?? 0,
+          cv: profile.cv_generation_balance ?? 0,
+          pf: profile.persistent_finder_balance ?? 0,
+        };
+        livePlan = profile.plan ?? "free";
       }
 
       // Banned lists
@@ -968,6 +997,8 @@ export async function POST(request: NextRequest) {
         bannedCompanies: state.bannedCompanies,
         pf_mode: !!pf_mode,
         query: query ?? "",
+        balances: liveBalances,
+        plan: livePlan,
       };
     }
 
@@ -976,6 +1007,13 @@ export async function POST(request: NextRequest) {
       async start(controller) {
         const writer = new StreamWriter(controller);
         const sendStatus = (event: SearchEvent) => writer.send(event);
+        const sendComplete = (event: SearchEvent) => {
+          if (state.balances) {
+            writer.send({ ...event, balances: state.balances, plan: state.plan } as SearchEvent);
+          } else {
+            writer.send(event);
+          }
+        };
         const startTime = Date.now();
 
         try {
@@ -1016,7 +1054,7 @@ export async function POST(request: NextRequest) {
                 const remainingSpecs = state.jobSpecs.slice(processedCount);
                 const remainingUrls = state.jobUrls.slice(processedCount);
                 const withIds = result.results.map((r: JobRow) => ({ ...r, id: crypto.randomUUID() }));
-                writer.send({
+                sendComplete({
                   type: "partial_complete",
                   results: withIds.map(normalize),
                   progress: 55 + (processedCount / state.rawJobs.length) * 30,
@@ -1045,9 +1083,9 @@ export async function POST(request: NextRequest) {
 
               if (result.results.length > 0) {
                 const withIds = result.results.map((r: JobRow) => ({ ...r, id: crypto.randomUUID() }));
-                writer.send({ type: "complete", results: withIds.map(normalize), progress: 100, ...(totalFiltered > 0 ? { filtered_summary: result.filteredCounts } : {}) });
+                sendComplete({ type: "complete", results: withIds.map(normalize), progress: 100, ...(totalFiltered > 0 ? { filtered_summary: result.filteredCounts } : {}) });
               } else {
-                writer.send({ type: "complete", results: [], progress: 100, message: "No strong matches found. Try broadening your criteria." });
+                sendComplete({ type: "complete", results: [], progress: 100, message: "No strong matches found. Try broadening your criteria." });
               }
               writer.close();
               return;
@@ -1062,13 +1100,13 @@ export async function POST(request: NextRequest) {
             );
 
             if (rawJobs.length === 0) {
-              writer.send({ type: "complete", results: [], progress: 100, message: "No matching jobs found. Try broadening your criteria." });
+              sendComplete({ type: "complete", results: [], progress: 100, message: "No matching jobs found. Try broadening your criteria." });
               writer.close();
               return;
             }
 
             // Pause after filtering — user clicks Continue to start AI screening
-            writer.send({
+            sendComplete({
               type: "pause",
               message: `Found ${rawJobs.length} matching results. Ready to screen?`,
               progress: 20,
@@ -1233,7 +1271,7 @@ Return ONLY a JSON array of strings. No explanation.`;
                 break;
               }
 
-              writer.send({
+              sendComplete({
                 type: "pause",
                 message: roundResults.length > 0
                   ? `Round ${pfRound} complete — ${allResults.length} results so far. Continue to round ${pfRound + 1}?`
@@ -1289,7 +1327,7 @@ Return ONLY a JSON array of strings. No explanation.`;
               ? `Search stopped early due to high demand — showing ${allResults.length} result${allResults.length === 1 ? "" : "s"} found so far`
               : undefined;
 
-            writer.send({ type: "complete", results: withIds.map(normalize), progress: 100, pf_mode: true, pf_rounds: pfRound, ...(pfTotalFiltered > 0 ? { filtered_summary: pfFilteredCounts } : {}), ...(pfMessage ? { message: pfMessage } : {}) });
+            sendComplete({ type: "complete", results: withIds.map(normalize), progress: 100, pf_mode: true, pf_rounds: pfRound, ...(pfTotalFiltered > 0 ? { filtered_summary: pfFilteredCounts } : {}), ...(pfMessage ? { message: pfMessage } : {}) });
 
             const rows = withIds.map((r) => ({
               id: r.id,
@@ -1308,7 +1346,7 @@ Return ONLY a JSON array of strings. No explanation.`;
             const noResultsMessage = pfAborted
               ? "Search stopped early due to high demand — no results were found. Try again later."
               : "Persistent Finder completed but found no matches. Try different profile keywords.";
-            writer.send({ type: "complete", results: [], progress: 100, message: noResultsMessage, pf_mode: true, pf_rounds: pfRound });
+            sendComplete({ type: "complete", results: [], progress: 100, message: noResultsMessage, pf_mode: true, pf_rounds: pfRound });
           }
 
           writer.close();

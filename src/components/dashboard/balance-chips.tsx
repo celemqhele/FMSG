@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { Search, FileText, Crosshair } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
-interface Balances {
+export interface Balances {
   search: number;
   cv: number;
   pf: number;
@@ -16,12 +16,44 @@ const MAX_BALANCES: Record<string, number> = {
   pf: 50,
 };
 
-export function BalanceChips() {
-  const supabaseRef = useRef(createClient());
-  const [balances, setBalances] = useState<Balances>({ search: 0, cv: 0, pf: 0 });
-  const [plan, setPlan] = useState("free");
+function AnimatedNumber({ value }: { value: number }) {
+  const [displayed, setDisplayed] = useState(value);
+  const prevRef = useRef(value);
 
   useEffect(() => {
+    const prev = prevRef.current;
+    if (prev === value) {
+      setDisplayed(value);
+      return;
+    }
+    prevRef.current = value;
+    const diff = value - prev;
+    const steps = Math.abs(diff) > 10 ? 5 : Math.max(Math.abs(diff), 1);
+    const increment = diff / steps;
+    let current = prev;
+    const interval = setInterval(() => {
+      current += increment;
+      if (increment > 0 ? current >= value : current <= value) {
+        setDisplayed(value);
+        clearInterval(interval);
+      } else {
+        setDisplayed(Math.round(current));
+      }
+    }, 80);
+    return () => clearInterval(interval);
+  }, [value]);
+
+  return <span>{displayed}</span>;
+}
+
+export function BalanceChips({ balances: propBalances, plan: propPlan }: { balances?: Balances; plan?: string }) {
+  const supabaseRef = useRef(createClient());
+  const [fetchedBalances, setFetchedBalances] = useState<Balances>({ search: 0, cv: 0, pf: 0 });
+  const [fetchedPlan, setFetchedPlan] = useState("free");
+  const hasProps = propBalances !== undefined && propPlan !== undefined;
+
+  useEffect(() => {
+    if (hasProps) return;
     const supabase = supabaseRef.current;
     const load = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -32,12 +64,12 @@ export function BalanceChips() {
         .eq("id", user.id)
         .maybeSingle();
       if (data) {
-        setBalances({
+        setFetchedBalances({
           search: data.search_balance ?? 0,
           cv: data.cv_generation_balance ?? 0,
           pf: data.persistent_finder_balance ?? 0,
         });
-        setPlan(data.plan ?? "free");
+        setFetchedPlan(data.plan ?? "free");
       }
     };
     load();
@@ -45,7 +77,10 @@ export function BalanceChips() {
     const handler = () => load();
     window.addEventListener("refresh-balances", handler);
     return () => window.removeEventListener("refresh-balances", handler);
-  }, []);
+  }, [hasProps]);
+
+  const balances = hasProps ? propBalances : fetchedBalances;
+  const plan = hasProps ? propPlan : fetchedPlan;
 
   const chip = (type: "search" | "cv" | "pf", icon: React.ReactNode, balance: number) => {
     const empty = balance <= 0;
@@ -53,9 +88,9 @@ export function BalanceChips() {
     const color = empty ? "text-red-400 border-red-400/30" : low ? "text-amber-400 border-amber-400/30" : "text-white/90 border-white/20";
 
     return (
-      <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-medium ${color}`}>
+      <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-medium transition-colors duration-500 ${color}`}>
         {icon}
-        <span>{balance}</span>
+        <AnimatedNumber value={balance} />
       </div>
     );
   };

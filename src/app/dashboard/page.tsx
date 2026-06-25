@@ -23,6 +23,7 @@ import { createClient } from "@/lib/supabase/client";
 import { BlockedAccountPage } from "@/components/dashboard/blocked-account";
 import { VerifyEmailBanner } from "@/components/dashboard/verify-email-banner";
 import { VerifyCodeModal } from "@/components/dashboard/verify-code-modal";
+import { ContinuePopup } from "@/components/dashboard/continue-popup";
 
 interface JobResult {
   id: string;
@@ -55,6 +56,12 @@ interface HistoryResult {
   domain_verified?: boolean;
   domain_unverified_reason?: string;
   suggested_cv?: string;
+}
+
+interface Balances {
+  search: number;
+  cv: number;
+  pf: number;
 }
 
 function SkeletonCard({ style }: { style?: React.CSSProperties }) {
@@ -102,15 +109,43 @@ export default function DashboardPage() {
   const [emailVerified, setEmailVerified] = useState<boolean | null>(null);
   const [showVerifyModal, setShowVerifyModal] = useState(false);
   const [userEmail, setUserEmail] = useState("");
+  const [balances, setBalances] = useState<Balances>({ search: 0, cv: 0, pf: 0 });
+  const [plan, setPlan] = useState("free");
+  const [pauseMessage, setPauseMessage] = useState("");
 
   useEffect(() => { endTransition(); }, [endTransition]);
 
-  // Refresh balance chips whenever a search completes
+  // Refresh balances from profile when triggered by search completion or CV/PF operations
+  const refreshBalances = useCallback(async () => {
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { data } = await supabase
+      .from("profiles")
+      .select("search_balance, cv_generation_balance, persistent_finder_balance, plan")
+      .eq("id", user.id)
+      .maybeSingle();
+    if (data) {
+      setBalances({
+        search: data.search_balance ?? 0,
+        cv: data.cv_generation_balance ?? 0,
+        pf: data.persistent_finder_balance ?? 0,
+      });
+      setPlan(data.plan ?? "free");
+    }
+  }, []);
+
   useEffect(() => {
     if (!searching && hasSearched) {
-      window.dispatchEvent(new Event("refresh-balances"));
+      refreshBalances();
     }
-  }, [searching, hasSearched]);
+  }, [searching, hasSearched, refreshBalances]);
+
+  useEffect(() => {
+    const handler = () => refreshBalances();
+    window.addEventListener("refresh-balances", handler);
+    return () => window.removeEventListener("refresh-balances", handler);
+  }, [refreshBalances]);
 
   useEffect(() => {
     const supabase = createClient();
@@ -449,6 +484,11 @@ export default function DashboardPage() {
               setContinuationToken(event.continuation);
               setSearching(false);
               setVideoFast(false);
+              if (event.balances) {
+                setBalances(event.balances);
+                setPlan(event.plan ?? "free");
+              }
+              setPauseMessage(event.message ?? "");
               break;
 
             case "partial_complete":
@@ -472,6 +512,11 @@ export default function DashboardPage() {
               setSearching(false);
               setVideoFast(false);
               setResultMessage(event.message ?? "");
+              if (event.balances) {
+                setBalances(event.balances);
+                setPlan(event.plan ?? "free");
+              }
+              setPauseMessage(event.message ?? "");
               break;
 
             case "complete":
@@ -493,19 +538,21 @@ export default function DashboardPage() {
               if (event.filtered_summary) {
                 setFilteredSummary(event.filtered_summary);
               }
-              setTimeout(() => {
-                setResults(event.results ?? []);
-                setSearching(false);
-                setProgress(0);
-                setVideoFast(false);
-                setPfActive(false);
-                setContinuationToken(null);
-                if (event.results?.length === 0 && event.message) {
-                  setResultMessage(event.message);
-                } else if (event.pf_mode && event.pf_rounds) {
-                  setResultMessage(`Persistent Finder completed (${event.results?.length ?? 0} results across ${event.pf_rounds} rounds)`);
-                }
-              }, 500);
+              if (event.balances) {
+                setBalances(event.balances);
+                setPlan(event.plan ?? "free");
+              }
+              setResults(event.results ?? []);
+              setSearching(false);
+              setProgress(0);
+              setVideoFast(false);
+              setPfActive(false);
+              setContinuationToken(null);
+              if (event.results?.length === 0 && event.message) {
+                setResultMessage(event.message);
+              } else if (event.pf_mode && event.pf_rounds) {
+                setResultMessage(`Persistent Finder completed (${event.results?.length ?? 0} results across ${event.pf_rounds} rounds)`);
+              }
               break;
 
             case "error":
@@ -592,7 +639,7 @@ export default function DashboardPage() {
           <>
             <SearchPill onSearch={handleSearch} onAbort={handleAbort} searching={searching} />
             <div className="flex flex-wrap justify-center gap-1.5">
-              <BalanceChips />
+              <BalanceChips balances={balances} plan={plan} />
             </div>
 
             {hasSearched && (
@@ -624,23 +671,14 @@ export default function DashboardPage() {
               />
             )}
 
-            {continuationToken && !searching && (
-              <div className="flex flex-col items-center gap-2 pt-2">
-                <p className="text-xs text-[var(--color-text-secondary)]/70 text-center max-w-md">
-                  {results.length > 0
-                    ? `${results.length} results found so far. Click to continue AI screening for remaining jobs.`
-                    : "Ready to screen jobs with AI analysis? This may take a minute."}
-                </p>
-                <button
-                  onClick={handleContinue}
-                  className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-white/10 border border-white/20 hover:bg-white/25 transition-all text-sm text-white"
-                  title="Continue search"
-                >
-                  Continue
-                  <ArrowRight size={14} />
-                </button>
-              </div>
-            )}
+            <ContinuePopup
+              isOpen={!!continuationToken && !searching}
+              message={pauseMessage || (results.length > 0
+                ? `${results.length} results found so far. Continue AI screening for remaining jobs?`
+                : "Ready to screen jobs with AI analysis? This may take a minute.")}
+              onContinue={handleContinue}
+              onCancel={() => setContinuationToken(null)}
+            />
 
             {!searching && results.length > 0 && (
               <div className="space-y-4">
