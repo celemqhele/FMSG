@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard/dashboard-layout";
 import { LiquidGlassCard } from "@/components/landing/liquid-glass-card";
-import { Loader2, Check, ArrowRight, ArrowLeft, CreditCard, Ban, Crosshair, ShoppingCart } from "lucide-react";
+import { Loader2, Check, ArrowRight, ArrowLeft, CreditCard, Ban, Crosshair, ShoppingCart, X } from "lucide-react";
 import { PageTransitionWrapper } from "@/components/ui/page-transition-wrapper";
 import { useTransition } from "@/components/providers/transition-provider";
 import { createClient } from "@/lib/supabase/client";
@@ -76,6 +76,8 @@ export default function ManageSubscriptionPage() {
   const [subscription, setSubscription] = useState<any>(null);
   const [profile, setProfile] = useState<any>(null);
   const [cancelling, setCancelling] = useState(false);
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [cancelMounted, setCancelMounted] = useState(false);
   const [generatingLink, setGeneratingLink] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
@@ -190,8 +192,19 @@ export default function ManageSubscriptionPage() {
   };
 
   // --- Cancel Subscription ---
-  const handleCancel = async () => {
+  const handleCancel = () => {
+    setShowCancelConfirm(true);
+    setTimeout(() => setCancelMounted(true), 10);
+  };
+
+  const closeCancelConfirm = () => {
+    setCancelMounted(false);
+    setTimeout(() => setShowCancelConfirm(false), 200);
+  };
+
+  const confirmCancel = async () => {
     if (!subscription) return;
+    closeCancelConfirm();
     setCancelling(true);
     setErrorMsg("");
 
@@ -663,6 +676,52 @@ export default function ManageSubscriptionPage() {
           <div className="flex items-center gap-2">
             <Check size={16} />
             {successMsg ?? "Success!"}
+          </div>
+        </div>
+      )}
+
+      {/* Cancel subscription confirmation modal */}
+      {showCancelConfirm && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center transition-opacity duration-300" style={{ opacity: cancelMounted ? 1 : 0 }}>
+          <div className="absolute inset-0 bg-black/60" onClick={closeCancelConfirm} />
+          <div className="relative">
+            <button
+              onClick={closeCancelConfirm}
+              className="absolute -top-4 -right-4 z-10 p-1.5 bg-white border border-gray-300 rounded-full text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors shadow-lg"
+            >
+              <X size={20} />
+            </button>
+            <div
+              className="bg-white border border-gray-200 rounded-2xl p-6 max-w-sm mx-4 text-center transition-all duration-300 ease-out shadow-xl"
+              style={{ opacity: cancelMounted ? 1 : 0, transform: cancelMounted ? "translateY(0) scale(1)" : "translateY(8px) scale(0.97)" }}
+            >
+              <p className="text-gray-900 font-semibold mb-2">Cancel {subscription?.plan ? subscription.plan.charAt(0).toUpperCase() + subscription.plan.slice(1) : ""} plan?</p>
+              <p className="text-sm text-gray-500 mb-4">
+                You'll keep access to your current plan features until{" "}
+                <strong className="text-gray-700">
+                  {subscription?.expiry_date
+                    ? new Date(subscription.expiry_date).toLocaleDateString("en-ZA", { day: "numeric", month: "long", year: "numeric" })
+                    : "the end of your billing period"}
+                </strong>.
+                After that, your account will switch to the Free tier.
+              </p>
+              <div className="flex justify-center gap-3">
+                <button
+                  onClick={closeCancelConfirm}
+                  className="px-5 py-2.5 text-sm font-medium text-gray-600 bg-gray-100 border border-gray-200 rounded-full hover:bg-gray-200 transition-colors"
+                >
+                  Keep Plan
+                </button>
+                <button
+                  onClick={confirmCancel}
+                  disabled={cancelling}
+                  className="px-5 py-2.5 text-sm font-semibold text-white bg-red-500 rounded-full hover:bg-red-600 transition-colors disabled:opacity-50 flex items-center gap-2"
+                >
+                  {cancelling ? <Loader2 size={14} className="animate-spin" /> : null}
+                  {cancelling ? "Cancelling..." : "Yes, Cancel"}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

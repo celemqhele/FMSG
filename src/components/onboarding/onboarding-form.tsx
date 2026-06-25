@@ -18,13 +18,7 @@ interface ExtractedData {
 type Step = "upload" | "extracting" | "review";
 
 const JOB_TYPE_OPTIONS = [
-  "Full-time",
-  "Part-time",
-  "Contract",
-  "Freelance",
-  "Remote",
-  "Hybrid",
-  "Internship",
+  "Full-time", "Part-time", "Contract", "Freelance", "Remote", "Hybrid", "Internship",
 ];
 
 interface OnboardingFormProps {
@@ -79,67 +73,63 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
       setCvFilePath(data.cv_file_path ?? "");
       setStep("review");
     } catch {
-      setError("Network error. Please try again.");
+      setError("Could not analyze CV. Please try again.");
       setStep("upload");
     }
   };
 
   const addJobTitle = () => {
     const t = jobTitleInput.trim();
-    if (t && !jobTitles.includes(t)) {
-      setJobTitles([...jobTitles, t]);
-      setJobTitleInput("");
-    }
+    if (t && !jobTitles.includes(t)) setJobTitles([...jobTitles, t]);
+    setJobTitleInput("");
   };
 
-  const removeJobTitle = (t: string) => setJobTitles(jobTitles.filter((x) => x !== t));
+  const removeJobTitle = (t: string) => setJobTitles(jobTitles.filter((j) => j !== t));
 
   const toggleJobType = (t: string) => {
-    setJobTypes((prev) => prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]);
+    setJobTypes((prev) => (prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]));
   };
 
   const handleSave = async () => {
-    setError("");
     setSaving(true);
+    setError("");
     const supabase = createClient();
-    const { data: user } = await supabase.auth.getUser();
-    if (!user?.user) {
-      setError("Not authenticated.");
-      setSaving(false);
-      return;
-    }
-    const { error: err } = await supabase.from("profiles").upsert({
-      id: user.user.id,
-      email: user.user.email,
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setError("Not authenticated."); setSaving(false); return; }
+
+    const fullName = [name, surname].filter(Boolean).join(" ");
+    const { error: profileErr } = await supabase.from("profiles").upsert({
+      id: user.id,
+      full_name: fullName,
       name,
       surname,
       phone,
       address,
-      job_titles: jobTitles,
-      job_types: jobTypes,
-      location,
       current_salary: currentSalary,
       desired_salary: desiredSalary,
-      cv_file_path: cvFilePath,
+      preferred_location: location,
+      job_types: jobTypes,
       onboarding_completed: true,
+      cv_file_path: cvFilePath,
     });
-    if (err) {
-      setSaving(false);
-      setError(err.message);
-      return;
-    }
 
-    const { data: existing } = await supabase
-      .from("search_profiles")
-      .select("id")
-      .eq("user_id", user.user.id)
-      .limit(1);
+    if (profileErr) { setError(profileErr.message); setSaving(false); return; }
 
-    if (!existing || existing.length === 0) {
-      const profileName = jobTitles.length > 0 ? `${jobTitles[0]} Profile` : "Main Profile";
+    const { data: existingSP } = await supabase.from("search_profiles").select("id").eq("user_id", user.id).limit(1);
+    const profileName = (jobTitles[0] ?? "General").slice(0, 50);
+
+    if (existingSP?.length) {
+      await supabase.from("search_profiles").update({
+        name: profileName,
+        job_titles: jobTitles,
+        job_types: jobTypes,
+        location,
+        cv_variations: cvFilePath ? [{ name: "CV", file_path: cvFilePath }] : [],
+      }).eq("user_id", user.id);
+    } else {
       const variations = cvFilePath ? [{ name: "CV", file_path: cvFilePath }] : [];
       await supabase.from("search_profiles").insert({
-        user_id: user.user.id,
+        user_id: user.id,
         name: profileName,
         job_titles: jobTitles,
         job_types: jobTypes,
@@ -157,14 +147,14 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
     return (
       <div className="flex flex-col items-center gap-8">
         <div className="text-center">
-          <h1 className="text-3xl md:text-4xl font-semibold text-white tracking-tight">
+          <h1 className="text-3xl md:text-4xl font-semibold text-gray-900 tracking-tight">
             Upload your CV
           </h1>
-          <p className="mt-3 text-white/80">
+          <p className="mt-3 text-gray-500">
             PDF only, max 10MB. Your file is stored securely.
           </p>
         </div>
-        {error && <p className="text-sm text-red-400 text-center">{error}</p>}
+        {error && <p className="text-sm text-red-500 text-center">{error}</p>}
         <div
           onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
           onDragLeave={() => setDragOver(false)}
@@ -172,15 +162,15 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
           onClick={() => inputRef.current?.click()}
           className={`w-full max-w-md p-12 rounded-2xl border-2 border-dashed cursor-pointer transition-all text-center ${
             dragOver
-              ? "border-[var(--color-accent)] bg-[var(--color-accent)]/10"
-              : "border-white/20 hover:border-white/40 bg-white/5"
+              ? "border-[var(--color-accent)] bg-[var(--color-accent)]/5"
+              : "border-gray-300 hover:border-gray-400 bg-gray-50"
           }`}
         >
-          <Upload size={36} className="mx-auto text-white/60" />
-          <p className="mt-4 text-sm text-white/80">
+          <Upload size={36} className="mx-auto text-gray-400" />
+          <p className="mt-4 text-sm text-gray-700">
             Drag and drop your CV here, or click to browse
           </p>
-          <p className="mt-1 text-xs text-white/60">PDF only (max 10MB)</p>
+          <p className="mt-1 text-xs text-gray-400">PDF only (max 10MB)</p>
           <input
             ref={inputRef}
             type="file"
@@ -196,93 +186,64 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
   if (step === "extracting") {
     return (
       <div className="flex flex-col items-center justify-center gap-6 py-20">
-        <Loader2 size={32} className="animate-spin text-white/80" />
+        <Loader2 size={32} className="animate-spin text-gray-500" />
         <div className="text-center">
-          <p className="text-lg font-medium text-white">Analyzing your CV...</p>
-          <p className="mt-1 text-sm text-white/60">Extracting your details with AI</p>
+          <p className="text-lg font-medium text-gray-900">Analyzing your CV...</p>
+          <p className="mt-1 text-sm text-gray-500">Extracting your details with AI</p>
         </div>
       </div>
     );
   }
 
+  const inputClass = (filled: boolean) =>
+    `w-full px-4 py-2.5 text-sm rounded-lg border text-gray-900 placeholder-gray-400 focus:outline-none focus:border-[var(--color-accent)] transition-colors ${
+      filled ? "bg-gray-50 border-gray-300" : "bg-yellow-50 border-yellow-300"
+    }`;
+
   return (
     <div className="w-full max-w-2xl mx-auto space-y-8 pb-16">
       <div className="text-center">
-        <h1 className="text-2xl md:text-3xl font-semibold text-white">Review your profile</h1>
-        <p className="mt-2 text-sm text-white/80">
-          Edit anything AI got wrong, then save.
-        </p>
+        <h1 className="text-2xl md:text-3xl font-semibold text-gray-900">Review your profile</h1>
+        <p className="mt-2 text-sm text-gray-500">Edit anything AI got wrong, then save.</p>
       </div>
 
-      {error && <p className="text-sm text-red-400 text-center">{error}</p>}
+      {error && <p className="text-sm text-red-500 text-center">{error}</p>}
 
-      {/* Personal Information */}
       <section className="space-y-4">
-        <h2 className="text-lg font-semibold text-white">Personal Information</h2>
+        <h2 className="text-lg font-semibold text-gray-900">Personal Information</h2>
         <div className="flex gap-4">
           <div className="flex-1">
-            <label className="block text-sm font-medium text-white mb-1.5">Name</label>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className={`w-full px-4 py-2.5 text-sm rounded-lg border text-white placeholder-white/40 focus:outline-none focus:border-white/40 ${
-                name ? "bg-white/10 border-white/20" : "bg-yellow-500/10 border-yellow-500/40"
-              }`}
-              placeholder="First name"
-            />
-            {!name && <p className="mt-1 text-xs text-yellow-400">Missing - fill in manually</p>}
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Name</label>
+            <input value={name} onChange={(e) => setName(e.target.value)} className={inputClass(!!name)} placeholder="First name" />
+            {!name && <p className="mt-1 text-xs text-yellow-600">Missing — fill in manually</p>}
           </div>
           <div className="flex-1">
-            <label className="block text-sm font-medium text-white mb-1.5">Surname</label>
-            <input
-              value={surname}
-              onChange={(e) => setSurname(e.target.value)}
-              className={`w-full px-4 py-2.5 text-sm rounded-lg border text-white placeholder-white/40 focus:outline-none focus:border-white/40 ${
-                surname ? "bg-white/10 border-white/20" : "bg-yellow-500/10 border-yellow-500/40"
-              }`}
-              placeholder="Last name"
-            />
-            {!surname && <p className="mt-1 text-xs text-yellow-400">Missing - fill in manually</p>}
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Surname</label>
+            <input value={surname} onChange={(e) => setSurname(e.target.value)} className={inputClass(!!surname)} placeholder="Surname" />
+            {!surname && <p className="mt-1 text-xs text-yellow-600">Missing — fill in manually</p>}
           </div>
         </div>
         <div>
-          <label className="block text-sm font-medium text-white mb-1.5">Phone</label>
-          <input
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            className={`w-full px-4 py-2.5 text-sm rounded-lg border text-white placeholder-white/40 focus:outline-none focus:border-white/40 ${
-              phone ? "bg-white/10 border-white/20" : "bg-yellow-500/10 border-yellow-500/40"
-            }`}
-            placeholder="+27 12 345 6789"
-          />
-          {!phone && <p className="mt-1 text-xs text-yellow-400">Missing - fill in manually</p>}
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">Phone</label>
+          <input value={phone} onChange={(e) => setPhone(e.target.value)} className={inputClass(!!phone)} placeholder="Phone number" />
+          {!phone && <p className="mt-1 text-xs text-yellow-600">Missing — fill in manually</p>}
         </div>
         <div>
-          <label className="block text-sm font-medium text-white mb-1.5">Address</label>
-          <input
-            value={address}
-            onChange={(e) => setAddress(e.target.value)}
-            className={`w-full px-4 py-2.5 text-sm rounded-lg border text-white placeholder-white/40 focus:outline-none focus:border-white/40 ${
-              address ? "bg-white/10 border-white/20" : "bg-yellow-500/10 border-yellow-500/40"
-            }`}
-            placeholder="Street, City, Province"
-          />
-          {!address && <p className="mt-1 text-xs text-yellow-400">Missing - fill in manually</p>}
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">Address</label>
+          <input value={address} onChange={(e) => setAddress(e.target.value)} className={inputClass(!!address)} placeholder="Your address" />
+          {!address && <p className="mt-1 text-xs text-yellow-600">Missing — fill in manually</p>}
         </div>
       </section>
 
-      {/* Career Information */}
       <section className="space-y-4">
-        <h2 className="text-lg font-semibold text-white">Career Information</h2>
+        <h2 className="text-lg font-semibold text-gray-900">Career Information</h2>
         <div>
-          <label className="block text-sm font-medium text-white mb-1.5">Desired Job Titles</label>
-          <div className="flex flex-wrap gap-2 mb-3">
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">Desired Job Titles</label>
+          <div className="flex flex-wrap gap-2 mb-2">
             {jobTitles.map((t) => (
-              <span key={t} className="inline-flex items-center gap-1 px-3 py-1 text-xs font-medium text-white bg-white/10 rounded-full">
+              <span key={t} className="inline-flex items-center gap-1 px-3 py-1 text-xs font-medium text-gray-700 bg-gray-100 border border-gray-200 rounded-full">
                 {t}
-                <button onClick={() => removeJobTitle(t)} className="text-white/70 hover:text-white">
-                  <X size={12} />
-                </button>
+                <button onClick={() => removeJobTitle(t)} className="text-gray-400 hover:text-gray-600"><X size={12} /></button>
               </span>
             ))}
           </div>
@@ -290,89 +251,69 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
             <input
               value={jobTitleInput}
               onChange={(e) => setJobTitleInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addJobTitle(); } }}
-              className={`flex-1 px-4 py-2 text-sm rounded-lg border text-white placeholder-white/40 focus:outline-none focus:border-white/40 ${
-                jobTitles.length > 0 ? "bg-white/10 border-white/20" : "bg-yellow-500/10 border-yellow-500/40"
-              }`}
-              placeholder="e.g. Software Engineer"
+              onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addJobTitle())}
+              className="flex-1 px-4 py-2 text-sm rounded-lg border border-gray-300 bg-gray-50 text-gray-900 placeholder-gray-400 focus:outline-none focus:border-[var(--color-accent)] transition-colors"
+              placeholder="Add a title"
             />
-            <button
-              onClick={addJobTitle}
-              className="px-3 py-2 text-sm font-medium text-white bg-[var(--color-accent)] rounded-lg hover:bg-[var(--color-accent-hover)] transition-colors"
-            >
+            <button onClick={addJobTitle} className="px-3 py-2 text-sm font-medium text-white bg-[var(--color-accent)] rounded-lg hover:bg-[var(--color-accent-hover)] transition-colors">
               <Plus size={16} />
             </button>
           </div>
-          {jobTitles.length === 0 && <p className="mt-1 text-xs text-yellow-400">Add at least one job title</p>}
         </div>
+
         <div>
-          <label className="block text-sm font-medium text-white mb-2">Job Types</label>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Job Types</label>
           <div className="flex flex-wrap gap-2">
-            {JOB_TYPE_OPTIONS.map((opt) => (
+            {JOB_TYPE_OPTIONS.map((t) => (
               <button
-                key={opt}
-                onClick={() => toggleJobType(opt)}
+                key={t}
+                onClick={() => toggleJobType(t)}
                 className={`px-3 py-1.5 text-xs font-medium rounded-full border transition-colors ${
-                  jobTypes.includes(opt)
+                  jobTypes.includes(t)
                     ? "bg-[var(--color-accent)] border-[var(--color-accent)] text-white"
-                    : "bg-white/10 border-white/20 text-white/80 hover:text-white hover:border-white/40"
+                    : "bg-gray-100 border-gray-200 text-gray-600 hover:text-gray-900 hover:border-gray-300"
                 }`}
               >
-                {opt}
+                {t}
               </button>
             ))}
           </div>
-          {jobTypes.length === 0 && <p className="mt-1 text-xs text-yellow-400">Select at least one job type</p>}
         </div>
+
         <div>
-          <label className="block text-sm font-medium text-white mb-1.5">Preferred Location</label>
-          <input
-            value={location}
-            onChange={(e) => setLocation(e.target.value)}
-            className={`w-full px-4 py-2.5 text-sm rounded-lg border text-white placeholder-white/40 focus:outline-none focus:border-white/40 ${
-              location ? "bg-white/10 border-white/20" : "bg-yellow-500/10 border-yellow-500/40"
-            }`}
-            placeholder="e.g. Johannesburg, Cape Town, Remote"
-          />
-          {!location && <p className="mt-1 text-xs text-yellow-400">Missing - fill in manually</p>}
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">Preferred Location</label>
+          <input value={location} onChange={(e) => setLocation(e.target.value)} className={inputClass(!!location)} placeholder="City or province" />
+          {!location && <p className="mt-1 text-xs text-yellow-600">Missing — fill in manually</p>}
         </div>
       </section>
 
-      {/* Pro tip */}
-      <div className="liquid-glass rounded-xl p-4 text-center">
-        <p className="text-xs text-white/80">
-          <span className="text-[var(--color-accent)] font-medium">Pro tip:</span> After onboarding, try Persistent Finder - it searches multiple rounds of AI-generated title variations to find jobs other engines miss.
-        </p>
-      </div>
+      <p className="text-xs text-gray-500">
+        A search profile will be created from this data. You can edit or add more profiles later in Settings.
+      </p>
 
-      {/* Salary - always manual */}
       <section className="space-y-4">
-        <h2 className="text-lg font-semibold text-white">Salary Expectations</h2>
-        <p className="text-xs text-white/60">These fields are always filled manually.</p>
+        <h2 className="text-lg font-semibold text-gray-900">Salary Expectations</h2>
+        <p className="text-xs text-gray-500">These fields are always filled manually.</p>
         <div className="flex gap-4">
           <div className="flex-1">
-            <label className="block text-sm font-medium text-white mb-1.5">Current Salary</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Current Salary</label>
             <input
               type="number"
               value={currentSalary ?? ""}
               onChange={(e) => setCurrentSalary(e.target.value ? Number(e.target.value) : null)}
-              min={0}
-              className="w-full px-4 py-2.5 text-sm rounded-lg bg-yellow-500/10 border border-yellow-500/40 text-white placeholder-white/40 focus:outline-none focus:border-white/40"
-              placeholder="Annual (ZAR)"
+              className="w-full px-4 py-2.5 text-sm rounded-lg bg-yellow-50 border border-yellow-300 text-gray-900 placeholder-gray-400 focus:outline-none focus:border-[var(--color-accent)] transition-colors"
+              placeholder="Monthly ZAR"
             />
-            <p className="mt-1 text-xs text-yellow-400">Required - enter manually</p>
           </div>
           <div className="flex-1">
-            <label className="block text-sm font-medium text-white mb-1.5">Desired Salary</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Desired Salary</label>
             <input
               type="number"
               value={desiredSalary ?? ""}
               onChange={(e) => setDesiredSalary(e.target.value ? Number(e.target.value) : null)}
-              min={0}
-              className="w-full px-4 py-2.5 text-sm rounded-lg bg-yellow-500/10 border border-yellow-500/40 text-white placeholder-white/40 focus:outline-none focus:border-white/40"
-              placeholder="Annual (ZAR)"
+              className="w-full px-4 py-2.5 text-sm rounded-lg bg-yellow-50 border border-yellow-300 text-gray-900 placeholder-gray-400 focus:outline-none focus:border-[var(--color-accent)] transition-colors"
+              placeholder="Monthly ZAR"
             />
-            <p className="mt-1 text-xs text-yellow-400">Required - enter manually</p>
           </div>
         </div>
       </section>
