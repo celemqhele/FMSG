@@ -171,3 +171,49 @@ export async function sendAccountDeleted(to: string) {
     `),
   });
 }
+
+export async function sendPlanUpgraded(to: string, fromPlan: string, toPlan: string, amount: string) {
+  const r = getResend();
+  if (!r) return;
+  await r.emails.send({
+    from: FROM_EMAIL,
+    to,
+    subject: `Plan upgraded to ${toPlan}`,
+    html: brandHTML(`
+      <p style="font-size:15px;line-height:1.6;color:#F5F5F7;margin:0 0 16px">Your plan has been upgraded from <strong style="color:#fff">${fromPlan}</strong> to <strong style="color:#fff">${toPlan}</strong>.</p>
+      <p style="font-size:15px;line-height:1.6;color:#E4E4E4;margin:0 0 16px">You were charged a prorated amount of <strong style="color:#F5F5F7">${amount}</strong>. Your new limits are available immediately.</p>
+      ${button("Go to Dashboard", "https://findmesomejobs.co.za/dashboard")}
+    `),
+  });
+}
+
+export async function sendPlanDowngraded(to: string, fromPlan: string, toPlan: string, effectiveDate: string) {
+  const r = getResend();
+  if (!r) return;
+  await r.emails.send({
+    from: FROM_EMAIL,
+    to,
+    subject: "Plan change scheduled",
+    html: brandHTML(`
+      <p style="font-size:15px;line-height:1.6;color:#F5F5F7;margin:0 0 16px">Your plan change from <strong style="color:#fff">${fromPlan}</strong> to <strong style="color:#fff">${toPlan}</strong> has been scheduled.</p>
+      <p style="font-size:15px;line-height:1.6;color:#E4E4E4;margin:0 0 16px">It will take effect on <strong style="color:#F5F5F7">${effectiveDate}</strong>. You'll keep your current plan benefits until then.</p>
+      ${subtleButton("Manage Plan", "https://findmesomejobs.co.za/upgrade")}
+    `),
+  });
+}
+
+export async function sendAccountDisabled(to: string, reason: string) {
+  const r = getResend();
+  if (!r) return;
+  await r.emails.send({
+    from: FROM_EMAIL,
+    to,
+    subject: "Your account has been disabled",
+    html: brandHTML(`
+      <p style="font-size:15px;line-height:1.6;color:#F5F5F7;margin:0 0 16px">Your Find Me Some Jobs account has been disabled.</p>
+      <p style="font-size:15px;line-height:1.6;color:#E4E4E4;margin:0 0 16px">Reason: <strong style="color:#F5F5F7">${reason}</strong></p>
+      <p style="font-size:15px;line-height:1.6;color:#E4E4E4;margin:0 0 16px">If you believe this is a mistake, you can submit an appeal from your dashboard.</p>
+      ${button("Open Dashboard", "https://findmesomejobs.co.za/dashboard")}
+    `),
+  });
+}

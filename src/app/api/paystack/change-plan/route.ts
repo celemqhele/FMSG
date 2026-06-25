@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { PLAN_LIMITS, PLAN_TIER_NAMES, PAYSTACK_PLAN_CODES, calculatePFPrice } from "@/lib/plan-limits";
+import { sendPlanUpgraded, sendPlanDowngraded } from "@/lib/email";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -194,6 +195,9 @@ export async function POST(request: NextRequest) {
         console.warn("[CHANGE_PLAN] pf_refill update skipped (column may not exist):", pfRefillErr.message);
       }
 
+      const upgradeAmount = `R${((psData.data?.prorated_amount ?? 0) / 100).toFixed(2)}`;
+      sendPlanUpgraded(user.email ?? "", currentPlan, newPlan, upgradeAmount).catch(() => {});
+
       return NextResponse.json({
         ok: true,
         type: "upgrade",
@@ -272,6 +276,11 @@ export async function POST(request: NextRequest) {
           console.warn("[CHANGE_PLAN] next_pf_refill update skipped (column may not exist):", nprErr.message);
         }
       }
+
+      const effectiveDate = sub.expiry_date
+        ? new Date(sub.expiry_date).toLocaleDateString("en-ZA", { year: "numeric", month: "long", day: "numeric" })
+        : "the end of your billing period";
+      sendPlanDowngraded(user.email ?? "", currentPlan, newPlan, effectiveDate).catch(() => {});
 
       return NextResponse.json({
         ok: true,
