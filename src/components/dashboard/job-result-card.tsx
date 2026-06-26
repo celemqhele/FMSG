@@ -19,6 +19,12 @@ interface JobResultCardProps {
   domainVerified?: boolean;
   domainUnverifiedReason?: string;
   suggestedCvName?: string;
+  knockoutFail?: boolean | null;
+  pillarScores?: { industry: number; function: number; scale: number; tools: number; location: number } | null;
+  taxesApplied?: string[] | null;
+  totalQuestionsAsked?: number | null;
+  yesAnswers?: number | null;
+  recruiterVerdict?: string | null;
   onDelete: (id: string) => void;
 }
 
@@ -36,6 +42,12 @@ export function JobResultCard({
   domainVerified = true,
   domainUnverifiedReason = "",
   suggestedCvName = "",
+  knockoutFail,
+  pillarScores,
+  taxesApplied,
+  totalQuestionsAsked,
+  yesAnswers,
+  recruiterVerdict,
   onDelete,
 }: JobResultCardProps) {
   const [showDeleteMenu, setShowDeleteMenu] = useState(false);
@@ -403,7 +415,7 @@ export function JobResultCard({
             onClick={() => setShowVerdict(false)}
           />
           <div
-            className={`relative w-full max-w-sm mx-4 p-6 rounded-2xl liquid-glass transition-all duration-200 ${
+            className={`relative w-full max-w-sm mx-4 p-6 rounded-2xl liquid-glass max-h-[85vh] overflow-y-auto transition-all duration-200 ${
               showVerdict ? "opacity-100 scale-100" : "opacity-0 scale-95"
             }`}
             onClick={(e) => e.stopPropagation()}
@@ -421,12 +433,72 @@ export function JobResultCard({
             </div>
 
             {matchSummary && (
-              <p className="text-sm text-[var(--color-text-secondary)] leading-relaxed mb-4">
+              <p className="text-sm text-[var(--color-text-secondary)] leading-relaxed mb-4 line-clamp-3">
                 {matchSummary}
               </p>
             )}
 
-            {verdictBullets && (
+            {/* New reasoning layout */}
+            {pillarScores ? (
+              <div className="space-y-4">
+                {recruiterVerdict && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-[var(--color-text-secondary)]">Verdict:</span>
+                    <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full ${
+                      recruiterVerdict === "HIRE" ? "bg-green-500/20 text-green-400" :
+                      recruiterVerdict === "INTERVIEW" ? "bg-amber-500/20 text-amber-400" :
+                      "bg-red-500/20 text-red-400"
+                    }`}>{recruiterVerdict}</span>
+                  </div>
+                )}
+
+                {knockoutFail && (
+                  <div className="px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20">
+                    <p className="text-xs text-red-400 font-medium">Knockout triggered — mandatory requirement not met.</p>
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-[var(--color-text-primary)]">Pillar Scores</p>
+                  {([
+                    { key: "industry", label: "Industry", weight: "25%", color: "bg-blue-500" },
+                    { key: "function", label: "Function", weight: "30%", color: "bg-emerald-500" },
+                    { key: "scale", label: "Scale", weight: "20%", color: "bg-purple-500" },
+                    { key: "tools", label: "Tools", weight: "15%", color: "bg-amber-500" },
+                    { key: "location", label: "Location", weight: "10%", color: "bg-pink-500" },
+                  ] as const).map((p) => {
+                    const val = pillarScores[p.key as keyof typeof pillarScores] ?? 0;
+                    return (
+                      <div key={p.key} className="flex items-center gap-2">
+                        <span className="text-xs text-[var(--color-text-secondary)] w-16 shrink-0">{p.label}</span>
+                        <div className="flex-1 h-1.5 rounded-full bg-white/10 overflow-hidden">
+                          <div className={`h-full rounded-full ${p.color} transition-all duration-500`} style={{ width: `${Math.min(100, val)}%` }} />
+                        </div>
+                        <span className="text-xs text-[var(--color-text-secondary)] w-12 text-right">{val}%</span>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {taxesApplied && taxesApplied.length > 0 && (
+                  <div>
+                    <p className="text-xs font-medium text-[var(--color-text-primary)] mb-1.5">Deductions</p>
+                    <div className="flex flex-wrap gap-1">
+                      {taxesApplied.map((t) => (
+                        <span key={t} className="text-[10px] px-2 py-0.5 rounded-full bg-red-500/10 text-red-400 border border-red-500/20">{t}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {totalQuestionsAsked != null && (
+                  <p className="text-xs text-[var(--color-text-secondary)]">
+                    Met {yesAnswers ?? 0} of {totalQuestionsAsked} requirements
+                  </p>
+                )}
+              </div>
+            ) : verdictBullets ? (
+              /* Legacy verdict layout */
               <div className="space-y-2.5">
                 <div className="flex items-start gap-2.5">
                   <span className="text-xs text-[var(--color-accent)] mt-0.5 shrink-0">Industry</span>
@@ -441,7 +513,7 @@ export function JobResultCard({
                   <p className="text-xs text-[var(--color-text-secondary)]/80 leading-relaxed">{verdictBullets.competition}</p>
                 </div>
               </div>
-            )}
+            ) : null}
 
             {suggestedCvName && (
               <div className="mt-4 pt-3 border-t border-white/[0.06]">

@@ -189,6 +189,12 @@ interface JobRow {
   posted_at: string;
   posted_at_ms: number;
   suggested_cv: string;
+  knockout_fail: boolean | null;
+  pillar_scores: { industry: number; function: number; scale: number; tools: number; location: number } | null;
+  taxes_applied: string[] | null;
+  total_questions_asked: number | null;
+  yes_answers: number | null;
+  recruiter_verdict: string | null;
 }
 
 function normalize(r: any) {
@@ -517,7 +523,7 @@ ${blacklistInfo}${bannedInfo}`;
       const job = rawJobs[i];
       const progress = Math.min(20 + ((i + 1) / rawJobs.length) * 35, 55);
       onStatus?.({ type: "screening_job", current: i + 1, total: rawJobs.length, progress });
-    if (i > 0) await sleep(20000);
+    if (i > 0) await sleep(lastAITier === "gemini" ? 20000 : 2000);
       const singlePrompt = `You are a Recruitment Auditor AI scoring a single job match.
 
 CANDIDATE INDUSTRY: ${profileIndustry || "Unknown"}
@@ -572,47 +578,97 @@ Return ONLY valid JSON (no markdown, no code fences):
     const progress = Math.min(55 + ((i + 1) / rawJobs.length) * 30, 85);
     onStatus?.({ type: "analyzing_job", title: job.title, company: job.company_name, current: i + 1, total: rawJobs.length, progress });
 
-    if (i > 0) await sleep(6000);
+    if (i > 0) await sleep(lastAITier === "gemini" ? 6000 : 1000);
 
-    const deepSystemPrompt = `You are a strict Recruitment Auditor AI. Evaluate the candidate's CVs against the job description.
+    const deepSystemPrompt = `You are a strict, budget-conscious Recruitment Auditor acting as a hiring manager. You have reviewed 100+ CVs for this role. 30% of applicants are perfect direct matches. Your goal is to protect the company from a bad hire. You are looking for reasons to say NO, not reasons to say YES.
 
 CANDIDATE INDUSTRY: ${profileIndustry || "Unknown"}
 
-40% COMPETITOR BENCHMARK:
-Assume 40% of applicants are perfect direct matches who tick every requirement. Only score highly if the candidate can stand out against this competition.
+You MUST follow this exact thinking process step-by-step. Perform all calculations internally, then output ONLY the final JSON object. Do not output your reasoning, markdown, or code fences.
 
-SCORING:
-- 0–30: Total mismatch in industry, sector, or core capabilities.
-- 31–59: Some transferable skills but significant gaps in industry nuance or scale.
-- 60–74: Good foundation but lacks a critical requirement direct competitors will have.
-- 75–100: Exceptional match — direct industry alignment, matching functional scale, clear competitive advantage.
+---
+INTERNAL THINKING CHECKLIST (Execute these steps strictly):
 
-INDUSTRY MATCH RULES:
-- First, identify the job's industry from the full job specification.
-- If the job's industry is clearly different from the candidate's industry (e.g. Healthcare vs Construction, Education vs Fintech), the score MUST NOT exceed 30.
-- Understand that functions like HR, IT, Admin, Finance, or Project Management can span multiple industries — in those cases, assess normally based on the role itself.
-- Set industry_match to true if the industries are the same, closely related, or the role is a cross-industry function. Set to false for clear mismatches.
+STEP 1: EXPLODE THE JOB DESCRIPTION INTO ATOMIC YES/NO QUESTIONS
+Read the job description line-by-line. For EVERY requirement, preference, or nice-to-have, break it down into the smallest possible Yes/No questions.
 
-RULES:
-- Judge transferable skills and career trajectory, not keywords.
-- Reference specifics from the CV and job spec.
-- Choose the CV variation that best matches this role and return its name in suggested_cv_name.
+CRITICAL RULE: Split compound requirements into multiple questions.
+Example: "7 years of experience required in sales in the Gas industry"
+-> Does the user have 7+ years in the Gas industry? [Yes/No]
+-> Does the user have 7+ years in sales? [Yes/No]
+-> Does the user have 7+ years of total experience? [Yes/No]
 
-${blacklistInfo}${bannedInfo}
+List ALL questions and answer each with Yes or No based strictly on the CV.
 
-Return ONLY valid JSON (no markdown, no code fences). Exact schema:
+STEP 2: CHECK MANDATORY KNOCKOUTS (Binary Kill-Switch)
+Explicitly check these 4 knockout questions. If ANY answer is "NO", immediately trigger KNOCKOUT.
+- Does the user meet the mandatory degree requirement? [Yes/No]
+- Does the user meet the mandatory license/cert requirement? [Yes/No]
+- Does the user meet the mandatory language requirement? [Yes/No]
+- Does the user meet the mandatory vertical tenure requirement (8+ years in that specific industry)? [Yes/No]
+
+IMPORTANT: Related or equivalent degrees count as meeting the requirement (e.g., BA Economics meets BCom requirement, BEng meets BSc requirement).
+
+IF KNOCKOUT TRIGGERED -> STOP. Set final_score = 25. SKIP to Step 6.
+
+STEP 3: CATEGORIZE QUESTIONS INTO 5 PILLARS & CALCULATE SCORES
+Group all questions from Step 1 into these 5 categories. For each pillar, calculate:
+Pillar_Score = (Number of "Yes" answers / Total questions in that pillar) * 100
+
+Pillar 1 - Industry Vertical (Weight 25%)
+Group: Questions about macro-sector, sub-vertical, target market, regulatory environment.
+Score = [0-100]
+CROSS-INDUSTRY EXEMPTION: For roles that are inherently cross-industry functions (HR, IT, Admin, Finance, Project Management), treat the Industry pillar as met (score = 100) regardless of the specific sector.
+
+Pillar 2 - Functional Discipline (Weight 30%)
+Group: Questions about daily tasks, sales motion (Hunter/Farmer/Channel), role archetype.
+Score = [0-100]
+
+Pillar 3 - Experience Depth & Scale (Weight 20%)
+Group: Questions about years of experience, deal size, team size, stakeholder level.
+Score = [0-100]
+
+Pillar 4 - Technical & Tool Competencies (Weight 15%)
+Group: Questions about specific tools, platforms, methodologies.
+Score = [0-100]
+
+Pillar 5 - Location & Mobility (Weight 10%)
+Group: Questions about geography, travel, work setup (Remote/Hybrid/On-site).
+Score = [0-100]
+
+STEP 4: APPLY RECRUITER TAXES (Strict Deductions)
+Check these taxes and deduct points if triggered. Be ruthless.
+
+- Hopper Tax (-15): Triggered IF 3+ jobs in last 5 years AND avg tenure < 18 months.
+- Overqualified Tax (-10): Triggered IF current title is significantly more senior than JD title.
+- Vague Achievement Tax (-10): Triggered IF CV has < 3 specific dollar or percentage figures.
+- No Degree Tax (-10): Triggered IF JD explicitly requires a degree AND CV has none.
+- Salary Mismatch Tax (-10): Triggered IF JD salary appears below market rate for CV's experience level.
+
+STEP 5: CALCULATE FINAL SCORE (Do the Math)
+Core_Raw = (Industry_Score * 0.25) + (Function_Score * 0.30) + (Scale_Score * 0.20) + (Tools_Score * 0.15) + (Location_Score * 0.10)
+Core_Score = Core_Raw * 0.95  (Apply 5% Competition Penalty)
+Total_Taxes = Sum of all tax deductions applied.
+Final_Score = Core_Score - Total_Taxes
+Final_Score = Max(0, Min(95, Final_Score))  (Cap between 0 and 95)
+
+STEP 6: RECRUITER VERDICT
+- IF Final_Score >= 75: "HIRE"
+- IF Final_Score >= 60 AND < 75: "INTERVIEW"
+- IF Final_Score < 60: "REJECT"
+
+---
+OUTPUT BLOCK (Strict JSON - No Markdown, No Extra Text)
 {
-  "score": number (0-100),
+  "score": number,
+  "knockout_fail": boolean,
+  "pillar_scores": { "industry": number, "function": number, "scale": number, "tools": number, "location": number },
+  "taxes_applied": ["Tax Name"],
+  "total_questions_asked": number,
+  "yes_answers": number,
+  "recruiter_verdict": "HIRE" | "INTERVIEW" | "REJECT",
   "estimated_salary": string,
-  "suggested_cv_name": string,
-  "match_summary": string,
-  "job_industry": string,
-  "industry_match": boolean,
-  "bullet_points": {
-    "industry": string,
-    "function": string,
-    "competition": string
-  }
+  "suggested_cv_name": string
 }`;
 
     try {
@@ -624,9 +680,10 @@ Return ONLY valid JSON (no markdown, no code fences). Exact schema:
       );
       const deepResult = JSON.parse(raw);
 
-      if (deepResult.industry_match === false && deepResult.score > 30) {
-        console.warn(`[AI] Industry mismatch: "${job.title}" at ${job.company_name} (candidate: ${profileIndustry}, job: ${deepResult.job_industry ?? "unknown"}, score: ${deepResult.score})`);
-      }
+      const questions = deepResult.total_questions_asked ?? 0;
+      const yes = deepResult.yes_answers ?? 0;
+      const verdict = deepResult.recruiter_verdict ?? (deepResult.score >= 75 ? "HIRE" : deepResult.score >= 60 ? "INTERVIEW" : "REJECT");
+      const autoSummary = `Verdict: ${verdict} — Met ${yes} of ${questions} requirements.${deepResult.taxes_applied?.length ? " Taxes: " + deepResult.taxes_applied.join(", ") + "." : ""}`;
 
       outputs.push({
         user_id: user.id,
@@ -636,7 +693,7 @@ Return ONLY valid JSON (no markdown, no code fences). Exact schema:
         location: job.location,
         estimated_salary: deepResult.estimated_salary || batchResult?.estimated_salary || "",
         match_score: deepResult.score,
-        match_summary: deepResult.match_summary || batchResult?.reason || "",
+        match_summary: autoSummary,
         verdict_bullets: deepResult.bullet_points || null,
         job_url: jobUrl,
         full_spec: fullSpec,
@@ -646,6 +703,12 @@ Return ONLY valid JSON (no markdown, no code fences). Exact schema:
         posted_at: (job as any)._postedAt ?? "",
         posted_at_ms: (job as any)._postedAtMs ?? 0,
         suggested_cv: deepResult.suggested_cv_name || "",
+        knockout_fail: deepResult.knockout_fail ?? null,
+        pillar_scores: deepResult.pillar_scores ?? null,
+        taxes_applied: deepResult.taxes_applied ?? null,
+        total_questions_asked: questions > 0 ? questions : null,
+        yes_answers: yes > 0 ? yes : null,
+        recruiter_verdict: verdict,
       });
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
@@ -654,22 +717,17 @@ Return ONLY valid JSON (no markdown, no code fences). Exact schema:
       let fallbackSummary = batchResult?.reason || "Analysis unavailable";
       let fallbackSalary = batchResult?.estimated_salary || "";
       try {
-        const retryPrompt = `You are a Recruitment Auditor AI. Score this job match for the candidate.
+        const retryPrompt = `You are a Recruitment Auditor AI. Score this job match for the candidate using a simplified formula.
 
 CANDIDATE INDUSTRY: ${profileIndustry || "Unknown"}
 
-SCORING:
-- 0–30: Total mismatch in industry, sector, or core capabilities.
-- 31–59: Some transferable skills but significant gaps.
-- 60–74: Good foundation but lacks a critical requirement.
-- 75–100: Exceptional match — direct alignment.
-
-INDUSTRY MATCH RULES:
-- If the job's industry is clearly different from the candidate's industry (e.g. Healthcare vs Construction), the score MUST NOT exceed 30.
-- Functions like HR, IT, Admin, Finance, or Project Management can span multiple industries.
+Evaluate across 5 pillars (each 0-100): Industry (25%), Function (30%), Scale (20%), Tools (15%), Location (10%).
+Then apply these deductions if warranted: Hopper Tax (-15), Overqualified Tax (-10), Vague Achievement Tax (-10), No Degree Tax (-10), Salary Mismatch Tax (-10).
+Final Score = sum(weighted pillars) * 0.95 - total taxes. Cap at 0-95.
+Knockout (score=25) if a mandatory degree, license, or language requirement is clearly unmet.
 
 Return ONLY valid JSON (no markdown, no code fences):
-{ "score": number (0-100), "estimated_salary": string, "match_summary": string, "suggested_cv_name": string }`;
+{ "score": number, "knockout_fail": boolean, "pillar_scores": { "industry": number, "function": number, "scale": number, "tools": number, "location": number }, "taxes_applied": [string], "total_questions_asked": number, "yes_answers": number, "recruiter_verdict": "HIRE"|"INTERVIEW"|"REJECT", "estimated_salary": string, "suggested_cv_name": string }`;
         const retryRaw = await callAIWithFallback(
           retryPrompt,
           `Candidate Profile:\n${profileContext}\n\nFull Job Specification:\n${fullSpec}\n\nJob Title: ${job.title}\nCompany: ${job.company_name}\nLocation: ${job.location}`,
@@ -678,7 +736,9 @@ Return ONLY valid JSON (no markdown, no code fences):
         );
         const retryResult = JSON.parse(retryRaw);
         fallbackScore = retryResult.score ?? fallbackScore;
-        fallbackSummary = retryResult.match_summary || fallbackSummary;
+        fallbackSummary = retryResult.recruiter_verdict
+          ? `Verdict: ${retryResult.recruiter_verdict} — Met ${retryResult.yes_answers ?? "?"} of ${retryResult.total_questions_asked ?? "?"} requirements.`
+          : (retryResult.match_summary || fallbackSummary);
         fallbackSalary = retryResult.estimated_salary || fallbackSalary;
         debugLog(`[AI] Pass 2 retry succeeded for "${job.title}" at ${job.company_name}`);
       } catch {
@@ -702,6 +762,12 @@ Return ONLY valid JSON (no markdown, no code fences):
         posted_at: (job as any)._postedAt ?? "",
         posted_at_ms: (job as any)._postedAtMs ?? 0,
         suggested_cv: "",
+        knockout_fail: null,
+        pillar_scores: null,
+        taxes_applied: null,
+        total_questions_asked: null,
+        yes_answers: null,
+        recruiter_verdict: null,
       });
     }
 
@@ -716,6 +782,9 @@ Return ONLY valid JSON (no markdown, no code fences):
         search_query: lastResult.search_query, domain_verified: lastResult.domain_verified,
         domain_unverified_reason: lastResult.domain_unverified_reason, posted_at: lastResult.posted_at,
         suggested_cv: lastResult.suggested_cv, verdict_bullets: lastResult.verdict_bullets,
+        knockout_fail: lastResult.knockout_fail, pillar_scores: lastResult.pillar_scores,
+        taxes_applied: lastResult.taxes_applied, total_questions_asked: lastResult.total_questions_asked,
+        yes_answers: lastResult.yes_answers, recruiter_verdict: lastResult.recruiter_verdict,
       };
       dataClient.from("job_results").insert(row).then(({ error }: any) => {
         if (error) console.error("[SEARCH] Failed to insert incremental result:", error.message);
@@ -940,6 +1009,36 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ results: [], code: "NO_TITLES", message: "Add job titles to your search profile first." });
       }
 
+      // Auto-generate industry if missing (runs in parallel with CV downloads)
+      let industryPromise: Promise<string | null> = Promise.resolve(null);
+      if (!profileIndustry && titles.length > 0) {
+        industryPromise = (async () => {
+          try {
+            const industryRaw = await callAIWithFallback(
+              `Based on the given job titles, determine the single most likely industry the candidate works in.
+Rules:
+- Return one concise word or short phrase (e.g. "Fintech", "Healthcare", "SaaS", "E-commerce", "Construction", "Education", "Logistics").
+- Do NOT include the job titles in your response. Just the industry.
+- If unclear, use the most specific industry that fits.
+Return ONLY valid JSON (no markdown, no code fences):
+{ "industry": string }`,
+              `Job titles: ${JSON.stringify(titles)}`,
+              "auto-generate industry",
+              { responseMimeType: "application/json", temperature: 0.3 }
+            );
+            const cleaned = industryRaw.slice(industryRaw.indexOf("{"), industryRaw.lastIndexOf("}") + 1);
+            const industry = JSON.parse(cleaned).industry?.trim() ?? "";
+            if (industry && profile_id) {
+              dataClient.from("search_profiles").update({ industry })
+                .eq("id", profile_id).eq("user_id", user.id)
+                .then(() => {}, () => {});
+              return industry;
+            }
+          } catch {}
+          return null;
+        })();
+      }
+
       // Load CV texts
       let cvTexts: { name: string; text: string }[] = [];
       const cvDownloads = cvVariations.map(async (cv) => {
@@ -957,8 +1056,14 @@ export async function POST(request: NextRequest) {
         } catch {}
         return null;
       });
-      const results = await Promise.all(cvDownloads);
-      cvTexts = results.filter((r): r is { name: string; text: string } => r !== null);
+      const [cvResults, generatedIndustry] = await Promise.all([
+        Promise.all(cvDownloads),
+        industryPromise,
+      ]);
+      cvTexts = cvResults.filter((r): r is { name: string; text: string } => r !== null);
+      if (generatedIndustry) {
+        profileIndustry = generatedIndustry;
+      }
 
       const cvText = cvTexts.map(cv => cv.text).join("\n\n---\n\n");
       debugLog(`[SEARCH] CV variations: ${cvTexts.length}, total text length: ${cvText.length}, titles: ${titles.length}`);
@@ -1338,6 +1443,9 @@ Return ONLY a JSON array of strings. No explanation.`;
               search_query: r.search_query, domain_verified: r.domain_verified,
               domain_unverified_reason: r.domain_unverified_reason, posted_at: r.posted_at,
               suggested_cv: r.suggested_cv, verdict_bullets: r.verdict_bullets,
+              knockout_fail: r.knockout_fail, pillar_scores: r.pillar_scores,
+              taxes_applied: r.taxes_applied, total_questions_asked: r.total_questions_asked,
+              yes_answers: r.yes_answers, recruiter_verdict: r.recruiter_verdict,
             }));
             dataClient.from("job_results").insert(rows).then(({ error }: any) => {
               if (error) console.error("[PF] Failed to insert job results:", error.message);

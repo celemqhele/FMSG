@@ -40,6 +40,12 @@ interface JobResult {
   domain_unverified_reason?: string;
   suggested_cv?: string;
   created_at?: string;
+  knockout_fail?: boolean | null;
+  pillar_scores?: { industry: number; function: number; scale: number; tools: number; location: number } | null;
+  taxes_applied?: string[] | null;
+  total_questions_asked?: number | null;
+  yes_answers?: number | null;
+  recruiter_verdict?: string | null;
 }
 
 interface HistoryResult {
@@ -56,6 +62,12 @@ interface HistoryResult {
   domain_verified?: boolean;
   domain_unverified_reason?: string;
   suggested_cv?: string;
+  knockout_fail?: boolean | null;
+  pillar_scores?: { industry: number; function: number; scale: number; tools: number; location: number } | null;
+  taxes_applied?: string[] | null;
+  total_questions_asked?: number | null;
+  yes_answers?: number | null;
+  recruiter_verdict?: string | null;
 }
 
 interface Balances {
@@ -698,6 +710,12 @@ export default function DashboardPage() {
                       domainVerified={r.domain_verified ?? true}
                       domainUnverifiedReason={r.domain_unverified_reason ?? ""}
                       suggestedCvName={r.suggested_cv ?? ""}
+                      knockoutFail={r.knockout_fail}
+                      pillarScores={r.pillar_scores}
+                      taxesApplied={r.taxes_applied}
+                      totalQuestionsAsked={r.total_questions_asked}
+                      yesAnswers={r.yes_answers}
+                      recruiterVerdict={r.recruiter_verdict}
                       onDelete={handleDelete}
                     />
                 ))}
@@ -743,6 +761,12 @@ export default function DashboardPage() {
                   domainVerified={r.domain_verified ?? true}
                   domainUnverifiedReason={r.domain_unverified_reason ?? ""}
                   suggestedCvName={r.suggested_cv ?? ""}
+                  knockoutFail={r.knockout_fail}
+                  pillarScores={r.pillar_scores}
+                  taxesApplied={r.taxes_applied}
+                  totalQuestionsAsked={r.total_questions_asked}
+                  yesAnswers={r.yes_answers}
+                  recruiterVerdict={r.recruiter_verdict}
                   onDelete={(id) => setHistoryResults((prev) => prev.filter((x) => x.id !== id))}
                 />
               ))}
