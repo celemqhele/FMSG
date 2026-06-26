@@ -6,6 +6,8 @@ import { callAIWithFallback, lastAITier } from "@/lib/gemini";
 import { StreamWriter, type SearchEvent } from "@/lib/search-stream";
 import { debugLog } from "@/lib/debug";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { broadenIndustry } from "@/data/industries";
+import { broadenTitle, broadenTitleMax } from "@/data/titles";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -1237,55 +1239,97 @@ Return ONLY valid JSON (no markdown, no code fences):
             return;
           }
 
-          // === PERSISTENT FINDER MODE (adaptive OR, per-round checkpoint) ===
-          const MAX_ROUNDS = 3;
-          const STOP_THRESHOLD = 80;
-          const STOP_COUNT = 5;
+          // === PERSISTENT FINDER MODE (laddered broadening, 5 deterministic rounds) ===
+          const PF_TIME_LIMIT_MS = 240_000; // 4 min total
+          const pfStartTime = Date.now();
 
           const pfTitles = state.titles;
           const pfLocation = state.profileLocation;
-          const pfIndustry = state.profileIndustry;
+          let pfIndustry = state.profileIndustry;
           const pfCvTexts = state.cvTexts;
-          const pfCvText = state.cvText;
           const pfBannedJobs = state.bannedJobs;
           const pfBannedCompanies = state.bannedCompanies;
           const pfDedupSets = state.dedupSets;
 
-          let allResults: JobRow[] = isContinuation ? (state.allResults || []) : [];
-          const pfFilteredCounts = isContinuation
-            ? (state.pfFilteredCounts || { history: 0, saved: 0, rejected: 0, blocked: 0 })
-            : { history: 0, saved: 0, rejected: 0, blocked: 0 };
-          const seenUrls = new Set<string>(
-            isContinuation ? (state.seenUrls || []) : [...pfDedupSets.history, ...pfDedupSets.saved, ...pfDedupSets.blocked]
-          );
-          let activeTitles = isContinuation ? (state.activeTitles || [...pfTitles]) : [...pfTitles];
-          const usedTitles = new Set<string>(isContinuation ? (state.usedTitles || pfTitles) : pfTitles);
-          const usedQueries = new Set<string>(isContinuation ? (state.usedQueries || []) : []);
-          let pfRound = isContinuation ? (state.nextRound - 1) : 0;
-          let pfAborted = isContinuation ? (state.pfAborted || false) : false;
+          // Auto-generate PF industry if missing (mirrors normal search)
+          if (!pfIndustry && pfTitles.length > 0) {
+            try {
+              const industryRaw = await callAIWithFallback(
+                `Based on the given job titles, determine the single most likely industry the candidate works in.
+Rules:
+- Return one concise word or short phrase.
+- Do NOT include the job titles in your response. Just the industry.
+- If unclear, use the most specific industry that fits.
+Return ONLY valid JSON (no markdown, no code fences):
+{ "industry": string }`,
+                `Job titles: ${JSON.stringify(pfTitles)}`,
+                "PF auto-generate industry",
+                { responseMimeType: "application/json", temperature: 0.3 }
+              );
+              const cleaned = industryRaw.slice(industryRaw.indexOf("{"), industryRaw.lastIndexOf("}") + 1);
+              pfIndustry = JSON.parse(cleaned).industry?.trim() ?? "";
+            } catch { /* proceed without industry */ }
+          }
 
-          for (let round = pfRound; round < MAX_ROUNDS; round++) {
-            pfRound = round + 1;
+          // Title tiers: specific → broad → broadest
+          const titleTiers: Record<string, string[]> = {
+            specific: pfTitles,
+            broad: pfTitles.map((t: string) => broadenTitle(t)).filter((t: string, i: number, a: string[]) => a.indexOf(t) === i),
+            broadest: pfTitles.map((t: string) => broadenTitleMax(t)).filter((t: string, i: number, a: string[]) => a.indexOf(t) === i),
+          };
 
-            if (activeTitles.length === 0) {
-              debugLog(`[PF] Round ${pfRound}/${MAX_ROUNDS}: no titles to search — stopping`);
+          // Industry tiers: specific → broad → broadest
+          const industryTiers: Record<string, string> = {
+            specific: pfIndustry,
+            broad: broadenIndustry(pfIndustry, 1),
+            broadest: broadenIndustry(pfIndustry, 2),
+          };
+
+          // Round ladder
+          const rounds = [
+            { id: 1, titleTier: "specific" as const, industryTier: "specific" as const },
+            { id: 2, titleTier: "broad" as const, industryTier: "specific" as const },
+            { id: 3, titleTier: "broadest" as const, industryTier: "specific" as const },
+            { id: 4, titleTier: "broad" as const, industryTier: "broad" as const },
+            { id: 5, titleTier: "broadest" as const, industryTier: "broadest" as const },
+          ];
+
+          const allResults: JobRow[] = [];
+          const pfFilteredCounts = { history: 0, saved: 0, rejected: 0, blocked: 0 };
+          const seenUrls = new Set<string>([...pfDedupSets.history, ...pfDedupSets.saved, ...pfDedupSets.blocked]);
+          const usedQueries = new Set<string>();
+          let pfRoundsExecuted = 0;
+          let pfAborted = false;
+
+          for (const round of rounds) {
+            if (Date.now() - pfStartTime > PF_TIME_LIMIT_MS) {
+              debugLog(`[PF] Time limit reached — stopping after ${pfRoundsExecuted} rounds`);
+              pfAborted = true;
               break;
             }
 
-            const orQuery = buildOrQuery(activeTitles);
-            const fullQuery = [orQuery, pfLocation].filter(Boolean).join(" in ");
+            const titles = titleTiers[round.titleTier];
+            const industry = industryTiers[round.industryTier];
+
+            if (titles.length === 0) {
+              debugLog(`[PF] Round ${round.id}: no titles for "${round.titleTier}" tier — skipping`);
+              continue;
+            }
+
+            const titleQuery = buildOrQuery(titles);
+            const industryPart = industry ? `"${industry}"` : "";
+            const fullQuery = [titleQuery, industryPart, pfLocation ? `in ${pfLocation}` : ""].filter(Boolean).join(" ");
 
             if (usedQueries.has(fullQuery)) {
-              debugLog(`[PF] Round ${pfRound}/${MAX_ROUNDS}: skipping duplicate query "${fullQuery}"`);
+              debugLog(`[PF] Round ${round.id}: skipping duplicate query "${fullQuery}"`);
               continue;
             }
             usedQueries.add(fullQuery);
 
-            debugLog(`[PF] Round ${pfRound}/${MAX_ROUNDS}: "${fullQuery}"`);
-            sendStatus({ type: "pf_round", round: pfRound, max: MAX_ROUNDS, query: fullQuery, progress: Math.min((pfRound / MAX_ROUNDS) * 90, 90) });
+            debugLog(`[PF] Round ${round.id}/5 [${round.titleTier} titles, ${round.industryTier} industry]: "${fullQuery}"`);
+            sendStatus({ type: "pf_round", round: round.id, max: 5, query: fullQuery, progress: Math.min((round.id / 5) * 85, 85) });
 
-            if (lastAITier === "openrouter") {
-              debugLog("[PF] On OpenRouter tier — using 3s delay between rounds");
+            if (pfRoundsExecuted > 0 && lastAITier === "openrouter") {
               await sleep(3000);
             }
 
@@ -1293,7 +1337,7 @@ Return ONLY valid JSON (no markdown, no code fences):
               const pfHiddenKeys = state.hiddenJobKeys ? new Set<string>(state.hiddenJobKeys as string[]) : undefined;
               const filtered = await fetchAndFilterJobs(
                 fullQuery, pfLocation, user, searchId,
-                pfBannedJobs, pfBannedCompanies, dataClient, sendStatus, pfRound,
+                pfBannedJobs, pfBannedCompanies, dataClient, sendStatus, round.id,
                 pfHiddenKeys
               );
 
@@ -1305,9 +1349,9 @@ Return ONLY valid JSON (no markdown, no code fences):
                   filtered.rawJobs, filtered.jobSpecs, filtered.jobUrls, filtered.queryUsed,
                   pfLocation, pfIndustry, pfTitles, pfCvTexts,
                   user, searchId, dataClient, pfBannedJobs, pfBannedCompanies,
-                  sendStatus, pfRound,
+                  sendStatus, round.id,
                   { history: new Set(pfDedupSets.history), saved: new Set(pfDedupSets.saved), blocked: new Set(pfDedupSets.blocked), rejected: new Set(pfDedupSets.rejected ?? []) },
-                  startTime
+                  pfStartTime
                 );
                 roundResults = result.results;
                 roundFilteredCounts = result.filteredCounts;
@@ -1325,114 +1369,56 @@ Return ONLY valid JSON (no markdown, no code fences):
                 }
               }
 
-              debugLog(`[PF] Round ${pfRound}: ${roundResults.length} valid (total unique: ${allResults.length})`);
+              pfRoundsExecuted++;
+              debugLog(`[PF] Round ${round.id}: ${roundResults.length} valid (total unique: ${allResults.length})`);
 
-              const highScoreCount = allResults.filter((r) => r.match_score >= STOP_THRESHOLD).length;
-              if (highScoreCount >= STOP_COUNT) {
-                debugLog(`[PF] Stopping early — ${highScoreCount} jobs >= ${STOP_THRESHOLD} (round ${pfRound})`);
+              const highScoreCount = allResults.filter((r) => (r.match_score ?? 0) >= 80).length;
+              if (highScoreCount >= 5) {
+                debugLog(`[PF] Stopping early — ${highScoreCount} jobs >= 80 (round ${round.id})`);
                 break;
               }
-
-              const isLastRound = pfRound >= MAX_ROUNDS;
-              if (isLastRound) break;
-
-              // Generate new title variations
-              const variationPrompt = `You are a job search strategist. The candidate's original job titles are: ${JSON.stringify(pfTitles)}.
-The following titles were just searched and didn't return enough valid results: ${JSON.stringify(activeTitles)}.
-Previous titles already tried: ${JSON.stringify([...usedTitles])}.
-Round feedback: ${roundResults.length} valid jobs found.
-Banned companies: ${pfBannedCompanies.join(", ") || "none"}.
-
-Generate 3-4 NEW job title variations that are related BUT DIFFERENT from the ones already tried. Suggest alternative phrasings, adjacent roles, or more specific titles. Avoid titles likely to hit blocked companies or similar dead ends.
-Return ONLY a JSON array of strings. No explanation.`;
-
-              try {
-                const variationResult = await callAIWithFallback(
-                  variationPrompt,
-                  `Candidate original titles: ${JSON.stringify(pfTitles)}\nLocation: ${pfLocation}\nCV summary: ${(pfCvText || "No CV").slice(0, 500)}`,
-                  `PF round ${pfRound} title variation`,
-                  { responseMimeType: "application/json", temperature: 0.7 }
-                );
-                const parsed = JSON.parse(variationResult);
-                const newTitles = unwrapArray(parsed) as string[];
-                const freshTitles = newTitles.filter(t => !usedTitles.has(t));
-                if (freshTitles.length > 0) {
-                  activeTitles = freshTitles;
-                  freshTitles.forEach(t => usedTitles.add(t));
-                  debugLog(`[PF] New titles for round ${pfRound + 1}: ${activeTitles.join(", ")}`);
-                } else {
-                  debugLog(`[PF] AI returned only already-tried titles — keeping current`);
-                }
-              } catch {
-                debugLog(`[PF] AI title generation failed — keeping current titles`);
-              }
-
-              // Pause after round — send continuation to client
-              
-              // Check if we have enough good results to stop early
-              const highQualityResults = allResults.filter(r => r.match_score >= 75);
-              if (highQualityResults.length >= 5) {
-                debugLog(`[PF] Found ${highQualityResults.length} high-quality results — stopping early.`);
-                break;
-              }
-
-              sendComplete({
-                type: "pause",
-                message: roundResults.length > 0
-                  ? `Round ${pfRound} complete — ${allResults.length} results so far. Continue to round ${pfRound + 1}?`
-                  : `Round ${pfRound} found no matches. Continue to round ${pfRound + 1}?`,
-                progress: Math.min((pfRound / MAX_ROUNDS) * 90, 90),
-                  continuation: Buffer.from(JSON.stringify({
-                    mode: "pf",
-                    nextRound: pfRound + 1,
-                    allResults,
-                    seenUrls: [...seenUrls],
-                    activeTitles,
-                    usedTitles: [...usedTitles],
-                    usedQueries: [...usedQueries],
-                    pfFilteredCounts,
-                    searchId,
-                    titles: pfTitles,
-                    profileLocation: pfLocation,
-                    profileIndustry: pfIndustry,
-                    cvTexts: pfCvTexts,
-                    bannedJobs: pfBannedJobs,
-                    bannedCompanies: pfBannedCompanies,
-                    hiddenJobKeys: state.hiddenJobKeys ?? [],
-                    dedupSets: { history: [...pfDedupSets.history], saved: [...pfDedupSets.saved], blocked: [...pfDedupSets.blocked] },
-                })).toString("base64"),
-              });
-              writer.close();
-              return; // Stream ends here, client resumes via /api/search/continue
             } catch (err) {
               const errMsg = err instanceof Error ? err.message : String(err);
-              debugLog(`[PF] Round ${pfRound} failed — error: ${errMsg}`);
-              pfAborted = true;
-              break;
+              debugLog(`[PF] Round ${round.id} failed — error: ${errMsg}`);
+              pfRoundsExecuted++;
             }
           }
 
-          // Finalize (reached after last round or early stop)
+          // Sort by score (descending), domain-verified first
           allResults.sort((a, b) => {
             if (a.domain_verified !== b.domain_verified) return a.domain_verified ? -1 : 1;
-            return b.posted_at_ms - a.posted_at_ms;
+            return (b.match_score ?? 0) - (a.match_score ?? 0);
           });
 
-          debugLog(`[PF] Total unique results: ${allResults.length}`);
+          debugLog(`[PF] Total unique: ${allResults.length} across ${pfRoundsExecuted} rounds`);
+
+          const topTier = allResults.filter(r => r.match_score >= 75);
+          const midTier = allResults.filter(r => r.match_score >= 60 && r.match_score < 75);
+          const lowTier = allResults.filter(r => r.match_score < 60);
 
           const pfTotalFiltered = pfFilteredCounts.history + pfFilteredCounts.saved + pfFilteredCounts.rejected + pfFilteredCounts.blocked;
           if (pfTotalFiltered > 0) {
-            writer.send({ type: "filtered_summary", ...pfFilteredCounts, progress: 50 });
+            writer.send({ type: "filtered_summary", ...pfFilteredCounts, progress: 90 });
           }
 
           if (allResults.length > 0) {
             const withIds = allResults.map((r) => ({ ...r, id: crypto.randomUUID() }));
 
             const pfMessage = pfAborted
-              ? `Search stopped early due to high demand — showing ${allResults.length} result${allResults.length === 1 ? "" : "s"} found so far`
+              ? `Search stopped early — showing ${allResults.length} results found so far`
               : undefined;
 
-            sendComplete({ type: "complete", results: withIds.map(normalize), progress: 100, pf_mode: true, pf_rounds: pfRound, ...(pfTotalFiltered > 0 ? { filtered_summary: pfFilteredCounts } : {}), ...(pfMessage ? { message: pfMessage } : {}) });
+            sendComplete({
+              type: "complete",
+              results: withIds.map(normalize),
+              progress: 100,
+              pf_mode: true,
+              pf_rounds: pfRoundsExecuted,
+              pf_tiers: { hire: topTier.length, interview: midTier.length, reject: lowTier.length },
+              pf_summary: { totalFound: allResults.length, highCount: topTier.length, midCount: midTier.length, lowCount: lowTier.length, roundsExecuted: pfRoundsExecuted },
+              ...(pfTotalFiltered > 0 ? { filtered_summary: pfFilteredCounts } : {}),
+              ...(pfMessage ? { message: pfMessage } : {}),
+            });
 
             const rows = withIds.map((r) => ({
               id: r.id,
@@ -1452,9 +1438,9 @@ Return ONLY a JSON array of strings. No explanation.`;
             });
           } else {
             const noResultsMessage = pfAborted
-              ? "Search stopped early due to high demand — no results were found. Try again later."
+              ? "Search stopped early — no results were found. Try again later."
               : "Persistent Finder completed but found no matches. Try different profile keywords.";
-            sendComplete({ type: "complete", results: [], progress: 100, message: noResultsMessage, pf_mode: true, pf_rounds: pfRound });
+            sendComplete({ type: "complete", results: [], progress: 100, message: noResultsMessage, pf_mode: true, pf_rounds: pfRoundsExecuted });
           }
 
           writer.close();
