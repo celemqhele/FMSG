@@ -553,7 +553,7 @@ Return ONLY valid JSON (no markdown, no code fences):
           { responseMimeType: "application/json", temperature: 0.1, maxOutputTokens: 1024 }
         );
         const parsed = JSON.parse(rawSingle);
-        batchResults.push({ index: i, ...parsed });
+        batchResults.push({ index: i, score: Math.round(parsed.score), reason: parsed.reason, estimated_salary: parsed.estimated_salary });
       } catch {
         batchResults.push({ index: i, score: 30, reason: "Screening unavailable", estimated_salary: "" });
       }
@@ -694,7 +694,7 @@ OUTPUT BLOCK (Strict JSON - No Markdown, No Extra Text)
         company: job.company_name,
         location: job.location,
         estimated_salary: deepResult.estimated_salary || batchResult?.estimated_salary || "",
-        match_score: deepResult.score,
+        match_score: Math.round(deepResult.score),
         match_summary: autoSummary,
         verdict_bullets: deepResult.bullet_points || null,
         job_url: jobUrl,
@@ -715,7 +715,7 @@ OUTPUT BLOCK (Strict JSON - No Markdown, No Extra Text)
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       debugLog(`[AI] Pass 2 failed for "${job.title}" at ${job.company_name}: ${errMsg.slice(0, 150)}`);
-      let fallbackScore = batchResult?.score ?? 30;
+      let fallbackScore = batchResult?.score != null ? Math.round(batchResult.score) : 30;
       let fallbackSummary = batchResult?.reason || "Analysis unavailable";
       let fallbackSalary = batchResult?.estimated_salary || "";
       try {
@@ -737,7 +737,7 @@ Return ONLY valid JSON (no markdown, no code fences):
           { responseMimeType: "application/json", temperature: 0.1, maxOutputTokens: 1024 }
         );
         const retryResult = JSON.parse(retryRaw);
-        fallbackScore = retryResult.score ?? fallbackScore;
+        fallbackScore = retryResult.score != null ? Math.round(retryResult.score) : fallbackScore;
         fallbackSummary = retryResult.recruiter_verdict
           ? `Verdict: ${retryResult.recruiter_verdict} — Met ${retryResult.yes_answers ?? "?"} of ${retryResult.total_questions_asked ?? "?"} requirements.`
           : (retryResult.match_summary || fallbackSummary);
