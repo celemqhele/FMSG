@@ -1386,7 +1386,6 @@ Return ONLY valid JSON (no markdown, no code fences):
             }
 
             const titles = titleTiers[round.titleTier];
-            const industry = industryTiers[round.industryTier];
 
             if (titles.length === 0) {
               debugLog(`[PF] Round ${round.id}: no titles for "${round.titleTier}" tier, skipping`);
@@ -1394,8 +1393,7 @@ Return ONLY valid JSON (no markdown, no code fences):
             }
 
             const titleQuery = buildOrQuery(titles);
-            const industryPart = industry ? `"${industry}"` : "";
-            const fullQuery = [titleQuery, industryPart, pfLocation ? `in ${pfLocation}` : ""].filter(Boolean).join(" ");
+            const fullQuery = [titleQuery, pfLocation ? `in ${pfLocation}` : ""].filter(Boolean).join(" ");
 
             if (usedQueries.has(fullQuery)) {
               debugLog(`[PF] Round ${round.id}: skipping duplicate query "${fullQuery}"`);
