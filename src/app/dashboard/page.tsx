@@ -36,8 +36,6 @@ interface JobResult {
   verdict_bullets?: { industry: string; function: string; competition: string } | null;
   job_url: string;
   full_description: string;
-  domain_verified?: boolean;
-  domain_unverified_reason?: string;
   suggested_cv?: string;
   created_at?: string;
   knockout_fail?: boolean | null;
@@ -59,8 +57,6 @@ interface HistoryResult {
   verdict_bullets?: { industry: string; function: string; competition: string } | null;
   job_url: string;
   full_spec: string;
-  domain_verified?: boolean;
-  domain_unverified_reason?: string;
   suggested_cv?: string;
   knockout_fail?: boolean | null;
   pillar_scores?: { industry: number; function: number; scale: number; tools: number; location: number } | null;
@@ -223,14 +219,12 @@ export default function DashboardPage() {
 
   // Filter + sort state
   const [filterState, setFilterState] = useState<FilterState>({
-    trusted: true, untrusted: true, scoreHigh: true, scoreMid: true, scoreLow: true,
+    scoreHigh: true, scoreMid: true, scoreLow: true,
   });
   const [sortMode, setSortMode] = useState<SortMode>("score");
 
   const filteredResults = useMemo(() => {
     let filtered = results.filter((r) => {
-      if (!filterState.trusted && r.domain_verified) return false;
-      if (!filterState.untrusted && !r.domain_verified) return false;
       const s = r.match_score;
       if (!filterState.scoreHigh && s >= 80) return false;
       if (!filterState.scoreMid && s >= 40 && s < 80) return false;
@@ -707,8 +701,6 @@ export default function DashboardPage() {
                       verdictBullets={r.verdict_bullets}
                       jobUrl={r.job_url}
                       fullDescription={r.full_description}
-                      domainVerified={r.domain_verified ?? true}
-                      domainUnverifiedReason={r.domain_unverified_reason ?? ""}
                       suggestedCvName={r.suggested_cv ?? ""}
                       knockoutFail={r.knockout_fail}
                       pillarScores={r.pillar_scores}
@@ -758,8 +750,6 @@ export default function DashboardPage() {
                   verdictBullets={r.verdict_bullets}
                   jobUrl={r.job_url}
                   fullDescription={r.full_spec}
-                  domainVerified={r.domain_verified ?? true}
-                  domainUnverifiedReason={r.domain_unverified_reason ?? ""}
                   suggestedCvName={r.suggested_cv ?? ""}
                   knockoutFail={r.knockout_fail}
                   pillarScores={r.pillar_scores}

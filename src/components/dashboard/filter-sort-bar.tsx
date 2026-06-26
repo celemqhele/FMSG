@@ -4,8 +4,6 @@ import { useState, useCallback } from "react";
 import { Filter, ArrowUpDown, Check } from "lucide-react";
 
 export interface FilterState {
-  trusted: boolean;
-  untrusted: boolean;
   scoreHigh: boolean;
   scoreMid: boolean;
   scoreLow: boolean;
@@ -21,8 +19,6 @@ interface FilterSortBarProps {
 }
 
 const FILTER_LABELS: Record<keyof FilterState, string> = {
-  trusted: "Trusted domains",
-  untrusted: "Untrusted domains",
   scoreHigh: "Score >= 80",
   scoreMid: "Score 40-79",
   scoreLow: "Score < 40",

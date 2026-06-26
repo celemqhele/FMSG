@@ -43,18 +43,6 @@ async function fetchJinaPage(url: string, apiKey: string | null): Promise<string
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const TIME_LIMIT_MS = 270_000; // 270s — stop pass 2 with 30s buffer before 300s Vercel timeout
 
-// --- Domain trust tiers ---
-
-const HIGH_TRUST_DOMAINS = [
-  'linkedin.com',
-  'indeed.co.za',
-  'indeed.com',
-  'careers24.com',
-  'pnet.co.za',
-];
-
-const STANDARD_TRUST_DOMAINS: string[] = [];
-
 const SHORT_SPEC_THRESHOLD = 500;
 
 const BLOCKED_ATS_TRACKERS = [
@@ -150,39 +138,6 @@ function isExpired(text: string): boolean {
   return EXPIRED_PATTERNS.some((p) => lower.includes(p));
 }
 
-function isDomainVerified(url: string, postedAt?: string): { verified: boolean; reason?: string } {
-  const domain = extractDomain(url);
-  if (!domain) return { verified: false, reason: "no_domain" };
-
-  if (BLACKLISTED_DOMAINS.some((d) => domain === d || domain.endsWith(`.${d}`))) {
-    return { verified: false, reason: "blacklisted_domain" };
-  }
-
-  if (HIGH_TRUST_DOMAINS.some((d) => domain === d || domain.endsWith(`.${d}`))) {
-    if (postedAt) {
-      const posted = new Date(postedAt).getTime();
-      const cutoff = Date.now() - 45 * 24 * 60 * 60 * 1000;
-      if (isNaN(posted) || posted < cutoff) {
-        return { verified: false, reason: "stale_high_trust" };
-      }
-    }
-    return { verified: true };
-  }
-
-  if (STANDARD_TRUST_DOMAINS.some((d) => domain === d || domain.endsWith(`.${d}`))) {
-    if (postedAt) {
-      const posted = new Date(postedAt).getTime();
-      const cutoff = Date.now() - 21 * 24 * 60 * 60 * 1000;
-      if (isNaN(posted) || posted < cutoff) {
-        return { verified: false, reason: "stale_standard_trust" };
-      }
-    }
-    return { verified: true };
-  }
-
-  return { verified: false, reason: "untrusted_domain" };
-}
-
 function getSupabase() {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 }
@@ -200,8 +155,6 @@ interface JobRow {
   job_url: string;
   full_spec: string;
   search_query: string;
-  domain_verified: boolean;
-  domain_unverified_reason: string;
   posted_at: string;
   posted_at_ms: number;
   suggested_cv: string;
@@ -345,15 +298,7 @@ async function fetchAndFilterJobs(
   onStatus?.({ type: "found_results", count: rawJobs.length, progress: 20 });
 
   for (const j of rawJobs) {
-    const destUrl = buildJobUrl(j);
     const postedStr = (j as any).detected_extensions?.posted_at ?? (j as any).posted_at ?? "";
-    const result = isDomainVerified(destUrl, postedStr);
-    (j as any)._domainVerified = result.verified;
-    (j as any)._domainReason = result.verified
-      ? ""
-      : result.reason === "untrusted_domain"
-        ? `untrusted_domain: ${extractDomain(destUrl)}`
-        : result.reason;
     (j as any)._postedAt = postedStr;
     (j as any)._postedAtMs = parsePostedAt(postedStr) ?? 0;
   }
@@ -794,8 +739,6 @@ OUTPUT BLOCK (Strict JSON - No Markdown, No Extra Text)
         job_url: jobUrl,
         full_spec: fullSpec,
         search_query: query,
-        domain_verified: (job as any)._domainVerified ?? true,
-        domain_unverified_reason: (job as any)._domainReason ?? "",
         posted_at: (job as any)._postedAt ?? "",
         posted_at_ms: (job as any)._postedAtMs ?? 0,
         suggested_cv: deepResult.suggested_cv_name || "",
@@ -855,8 +798,6 @@ Return ONLY valid JSON (no markdown, no code fences):
         job_url: jobUrl,
         full_spec: fullSpec,
         search_query: query,
-        domain_verified: (job as any)._domainVerified ?? true,
-        domain_unverified_reason: (job as any)._domainReason ?? "",
         posted_at: (job as any)._postedAt ?? "",
         posted_at_ms: (job as any)._postedAtMs ?? 0,
         suggested_cv: "",
@@ -877,8 +818,7 @@ Return ONLY valid JSON (no markdown, no code fences):
         job_title: lastResult.job_title, company: lastResult.company, location: lastResult.location,
         estimated_salary: lastResult.estimated_salary, match_score: lastResult.match_score,
         match_summary: lastResult.match_summary, job_url: lastResult.job_url, full_spec: lastResult.full_spec,
-        search_query: lastResult.search_query, domain_verified: lastResult.domain_verified,
-        domain_unverified_reason: lastResult.domain_unverified_reason, posted_at: lastResult.posted_at,
+        search_query: lastResult.search_query, posted_at: lastResult.posted_at,
         suggested_cv: lastResult.suggested_cv, verdict_bullets: lastResult.verdict_bullets,
         knockout_fail: lastResult.knockout_fail, pillar_scores: lastResult.pillar_scores,
         taxes_applied: lastResult.taxes_applied, total_questions_asked: lastResult.total_questions_asked,
@@ -1597,7 +1537,6 @@ Return ONLY valid JSON (no markdown, no code fences).`,
 
           // Finalize
           allResults.sort((a, b) => {
-            if (a.domain_verified !== b.domain_verified) return a.domain_verified ? -1 : 1;
             return (b.match_score ?? 0) - (a.match_score ?? 0);
           });
 
@@ -1637,8 +1576,7 @@ Return ONLY valid JSON (no markdown, no code fences).`,
               job_title: r.job_title, company: r.company, location: r.location,
               estimated_salary: r.estimated_salary, match_score: r.match_score,
               match_summary: r.match_summary, job_url: r.job_url, full_spec: r.full_spec,
-              search_query: r.search_query, domain_verified: r.domain_verified,
-              domain_unverified_reason: r.domain_unverified_reason, posted_at: r.posted_at,
+              search_query: r.search_query, posted_at: r.posted_at,
               suggested_cv: r.suggested_cv, verdict_bullets: r.verdict_bullets,
               knockout_fail: r.knockout_fail, pillar_scores: r.pillar_scores,
               taxes_applied: r.taxes_applied, total_questions_asked: r.total_questions_asked,
