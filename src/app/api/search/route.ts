@@ -11,6 +11,34 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const JINA_API = process.env.JINA_API;
 
+async function fetchJinaPage(url: string, apiKey: string | null): Promise<string> {
+  const headers: Record<string, string> = {
+    "Accept": "application/json",
+    "X-Return-Format": "markdown",
+    "X-Remove-Images": "true",
+  };
+  if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+
+  const res = await fetch(`https://r.jina.ai/${encodeURIComponent(url)}`, { headers });
+
+  if (!res.ok) {
+    if (apiKey && (res.status === 429 || res.status === 403)) {
+      try {
+        const err = await res.json();
+        if (err.code?.startsWith("RATE_") || err.code?.startsWith("AUTHZ_")) {
+          return "";
+        }
+      } catch {}
+    }
+    return "";
+  }
+
+  try {
+    const json = await res.json();
+    if (json.code === 200 && json.data?.content) return json.data.content.trim();
+  } catch {}
+  return "";
+}
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const TIME_LIMIT_MS = 270_000; // 270s — stop pass 2 with 30s buffer before 300s Vercel timeout
@@ -399,10 +427,8 @@ async function fetchAndFilterJobs(
     let specText = "";
     if (jobUrl) {
       try {
-        const headers: Record<string, string> = {};
-        if (JINA_API) headers["Authorization"] = `Bearer ${JINA_API}`;
-        const jinaRes = await fetch(`https://r.jina.ai/${encodeURIComponent(jobUrl)}`, { headers });
-        if (jinaRes.ok) specText = (await jinaRes.text()).trim();
+        specText = await fetchJinaPage(jobUrl, JINA_API ?? null);
+        if (!specText && JINA_API) specText = await fetchJinaPage(jobUrl, null);
       } catch {}
     }
     if (!specText) {
