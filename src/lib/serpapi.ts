@@ -23,6 +23,7 @@ interface SerpParams {
   location?: string;
   hl?: string;
   gl?: string;
+  start?: number;
 }
 
 export async function searchGoogleJobs(params: SerpParams): Promise<SerpJob[]> {
@@ -33,6 +34,7 @@ export async function searchGoogleJobs(params: SerpParams): Promise<SerpJob[]> {
   if (params.location) url.searchParams.set("location", params.location);
   if (params.hl) url.searchParams.set("hl", params.hl);
   if (params.gl) url.searchParams.set("gl", params.gl);
+  if (params.start != null) url.searchParams.set("start", String(params.start));
 
   const fullUrl = url.toString();
   const safeUrl = fullUrl.replace(/api_key=[^&]+/, "api_key=***");

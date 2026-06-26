@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { searchGoogleJobs } from "@/lib/serpapi";
+import { searchGoogleJobs, type SerpJob } from "@/lib/serpapi";
 import { extractTextFromPDF } from "@/lib/pdf";
 import { callAIWithFallback, lastAITier } from "@/lib/gemini";
 import { StreamWriter, type SearchEvent } from "@/lib/search-stream";
@@ -9,7 +9,7 @@ import { checkRateLimit } from "@/lib/rate-limit";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const JINA_API_KEY = process.env.JINA_API_KEY;
+const JINA_API = process.env.JINA_API;
 
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -29,20 +29,8 @@ const STANDARD_TRUST_DOMAINS: string[] = [];
 
 const SHORT_SPEC_THRESHOLD = 500;
 
-const RECRUITMENT_KEYWORDS = [
-  'recruitment', 'recruiter', 'staffing', 'talent ', 'talent-',
-  'placement', 'personnel', 'employment agency', 'manpower',
-  'recruit', 'staffing solutions',
-];
-
 const BLOCKED_ATS_TRACKERS = [
   '#J-18808-Ljbffr',
-];
-
-const RECRUITMENT_SPEC_PATTERNS = [
-  /is seeking\s+(a|an)\s+/i,
-  /are looking for\s+(a|an)\s+/i,
-  /on behalf of\s+(a|an\s+)?(client|company|organisation|organization)/i,
 ];
 
 const BLACKLISTED_DOMAINS = [
@@ -257,6 +245,23 @@ Return ONLY a JSON array of strings with no duplicates. No explanation.`,
   }
 }
 
+const SERP_PAGE_SIZE = 10;
+
+async function fetchPaginatedJobs(params: { q: string; location?: string; hl?: string; gl?: string; start?: number }, maxPages: number): Promise<SerpJob[]> {
+  const all: SerpJob[] = [];
+  const seen = new Set<string>();
+  for (let p = 0; p < maxPages; p++) {
+    const jobs = await searchGoogleJobs({ ...params, start: p * SERP_PAGE_SIZE });
+    if (!jobs || jobs.length === 0) break;
+    for (const j of jobs) {
+      const key = `${j.title ?? ""}|${j.company_name ?? ""}`.toLowerCase();
+      if (!seen.has(key)) { seen.add(key); all.push(j); }
+    }
+    if (jobs.length < SERP_PAGE_SIZE) break;
+  }
+  return all;
+}
+
 async function fetchAndFilterJobs(
   query: string,
   profileLocation: string,
@@ -269,6 +274,7 @@ async function fetchAndFilterJobs(
   pfRound?: number,
   hiddenJobKeys?: Set<string>,
   maxAgeDays?: number,
+  maxPages?: number,
 ): Promise<{ rawJobs: any[]; jobSpecs: [number, string][]; jobUrls: [number, string][]; queryUsed: string }> {
   function sanitiseLocation(raw: string): string | undefined {
     if (!raw) return undefined;
@@ -287,15 +293,16 @@ async function fetchAndFilterJobs(
   });
 
   const serpParams = buildSerpParams(sanitisedLocation);
+  const pages = maxPages ?? 2;
 
-  let rawJobs: Awaited<ReturnType<typeof searchGoogleJobs>>;
+  let rawJobs: SerpJob[];
   try {
-    rawJobs = await searchGoogleJobs(serpParams);
+    rawJobs = await fetchPaginatedJobs(serpParams, pages);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.includes("(400)")) {
       try {
-        rawJobs = await searchGoogleJobs(buildSerpParams(undefined));
+        rawJobs = await fetchPaginatedJobs(buildSerpParams(undefined), pages);
       } catch {
         return { rawJobs: [], jobSpecs: [], jobUrls: [], queryUsed: query };
       }
@@ -383,30 +390,42 @@ async function fetchAndFilterJobs(
     dataClient.from("rejected_jobs").insert(rows).then((r: any) => r.error && debugLog('[SEARCH] Failed to log banned rejected:', r.error));
   }
 
-  rawJobs = rawJobs.filter((j) => !(j.description && isExpired(j.description)));
-  if (rawJobs.length === 0) return { rawJobs: [], jobSpecs: [], jobUrls: [], queryUsed: query };
-
-  rawJobs = rawJobs.filter((j) => !(j.description && BLOCKED_ATS_TRACKERS.some(t => j.description!.includes(t))));
-  if (rawJobs.length === 0) return { rawJobs: [], jobSpecs: [], jobUrls: [], queryUsed: query };
-
   const tempJobUrls = new Map<number, string>();
   const tempJobSpecs = new Map<number, string>();
   for (let i = 0; i < rawJobs.length; i++) {
     const job = rawJobs[i];
     const jobUrl = buildJobUrl(job);
     tempJobUrls.set(i, jobUrl);
-    let specText = job.description ?? "";
+    let specText = "";
     if (jobUrl) {
       try {
         const headers: Record<string, string> = {};
-        if (JINA_API_KEY) headers["Authorization"] = `Bearer ${JINA_API_KEY}`;
+        if (JINA_API) headers["Authorization"] = `Bearer ${JINA_API}`;
         const jinaRes = await fetch(`https://r.jina.ai/${encodeURIComponent(jobUrl)}`, { headers });
-        if (jinaRes.ok) specText = await jinaRes.text();
+        if (jinaRes.ok) specText = (await jinaRes.text()).trim();
       } catch {}
     }
-    tempJobSpecs.set(i, specText || job.description || "");
-    if (specText && isExpired(specText)) (job as any)._expired = true;
+    if (!specText) {
+      (job as any)._noSpec = true;
+      continue;
+    }
+    tempJobSpecs.set(i, specText);
+    if (isExpired(specText)) (job as any)._expired = true;
   }
+
+  const noSpecRejected = rawJobs.filter((j) => (j as any)._noSpec);
+  if (noSpecRejected.length > 0) {
+    const rows = noSpecRejected.map((j) => ({
+      user_id: user.id, search_id: searchId, search_query: query,
+      job_title: j.title, company: j.company_name, location: j.location ?? '',
+      snippet: '', job_url: buildJobUrl(j),
+      reason: 'jina_read_failed', rejection_category: 'ai', rejection_reason: 'jina_read_failed',
+      passed_domain_filter: false, passed_banned_filter: false,
+    }));
+    dataClient.from("rejected_jobs").insert(rows).then((r: any) => r.error && debugLog('[SEARCH] Failed to log no-spec rejected:', r.error));
+  }
+  rawJobs = rawJobs.filter((j) => !(j as any)._noSpec);
+  if (rawJobs.length === 0) return { rawJobs: [], jobSpecs: [], jobUrls: [], queryUsed: query };
 
   const preFilterUrls = new Map(tempJobUrls);
   const preFilterSpecs = new Map(tempJobSpecs);
@@ -416,7 +435,7 @@ async function fetchAndFilterJobs(
   for (let i = 0; i < rawJobs.length; i++) {
     const url = rebuiltUrls.get(i) ?? "";
     const origEntry = [...preFilterSpecs.entries()].find(([origIdx]) => preFilterUrls.get(origIdx) === url);
-    rebuiltSpecs.set(i, origEntry?.[1] ?? rawJobs[i].description ?? "");
+    rebuiltSpecs.set(i, origEntry?.[1] ?? "");
   }
 
   {
@@ -427,14 +446,6 @@ async function fetchAndFilterJobs(
       const spec = rebuiltSpecs.get(i) ?? "";
       if (BLOCKED_ATS_TRACKERS.some(t => spec.includes(t))) return;
       if (spec.length >= SHORT_SPEC_THRESHOLD) {
-        const newIdx = filtered.length;
-        filtered.push(j); filteredSpecs.set(newIdx, spec); filteredUrls.set(newIdx, buildJobUrl(j));
-        return;
-      }
-      const companyLower = (j.company_name ?? "").toLowerCase();
-      const isRecruitmentAgency = RECRUITMENT_KEYWORDS.some(kw => companyLower.includes(kw))
-        || RECRUITMENT_SPEC_PATTERNS.some(p => p.test(spec.slice(0, 500)));
-      if (!isRecruitmentAgency) {
         const newIdx = filtered.length;
         filtered.push(j); filteredSpecs.set(newIdx, spec); filteredUrls.set(newIdx, buildJobUrl(j));
       }
@@ -592,7 +603,7 @@ Return ONLY valid JSON (no markdown, no code fences):
     const job = rawJobs[i];
     const batchResult = batchResults.find((r) => r.index === i);
     const jobUrl = jobUrls.get(i) || buildJobUrl(job);
-    const fullSpec = jobSpecs.get(i) || job.description || "";
+    const fullSpec = jobSpecs.get(i) || "";
 
     const progress = Math.min(55 + ((i + 1) / rawJobs.length) * 30, 85);
     onStatus?.({ type: "analyzing_job", title: job.title, company: job.company_name, current: i + 1, total: rawJobs.length, progress });
@@ -1267,7 +1278,7 @@ Return ONLY valid JSON (no markdown, no code fences):
             const { rawJobs, jobSpecs, jobUrls, queryUsed } = await fetchAndFilterJobs(
               searchQuery, state.profileLocation, user, searchId,
               state.bannedJobs, state.bannedCompanies, dataClient, sendStatus, undefined,
-              hiddenKeys, state.maxAgeDays
+              hiddenKeys, state.maxAgeDays, 2
             );
 
             if (rawJobs.length === 0) {
@@ -1477,7 +1488,7 @@ Return ONLY valid JSON (no markdown, no code fences).`,
               const filtered = await fetchAndFilterJobs(
                 fullQuery, pfLocation, user, searchId,
                 pfBannedJobs, pfBannedCompanies, dataClient, sendStatus, roundNum,
-                pfHiddenKeys, state.maxAgeDays
+                pfHiddenKeys, state.maxAgeDays, 5
               );
 
               let roundResults: JobRow[] = [];
