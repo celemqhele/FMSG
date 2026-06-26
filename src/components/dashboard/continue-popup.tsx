@@ -28,7 +28,7 @@ export function ContinuePopup({ isOpen, message, onContinue, onCancel }: Continu
       className="fixed inset-0 z-[60] flex items-center justify-center transition-opacity duration-200"
       style={{ opacity: mounted ? 1 : 0 }}
     >
-      <div className="absolute inset-0 bg-black/50" onClick={onCancel} />
+      <div className="absolute inset-0 bg-black/50" />
       <div
         className="relative bg-white border border-gray-200 rounded-2xl p-6 max-w-sm mx-4 text-center shadow-2xl transition-all duration-200 ease-out"
         style={{ opacity: mounted ? 1 : 0, transform: mounted ? "translateY(0) scale(1)" : "translateY(6px) scale(0.98)" }}
