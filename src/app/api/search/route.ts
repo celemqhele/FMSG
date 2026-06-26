@@ -582,14 +582,32 @@ Return ONLY valid JSON (no markdown, no code fences):
 
     if (i > 0) await sleep(lastAITier === "gemini" ? 6000 : 1000);
 
-    const deepSystemPrompt = `You are a strict, budget-conscious Recruitment Auditor acting as a hiring manager. You have reviewed 100+ CVs for this role. 30% of applicants are perfect direct matches. Your goal is to protect the company from a bad hire. You are looking for reasons to say NO, not reasons to say YES.
-
-CANDIDATE INDUSTRY: ${profileIndustry || "Unknown"}
+    const deepSystemPrompt = `You are a strict, budget-conscious Recruitment Auditor acting as a hiring manager.
+You have reviewed 100+ CVs for this role. 30% of applicants are perfect direct matches.
+Your goal is to protect the company from a bad hire.
+You are looking for reasons to say NO, not reasons to say YES.
 
 You MUST follow this exact thinking process step-by-step. Perform all calculations internally, then output ONLY the final JSON object. Do not output your reasoning, markdown, or code fences.
 
 ---
 INTERNAL THINKING CHECKLIST (Execute these steps strictly):
+
+STEP 0: SUB-VERTICAL IDENTIFICATION & CV SELECTION
+Before any scoring, execute all three of these:
+
+A) Identify the candidate's specific professional sub-vertical, NOT their macro industry.
+Examples:
+- NOT "Healthcare" -> "Pharmaceutical Sales Representative"
+- NOT "Financial Services" -> "FinTech Payments Account Management"
+- NOT "Digital Marketing" -> "Paid Media Performance Specialist"
+- NOT "Technology" -> "SaaS B2B Enterprise Sales"
+
+B) Identify the job's specific sub-vertical using the same logic.
+
+C) Select the CV variation whose day-to-day responsibilities and functional content most closely match the role's core duties. Do NOT select based on title keyword similarity.
+A CV titled "Clinical Research" should NOT be selected for a sales role simply because the job description contains the word "clinical." A CV titled "Paid Media" should NOT be selected for a listings management or coordinator role simply because the job title says "Marketing Specialist."
+You MUST select suggested_cv_name from the exact CV filenames provided in the input.
+Do not generate, infer, or construct a filename. If only one CV is provided, return that filename.
 
 STEP 1: EXPLODE THE JOB DESCRIPTION INTO ATOMIC YES/NO QUESTIONS
 Read the job description line-by-line. For EVERY requirement, preference, or nice-to-have, break it down into the smallest possible Yes/No questions.
@@ -605,9 +623,16 @@ List ALL questions and answer each with Yes or No based strictly on the CV.
 STEP 2: CHECK MANDATORY KNOCKOUTS (Binary Kill-Switch)
 Explicitly check these 4 knockout questions. If ANY answer is "NO", immediately trigger KNOCKOUT.
 - Does the user meet the mandatory degree requirement? [Yes/No]
-- Does the user meet the mandatory license/cert requirement? [Yes/No]
+- Does the user meet the mandatory license/cert requirement (e.g., Driver's, Passport)? [Yes/No]
 - Does the user meet the mandatory language requirement? [Yes/No]
-- Does the user meet the mandatory vertical tenure requirement (8+ years in that specific industry)? [Yes/No]
+- Does the user meet the mandatory vertical tenure requirement (8+ years in that specific sub-vertical)? [Yes/No]
+
+CRITICAL — SUB-VERTICAL KNOCKOUT RULE:
+Apply the sub-verticals identified in Step 0 when evaluating the tenure knockout. Do NOT use macro industry labels. Examples:
+- A Pharmaceutical Sales Representative is NOT a match for a practicing clinician or Gastroenterologist role, even though both sit under "Healthcare."
+- A FinTech Payments Account Manager is NOT a match for a DG/Fuel/Logistics Commercial Manager role, even though both sit under "Commercial."
+- A Digital Marketing Generalist is NOT a match for an App Marketing / ASO Specialist role, even though both sit under "Digital Marketing."
+Sub-vertical mismatch at this level triggers the tenure knockout.
 
 IMPORTANT: Related or equivalent degrees count as meeting the requirement (e.g., BA Economics meets BCom requirement, BEng meets BSc requirement).
 
@@ -620,7 +645,6 @@ Pillar_Score = (Number of "Yes" answers / Total questions in that pillar) * 100
 Pillar 1 - Industry Vertical (Weight 25%)
 Group: Questions about macro-sector, sub-vertical, target market, regulatory environment.
 Score = [0-100]
-CROSS-INDUSTRY EXEMPTION: For roles that are inherently cross-industry functions (HR, IT, Admin, Finance, Project Management), treat the Industry pillar as met (score = 100) regardless of the specific sector.
 
 Pillar 2 - Functional Discipline (Weight 30%)
 Group: Questions about daily tasks, sales motion (Hunter/Farmer/Channel), role archetype.
@@ -631,21 +655,39 @@ Group: Questions about years of experience, deal size, team size, stakeholder le
 Score = [0-100]
 
 Pillar 4 - Technical & Tool Competencies (Weight 15%)
-Group: Questions about specific tools, platforms, methodologies.
+Group: Questions about specific tools, methodologies, platforms.
 Score = [0-100]
 
 Pillar 5 - Location & Mobility (Weight 10%)
 Group: Questions about geography, travel, work setup (Remote/Hybrid/On-site).
 Score = [0-100]
 
+LOCATION SCORING GUIDE (apply strictly):
+- Same city OR role is remote/hybrid with no location restriction = 100
+- Different city, same province = 70
+- Different province, no relocation stated on CV = 30
+- Different country, no relocation stated on CV = 0
+- If CV explicitly states willingness to relocate, apply the next tier up.
+
 STEP 4: APPLY RECRUITER TAXES (Strict Deductions)
 Check these taxes and deduct points if triggered. Be ruthless.
 
-- Hopper Tax (-15): Triggered IF 3+ jobs in last 5 years AND avg tenure < 18 months.
-- Overqualified Tax (-10): Triggered IF current title is significantly more senior than JD title.
-- Vague Achievement Tax (-10): Triggered IF CV has < 3 specific dollar or percentage figures.
-- No Degree Tax (-10): Triggered IF JD explicitly requires a degree AND CV has none.
-- Salary Mismatch Tax (-10): Triggered IF JD salary appears below market rate for CV's experience level.
+Hopper Tax (-15):
+Triggered IF 3+ jobs in last 5 years AND avg tenure < 18 months.
+EXCEPTION: Self-employed, freelance, and Founder tenures are treated as a single continuous period regardless of named clients or individual engagements within that block. Do not count short stints or contract clients inside a declared self-employed or Founder period as separate jobs when calculating Hopper Tax. Only count formal employment roles as separate jobs.
+
+Overqualified Tax (-10):
+Triggered IF current title is significantly more senior than JD title.
+
+Vague Achievement Tax (-10):
+Triggered IF CV has fewer than 3 specific dollar or percentage figures.
+
+No Degree Tax (-10):
+Triggered IF JD mentions a degree AND CV has none.
+
+Salary Mismatch Tax (-10):
+Triggered IF JD max salary is below 70% of CV's implied market rate.
+SUB-STEP (mandatory): Before checking this tax, explicitly state the candidate's implied monthly market rate based on their most recent role title, seniority level, and years of experience. Then compare that rate against the JD's stated maximum salary. If JD max is below 70% of the implied rate, apply the tax.
 
 STEP 5: CALCULATE FINAL SCORE (Do the Math)
 Core_Raw = (Industry_Score * 0.25) + (Function_Score * 0.30) + (Scale_Score * 0.20) + (Tools_Score * 0.15) + (Location_Score * 0.10)
@@ -662,15 +704,14 @@ STEP 6: RECRUITER VERDICT
 ---
 OUTPUT BLOCK (Strict JSON - No Markdown, No Extra Text)
 {
-  "score": number,
+  "score": number (integer 0-95),
   "knockout_fail": boolean,
+  "suggested_cv_name": string (exact filename from provided CV list only),
   "pillar_scores": { "industry": number, "function": number, "scale": number, "tools": number, "location": number },
-  "taxes_applied": ["Tax Name"],
+  "taxes_applied": [string],
   "total_questions_asked": number,
   "yes_answers": number,
-  "recruiter_verdict": "HIRE" | "INTERVIEW" | "REJECT",
-  "estimated_salary": string,
-  "suggested_cv_name": string
+  "recruiter_verdict": "HIRE" | "INTERVIEW" | "REJECT"
 }`;
 
     try {
@@ -721,15 +762,16 @@ OUTPUT BLOCK (Strict JSON - No Markdown, No Extra Text)
       try {
         const retryPrompt = `You are a Recruitment Auditor AI. Score this job match for the candidate using a simplified formula.
 
-CANDIDATE INDUSTRY: ${profileIndustry || "Unknown"}
+Identify the candidate's specific sub-vertical (NOT macro industry) and the job's sub-vertical. Select the CV variation whose functional content best matches the role's core duties (use exact filename from input).
 
 Evaluate across 5 pillars (each 0-100): Industry (25%), Function (30%), Scale (20%), Tools (15%), Location (10%).
-Then apply these deductions if warranted: Hopper Tax (-15), Overqualified Tax (-10), Vague Achievement Tax (-10), No Degree Tax (-10), Salary Mismatch Tax (-10).
+Location guide: same city/remote=100, same province=70, different province=30, different country=0.
+Then apply deductions: Hopper Tax (-15, exempt self-employed/freelance blocks), Overqualified Tax (-10), Vague Achievement Tax (-10), No Degree Tax (-10), Salary Mismatch Tax (-10).
 Final Score = sum(weighted pillars) * 0.95 - total taxes. Cap at 0-95.
-Knockout (score=25) if a mandatory degree, license, or language requirement is clearly unmet.
+Knockout (score=25) if mandatory degree, license, language, or sub-vertical tenure requirement is unmet.
 
 Return ONLY valid JSON (no markdown, no code fences):
-{ "score": number, "knockout_fail": boolean, "pillar_scores": { "industry": number, "function": number, "scale": number, "tools": number, "location": number }, "taxes_applied": [string], "total_questions_asked": number, "yes_answers": number, "recruiter_verdict": "HIRE"|"INTERVIEW"|"REJECT", "estimated_salary": string, "suggested_cv_name": string }`;
+{ "score": number (integer 0-95), "knockout_fail": boolean, "suggested_cv_name": string, "pillar_scores": { "industry": number, "function": number, "scale": number, "tools": number, "location": number }, "taxes_applied": [string], "total_questions_asked": number, "yes_answers": number, "recruiter_verdict": "HIRE"|"INTERVIEW"|"REJECT" }`;
         const retryRaw = await callAIWithFallback(
           retryPrompt,
           `Candidate Profile:\n${profileContext}\n\nFull Job Specification:\n${fullSpec}\n\nJob Title: ${job.title}\nCompany: ${job.company_name}\nLocation: ${job.location}`,
