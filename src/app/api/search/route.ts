@@ -345,7 +345,7 @@ async function fetchAndFilterJobs(
   onStatus?.({ type: "found_results", count: rawJobs.length, progress: 20 });
 
   for (const j of rawJobs) {
-    const destUrl = decodeGoogleRedirect(j.link || buildJobUrl(j));
+    const destUrl = buildJobUrl(j);
     const postedStr = (j as any).detected_extensions?.posted_at ?? (j as any).posted_at ?? "";
     const result = isDomainVerified(destUrl, postedStr);
     (j as any)._domainVerified = result.verified;
