@@ -253,8 +253,8 @@ export default function DashboardPage() {
     return filtered;
   }, [results, filterState, sortMode]);
 
-  const handleSearch = useCallback(async (query: string, profileId?: string | null, pfMode?: boolean) => {
-    console.log("[DASHBOARD] Search clicked:", { query, profileId, pfMode, time: new Date().toISOString() });
+  const handleSearch = useCallback(async (query: string, profileId?: string | null, pfMode?: boolean, dateFilterDays?: number | null) => {
+    console.log("[DASHBOARD] Search clicked:", { query, profileId, pfMode, dateFilterDays, time: new Date().toISOString() });
     setSearching(true);
     setProgress(0);
     setHasSearched(true);
@@ -283,7 +283,7 @@ export default function DashboardPage() {
           Authorization: `Bearer ${session.access_token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ query, profile_id: profileId, pf_mode: pfMode }),
+        body: JSON.stringify({ query, profile_id: profileId, pf_mode: pfMode, date_filter_days: dateFilterDays ?? null }),
         signal: abortRef.current.signal,
       });
 

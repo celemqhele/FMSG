@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useActiveProfile } from "@/components/dashboard/dashboard-layout";
 
 interface SearchPillProps {
-  onSearch: (query: string, profileId?: string | null, pfMode?: boolean) => void;
+  onSearch: (query: string, profileId?: string | null, pfMode?: boolean, dateFilterDays?: number | null) => void;
   onAbort: () => void;
   searching: boolean;
 }
@@ -18,6 +18,16 @@ export function SearchPill({ onSearch, onAbort, searching }: SearchPillProps) {
   const [pfMode, setPfMode] = useState(false);
   const [showAbortConfirm, setShowAbortConfirm] = useState(false);
   const [abortMounted, setAbortMounted] = useState(false);
+  const [dateFilterDays, setDateFilterDays] = useState<number | null>(null);
+  const [showDateFilter, setShowDateFilter] = useState(false);
+  const [dateFilterMounted, setDateFilterMounted] = useState(false);
+
+  const DATE_OPTIONS = [
+    { label: "Any date", value: null },
+    { label: "Last 24h", value: 1 },
+    { label: "Last 7d", value: 7 },
+    { label: "Last 3w", value: 21 },
+  ] as const;
 
   const handleSearch = async () => {
     if (searching) return;
@@ -69,7 +79,7 @@ export function SearchPill({ onSearch, onAbort, searching }: SearchPillProps) {
     }
     const query = [pick, ind, loc].filter(Boolean).join(" ");
     setDisplayTitle(query);
-    onSearch(query, usedProfileId, pfMode);
+    onSearch(query, usedProfileId, pfMode, pfMode ? dateFilterDays : null);
   };
 
   const openAbortConfirm = () => {
@@ -86,6 +96,26 @@ export function SearchPill({ onSearch, onAbort, searching }: SearchPillProps) {
     closeAbortConfirm();
     onAbort();
   };
+
+  const togglePfMode = () => {
+    const next = !pfMode;
+    setPfMode(next);
+    if (next) {
+      setShowDateFilter(true);
+      setTimeout(() => setDateFilterMounted(true), 10);
+    } else {
+      setDateFilterMounted(false);
+      setTimeout(() => setShowDateFilter(false), 200);
+    }
+  };
+
+  const selectDateFilter = (value: number | null) => {
+    setDateFilterDays(value);
+    setDateFilterMounted(false);
+    setTimeout(() => setShowDateFilter(false), 200);
+  };
+
+  const activeDateLabel = DATE_OPTIONS.find((o) => o.value === dateFilterDays)?.label ?? "Any date";
 
   return (
     <>
@@ -126,17 +156,42 @@ export function SearchPill({ onSearch, onAbort, searching }: SearchPillProps) {
         </div>
       )}
 
-      <div className={`w-full max-w-2xl mx-auto flex items-center h-14 rounded-full bg-white/10 border border-white/20 backdrop-blur-xl overflow-hidden transition-transform duration-200 ${bouncing ? "scale-[1.02]" : "scale-100"}`}>
-      <button
-        onClick={() => setPfMode(!pfMode)}
-        className={`ml-2 w-10 h-10 rounded-full flex items-center justify-center transition-colors ${pfMode ? "bg-[var(--color-accent)] text-white" : "text-white/60 hover:text-white/90 hover:bg-white/10"}`}
-        title={pfMode ? "Persistent Finder active: searches multiple rounds across all titles" : "Click to enable Persistent Finder"}
-      >
-        <Crosshair size={16} />
-      </button>
+      <div className={`w-full max-w-2xl mx-auto flex items-center h-14 rounded-full bg-white/10 border border-white/20 backdrop-blur-xl overflow-visible transition-transform duration-200 ${bouncing ? "scale-[1.02]" : "scale-100"}`}>
+      <div className="relative ml-2">
+        <button
+          onClick={togglePfMode}
+          className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${pfMode ? "bg-[var(--color-accent)] text-white" : "text-white/60 hover:text-white/90 hover:bg-white/10"}`}
+          title={pfMode ? "Persistent Finder active: searches multiple rounds across all titles" : "Click to enable Persistent Finder"}
+        >
+          <Crosshair size={16} />
+        </button>
+
+        {showDateFilter && (
+          <div
+            className="absolute left-1/2 -translate-x-1/2 top-full mt-2 z-[60] transition-all duration-200 ease-out"
+            style={{ opacity: dateFilterMounted ? 1 : 0, transform: dateFilterMounted ? "translateY(0) scale(1)" : "translateY(-4px) scale(0.95)" }}
+          >
+            <div className="bg-gray-900/95 backdrop-blur-xl border border-white/20 rounded-xl py-1.5 shadow-2xl min-w-[140px]">
+              {DATE_OPTIONS.map((opt) => (
+                <button
+                  key={opt.label}
+                  onClick={() => selectDateFilter(opt.value)}
+                  className={`w-full text-left px-3.5 py-2 text-xs transition-colors ${
+                    dateFilterDays === opt.value
+                      ? "text-white bg-white/10"
+                      : "text-white/60 hover:text-white hover:bg-white/5"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
 
       <span className="flex-1 text-white/60 text-sm px-3 truncate select-none">
-        {pfMode ? "Persistent Finder: scanning all titles" : displayTitle}
+        {pfMode ? `Persistent Finder (${activeDateLabel})` : displayTitle}
       </span>
 
       {searching && (

@@ -268,6 +268,7 @@ async function fetchAndFilterJobs(
   onStatus?: (event: SearchEvent) => void,
   pfRound?: number,
   hiddenJobKeys?: Set<string>,
+  maxAgeDays?: number,
 ): Promise<{ rawJobs: any[]; jobSpecs: [number, string][]; jobUrls: [number, string][]; queryUsed: string }> {
   function sanitiseLocation(raw: string): string | undefined {
     if (!raw) return undefined;
@@ -322,6 +323,19 @@ async function fetchAndFilterJobs(
         : result.reason;
     (j as any)._postedAt = postedStr;
     (j as any)._postedAtMs = parsePostedAt(postedStr) ?? 0;
+  }
+
+  if (maxAgeDays) {
+    const cutoffMs = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000;
+    rawJobs = rawJobs.filter((j) => {
+      const postedMs = (j as any)._postedAtMs ?? 0;
+      if (postedMs > 0 && postedMs < cutoffMs) return false;
+      return true;
+    });
+    if (rawJobs.length === 0) {
+      debugLog(`[SEARCH] All jobs filtered out by date filter (${maxAgeDays}d)`);
+      return { rawJobs: [], jobSpecs: [], jobUrls: [], queryUsed: query };
+    }
   }
 
   const blacklistRejected: { job: any; reason: string }[] = [];
@@ -448,6 +462,7 @@ async function screenAndAnalyze(
   pfRound?: number,
   dedupSets?: { history: Set<string>; saved: Set<string>; blocked: Set<string>; rejected?: Set<string> },
   startTime?: number,
+  maxAgeDays?: number,
 ): Promise<{ results: JobRow[]; queryUsed: string; filteredCounts: { history: number; saved: number; rejected: number; blocked: number }; timedOut?: boolean }> {
   const filteredCounts = { history: 0, saved: 0, rejected: 0, blocked: 0 };
   const aiRejectedJobs: { job: any; reason: string; stage: string }[] = [];
@@ -474,6 +489,9 @@ async function screenAndAnalyze(
 
   const blacklistInfo = `BLACKLISTED_DOMAINS: ${BLACKLISTED_DOMAINS.join(", ")}`;
   const bannedInfo = bannedCompanies.length > 0 ? `\nUSER-BANNED COMPANIES: ${bannedCompanies.join(", ")}` : "";
+  const dateConstraintInfo = maxAgeDays
+    ? `\nDATE CONSTRAINT: Only consider jobs posted within the last ${maxAgeDays} day(s). If no posted date is available, assume it passes. Jobs older than ${maxAgeDays} days are irrelevant — score them 0 with reason "Posted outside date filter".`
+    : "";
 
   const batchSystemPrompt = `You are a Recruitment Auditor AI screening job matches. Score each job against the candidate's profile and CV.
 
@@ -496,7 +514,7 @@ RULES:
 Return ONLY a JSON array of objects. No markdown, no explanation, no code fences.
 Each object: { "index": number, "score": number (0-100), "reason": string, "estimated_salary": string }
 
-${blacklistInfo}${bannedInfo}`;
+${blacklistInfo}${bannedInfo}${dateConstraintInfo}`;
 
   let batchResults: { index: number; score: number; reason: string; estimated_salary: string }[] = [];
 
@@ -540,6 +558,7 @@ INDUSTRY MATCH RULES:
 
 RULES:
 - Judge transferable skills, not keywords.
+${dateConstraintInfo}
 
 Return ONLY valid JSON (no markdown, no code fences):
 { "score": number (0-100), "reason": string, "estimated_salary": string }`;
@@ -584,6 +603,7 @@ Return ONLY valid JSON (no markdown, no code fences):
 You have reviewed 100+ CVs for this role. 30% of applicants are perfect direct matches.
 Your goal is to protect the company from a bad hire.
 You are looking for reasons to say NO, not reasons to say YES.
+${dateConstraintInfo}
 
 You MUST follow this exact thinking process step-by-step. Perform all calculations internally, then output ONLY the final JSON object. Do not output your reasoning, markdown, or code fences.
 
@@ -759,6 +779,7 @@ OUTPUT BLOCK (Strict JSON - No Markdown, No Extra Text)
       let fallbackSalary = batchResult?.estimated_salary || "";
       try {
         const retryPrompt = `You are a Recruitment Auditor AI. Score this job match for the candidate using a simplified formula.
+${dateConstraintInfo}
 
 Identify the candidate's specific sub-vertical (NOT macro industry) and the job's sub-vertical. Select the CV variation whose functional content best matches the role's core duties (use exact filename from input).
 
@@ -902,7 +923,8 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { query, profile_id, pf_mode, continuation } = body;
+    const { query, profile_id, pf_mode, continuation, date_filter_days } = body;
+    const maxAgeDays = date_filter_days ? parseInt(String(date_filter_days), 10) : undefined;
     const isContinuation = !!continuation;
 
     if (!isContinuation) {
@@ -1146,6 +1168,7 @@ Return ONLY valid JSON (no markdown, no code fences):
         query: query ?? "",
         balances: liveBalances,
         plan: livePlan,
+        maxAgeDays,
       };
     }
 
@@ -1187,7 +1210,7 @@ Return ONLY valid JSON (no markdown, no code fences):
                 user, searchId, dataClient, state.bannedJobs, state.bannedCompanies,
                 sendStatus, undefined,
                 { history: new Set(state.dedupSets.history), saved: new Set(state.dedupSets.saved), blocked: new Set(state.dedupSets.blocked), rejected: new Set(state.dedupSets.rejected ?? []) },
-                startTime
+                startTime, state.maxAgeDays
               );
 
               const totalFiltered = result.filteredCounts.history + result.filteredCounts.saved + result.filteredCounts.rejected + result.filteredCounts.blocked;
@@ -1221,6 +1244,7 @@ Return ONLY valid JSON (no markdown, no code fences):
                       hiddenJobKeys: state.hiddenJobKeys,
                       query: state.query,
                       dedupSets: { history: [...state.dedupSets.history], saved: [...state.dedupSets.saved], blocked: [...state.dedupSets.blocked], rejected: [...state.dedupSets.rejected ?? []] },
+                      maxAgeDays: state.maxAgeDays,
                     })).toString("base64"),
                   message: `Analysed ${processedCount} of ${state.rawJobs.length} jobs so far. Continue to screen remaining ${remainingJobs.length} jobs?`,
                 });
@@ -1243,7 +1267,7 @@ Return ONLY valid JSON (no markdown, no code fences):
             const { rawJobs, jobSpecs, jobUrls, queryUsed } = await fetchAndFilterJobs(
               searchQuery, state.profileLocation, user, searchId,
               state.bannedJobs, state.bannedCompanies, dataClient, sendStatus, undefined,
-              hiddenKeys
+              hiddenKeys, state.maxAgeDays
             );
 
             if (rawJobs.length === 0) {
@@ -1273,6 +1297,7 @@ Return ONLY valid JSON (no markdown, no code fences):
                 hiddenJobKeys: state.hiddenJobKeys,
                 query: searchQuery,
                 dedupSets: { history: [...state.dedupSets.history], saved: [...state.dedupSets.saved], blocked: [...state.dedupSets.blocked], rejected: [...state.dedupSets.rejected] },
+                maxAgeDays: state.maxAgeDays,
               })).toString("base64"),
             });
             writer.close();
@@ -1452,7 +1477,7 @@ Return ONLY valid JSON (no markdown, no code fences).`,
               const filtered = await fetchAndFilterJobs(
                 fullQuery, pfLocation, user, searchId,
                 pfBannedJobs, pfBannedCompanies, dataClient, sendStatus, roundNum,
-                pfHiddenKeys
+                pfHiddenKeys, state.maxAgeDays
               );
 
               let roundResults: JobRow[] = [];
@@ -1465,7 +1490,7 @@ Return ONLY valid JSON (no markdown, no code fences).`,
                   user, searchId, dataClient, pfBannedJobs, pfBannedCompanies,
                   sendStatus, roundNum,
                   { history: new Set(pfDedupSets.history || []), saved: new Set(pfDedupSets.saved || []), blocked: new Set(pfDedupSets.blocked || []), rejected: new Set(pfDedupSets.rejected || []) },
-                  pfStartTime
+                  pfStartTime, state.maxAgeDays
                 );
                 roundResults = result.results;
                 roundFilteredCounts = result.filteredCounts;
@@ -1522,6 +1547,7 @@ Return ONLY valid JSON (no markdown, no code fences).`,
                       blocked: pfDedupSets.blocked ? [...pfDedupSets.blocked] : [],
                       rejected: pfDedupSets.rejected ? [...pfDedupSets.rejected] : [],
                     },
+                    maxAgeDays: state.maxAgeDays,
                   })).toString("base64"),
                 });
                 writer.close();
