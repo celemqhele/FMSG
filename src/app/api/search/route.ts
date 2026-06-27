@@ -515,7 +515,7 @@ async function screenAndAnalyze(
 ): Promise<{ results: JobRow[]; queryUsed: string; filteredCounts: { history: number; saved: number; rejected: number; blocked: number } }> {
   const filteredCounts = { history: 0, saved: 0, rejected: 0, blocked: 0 };
 
-  // AI Scoring toggle — set `AI_SCORING=false` to disable matching
+  // AI scoring toggle — set AI_SCORING=false to disable matching — jun27
   const aiScoringEnabled = process.env.AI_SCORING !== "false";
 
   if (!aiScoringEnabled) {
