@@ -534,6 +534,9 @@ Pillar 2 - Functional Discipline (Weight 30%)
 
 Pillar 3 - Experience Depth & Scale (Weight 20%)
 - Years of experience, deal size, team size, stakeholder level, revenue managed.
+- CRITICAL: If the candidate has MORE years than the job requires, that is a POSITIVE — not a negative.
+  Example: Job requires 2-5 years, candidate has 6 years = positive. Scale should be 80+.
+  Only penalize if the candidate has LESS experience than the minimum.
 
 Pillar 4 - Technical & Tool Competencies (Weight 15%)
 - Specific tools, methodologies, platforms, domain software.
@@ -557,15 +560,15 @@ STEP 2: CHECK KNOCKOUTS (Binary Kill-Switch)
 If ANY answer is NO, trigger knockout → score MUST be 25:
 - Does the user meet the mandatory DEGREE requirement? (Avoid this tax if degree is "advantageous" or "preferred" only)
 - Does the user meet the mandatory LICENSE/CERT requirement (Driver's, Passport, etc.)?
-- Does the user meet the mandatory LANGUAGE requirement?
+- Does the user meet the mandatory LANGUAGE requirement? If the role lists "bilingual Afrikaans/English" as a firm requirement (NOT "advantageous"), and the candidate's CV shows no evidence of that language, trigger knockout.
 - Does the user meet the mandatory VERTICAL TENURE requirement (8+ years in that specific sub-vertical)?
-Related or equivalent degrees count (e.g., BA Economics meets BCom requirement, BEng meets BSc).
+Related or equivalent degrees count (e.g., BA Economics meets BCom requirement, BEng meets BSc, LLB satisfies any "degree" requirement).
 
 STEP 3: APPLY TAXES (Strict Deductions)
 Hopper Tax (-15): 3+ jobs in last 5 years AND avg tenure < 18 months. EXCEPTION: Self-employed, freelance, and Founder tenures are treated as a SINGLE continuous period.
 Overqualified Tax (-10): Current title is significantly MORE senior than JD title.
 Vague Achievement Tax (-10): CV has fewer than 3 specific dollar or percentage figures.
-No Degree Tax (-10): JD mentions a degree AND CV has none. Do NOT apply if JD says "advantageous" or "preferred."
+No Degree Tax (-10): JD mentions a degree AND CV has none. Do NOT apply if JD says "advantageous" or "preferred." CRITICAL: If the candidate has ANY tertiary qualification (LLB, BCom, BSc, Diploma, etc.), this tax is NEVER applied — even if the JD asks for a specific degree type.
 Salary Mismatch Tax (-10): JD max salary is below 70% of the candidate's implied market rate. State the implied rate before checking.
 
 STEP 4: CALCULATE FINAL SCORE
@@ -585,13 +588,15 @@ C) Language check — pillar_reasons MUST mention specific CV details (employer 
    Bad: "The company operates in e-commerce."  Good: "Candidate worked at Superbalist and Takealot, both e-commerce companies."
    Bad: "The tools mentioned align with the candidate's skills."  Good: "Candidate knows Google Ads, Meta Ads, and Klaviyo essential for this role."
 D) Score check — do the gaps match the score?
-   Severe gaps (wrong industry, missing mandatory skills, knockout) → ≤40
-   Moderate gaps (missing nice-to-haves, transferable skills) → 41-60
-   Strong match with minor gaps → 61-75
-   Near-perfect fit → 76+
-E) If the score feels wrong, adjust by ±5 (max ±10). Set adjustment_note to a short sentence explaining the change.
+    Severe gaps (wrong industry, missing mandatory skills, knockout) → ≤40
+    Moderate gaps (missing nice-to-haves, transferable skills) → 41-60
+    Strong match with minor gaps → 61-80
+    Near-perfect fit (all pillars strong, zero gaps, same industry) → 81-95
+E) Experience logic: if candidate has MORE years than required → positive, Scale ≥70. If candidate has less → negative.
+   Language: if role mandates a language the CV doesn't mention → flag in reasons, knockout only if "essential"/"mandatory."
+F) If the score feels wrong, adjust by ±5 (max ±10). Set adjustment_note explaining the change.
    If no adjustment needed, set adjustment_note to null.
-F) score field = FINAL adjusted score. pillar_scores MUST reflect the final math.
+G) score field = FINAL adjusted score. pillar_scores MUST reflect the final math.
 
 Return ONLY a JSON array of objects. No markdown, no explanation, no code fences.
 Each object:
@@ -668,7 +673,10 @@ PILLARS (each 0-100): Industry 25% | Function 30% | Scale 20% | Tools 15% | Loca
 
 INDUSTRY: Identify from EMPLOYERS, not tools. SAME industry=70-95, ADJACENT=40-65, DIFFERENT=0-30. FinTech ≠ Construction. E-commerce ≠ Healthcare.
 FUNCTION: Measures ROLE TYPE transferability, not language/tool skills. C++/Python/Java skills belong in Tools pillar. A backend engineer can do backend work in any stack.
-KNOCKOUT (score=25): mandatory degree, license, language, or vertical tenure unmet. Do NOT knockout for "advantageous" or "preferred" degrees.
+SCALE: More years than required = POSITIVE. Job asks 2-5yrs, candidate has 6yrs → Scale 80+. Only penalize if LESS than minimum.
+KNOCKOUT: Apply for mandatory degree (not "advantageous"), mandatory license, mandatory LANGUAGE (if "bilingual" required and CV shows no evidence), or vertical tenure gap. LLB satisfies any degree requirement.
+No Degree Tax: NEVER apply if candidate has ANY tertiary qualification.
+NEAR-PERFECT fits (all pillars strong, zero gaps, same industry) → 81-95. Do not cap at 75.
 TAXES: Hopper(-15, exempt self-employed blocks), Overqualified(-10), Vague Achievement(-10), No Degree(-10, only when REQUIRED), Salary Mismatch(-10).
 FINAL = (Industry×0.25 + Function×0.30 + Scale×0.20 + Tools×0.15 + Location×0.10) × 0.95 - taxes. Cap 0-95.
 VERDICT: >=75 HIRE | >=60 INTERVIEW | <60 REJECT.

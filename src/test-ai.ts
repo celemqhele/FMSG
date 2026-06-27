@@ -62,7 +62,10 @@ INDUSTRY: Same=70-95, Adjacent=40-65, Different=0-30. Identify from employers (S
 FUNCTION: Role type transferability. Language/tool skills belong in Tools pillar.
 PILLAR-REASONS: Must reference CV specifics — employer names, skills, numbers. Bad: "company operates in e-commerce." Good: "worked at Superbalist and Takealot, both e-commerce."
 PILLAR-FINAL CHECK: Does (I×0.25+F×0.30+S×0.20+T×0.15+L×0.10)×0.95−taxes = final score? If >5 pt gap, fix both.
-KNOCKOUT (score=25): mandatory degree, license, language, or vertical tenure unmet. Skip for "advantageous" degrees.
+SCALE: More years than required = POSITIVE. Only penalize if LESS than minimum.
+KNOCKOUT (score=25): mandatory degree (not "advantageous"), mandatory license, mandatory LANGUAGE (if CV doesn't show required language). LLB satisfies any degree.
+No Degree Tax: NEVER apply if candidate has ANY tertiary qualification.
+NEAR-PERFECT: all pillars strong, zero gaps, same industry → 81-95. Do not cap at 75.
 TAXES: Hopper(-15), Overqualified(-10), Vague Achievement(-10), No Degree(-10 only when REQUIRED), Salary Mismatch(-10).
 FINAL = weighted_pillars × 0.95 - taxes. Cap 0-95.
 VERDICT: >=75 HIRE | >=60 INTERVIEW | <60 REJECT.
