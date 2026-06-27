@@ -491,6 +491,40 @@ async function screenAndAnalyze(
   maxAgeDays?: number,
 ): Promise<{ results: JobRow[]; queryUsed: string; filteredCounts: { history: number; saved: number; rejected: number; blocked: number } }> {
   const filteredCounts = { history: 0, saved: 0, rejected: 0, blocked: 0 };
+
+  // AI Scoring toggle — set `AI_SCORING=false` to disable matching
+  const aiScoringEnabled = process.env.AI_SCORING !== "false";
+
+  if (!aiScoringEnabled) {
+    const jobSpecs = new Map(jobSpecsEntries);
+    const jobUrls = new Map(jobUrlsEntries);
+    const results: JobRow[] = rawJobs.map((job: any, i: number) => ({
+      user_id: user.id,
+      search_id: searchId,
+      job_title: job.title,
+      company: job.company_name,
+      location: job.location,
+      estimated_salary: "",
+      match_score: 0,
+      match_summary: "Scoring is currently disabled.",
+      verdict_bullets: null,
+      job_url: jobUrls.get(i) || buildJobUrl(job),
+      full_spec: jobSpecs.get(i) || job.description || "",
+      search_query: query,
+      posted_at: "",
+      posted_at_ms: 0,
+      suggested_cv: "",
+      knockout_fail: null,
+      pillar_scores: null,
+      taxes_applied: null,
+      total_questions_asked: null,
+      yes_answers: null,
+      recruiter_verdict: null,
+    }));
+    onStatus?.({ type: "almost_done", progress: 90 });
+    return { results, queryUsed: query, filteredCounts };
+  }
+
   const aiRejectedJobs: { job: any; reason: string; stage: string }[] = [];
   const jobSpecs = new Map(jobSpecsEntries);
   const jobUrls = new Map(jobUrlsEntries);
