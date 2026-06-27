@@ -200,6 +200,7 @@ export function JobResultCard({
         <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={() => setShowVerdict(true)}
+            title={pillarScores == null ? "Deep analysis unavailable — score may change" : ""}
             className={`text-xs font-medium px-3 py-1 rounded-full ${scoreBg} cursor-pointer hover:opacity-80 transition-opacity`}
           >
             {scoreLabel} {pillarScores == null ? "~" : ""}{matchScore}%
