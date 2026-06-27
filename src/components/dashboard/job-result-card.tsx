@@ -16,9 +16,13 @@ interface JobResultCardProps {
   verdictBullets?: { industry: string; function: string; competition: string } | null;
   jobUrl: string;
   fullDescription: string;
-  domainVerified?: boolean;
-  domainUnverifiedReason?: string;
   suggestedCvName?: string;
+  knockoutFail?: boolean | null;
+  pillarScores?: { industry: number; function: number; scale: number; tools: number; location: number } | null;
+  taxesApplied?: string[] | null;
+  totalQuestionsAsked?: number | null;
+  yesAnswers?: number | null;
+  recruiterVerdict?: string | null;
   onDelete: (id: string) => void;
 }
 
@@ -33,9 +37,13 @@ export function JobResultCard({
   verdictBullets,
   jobUrl,
   fullDescription,
-  domainVerified = true,
-  domainUnverifiedReason = "",
   suggestedCvName = "",
+  knockoutFail,
+  pillarScores,
+  taxesApplied,
+  totalQuestionsAsked,
+  yesAnswers,
+  recruiterVerdict,
   onDelete,
 }: JobResultCardProps) {
   const [showDeleteMenu, setShowDeleteMenu] = useState(false);
@@ -44,30 +52,8 @@ export function JobResultCard({
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [cvLoading, setCvLoading] = useState(false);
-  const [showDomainWarning, setShowDomainWarning] = useState(false);
-  const [domainMounted, setDomainMounted] = useState(false);
-  const [showTrustedInfo, setShowTrustedInfo] = useState(false);
-  const [trustedMounted, setTrustedMounted] = useState(false);
   const [showVerdict, setShowVerdict] = useState(false);
   const [verdictMounted, setVerdictMounted] = useState(false);
-
-  useEffect(() => {
-    if (showDomainWarning) {
-      setDomainMounted(true);
-    } else {
-      const timer = setTimeout(() => setDomainMounted(false), 250);
-      return () => clearTimeout(timer);
-    }
-  }, [showDomainWarning]);
-
-  useEffect(() => {
-    if (showTrustedInfo) {
-      setTrustedMounted(true);
-    } else {
-      const timer = setTimeout(() => setTrustedMounted(false), 250);
-      return () => clearTimeout(timer);
-    }
-  }, [showTrustedInfo]);
 
   useEffect(() => {
     if (showVerdict) {
@@ -210,36 +196,17 @@ export function JobResultCard({
       {/* Top row: score badge + domain badge left, delete (X) right */}
       <div className="flex justify-between items-start mb-3.5">
         <div className="flex items-center gap-2 flex-wrap">
-          <button
-            onClick={() => setShowVerdict(true)}
-            className={`text-xs font-medium px-3 py-1 rounded-full ${scoreBg} cursor-pointer hover:opacity-80 transition-opacity`}
-          >
-            {scoreLabel} {matchScore}%
-          </button>
-          {domainVerified && (
+          {matchScore > 0 && (
             <button
-              onClick={() => setShowTrustedInfo(true)}
-              className="text-xs font-medium px-3 py-1 rounded-full bg-green-100 dark:bg-green-500/20 text-green-700 dark:text-green-400 border border-green-500/30 hover:bg-green-200 dark:hover:bg-green-500/30 transition-colors"
+              onClick={() => setShowVerdict(true)}
+              className={`text-xs font-medium px-3 py-1 rounded-full ${scoreBg} cursor-pointer hover:opacity-80 transition-opacity`}
             >
-              Trusted Domain
-            </button>
-          )}
-          {!domainVerified && (
-            <button
-              onClick={() => setShowDomainWarning(true)}
-              className="text-xs font-medium px-3 py-1 rounded-full bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400 border border-yellow-500/30 hover:bg-yellow-200 dark:hover:bg-yellow-500/30 transition-colors"
-            >
-              Untrusted Domain
+              {scoreLabel} {matchScore}%
             </button>
           )}
           {suggestedCvName && (
             <span className="text-xs font-medium px-3 py-1 rounded-full bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400 border border-purple-500/30">
               CV: {suggestedCvName}
-            </span>
-          )}
-          {!verdictBullets && (
-            <span className="text-xs font-medium px-3 py-1 rounded-full bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-400 border border-red-500/30">
-              Unverified Job Spec
             </span>
           )}
         </div>
@@ -322,75 +289,6 @@ export function JobResultCard({
         </button>
       </div>
 
-      {/* Trusted domain info modal */}
-      {trustedMounted && createPortal(
-        <div
-          className={`fixed inset-0 z-[300] flex items-center justify-center transition-all duration-200 ${
-            showTrustedInfo ? "opacity-100" : "opacity-0"
-          }`}
-        >
-          <div
-            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-            onClick={() => setShowTrustedInfo(false)}
-          />
-          <div
-            className={`relative w-full max-w-sm mx-4 p-6 rounded-2xl liquid-glass transition-all duration-200 ${
-              showTrustedInfo ? "opacity-100 scale-100" : "opacity-0 scale-95"
-            }`}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="text-base font-semibold text-[var(--color-text-primary)] mb-3">Trusted Domain</h3>
-            <p className="text-sm text-[var(--color-text-secondary)] leading-relaxed">
-              This job listing is from a verified source. We periodically check these platforms and confirm they reliably host active, genuine listings.
-            </p>
-            <button
-              onClick={() => setShowTrustedInfo(false)}
-              className="mt-4 w-full py-2.5 rounded-xl bg-[var(--color-accent)] text-white text-sm font-medium hover:bg-[var(--color-accent-hover)] transition-colors"
-            >
-              Got it
-            </button>
-          </div>
-        </div>,
-        document.body
-      )}
-
-      {/* Domain warning modal */}
-      {domainMounted && createPortal(
-        <div
-          className={`fixed inset-0 z-[300] flex items-center justify-center transition-all duration-200 ${
-            showDomainWarning ? "opacity-100" : "opacity-0"
-          }`}
-        >
-          <div
-            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-            onClick={() => setShowDomainWarning(false)}
-          />
-          <div
-            className={`relative w-full max-w-sm mx-4 p-6 rounded-2xl liquid-glass transition-all duration-200 ${
-              showDomainWarning ? "opacity-100 scale-100" : "opacity-0 scale-95"
-            }`}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="text-base font-semibold text-[var(--color-text-primary)] mb-3">Untrusted Domain</h3>
-            <p className="text-sm text-[var(--color-text-secondary)] leading-relaxed">
-              This job listing is from a source that has not been verified. Listings on untrusted platforms may have expired roles, inaccurate details, or lower-quality postings.
-            </p>
-            {domainUnverifiedReason && (
-              <p className="text-xs text-[var(--color-text-secondary)]/60 mt-2">
-                Reason: {domainUnverifiedReason}
-              </p>
-            )}
-            <button
-              onClick={() => setShowDomainWarning(false)}
-              className="mt-4 w-full py-2.5 rounded-xl bg-[var(--color-accent)] text-white text-sm font-medium hover:bg-[var(--color-accent-hover)] transition-colors"
-            >
-              Got it
-            </button>
-          </div>
-        </div>,
-        document.body
-      )}
-
       {/* Verdict popup */}
       {verdictMounted && createPortal(
         <div
@@ -403,14 +301,14 @@ export function JobResultCard({
             onClick={() => setShowVerdict(false)}
           />
           <div
-            className={`relative w-full max-w-sm mx-4 p-6 rounded-2xl liquid-glass transition-all duration-200 ${
+            className={`relative w-full max-w-2xl mx-4 p-6 rounded-2xl liquid-glass max-h-[95vh] overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden transition-all duration-200 ${
               showVerdict ? "opacity-100 scale-100" : "opacity-0 scale-95"
             }`}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-4">
               <span className={`text-sm font-semibold px-3 py-1 rounded-full ${scoreBg}`}>
-                {scoreLabel} {matchScore}%
+             {scoreLabel} {matchScore}%
               </span>
               <button
                 onClick={() => setShowVerdict(false)}
@@ -421,30 +319,19 @@ export function JobResultCard({
             </div>
 
             {matchSummary && (
-              <p className="text-sm text-[var(--color-text-secondary)] leading-relaxed mb-4">
+              <p className="text-sm text-[var(--color-text-secondary)] leading-relaxed mb-4 whitespace-pre-line">
                 {matchSummary}
               </p>
             )}
 
-            {verdictBullets && (
-              <div className="space-y-2.5">
-                <div className="flex items-start gap-2.5">
-                  <span className="text-xs text-[var(--color-accent)] mt-0.5 shrink-0">Industry</span>
-                  <p className="text-xs text-[var(--color-text-secondary)]/80 leading-relaxed">{verdictBullets.industry}</p>
-                </div>
-                <div className="flex items-start gap-2.5">
-                  <span className="text-xs text-[var(--color-accent)] mt-0.5 shrink-0">Function</span>
-                  <p className="text-xs text-[var(--color-text-secondary)]/80 leading-relaxed">{verdictBullets.function}</p>
-                </div>
-                <div className="flex items-start gap-2.5">
-                  <span className="text-xs text-[var(--color-accent)] mt-0.5 shrink-0">Competition</span>
-                  <p className="text-xs text-[var(--color-text-secondary)]/80 leading-relaxed">{verdictBullets.competition}</p>
-                </div>
+            {knockoutFail && (
+              <div className="px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20 mb-4">
+                <p className="text-xs text-red-400 font-medium">Knockout triggered — mandatory requirement not met.</p>
               </div>
             )}
 
             {suggestedCvName && (
-              <div className="mt-4 pt-3 border-t border-white/[0.06]">
+              <div className="pt-3 border-t border-white/[0.06]">
                 <p className="text-xs text-[var(--color-text-secondary)]/60">
                   Suggested CV: <span className="text-white font-medium">{suggestedCvName}</span>
                 </p>

@@ -84,7 +84,7 @@ export async function POST(request: NextRequest) {
 
     const amountPaid = (txData.amount ?? 0) / 100;
     const amountStr = `R${amountPaid}`;
-    sendPFReceipt(user.email ?? "", runs, amountStr).catch(() => {});
+    sendPFReceipt(user.email ?? "", runs, amountStr).catch((err) => console.error("[PURCHASE_PF] Email failed:", err));
 
     return NextResponse.json({ ok: true, pf_balance: newBalance, added: runs });
   } catch (err) {

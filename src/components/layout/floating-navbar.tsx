@@ -8,6 +8,7 @@ import "../landing/liquid-glass.css";
 interface FloatingNavbarProps {
   onLoginClick?: () => void;
   onSignUpClick?: () => void;
+  isLoggedIn?: boolean;
 }
 
 const navLinks = [
@@ -16,7 +17,7 @@ const navLinks = [
   { label: "About", href: "/about" },
 ];
 
-export function FloatingNavbar({ onLoginClick, onSignUpClick }: FloatingNavbarProps) {
+export function FloatingNavbar({ onLoginClick, onSignUpClick, isLoggedIn }: FloatingNavbarProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (
@@ -39,22 +40,31 @@ export function FloatingNavbar({ onLoginClick, onSignUpClick }: FloatingNavbarPr
             ))}
           </div>
 
-          {onLoginClick && onSignUpClick && (
           <div className="hidden md:flex items-center gap-3">
-            <button
-              onClick={onLoginClick}
-              className="px-5 py-2 text-sm font-medium text-white hover:text-white/90 transition-colors"
-            >
-              Log In
-            </button>
-            <button
-              onClick={onSignUpClick}
-              className="px-5 py-2 text-sm font-medium text-white bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] rounded-full transition-colors"
-            >
-              Sign Up
-            </button>
+            {isLoggedIn ? (
+              <TransitionLink
+                href="/dashboard"
+                className="px-5 py-2 text-sm font-medium text-white bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] rounded-full transition-colors"
+              >
+                Go to Dashboard
+              </TransitionLink>
+            ) : onLoginClick && onSignUpClick ? (
+              <>
+                <button
+                  onClick={onLoginClick}
+                  className="px-5 py-2 text-sm font-medium text-white hover:text-white/90 transition-colors"
+                >
+                  Log In
+                </button>
+                <button
+                  onClick={onSignUpClick}
+                  className="px-5 py-2 text-sm font-medium text-white bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] rounded-full transition-colors"
+                >
+                  Sign Up
+                </button>
+              </>
+            ) : null}
           </div>
-          )}
 
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}

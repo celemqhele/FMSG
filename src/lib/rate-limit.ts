@@ -14,21 +14,25 @@ export interface RateLimitConfig {
   max: number;
 }
 
-const DEFAULTS = {
-  search: { windowMs: 60_000, max: 5 },
-  extract: { windowMs: 60_000, max: 3 },
-  generate: { windowMs: 60_000, max: 3 },
-  webhook: { windowMs: 60_000, max: 20 },
-  general: { windowMs: 60_000, max: 10 },
-} as const;
+const DEFAULTS: Record<string, RateLimitConfig> = {
+  search:       { windowMs: 60_000, max: 5 },
+  extract:      { windowMs: 60_000, max: 3 },
+  generate:     { windowMs: 60_000, max: 3 },
+  webhook:      { windowMs: 60_000, max: 20 },
+  general:      { windowMs: 60_000, max: 10 },
+  signup:       { windowMs: 3_600_000, max: 5 },
+  "send-verify": { windowMs: 3_600_000, max: 3 },
+  verify:       { windowMs: 300_000, max: 10 },
+  appeal:       { windowMs: 3_600_000, max: 2 },
+};
 
-export type RateLimitScope = keyof typeof DEFAULTS;
+export type RateLimitScope = string;
 
 export function checkRateLimit(
   key: string,
   scope: RateLimitScope = "general"
 ): { allowed: boolean; remaining: number; resetAt: number } {
-  const cfg = DEFAULTS[scope];
+  const cfg = DEFAULTS[scope] ?? DEFAULTS.general;
   const now = Date.now();
   const existing = windows.get(key);
 

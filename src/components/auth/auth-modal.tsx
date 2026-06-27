@@ -14,13 +14,13 @@ interface AuthModalProps {
   defaultTab?: "login" | "signup";
 }
 
-type Screen = "login" | "signup" | "signup-sent" | "forgot" | "forgot-sent";
+type Screen = "login" | "signup" | "forgot" | "forgot-sent";
 
 export function AuthModal({ isOpen, onClose, defaultTab = "signup" }: AuthModalProps) {
   const [mounted, setMounted] = useState(false);
   const [screen, setScreen] = useState<Screen>(defaultTab);
   const [pendingEmail, setPendingEmail] = useState("");
-  const [transitionType, setTransitionType] = useState<"login" | "signup" | null>(null);
+  const [transitionType, setTransitionType] = useState<"login" | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -38,18 +38,9 @@ export function AuthModal({ isOpen, onClose, defaultTab = "signup" }: AuthModalP
     setScreen(s);
   }, []);
 
-  const handleSignUpSubmit = useCallback(({ email, autoConfirmed }: { email: string; autoConfirmed: boolean }) => {
-    if (autoConfirmed) {
-      setTransitionType("signup");
-    } else {
-      setPendingEmail(email);
-      setScreen("signup-sent");
-    }
+  const handleSignUpSubmit = useCallback(() => {
+    setTransitionType("login");
   }, []);
-
-  const handleVerified = useCallback(() => {
-    onClose();
-  }, [onClose]);
 
   const handleLoggedIn = useCallback(() => {
     setTransitionType("login");
@@ -95,7 +86,7 @@ export function AuthModal({ isOpen, onClose, defaultTab = "signup" }: AuthModalP
           }}
           onClick={(e) => e.stopPropagation()}
         >
-          {screen !== "signup-sent" && screen !== "forgot-sent" && (
+          {screen !== "forgot-sent" && (
             <div className="flex gap-1 mb-6 p-1 rounded-lg bg-[var(--color-surface)]">
               <button
                 onClick={() => switchScreen("login")}
@@ -125,20 +116,6 @@ export function AuthModal({ isOpen, onClose, defaultTab = "signup" }: AuthModalP
               <LogInForm onForgotPassword={() => switchScreen("forgot")} onLoggedIn={handleLoggedIn} />
             )}
             {screen === "signup" && <SignUpForm onSuccess={handleSignUpSubmit} />}
-            {screen === "signup-sent" && (
-              <div className="flex flex-col items-center gap-4 text-center">
-                <p className="text-sm text-[var(--color-text-secondary)]">
-                  Check your email for the confirmation link.
-                </p>
-                <p className="text-sm font-medium text-[var(--color-text-primary)]">{pendingEmail}</p>
-                <button
-                  onClick={() => switchScreen("signup")}
-                  className="text-sm text-[var(--color-accent)] hover:underline transition-colors"
-                >
-                  Back to Sign Up
-                </button>
-              </div>
-            )}
             {screen === "forgot" && (
               <ForgotPasswordForm
                 onBack={() => switchScreen("login")}
@@ -175,7 +152,7 @@ export function AuthModal({ isOpen, onClose, defaultTab = "signup" }: AuthModalP
       </div>
 
       {transitionType && (
-        <LoginTransition type={transitionType === "signup" ? "onboarding" : "login"} redirectTo={transitionType === "signup" ? "/onboarding" : undefined} onComplete={handleTransitionComplete} />
+        <LoginTransition type="login" onComplete={handleTransitionComplete} />
       )}
     </>
   );

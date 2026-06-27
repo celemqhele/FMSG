@@ -18,33 +18,33 @@ export const PLAN_PRICES: Record<string, { monthly: number; annual: number }> = 
 };
 
 export const PF_DEFAULT_BY_TIER: Record<string, number> = {
-  Seeker: 1,
-  Hunter: 3,
-  Pro: 6,
+  Seeker: 0,
+  Hunter: 0,
+  Pro:    0,
 };
 
-export const PF_PRICE_BREAKS = [
+export const PF_PRICE_BREAKS: { min: number; max?: number; price: number }[] = [
   { min: 1, max: 2, price: 59 },
   { min: 3, max: 5, price: 54 },
   { min: 6, max: 10, price: 49 },
-  { min: 11, max: 25, price: 45 },
-] as const;
+  { min: 11, price: 45 },
+];
 
 export function calculatePFPrice(count: number): number {
   if (count <= 0) return 0;
   for (const b of PF_PRICE_BREAKS) {
-    if (count >= b.min && count <= b.max) return b.price;
+    if (count >= b.min && (!b.max || count <= b.max)) return b.price;
   }
   return 45;
 }
 
 export const PAYSTACK_PLAN_CODES: Record<string, string> = {
-  Seeker_monthly: process.env.PLAN_CODE_SEEKER_MONTHLY ?? "",
-  Seeker_annual: process.env.PLAN_CODE_SEEKER_ANNUAL ?? "",
-  Hunter_monthly: process.env.PLAN_CODE_HUNTER_MONTHLY ?? "",
-  Hunter_annual: process.env.PLAN_CODE_HUNTER_ANNUAL ?? "",
-  Pro_monthly: process.env.PLAN_CODE_PRO_MONTHLY ?? "",
-  Pro_annual: process.env.PLAN_CODE_PRO_ANNUAL ?? "",
+  Seeker_monthly: process.env.NEXT_PUBLIC_PLAN_CODE_SEEKER_MONTHLY ?? "",
+  Seeker_annual: process.env.NEXT_PUBLIC_PLAN_CODE_SEEKER_ANNUAL ?? "",
+  Hunter_monthly: process.env.NEXT_PUBLIC_PLAN_CODE_HUNTER_MONTHLY ?? "",
+  Hunter_annual: process.env.NEXT_PUBLIC_PLAN_CODE_HUNTER_ANNUAL ?? "",
+  Pro_monthly: process.env.NEXT_PUBLIC_PLAN_CODE_PRO_MONTHLY ?? "",
+  Pro_annual: process.env.NEXT_PUBLIC_PLAN_CODE_PRO_ANNUAL ?? "",
 };
 
 export function formatPlanPrice(plan: string, cycle: "monthly" | "annual"): string {

@@ -4,11 +4,11 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard/dashboard-layout";
 import { LiquidGlassCard } from "@/components/landing/liquid-glass-card";
-import { Loader2, Check, ArrowRight, ArrowLeft, CreditCard, Ban, Crosshair, ShoppingCart } from "lucide-react";
+import { Loader2, Check, ArrowRight, ArrowLeft, CreditCard, Ban, Crosshair, ShoppingCart, X } from "lucide-react";
 import { PageTransitionWrapper } from "@/components/ui/page-transition-wrapper";
 import { useTransition } from "@/components/providers/transition-provider";
 import { createClient } from "@/lib/supabase/client";
-import { PLAN_PRICES, PLAN_LIMITS, calculatePFPrice, PF_DEFAULT_BY_TIER, formatPlanPrice, PAYSTACK_PLAN_CODES, PLAN_TIER_NAMES } from "@/lib/plan-limits";
+import { PLAN_PRICES, PLAN_LIMITS, calculatePFPrice, PF_DEFAULT_BY_TIER, formatPlanPrice, PLAN_TIER_NAMES } from "@/lib/plan-limits";
 import { PFStepper } from "@/components/pricing/pf-stepper";
 
 interface Tier {
@@ -76,6 +76,10 @@ export default function ManageSubscriptionPage() {
   const [subscription, setSubscription] = useState<any>(null);
   const [profile, setProfile] = useState<any>(null);
   const [cancelling, setCancelling] = useState(false);
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [cancelMounted, setCancelMounted] = useState(false);
+  const [showUpdateCardConfirm, setShowUpdateCardConfirm] = useState(false);
+  const [updateCardMounted, setUpdateCardMounted] = useState(false);
   const [generatingLink, setGeneratingLink] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
@@ -110,7 +114,9 @@ export default function ManageSubscriptionPage() {
 
     if (subRes.data) {
       setSubscription(subRes.data);
-      setHasSubscription(subRes.data.status === "active");
+      const hasActive = subRes.data.status === "active";
+      const hasCancelledWithTime = subRes.data.status === "cancelled" && subRes.data.expiry_date && new Date(subRes.data.expiry_date) > new Date();
+      setHasSubscription(hasActive || hasCancelledWithTime);
     }
     setLoading(false);
   }, [router, supabase]);
@@ -128,21 +134,26 @@ export default function ManageSubscriptionPage() {
     script.src = "https://js.paystack.co/v1/inline.js";
     script.async = true;
     script.onload = () => setPaystackReady(true);
+    script.onerror = () => setPaystackReady(false);
     document.body.appendChild(script);
+    const timeout = setTimeout(() => {
+      if (!(window as any).PaystackPop) setPaystackReady(false);
+    }, 10000);
+    return () => clearTimeout(timeout);
   }, []);
 
   // --- Buy PF Credits ---
   const handleBuyPf = async () => {
     if (buyPfQty <= 0 || !PAYSTACK_PUBLIC_KEY) return;
     if (!paystackReady || !(window as any).PaystackPop) {
-      alert("Payment system initializing. Try again.");
+      alert("Payment system could not load. Try refreshing the page.");
       return;
     }
 
     setBuyingPf(true);
 
     const { data: { session } } = await supabase.auth.getSession();
-    if (!session) { setBuyingPf(false); return; }
+    if (!session) { setBuyingPf(false); alert("Session expired. Please refresh and try again."); return; }
 
     const amount = buyPfQty * calculatePFPrice(buyPfQty) * 100;
 
@@ -185,8 +196,19 @@ export default function ManageSubscriptionPage() {
   };
 
   // --- Cancel Subscription ---
-  const handleCancel = async () => {
+  const handleCancel = () => {
+    setShowCancelConfirm(true);
+    setTimeout(() => setCancelMounted(true), 10);
+  };
+
+  const closeCancelConfirm = () => {
+    setCancelMounted(false);
+    setTimeout(() => setShowCancelConfirm(false), 200);
+  };
+
+  const confirmCancel = async () => {
     if (!subscription) return;
+    closeCancelConfirm();
     setCancelling(true);
     setErrorMsg("");
 
@@ -217,31 +239,69 @@ export default function ManageSubscriptionPage() {
   };
 
   // --- Update Card ---
-  const handleUpdateCard = async () => {
+  const closeUpdateCardConfirm = () => {
+    setUpdateCardMounted(false);
+    setTimeout(() => setShowUpdateCardConfirm(false), 200);
+    setGeneratingLink(false);
+  };
+
+  const confirmUpdateCard = async () => {
+    closeUpdateCardConfirm();
+
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) { return; }
+
+    if (!paystackReady || !(window as any).PaystackPop) {
+      alert("Payment system is still initializing. Please wait a second and try again.");
+      return;
+    }
+
+    const email = session.user?.email;
+    if (!email) { return; }
+
     setGeneratingLink(true);
     setErrorMsg("");
 
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) { setGeneratingLink(false); return; }
+    const handler = (window as any).PaystackPop.setup({
+      key: PAYSTACK_PUBLIC_KEY,
+      email,
+      amount: 100,
+      currency: "ZAR",
+      ref: "FMSG-CARD-" + Date.now(),
+      channels: ["card"],
+      metadata: { purpose: "card_update" },
+      onClose: () => setGeneratingLink(false),
+      callback: (response: { reference: string }) => {
+        fetch("/api/paystack/verify-card-update", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ reference: response.reference }),
+        }).then(async (verifyRes) => {
+          const data = await verifyRes.json();
+          if (verifyRes.ok && data.ok) {
+            setSuccessMsg("Card updated successfully.");
+            setSuccessToast(true);
+            setTimeout(() => setSuccessToast(false), 3000);
+          } else {
+            setErrorMsg(data.error ?? "Failed to verify card update.");
+          }
+          setGeneratingLink(false);
+        }).catch(() => {
+          setErrorMsg("Failed to verify card update.");
+          setGeneratingLink(false);
+        });
+      },
+    });
 
-    try {
-      const res = await fetch("/api/update-payment-method", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-          "Content-Type": "application/json",
-        },
-      });
-      const data = await res.json();
-      if (res.ok && data.link) {
-        window.open(data.link, "_blank");
-      } else {
-        setErrorMsg(data.error ?? "Failed to generate update link.");
-      }
-    } catch {
-      setErrorMsg("Failed to generate update link.");
-    }
-    setGeneratingLink(false);
+    handler.openIframe();
+  };
+
+  const handleUpdateCard = () => {
+    setShowUpdateCardConfirm(true);
+    setTimeout(() => setUpdateCardMounted(true), 10);
   };
 
   // --- Switch Plan ---
@@ -259,10 +319,12 @@ export default function ManageSubscriptionPage() {
     if (hasSubscription) {
       const sRes = await supabase.auth.getSession();
       const session = sRes.data.session;
-      if (!session) { setProcessing(null); return; }
+      if (!session) { setProcessing(null); alert("Session expired. Please refresh and try again."); return; }
 
       try {
-        const pfCount = pfCounts[tier.name] ?? PF_DEFAULT_BY_TIER[tier.name] ?? PLAN_LIMITS[tier.name]?.pf_balance ?? 0;
+        const extraPf = pfCounts[tier.name] ?? PF_DEFAULT_BY_TIER[tier.name] ?? 0;
+        const basePf = PLAN_LIMITS[tier.name]?.pf_balance ?? 0;
+        const totalPf = basePf + extraPf;
         const res = await fetch("/api/paystack/change-plan", {
           method: "POST",
           headers: {
@@ -272,7 +334,7 @@ export default function ManageSubscriptionPage() {
           body: JSON.stringify({
             plan: tier.name,
             billing_cycle: annual ? "annual" : "monthly",
-            pf_count: pfCount,
+            pf_count: totalPf,
           }),
         });
 
@@ -306,27 +368,33 @@ export default function ManageSubscriptionPage() {
       }
 
       const baseKobo = (PLAN_PRICES[tier.name] ?? { monthly: 0, annual: 0 })[annual ? "annual" : "monthly"];
-      const pfCount = pfCounts[tier.name] ?? PF_DEFAULT_BY_TIER[tier.name] ?? 0;
-      const pfPriceZar = calculatePFPrice(pfCount);
-      const pfKobo = pfCount * pfPriceZar * 100 * (annual ? 12 : 1);
+      const extraPf = pfCounts[tier.name] ?? PF_DEFAULT_BY_TIER[tier.name] ?? 0;
+      const basePf = PLAN_LIMITS[tier.name]?.pf_balance ?? 0;
+      const totalPf = basePf + extraPf;
+      const pfPriceZar = calculatePFPrice(extraPf);
+      const pfKobo = extraPf * pfPriceZar * 100 * (annual ? 12 : 1);
       const amount = baseKobo + pfKobo;
 
       try {
         const sRes = await supabase.auth.getSession();
         const session = sRes.data.session;
         const email = session?.user?.email;
-        if (!email) { setProcessing(null); return; }
+        if (!email) { setProcessing(null); alert("Session expired. Please refresh and try again."); return; }
 
-        const planCode = PAYSTACK_PLAN_CODES[`${tier.name}_${annual ? "annual" : "monthly"}`] || "";
+        const fullName = (session?.user?.user_metadata?.full_name as string) || "";
+        const nameParts = fullName.split(" ");
+        const firstName = nameParts[0] || "";
+        const lastName = nameParts.slice(1).join(" ") || "";
 
         const handler = (window as any).PaystackPop.setup({
           key: PAYSTACK_PUBLIC_KEY,
           email,
+          first_name: firstName,
+          last_name: lastName,
           amount,
           currency: "ZAR",
           ref: "FMSG-" + Date.now(),
-          plan: planCode,
-          metadata: { plan: tier.name, billing_cycle: annual ? "annual" : "monthly", pf_count: pfCount },
+          metadata: { plan: tier.name, billing_cycle: annual ? "annual" : "monthly", pf_count: totalPf },
           callback: function (response: { reference: string }) {
             fetch("/api/verify-payment", {
               method: "POST",
@@ -471,8 +539,8 @@ export default function ManageSubscriptionPage() {
                     <span className="ml-1 text-sm text-white/70">runs</span>
                   </div>
                   <button
-                    onClick={() => setBuyPfQty(Math.min(25, buyPfQty + 1))}
-                    disabled={buyPfQty >= 25 || buyingPf}
+                    onClick={() => setBuyPfQty(buyPfQty + 1)}
+                    disabled={buyingPf}
                     className="w-10 h-10 flex items-center justify-center rounded-lg border border-white/20 text-white/90 hover:text-white hover:border-white/40 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                   >
                     <span className="text-lg font-bold">+</span>
@@ -658,6 +726,92 @@ export default function ManageSubscriptionPage() {
           <div className="flex items-center gap-2">
             <Check size={16} />
             {successMsg ?? "Success!"}
+          </div>
+        </div>
+      )}
+
+      {/* Update card confirmation modal */}
+      {showUpdateCardConfirm && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center transition-opacity duration-300" style={{ opacity: updateCardMounted ? 1 : 0 }}>
+          <div className="absolute inset-0 bg-black/60" onClick={closeUpdateCardConfirm} />
+          <div className="relative">
+            <button
+              onClick={closeUpdateCardConfirm}
+              className="absolute -top-4 -right-4 z-10 p-1.5 bg-white border border-gray-300 rounded-full text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors shadow-lg"
+            >
+              <X size={20} />
+            </button>
+            <div
+              className="bg-white border border-gray-200 rounded-2xl p-6 max-w-sm mx-4 text-center transition-all duration-300 ease-out shadow-xl"
+              style={{ opacity: updateCardMounted ? 1 : 0, transform: updateCardMounted ? "translateY(0) scale(1)" : "translateY(8px) scale(0.97)" }}
+            >
+              <p className="text-gray-900 font-semibold mb-2">Update Card</p>
+              <p className="text-sm text-gray-500 mb-4">
+                A <strong className="text-gray-700">R1.00</strong> verification charge
+                will be placed on your card. This amount will be credited toward
+                your next bill.
+              </p>
+              <div className="flex justify-center gap-3">
+                <button
+                  onClick={closeUpdateCardConfirm}
+                  className="px-5 py-2.5 text-sm font-medium text-gray-600 bg-gray-100 border border-gray-200 rounded-full hover:bg-gray-200 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmUpdateCard}
+                  className="px-5 py-2.5 text-sm font-semibold text-white bg-[var(--color-success)] rounded-full hover:brightness-110 transition-colors"
+                >
+                  Continue
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cancel subscription confirmation modal */}
+      {showCancelConfirm && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center transition-opacity duration-300" style={{ opacity: cancelMounted ? 1 : 0 }}>
+          <div className="absolute inset-0 bg-black/60" onClick={closeCancelConfirm} />
+          <div className="relative">
+            <button
+              onClick={closeCancelConfirm}
+              className="absolute -top-4 -right-4 z-10 p-1.5 bg-white border border-gray-300 rounded-full text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors shadow-lg"
+            >
+              <X size={20} />
+            </button>
+            <div
+              className="bg-white border border-gray-200 rounded-2xl p-6 max-w-sm mx-4 text-center transition-all duration-300 ease-out shadow-xl"
+              style={{ opacity: cancelMounted ? 1 : 0, transform: cancelMounted ? "translateY(0) scale(1)" : "translateY(8px) scale(0.97)" }}
+            >
+              <p className="text-gray-900 font-semibold mb-2">Cancel {subscription?.plan ? subscription.plan.charAt(0).toUpperCase() + subscription.plan.slice(1) : ""} plan?</p>
+              <p className="text-sm text-gray-500 mb-4">
+                You'll keep access to your current plan features until{" "}
+                <strong className="text-gray-700">
+                  {subscription?.expiry_date
+                    ? new Date(subscription.expiry_date).toLocaleDateString("en-ZA", { day: "numeric", month: "long", year: "numeric" })
+                    : "the end of your billing period"}
+                </strong>.
+                After that, your account will switch to the Free tier.
+              </p>
+              <div className="flex justify-center gap-3">
+                <button
+                  onClick={closeCancelConfirm}
+                  className="px-5 py-2.5 text-sm font-medium text-gray-600 bg-gray-100 border border-gray-200 rounded-full hover:bg-gray-200 transition-colors"
+                >
+                  Keep Plan
+                </button>
+                <button
+                  onClick={confirmCancel}
+                  disabled={cancelling}
+                  className="px-5 py-2.5 text-sm font-semibold text-white bg-red-500 rounded-full hover:bg-red-600 transition-colors disabled:opacity-50 flex items-center gap-2"
+                >
+                  {cancelling ? <Loader2 size={14} className="animate-spin" /> : null}
+                  {cancelling ? "Cancelling..." : "Yes, Cancel"}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

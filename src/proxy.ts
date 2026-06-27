@@ -1,50 +1,22 @@
-import { createServerClient } from "@supabase/ssr";
-import { NextResponse, type NextRequest } from "next/server";
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 
-export async function proxy(request: NextRequest) {
-  let supabaseResponse = NextResponse.next({ request });
+export function proxy(request: NextRequest) {
+  const url = request.nextUrl.clone();
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      auth: {
-        storageKey: "fmsg-auth",
-      },
-      cookies: {
-        getAll() {
-          return request.cookies.getAll();
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
-          supabaseResponse = NextResponse.next({ request });
-          cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options)
-          );
-        },
-      },
-    }
-  );
-
-  const { data: { user } } = await supabase.auth.getUser();
-
-  // Protected routes — redirect to landing if not authenticated
-  const protectedPaths = ["/dashboard", "/settings", "/profile", "/onboarding", "/upgrade"];
-  const isProtected = protectedPaths.some((p) =>
-    request.nextUrl.pathname.startsWith(p)
-  );
-
-  if (isProtected && !user) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/";
+  if (
+    url.pathname === "/" &&
+    (url.searchParams.has("code") ||
+      url.searchParams.has("type") ||
+      url.searchParams.has("error"))
+  ) {
+    url.pathname = "/auth/confirm";
     return NextResponse.redirect(url);
   }
 
-  return supabaseResponse;
+  return NextResponse.next();
 }
 
 export const config = {
-  matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|mp4)$).*)",
-  ],
+  matcher: "/",
 };

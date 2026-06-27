@@ -1,0 +1,123 @@
+import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
+import { checkRateLimit } from "@/lib/rate-limit";
+import { verifyCode } from "@/lib/verification-code";
+import { sendAccountDeleted } from "@/lib/email";
+
+const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || process.env.PAYSTACK_TEST_SECRET_KEY;
+
+export async function POST(request: NextRequest) {
+  try {
+    const authHeader = request.headers.get("Authorization")?.replace("Bearer ", "");
+    if (!authHeader) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const body = await request.json();
+    const { code } = body as { code?: string };
+
+    if (!code || typeof code !== "string" || code.length !== 6 || !/^\d{6}$/.test(code)) {
+      return NextResponse.json({ error: "Invalid code format" }, { status: 400 });
+    }
+
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
+
+    const { data: { user }, error: authErr } = await supabase.auth.getUser(authHeader);
+    if (authErr || !user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const email = user.email;
+    if (!email) {
+      return NextResponse.json({ error: "No email on account" }, { status: 400 });
+    }
+
+    const { allowed } = checkRateLimit(`verify-deletion:${user.id}`, "verify");
+    if (!allowed) {
+      return NextResponse.json({ error: "Too many attempts. Please wait before trying again." }, { status: 429 });
+    }
+
+    const { data: profile, error: fetchErr } = await supabase
+      .from("profiles")
+      .select("email_verification_hash, cv_file_path")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    if (fetchErr || !profile?.email_verification_hash) {
+      return NextResponse.json({ error: "Code expired or not requested. Please request a new one." }, { status: 400 });
+    }
+
+    const valid = await verifyCode(code, email, profile.email_verification_hash);
+    if (!valid) {
+      return NextResponse.json({ error: "Invalid code. Please try again." }, { status: 400 });
+    }
+
+    // Cancel active subscriptions and deactivate authorizations
+    if (PAYSTACK_SECRET_KEY) {
+      try {
+        const { data: subs } = await supabase
+          .from("subscriptions")
+          .select("authorization_code, id")
+          .eq("user_id", user.id)
+          .in("status", ["active", "past_due"]);
+
+        if (subs) {
+          for (const s of subs) {
+            // Mark as cancelled in DB
+            await supabase
+              .from("subscriptions")
+              .update({ status: "cancelled", cancelled_at: new Date().toISOString() })
+              .eq("id", s.id);
+
+            // Deactivate authorization on Paystack
+            if (s.authorization_code) {
+              await fetch("https://api.paystack.co/customer/authorization/deactivate", {
+                method: "POST",
+                headers: {
+                  Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ authorization_code: s.authorization_code }),
+              });
+            }
+          }
+        }
+      } catch (err) {
+        console.error("[VERIFY-DEL] Paystack cancel failed:", err);
+      }
+    }
+
+    // Send goodbye email
+    await sendAccountDeleted(email).catch((err) => console.error("[VERIFY-DEL] Goodbye email failed:", err));
+
+    // Delete CV file from storage
+    try {
+      if (profile.cv_file_path) {
+        await supabase.storage.from("cv-files").remove([profile.cv_file_path]);
+      }
+    } catch (err) {
+      console.error("[VERIFY-DEL] CV deletion failed:", err);
+    }
+
+    // Delete all data
+    const tables = ["profiles", "job_results", "subscriptions", "error_logs", "saved_jobs", "search_profiles", "rejected_jobs"];
+    for (const table of tables) {
+      const { error } = await supabase.from(table).delete().eq("user_id", user.id);
+      if (error) console.error(`[VERIFY-DEL] Failed to delete from ${table}:`, error);
+    }
+
+    // Delete auth user
+    const { error: deleteErr } = await supabase.auth.admin.deleteUser(user.id);
+    if (deleteErr) {
+      return NextResponse.json({ error: "Failed to delete account" }, { status: 500 });
+    }
+
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    console.error("[VERIFY-DEL]", err);
+    return NextResponse.json({ error: "Internal error" }, { status: 500 });
+  }
+}

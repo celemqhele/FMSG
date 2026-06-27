@@ -61,7 +61,7 @@ export async function callGroq(systemPrompt: string, userText: string, config?: 
         { role: "system", content: systemPrompt },
         { role: "user", content: userText },
       ],
-      max_tokens: config?.maxOutputTokens ?? 4096,
+    max_tokens: Math.min(config?.maxOutputTokens ?? 4096, 16384),
       temperature: config?.temperature ?? 0.1,
     }),
   });
@@ -76,11 +76,9 @@ export async function callGroq(systemPrompt: string, userText: string, config?: 
 }
 
 const OPENROUTER_FALLBACK_MODELS = [
-  "openai/gpt-oss-120b:free",
-  "nvidia/nemotron-3-super-120b-a12b:free",
-  "google/gemma-4-31b-it:free",
-  "openai/gpt-oss-20b:free",
-  "qwen/qwen3-235b-a22b:free",
+  "openai/gpt-4o-mini",
+  "google/gemini-2.5-flash",
+  "deepseek/deepseek-chat",
 ];
 
 async function callOpenRouterSingle(model: string, systemPrompt: string, userText: string, apiKey: string, config?: AIConfig): Promise<string> {
@@ -158,7 +156,7 @@ export async function callAIWithFallback(
   } catch (err: any) {
     const msg = err?.message ?? String(err);
     debugLog(`[AI] Gemini error on "${stepName}": ${msg}`);
-    const isRetryable = msg.includes("429") || msg.includes("quota") || /5\d{2}/.test(msg) || /UNAVAILABLE/i.test(msg);
+    const isRetryable = msg.includes("429") || msg.includes("quota") || msg.includes("401") || msg.includes("403") || /5\d{2}/.test(msg) || /UNAVAILABLE/i.test(msg);
     if (!isRetryable) throw err;
   }
 
@@ -172,7 +170,7 @@ export async function callAIWithFallback(
     } catch (err: any) {
       const msg = err?.message ?? String(err);
       debugLog(`[AI] Groq error on "${stepName}": ${msg}`);
-      const isRetryable = msg.includes("429") || msg.includes("quota") || /5\d{2}/.test(msg) || /UNAVAILABLE/i.test(msg);
+      const isRetryable = msg.includes("429") || msg.includes("quota") || msg.includes("401") || msg.includes("403") || /5\d{2}/.test(msg) || /UNAVAILABLE/i.test(msg);
       if (!isRetryable) throw err;
     }
   }

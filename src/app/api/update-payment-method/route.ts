@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Get active subscription
+  // Get active subscription with a valid authorization
   const { data: sub, error: subErr } = await supabase
     .from("subscriptions")
     .select("*")
@@ -40,62 +40,46 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "No active subscription found" }, { status: 404 });
   }
 
+  if (!sub.customer_code && !sub.email) {
+    return NextResponse.json({ error: "No payment method on file for this account." }, { status: 400 });
+  }
+
   if (!PAYSTACK_SECRET_KEY) {
     return NextResponse.json({ error: "Paystack not configured" }, { status: 500 });
   }
 
-  // Generate a Paystack managed page for updating payment method
+  // Initialize a small transaction to collect new card details.
+  // Paystack returns an authorization_url where the user enters their new card.
+  // On successful payment, the webhook updates the subscription's authorization_code.
   try {
-    let link = "";
-
-    if (sub.paystack_subscription_id) {
-      const res = await fetch("https://api.paystack.co/subscription/manage/link", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
-          "Content-Type": "application/json",
+    const res = await fetch("https://api.paystack.co/transaction/initialize", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        email: sub.email,
+        amount: 100, // R1 (minimum charge to tokenize card)
+        currency: "ZAR",
+        metadata: {
+          purpose: "card_update",
+          user_id: user.id,
         },
-        body: JSON.stringify({
-          subscription: sub.paystack_subscription_id,
-        }),
-      });
+        channels: ["card"],
+      }),
+    });
 
-      const data = await res.json();
+    const text = await res.text();
+    const data = text ? JSON.parse(text) : {};
 
-      if (data.status && data.data?.link) {
-        link = data.data.link;
-      } else {
-        console.error("[UPDATE_PAYMENT] Paystack manage/link failed:", JSON.stringify(data));
-      }
+    if (data.status && data.data?.authorization_url) {
+      return NextResponse.json({ link: data.data.authorization_url });
     }
 
-    // Fallback: use customer code if subscription link failed or missing
-    if (!link && sub.customer_code) {
-      const custRes = await fetch(`https://api.paystack.co/customer/${sub.customer_code}/payment_method`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({}),
-      });
-      const custData = await custRes.json();
-      if (custData.status && custData.data?.link) {
-        link = custData.data.link;
-      } else {
-        console.error("[UPDATE_PAYMENT] Customer payment_method failed:", JSON.stringify(custData));
-      }
-    }
-
-    if (link) {
-      return NextResponse.json({ link });
-    }
-
-    const reason = sub.paystack_subscription_id
-      ? "Payment provider returned an error."
-      : "No subscription code on record.";
+    console.error("[UPDATE_PAYMENT] Initialize failed:", text || "(empty body)");
     return NextResponse.json({
-      error: `Unable to generate update link. ${reason} Try again or contact support.`,
+      error: "Unable to generate update link. Payment provider returned an error. Try again or contact support.",
     }, { status: 500 });
   } catch (err) {
     console.error("[UPDATE_PAYMENT] Error:", err);

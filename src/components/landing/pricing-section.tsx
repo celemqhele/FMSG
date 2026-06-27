@@ -315,23 +315,31 @@ export function PricingSection() {
     }
 
     const baseKobo = cycle === "annual" ? PLAN_PRICES[planName].annual : PLAN_PRICES[planName].monthly;
-    const pfCount = pfCounts[planName] ?? PF_DEFAULT_BY_TIER[planName] ?? 0;
-    const pfPriceZar = calculatePFPrice(pfCount);
-    const pfKobo = pfCount * pfPriceZar * 100 * (cycle === "annual" ? 12 : 1);
+    const extraPf = pfCounts[planName] ?? PF_DEFAULT_BY_TIER[planName] ?? 0;
+    const pfPriceZar = calculatePFPrice(extraPf || 1);
+    const billingMonths = cycle === "annual" ? 12 : 1;
+    const pfKobo = extraPf * pfPriceZar * 100 * billingMonths;
     const amount = baseKobo + pfKobo;
+    const totalPf = (PLAN_LIMITS[planName]?.pf_balance ?? 0) + extraPf;
     const sRes = await supabase.auth.getSession();
     const session = sRes.data.session;
     const email = session?.user?.email;
     if (!email) { setProcessing(null); return; }
 
+    const fullName = (session?.user?.user_metadata?.full_name as string) || "";
+    const nameParts = fullName.split(" ");
+    const firstName = nameParts[0] || "";
+    const lastName = nameParts.slice(1).join(" ") || "";
+
     const handler = (window as any).PaystackPop.setup({
       key: PAYSTACK_PUBLIC_KEY,
       email,
+      first_name: firstName,
+      last_name: lastName,
       amount,
       currency: "ZAR",
       ref: "FMSG-" + Date.now(),
-      plan: "",
-      metadata: { plan: planName, billing_cycle: cycle, pf_count: pfCount },
+      metadata: { plan: planName, billing_cycle: cycle, pf_count: totalPf },
       callback: function (response: { reference: string }) {
         fetch("/api/verify-payment", {
           method: "POST",

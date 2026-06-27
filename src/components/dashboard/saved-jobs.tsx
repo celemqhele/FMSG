@@ -85,7 +85,6 @@ export function SavedJobs() {
           matchScore={j.match_score}
           jobUrl={j.job_url}
           fullDescription={j.full_spec}
-          domainVerified={true}
           suggestedCvName={j.suggested_cv ?? ""}
           onDelete={(id) => setJobs((prev) => prev.filter((x) => x.id !== id))}
         />

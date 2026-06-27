@@ -60,15 +60,21 @@ export async function POST(request: NextRequest) {
     const authorizationCode = txData.authorization?.authorization_code ?? "";
     const customerCode = txData.customer?.customer_code ?? "";
     const email = txData.customer?.email ?? "";
-    const paystackSubId = txData.subscription?.subscription_code ?? "";
 
-    // Calculate expiry
+    if (!authorizationCode) {
+      return NextResponse.json({ error: "No authorization code returned. Ensure card payment was used (not bank transfer)." }, { status: 400 });
+    }
+
+    // Calculate expiry and next payment date
     const now = new Date();
     const expiryDate = new Date(now);
+    const nextPaymentDate = new Date(now);
     if (billing_cycle === "annual") {
       expiryDate.setFullYear(expiryDate.getFullYear() + 1);
+      nextPaymentDate.setFullYear(nextPaymentDate.getFullYear() + 1);
     } else {
       expiryDate.setMonth(expiryDate.getMonth() + 1);
+      nextPaymentDate.setMonth(nextPaymentDate.getMonth() + 1);
     }
 
     const limits = PLAN_LIMITS[plan] ?? { searches: 1, cv_gens: 0, pf_balance: 0 };
@@ -79,14 +85,13 @@ export async function POST(request: NextRequest) {
       plan,
       billing_cycle,
       paystack_reference: reference,
-      paystack_subscription_id: paystackSubId,
       amount: txData.amount,
       authorization_code: authorizationCode,
       customer_code: customerCode,
       email,
       start_date: now.toISOString(),
       expiry_date: expiryDate.toISOString(),
-      next_payment_date: txData.subscription?.next_payment_date ?? null,
+      next_payment_date: nextPaymentDate.toISOString(),
       status: "active",
     });
 
@@ -95,8 +100,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Failed to record subscription" }, { status: 500 });
     }
 
-    // Determine pf_balance — metadata.pf_count replaces base (user's choice)
-    const pfCount = txData.metadata?.pf_count ?? limits.pf_balance;
+    // Determine pf_balance — metadata.pf_count is total PF (base + extra)
+    const metadataPf = txData.metadata?.pf_count;
+    const pfCount = (metadataPf != null && metadataPf > 0) ? metadataPf : limits.pf_balance;
 
     // Update profile (core fields)
     const { error: profileErr } = await supabase
@@ -125,7 +131,7 @@ export async function POST(request: NextRequest) {
       console.warn("[VERIFY] pf_refill column missing (safe to ignore):", pfRefillErr.message);
     }
 
-    sendSubscriptionConfirmation(email, plan, billing_cycle, formatPlanPrice(plan, billing_cycle)).catch(() => {});
+    sendSubscriptionConfirmation(email, plan, billing_cycle, formatPlanPrice(plan, billing_cycle)).catch((err) => console.error("[VERIFY] Email failed:", err));
 
     return NextResponse.json({ ok: true, plan: plan.toLowerCase(), balance: limits });
   } catch (err) {

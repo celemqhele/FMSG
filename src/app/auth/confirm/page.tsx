@@ -28,21 +28,7 @@ function ConfirmContent() {
 
   const handleContinue = async () => {
     setLoading(true);
-    const supabase = createClient();
-    try {
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("onboarding_completed")
-        .single();
-
-      if (profile?.onboarding_completed) {
-        router.push("/dashboard");
-      } else {
-        router.push("/onboarding");
-      }
-    } catch {
-      router.push("/onboarding");
-    }
+    router.push("/onboarding");
   };
 
   return (
@@ -67,7 +53,7 @@ function ConfirmContent() {
           disabled={loading}
           className="w-full px-5 py-2.5 text-sm font-medium text-white bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] rounded-full transition-colors disabled:opacity-50"
         >
-          {loading ? "Loading..." : "Continue to Dashboard"}
+          {loading ? "Loading..." : "Set up account"}
         </button>
       </div>
     </div>

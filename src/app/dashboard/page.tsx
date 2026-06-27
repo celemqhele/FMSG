@@ -2,15 +2,16 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef, startTransition } from "react";
 import { useRouter } from "next/navigation";
-import { X, ArrowRight } from "lucide-react";
+import { X, ArrowRight, Mail, Upload } from "lucide-react";
 import { DashboardLayout } from "@/components/dashboard/dashboard-layout";
 import { SearchPill } from "@/components/dashboard/search-pill";
 import { JobResultCard } from "@/components/dashboard/job-result-card";
 import dynamic from "next/dynamic";
 const PFPurchaseModal = dynamic(() => import("@/components/dashboard/pf-purchase-modal").then((mod) => mod.PFPurchaseModal), { ssr: false });
+const OnboardingForm = dynamic(() => import("@/components/onboarding/onboarding-form").then((mod) => mod.OnboardingForm), { ssr: false });
 import { DashboardTabs, type TabId } from "@/components/dashboard/dashboard-tabs";
 import { BalanceChips } from "@/components/dashboard/balance-chips";
-import { FilterSortBar, type FilterState, type SortMode } from "@/components/dashboard/filter-sort-bar";
+import { FilterSortBar, type SortMode } from "@/components/dashboard/filter-sort-bar";
 import { SearchProgress } from "@/components/dashboard/search-progress";
 import type { FilteredSummary } from "@/lib/search-stream";
 import { SavedJobs } from "@/components/dashboard/saved-jobs";
@@ -19,6 +20,10 @@ import { RejectedJobs } from "@/components/dashboard/rejected-jobs";
 import { PageTransitionWrapper } from "@/components/ui/page-transition-wrapper";
 import { useTransition } from "@/components/providers/transition-provider";
 import { createClient } from "@/lib/supabase/client";
+import { BlockedAccountPage } from "@/components/dashboard/blocked-account";
+import { VerifyEmailBanner } from "@/components/dashboard/verify-email-banner";
+import { VerifyCodeModal } from "@/components/dashboard/verify-code-modal";
+import { ContinuePopup } from "@/components/dashboard/continue-popup";
 
 interface JobResult {
   id: string;
@@ -31,10 +36,14 @@ interface JobResult {
   verdict_bullets?: { industry: string; function: string; competition: string } | null;
   job_url: string;
   full_description: string;
-  domain_verified?: boolean;
-  domain_unverified_reason?: string;
   suggested_cv?: string;
   created_at?: string;
+  knockout_fail?: boolean | null;
+  pillar_scores?: { industry: number; function: number; scale: number; tools: number; location: number } | null;
+  taxes_applied?: string[] | null;
+  total_questions_asked?: number | null;
+  yes_answers?: number | null;
+  recruiter_verdict?: string | null;
 }
 
 interface HistoryResult {
@@ -48,9 +57,19 @@ interface HistoryResult {
   verdict_bullets?: { industry: string; function: string; competition: string } | null;
   job_url: string;
   full_spec: string;
-  domain_verified?: boolean;
-  domain_unverified_reason?: string;
   suggested_cv?: string;
+  knockout_fail?: boolean | null;
+  pillar_scores?: { industry: number; function: number; scale: number; tools: number; location: number } | null;
+  taxes_applied?: string[] | null;
+  total_questions_asked?: number | null;
+  yes_answers?: number | null;
+  recruiter_verdict?: string | null;
+}
+
+interface Balances {
+  search: number;
+  cv: number;
+  pf: number;
 }
 
 function SkeletonCard({ style }: { style?: React.CSSProperties }) {
@@ -90,8 +109,51 @@ export default function DashboardPage() {
   const [statusActive, setStatusActive] = useState("");
   const [filteredSummary, setFilteredSummary] = useState<FilteredSummary | null>(null);
   const [continuationToken, setContinuationToken] = useState<string | null>(null);
+  const [needsOnboarding, setNeedsOnboarding] = useState(false);
+  const [onboardingStep, setOnboardingStep] = useState<"prompt" | "form" | "done">("prompt");
+  const [onboardingMounted, setOnboardingMounted] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
+  const [accountStatus, setAccountStatus] = useState<string>("active");
+  const [emailVerified, setEmailVerified] = useState<boolean | null>(null);
+  const [showVerifyModal, setShowVerifyModal] = useState(false);
+  const [userEmail, setUserEmail] = useState("");
+  const [balances, setBalances] = useState<Balances>({ search: 0, cv: 0, pf: 0 });
+  const [plan, setPlan] = useState("free");
+  const [pauseMessage, setPauseMessage] = useState("");
 
   useEffect(() => { endTransition(); }, [endTransition]);
+
+  // Refresh balances from profile when triggered by search completion or CV/PF operations
+  const refreshBalances = useCallback(async () => {
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { data } = await supabase
+      .from("profiles")
+      .select("search_balance, cv_generation_balance, persistent_finder_balance, plan")
+      .eq("id", user.id)
+      .maybeSingle();
+    if (data) {
+      setBalances({
+        search: data.search_balance ?? 0,
+        cv: data.cv_generation_balance ?? 0,
+        pf: data.persistent_finder_balance ?? 0,
+      });
+      setPlan(data.plan ?? "free");
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!searching && hasSearched) {
+      refreshBalances();
+    }
+  }, [searching, hasSearched, refreshBalances]);
+
+  useEffect(() => {
+    const handler = () => refreshBalances();
+    window.addEventListener("refresh-balances", handler);
+    return () => window.removeEventListener("refresh-balances", handler);
+  }, [refreshBalances]);
 
   useEffect(() => {
     const supabase = createClient();
@@ -101,6 +163,20 @@ export default function DashboardPage() {
         return;
       }
       setAuthChecked(true);
+      setUserEmail(data.session.user?.email ?? "");
+      supabase
+        .from("profiles")
+        .select("onboarding_completed, account_status, email_verified")
+        .maybeSingle()
+        .then(({ data: profile }: { data: any }) => {
+          if (!profile) {
+            setNeedsOnboarding(true);
+            requestAnimationFrame(() => setOnboardingMounted(true));
+          } else {
+            if (profile.account_status) setAccountStatus(profile.account_status);
+            setEmailVerified(profile.email_verified ?? false);
+          }
+        });
     });
 
     const handler = (e: Event) => {
@@ -141,40 +217,24 @@ export default function DashboardPage() {
 
   const [pfActive, setPfActive] = useState(false);
 
-  // Filter + sort state
-  const [filterState, setFilterState] = useState<FilterState>({
-    trusted: true, untrusted: true, scoreHigh: true, scoreMid: true, scoreLow: true,
-  });
-  const [sortMode, setSortMode] = useState<SortMode>("score");
+  // Sort state
+  const [sortMode, setSortMode] = useState<SortMode>("date_newest");
 
-  const filteredResults = useMemo(() => {
-    let filtered = results.filter((r) => {
-      if (!filterState.trusted && r.domain_verified) return false;
-      if (!filterState.untrusted && !r.domain_verified) return false;
-      const s = r.match_score;
-      if (!filterState.scoreHigh && s >= 80) return false;
-      if (!filterState.scoreMid && s >= 40 && s < 80) return false;
-      if (!filterState.scoreLow && s < 40) return false;
-      return true;
-    });
-
-    filtered.sort((a, b) => {
+  const sortedResults = useMemo(() => {
+    const sorted = [...results].sort((a, b) => {
       switch (sortMode) {
-        case "date_newest":
-          return new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime();
         case "date_oldest":
           return new Date(a.created_at ?? 0).getTime() - new Date(b.created_at ?? 0).getTime();
-        case "score":
+        case "date_newest":
         default:
-          return (b.match_score ?? 0) - (a.match_score ?? 0);
+          return new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime();
       }
     });
+    return sorted;
+  }, [results, sortMode]);
 
-    return filtered;
-  }, [results, filterState, sortMode]);
-
-  const handleSearch = useCallback(async (query: string, profileId?: string | null, pfMode?: boolean) => {
-    console.log("[DASHBOARD] Search clicked:", { query, profileId, pfMode, time: new Date().toISOString() });
+  const handleSearch = useCallback(async (query: string, profileId?: string | null, pfMode?: boolean, dateFilterDays?: number | null) => {
+    console.log("[DASHBOARD] Search clicked:", { query, profileId, pfMode, dateFilterDays, time: new Date().toISOString() });
     setSearching(true);
     setProgress(0);
     setHasSearched(true);
@@ -194,16 +254,23 @@ export default function DashboardPage() {
       return;
     }
 
-    const res = await fetch("/api/search", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${session.access_token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ query, profile_id: profileId, pf_mode: pfMode }),
-    });
+    abortRef.current = new AbortController();
 
-    await handleStreamResponse(res);
+    try {
+      const res = await fetch("/api/search", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ query, profile_id: profileId, pf_mode: pfMode, date_filter_days: dateFilterDays ?? null }),
+        signal: abortRef.current.signal,
+      });
+
+      await handleStreamResponse(res);
+    } catch (err) {
+      if ((err as DOMException)?.name !== "AbortError") throw err;
+    }
   }, [setVideoFast]);
 
   const handleContinue = useCallback(async () => {
@@ -217,18 +284,40 @@ export default function DashboardPage() {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return;
 
-    const res = await fetch("/api/search", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${session.access_token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ continuation: continuationToken }),
-    });
+    abortRef.current = new AbortController();
 
-    setContinuationToken(null);
-    await handleStreamResponse(res);
+    try {
+      const res = await fetch("/api/search", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ continuation: continuationToken }),
+        signal: abortRef.current.signal,
+      });
+
+      setContinuationToken(null);
+      await handleStreamResponse(res);
+    } catch (err) {
+      if ((err as DOMException)?.name !== "AbortError") throw err;
+    }
   }, [continuationToken, setVideoFast]);
+
+  const handleAbort = useCallback(() => {
+    if (abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
+    }
+    setSearching(false);
+    setProgress(0);
+    setVideoFast(false);
+    setPfActive(false);
+    setContinuationToken(null);
+    setStatusCompleted([]);
+    setStatusActive("");
+    setResultMessage("");
+  }, []);
 
   const handleStreamResponse = async (res: Response) => {
     const contentType = res.headers.get("Content-Type") || "";
@@ -251,6 +340,24 @@ export default function DashboardPage() {
         setProgress(0);
         setVideoFast(false);
         setPfActive(false);
+        return;
+      }
+
+      if (res.status === 403 && data.code === "ACCOUNT_BLOCKED") {
+        setAccountStatus("blocked");
+        setSearching(false);
+        setProgress(0);
+        setVideoFast(false);
+        setPfActive(false);
+        return;
+      }
+
+      if (res.status === 403 && data.code === "EMAIL_NOT_VERIFIED") {
+        setSearching(false);
+        setProgress(0);
+        setVideoFast(false);
+        setPfActive(false);
+        setResultMessage("Please verify your email before searching.");
         return;
       }
 
@@ -369,6 +476,11 @@ export default function DashboardPage() {
               setContinuationToken(event.continuation);
               setSearching(false);
               setVideoFast(false);
+              if (event.balances) {
+                setBalances(event.balances);
+                setPlan(event.plan ?? "free");
+              }
+              setPauseMessage(event.message ?? "");
               break;
 
             case "partial_complete":
@@ -392,6 +504,11 @@ export default function DashboardPage() {
               setSearching(false);
               setVideoFast(false);
               setResultMessage(event.message ?? "");
+              if (event.balances) {
+                setBalances(event.balances);
+                setPlan(event.plan ?? "free");
+              }
+              setPauseMessage(event.message ?? "");
               break;
 
             case "complete":
@@ -413,19 +530,21 @@ export default function DashboardPage() {
               if (event.filtered_summary) {
                 setFilteredSummary(event.filtered_summary);
               }
-              setTimeout(() => {
-                setResults(event.results ?? []);
-                setSearching(false);
-                setProgress(0);
-                setVideoFast(false);
-                setPfActive(false);
-                setContinuationToken(null);
-                if (event.results?.length === 0 && event.message) {
-                  setResultMessage(event.message);
-                } else if (event.pf_mode && event.pf_rounds) {
-                  setResultMessage(`Persistent Finder completed (${event.results?.length ?? 0} results across ${event.pf_rounds} rounds)`);
-                }
-              }, 500);
+              if (event.balances) {
+                setBalances(event.balances);
+                setPlan(event.plan ?? "free");
+              }
+              setResults(event.results ?? []);
+              setSearching(false);
+              setProgress(0);
+              setVideoFast(false);
+              setPfActive(false);
+              setContinuationToken(null);
+              if (event.results?.length === 0 && event.message) {
+                setResultMessage(event.message);
+              } else if (event.pf_mode && event.pf_rounds) {
+                setResultMessage(`Persistent Finder completed (${event.results?.length ?? 0} results across ${event.pf_rounds} rounds)`);
+              }
               break;
 
             case "error":
@@ -454,7 +573,8 @@ export default function DashboardPage() {
         setStatusActive("");
         setResultMessage("Connection lost. Please try again.");
       }
-    } catch {
+    } catch (err) {
+      if ((err as DOMException)?.name === "AbortError") return;
       if (!streamComplete) {
         setSearching(false);
         setProgress(0);
@@ -498,21 +618,26 @@ export default function DashboardPage() {
     <DashboardLayout>
       <PageTransitionWrapper>
       <div className="max-w-4xl mx-auto pt-8 space-y-6">
-        <DashboardTabs active={activeTab} onChange={setActiveTab} />
+        {accountStatus === "blocked" ? (
+          <BlockedAccountPage />
+        ) : (
+          <>
+            {emailVerified === false && authChecked && (
+              <VerifyEmailBanner onOpenModal={() => setShowVerifyModal(true)} />
+            )}
+            <DashboardTabs active={activeTab} onChange={setActiveTab} />
 
         {activeTab === "search" && (
           <>
-            <SearchPill onSearch={handleSearch} searching={searching} />
+            <SearchPill onSearch={handleSearch} onAbort={handleAbort} searching={searching} />
             <div className="flex flex-wrap justify-center gap-1.5">
-              <BalanceChips />
+              <BalanceChips balances={balances} plan={plan} />
             </div>
 
             {hasSearched && (
               <div className="flex items-center justify-center">
                 <FilterSortBar
-                  filter={filterState}
                   sort={sortMode}
-                  onFilterChange={setFilterState}
                   onSortChange={setSortMode}
                 />
               </div>
@@ -536,27 +661,18 @@ export default function DashboardPage() {
               />
             )}
 
-            {continuationToken && !searching && (
-              <div className="flex flex-col items-center gap-2 pt-2">
-                <p className="text-xs text-[var(--color-text-secondary)]/70 text-center max-w-md">
-                  {results.length > 0
-                    ? `${results.length} results found so far. Click to continue AI screening for remaining jobs.`
-                    : "Ready to screen jobs with AI analysis? This may take a minute."}
-                </p>
-                <button
-                  onClick={handleContinue}
-                  className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-white/10 border border-white/20 hover:bg-white/25 transition-all text-sm text-white"
-                  title="Continue search"
-                >
-                  Continue
-                  <ArrowRight size={14} />
-                </button>
-              </div>
-            )}
+            <ContinuePopup
+              isOpen={!!continuationToken && !searching}
+              message={pauseMessage || (results.length > 0
+                ? `${results.length} results found so far. Continue AI screening for remaining jobs?`
+                : "Ready to screen jobs with AI analysis? This may take a minute.")}
+              onContinue={handleContinue}
+              onCancel={() => setContinuationToken(null)}
+            />
 
             {!searching && results.length > 0 && (
               <div className="space-y-4">
-                {filteredResults.map((r) => (
+                {sortedResults.map((r) => (
                     <JobResultCard
                       key={r.id}
                       id={r.id}
@@ -569,9 +685,13 @@ export default function DashboardPage() {
                       verdictBullets={r.verdict_bullets}
                       jobUrl={r.job_url}
                       fullDescription={r.full_description}
-                      domainVerified={r.domain_verified ?? true}
-                      domainUnverifiedReason={r.domain_unverified_reason ?? ""}
                       suggestedCvName={r.suggested_cv ?? ""}
+                      knockoutFail={r.knockout_fail}
+                      pillarScores={r.pillar_scores}
+                      taxesApplied={r.taxes_applied}
+                      totalQuestionsAsked={r.total_questions_asked}
+                      yesAnswers={r.yes_answers}
+                      recruiterVerdict={r.recruiter_verdict}
                       onDelete={handleDelete}
                     />
                 ))}
@@ -614,9 +734,13 @@ export default function DashboardPage() {
                   verdictBullets={r.verdict_bullets}
                   jobUrl={r.job_url}
                   fullDescription={r.full_spec}
-                  domainVerified={r.domain_verified ?? true}
-                  domainUnverifiedReason={r.domain_unverified_reason ?? ""}
                   suggestedCvName={r.suggested_cv ?? ""}
+                  knockoutFail={r.knockout_fail}
+                  pillarScores={r.pillar_scores}
+                  taxesApplied={r.taxes_applied}
+                  totalQuestionsAsked={r.total_questions_asked}
+                  yesAnswers={r.yes_answers}
+                  recruiterVerdict={r.recruiter_verdict}
                   onDelete={(id) => setHistoryResults((prev) => prev.filter((x) => x.id !== id))}
                 />
               ))}
@@ -629,60 +753,129 @@ export default function DashboardPage() {
         {activeTab === "saved" && <SavedJobs />}
 
         {activeTab === "rejected" && <RejectedJobs />}
+              </>
+            )}
       </div>
 
       {showLimitModal && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center transition-opacity duration-300" style={{ opacity: limitModalMounted ? 1 : 0 }}>
           <div className="absolute inset-0 bg-black/60" onClick={() => setShowLimitModal(null)} />
-          <div
-            className="relative liquid-glass border rounded-2xl p-6 max-w-sm mx-4 text-center space-y-4 transition-all duration-300 ease-out"
-            style={{ opacity: limitModalMounted ? 1 : 0, transform: limitModalMounted ? "translateY(0) scale(1)" : "translateY(8px) scale(0.97)" }}
-          >
+          <div className="relative">
             <button
               onClick={() => setShowLimitModal(null)}
-              className="absolute top-3 right-3 p-1 text-white/60 hover:text-white transition-colors"
+              className="absolute -top-4 -right-4 z-10 p-1.5 bg-red-800 rounded-full text-white/80 hover:text-white hover:bg-red-900 transition-colors shadow-lg"
             >
-              <X size={18} />
+              <X size={20} />
             </button>
-            <p className="text-[var(--color-error)] font-semibold">
-              {showLimitModal === "LIMIT_001"
-                ? "No searches remaining"
-                : showLimitModal === "LIMIT_002"
-                ? "No CV generations remaining"
-                : showLimitModal === "LIMIT_003"
-                ? "No Persistent Finder rounds remaining"
-                : "No remaining credits"}
-            </p>
-            <p className="text-sm text-[var(--color-text-secondary)]">
-              {showLimitModal === "LIMIT_001"
-                ? "You've used all your free searches. Paid users receive priority AI processing. Upgrade your plan to continue searching."
-                : showLimitModal === "LIMIT_002"
-                ? "You've used all your CV generations. Upgrade your plan to generate more."
-                : showLimitModal === "LIMIT_003"
-                ? "You've used all your Persistent Finder rounds. Upgrade your plan or buy more PF credits."
-                : "You've run out of credits. Upgrade your plan."}
-            </p>
-            <div className="flex flex-wrap justify-center gap-3">
-              <button
-                onClick={() => { setShowLimitModal(null); router.push("/upgrade"); }}
-                className="px-5 py-2.5 text-sm font-medium text-white bg-[var(--color-accent)] rounded-full hover:bg-[var(--color-accent-hover)] transition-colors"
-              >
-                Upgrade Plan
-              </button>
-              {showLimitModal === "LIMIT_003" && (
+            <div
+              className="bg-[var(--color-error)] rounded-2xl p-6 max-w-sm mx-4 text-center space-y-4 transition-all duration-300 ease-out shadow-2xl"
+              style={{ opacity: limitModalMounted ? 1 : 0, transform: limitModalMounted ? "translateY(0) scale(1)" : "translateY(8px) scale(0.97)" }}
+            >
+              <p className="text-white font-semibold">
+                {showLimitModal === "LIMIT_001"
+                  ? "No searches remaining"
+                  : showLimitModal === "LIMIT_002"
+                  ? "No CV generations remaining"
+                  : showLimitModal === "LIMIT_003"
+                  ? "No Persistent Finder rounds remaining"
+                  : "No remaining credits"}
+              </p>
+              <p className="text-sm text-white/90">
+                {showLimitModal === "LIMIT_001"
+                  ? "You've used all your free searches. Paid users receive priority AI processing. Upgrade your plan to continue searching."
+                  : showLimitModal === "LIMIT_002"
+                  ? "You've used all your CV generations. Upgrade your plan to generate more."
+                  : showLimitModal === "LIMIT_003"
+                  ? "You've used all your Persistent Finder rounds. Upgrade your plan or buy more PF credits."
+                  : "You've run out of credits. Upgrade your plan."}
+              </p>
+              <div className="flex flex-wrap justify-center gap-3">
                 <button
-                  onClick={() => { setShowLimitModal(null); setPfModalOpen(true); }}
-                  className="px-5 py-2.5 text-sm font-medium text-white bg-white/10 border border-white/20 rounded-full hover:bg-white/20 transition-colors"
+                  onClick={() => { setShowLimitModal(null); router.push("/upgrade"); }}
+                  className="px-5 py-2.5 text-sm font-semibold text-[var(--color-error)] bg-white rounded-full hover:bg-white/90 transition-colors"
                 >
-                  Buy PF Credits
+                  Upgrade Plan
                 </button>
-              )}
+                {showLimitModal === "LIMIT_003" && (
+                  <button
+                    onClick={() => { setShowLimitModal(null); setPfModalOpen(true); }}
+                    className="px-5 py-2.5 text-sm font-medium text-white bg-transparent border border-white/50 rounded-full hover:bg-white/20 transition-colors"
+                  >
+                    Buy PF Credits
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>
       )}
 
       <PFPurchaseModal isOpen={pfModalOpen} onClose={() => setPfModalOpen(false)} />
+
+      <VerifyCodeModal
+        isOpen={showVerifyModal}
+        email={userEmail}
+        onClose={() => setShowVerifyModal(false)}
+        onVerified={() => { setEmailVerified(true); window.dispatchEvent(new Event("refresh-balances")); }}
+      />
+
+      {needsOnboarding && onboardingMounted && (
+        <div
+          className="fixed inset-0 z-[200] flex items-start justify-center pt-24 bg-black/60 backdrop-blur-sm transition-opacity duration-500"
+          style={{ opacity: onboardingStep === "done" ? 1 : 1 }}
+        >
+          <div
+            className="w-full max-w-lg mx-4 rounded-2xl bg-white shadow-2xl overflow-hidden transition-all duration-500 ease-out"
+          >
+            <div className="relative z-10 px-6 py-6 max-h-[80vh] overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+              {onboardingStep === "prompt" && (
+                <div className="flex flex-col items-center gap-5 py-8">
+                  <div className="w-16 h-16 rounded-full bg-[var(--color-accent)]/10 flex items-center justify-center">
+                    <Upload size={28} className="text-[var(--color-accent)]" />
+                  </div>
+                  <div className="text-center space-y-2">
+                    <h2 className="text-xl font-semibold text-gray-900">Set Up Your Account</h2>
+                    <p className="text-sm text-gray-500 max-w-xs">
+                      Upload your CV and let AI fill in your profile details automatically.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setOnboardingStep("form")}
+                    className="px-6 py-2.5 text-sm font-medium text-white bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] rounded-full transition-colors"
+                  >
+                    Set up account
+                  </button>
+                </div>
+              )}
+
+              {onboardingStep === "form" && (
+                <OnboardingForm
+                  onOnboarded={() => setOnboardingStep("done")}
+                />
+              )}
+
+              {onboardingStep === "done" && (
+                <div className="flex flex-col items-center gap-5 py-8">
+                  <div className="w-16 h-16 rounded-full bg-emerald-500/20 flex items-center justify-center">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-500"><polyline points="20 6 9 17 4 12" /></svg>
+                  </div>
+                  <div className="text-center space-y-2">
+                    <h2 className="text-xl font-semibold text-gray-900">Account set up!</h2>
+                    <p className="text-sm text-gray-500">Your profile is ready to go.</p>
+                  </div>
+                  <button
+                    onClick={() => { setNeedsOnboarding(false); setOnboardingMounted(false); window.location.reload(); }}
+                    className="px-6 py-2.5 text-sm font-medium text-white bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] rounded-full transition-colors"
+                  >
+                    Go to Dashboard
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       </PageTransitionWrapper>
     </DashboardLayout>
   );

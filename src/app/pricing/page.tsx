@@ -12,7 +12,7 @@ import { LiquidGlassCard } from "@/components/landing/liquid-glass-card";
 import { PageTransitionWrapper } from "@/components/ui/page-transition-wrapper";
 import { useTransition } from "@/components/providers/transition-provider";
 import { createClient } from "@/lib/supabase/client";
-import { PLAN_PRICES, PLAN_LIMITS, calculatePFPrice, PF_DEFAULT_BY_TIER, formatPlanPrice, formatPFFromPrice, PAYSTACK_PLAN_CODES, PLAN_TIER_NAMES, TIER_FEATURES, TIER_POPULAR } from "@/lib/plan-limits";
+import { PLAN_PRICES, PLAN_LIMITS, calculatePFPrice, PF_DEFAULT_BY_TIER, formatPlanPrice, formatPFFromPrice, PLAN_TIER_NAMES, TIER_FEATURES, TIER_POPULAR } from "@/lib/plan-limits";
 import { PFStepper } from "@/components/pricing/pf-stepper";
 import "@/components/landing/liquid-glass.css";
 
@@ -119,23 +119,31 @@ export default function PricingPage() {
     }
 
     const baseKobo = cycle === "annual" ? PLAN_PRICES[planName].annual : PLAN_PRICES[planName].monthly;
-    const pfCount = pfCounts[planName] ?? PF_DEFAULT_BY_TIER[planName] ?? 0;
-    const pfPriceZar = calculatePFPrice(pfCount);
-    const pfKobo = pfCount * pfPriceZar * 100 * (cycle === "annual" ? 12 : 1);
+    const extraPf = pfCounts[planName] ?? PF_DEFAULT_BY_TIER[planName] ?? 0;
+    const pfPriceZar = calculatePFPrice(extraPf || 1);
+    const billingMonths = cycle === "annual" ? 12 : 1;
+    const pfKobo = extraPf * pfPriceZar * 100 * billingMonths;
     const amount = baseKobo + pfKobo;
+    const totalPf = (PLAN_LIMITS[planName]?.pf_balance ?? 0) + extraPf;
     const sRes = await supabase.auth.getSession();
     const session = sRes.data.session;
     const email = session?.user?.email;
     if (!email) { setProcessing(null); return; }
 
+    const fullName = (session?.user?.user_metadata?.full_name as string) || "";
+    const nameParts = fullName.split(" ");
+    const firstName = nameParts[0] || "";
+    const lastName = nameParts.slice(1).join(" ") || "";
+
     const handler = (window as any).PaystackPop.setup({
       key: PAYSTACK_PUBLIC_KEY,
       email,
+      first_name: firstName,
+      last_name: lastName,
       amount,
       currency: "ZAR",
       ref: "FMSG-" + Date.now(),
-      plan: "",
-      metadata: { plan: planName, billing_cycle: cycle, pf_count: pfCount },
+      metadata: { plan: planName, billing_cycle: cycle, pf_count: totalPf },
       callback: function (response: { reference: string }) {
         fetch("/api/verify-payment", {
           method: "POST",

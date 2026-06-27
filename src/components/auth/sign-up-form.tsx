@@ -36,6 +36,22 @@ export function SignUpForm({ onSuccess }: { onSuccess: (data: SignUpData) => voi
     }
 
     setLoading(true);
+
+    // Pre-signup security check
+    try {
+      const checkRes = await fetch("/api/auth/check-signup", { method: "POST" });
+      const checkData = await checkRes.json();
+      if (!checkData.allowed) {
+        setError(checkData.reason ?? "Signup not allowed. Please try again later.");
+        setLoading(false);
+        return;
+      }
+    } catch {
+      setError("Unable to verify signup. Please try again.");
+      setLoading(false);
+      return;
+    }
+
     const supabase = createClient();
 
     const fullName = [name, surname].filter(Boolean).join(" ");
@@ -45,13 +61,11 @@ export function SignUpForm({ onSuccess }: { onSuccess: (data: SignUpData) => voi
       password,
       options: {
         data: fullName ? { full_name: fullName } : undefined,
-        emailRedirectTo: `${window.location.origin}/auth/confirm`,
       },
     });
 
-    setLoading(false);
-
     if (signUpErr) {
+      setLoading(false);
       if (signUpErr.message.includes("already registered")) {
         setError("An account with this email already exists.");
       } else {
@@ -60,12 +74,39 @@ export function SignUpForm({ onSuccess }: { onSuccess: (data: SignUpData) => voi
       return;
     }
 
+    let hasSession = !!data.session;
+
+    if (!hasSession && data.user) {
+      const { error: signInErr } = await supabase.auth.signInWithPassword({ email, password });
+      if (!signInErr) {
+        hasSession = true;
+      }
+    }
+
+    // Post-signup: record IP and send verification email
+    if (hasSession) {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        fetch("/api/auth/record-signup", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        }).catch(() => {});
+
+        fetch("/api/auth/send-verification", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        }).catch(() => {});
+      }
+    }
+
+    setLoading(false);
+
     onSuccess({
       email,
       password,
       name,
       surname,
-      autoConfirmed: !!data.session,
+      autoConfirmed: hasSession,
     });
   };
 

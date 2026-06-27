@@ -13,8 +13,6 @@ interface DeletedJob {
   match_score: number;
   job_url: string;
   full_spec: string;
-  domain_verified?: boolean;
-  domain_unverified_reason?: string;
 }
 
 interface SystemRejected {

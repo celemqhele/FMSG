@@ -45,6 +45,10 @@ export default function ProfilePage() {
   // Danger zone
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [deleteStep, setDeleteStep] = useState<"confirm" | "code">("confirm");
+  const [deleteCode, setDeleteCode] = useState(["", "", "", "", "", ""]);
+  const [deleteError, setDeleteError] = useState("");
+  const [sendingCode, setSendingCode] = useState(false);
 
   useEffect(() => {
     supabase.auth.getUser().then((res: { data: { user: { id: string; email?: string } | null } }) => {
@@ -134,24 +138,58 @@ export default function ProfilePage() {
   };
 
   const handleDeleteAccount = async () => {
-    setDeleting(true);
+    setDeleting(false);
+    setSendingCode(true);
+    setDeleteError("");
+
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return;
+
     try {
-      const res = await fetch("/api/delete-account", {
-        method: "DELETE",
+      const res = await fetch("/api/auth/send-deletion-code", {
+        method: "POST",
         headers: { Authorization: `Bearer ${session.access_token}` },
       });
+      const data = await res.json();
       if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        console.error("Failed to delete account:", errData.error || res.statusText);
+        setDeleteError(data.error ?? "Failed to send code");
+        setSendingCode(false);
+        return;
+      }
+      setSendingCode(false);
+      setDeleteStep("code");
+    } catch (err) {
+      console.error("Error requesting deletion code:", err);
+      setDeleteError("Something went wrong. Try again.");
+      setSendingCode(false);
+    }
+  };
+
+  const verifyDelete = async (fullCode: string) => {
+    setDeleting(true);
+    setDeleteError("");
+
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) { setDeleting(false); return; }
+
+    try {
+      const res = await fetch("/api/auth/verify-deletion-code", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ code: fullCode }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setDeleteError(data.error ?? "Invalid code");
+        setDeleteCode(["", "", "", "", "", ""]);
         setDeleting(false);
         return;
       }
       await supabase.auth.signOut();
       window.location.href = "/";
     } catch (err) {
-      console.error("Network error deleting account:", err);
+      console.error("Error deleting account:", err);
+      setDeleteError("Something went wrong. Try again.");
       setDeleting(false);
     }
   };
@@ -308,19 +346,79 @@ export default function ProfilePage() {
         {/* Delete confirmation modal */}
         {showDeleteConfirm && (
           <div className="fixed inset-0 z-[60] flex items-center justify-center">
-            <div className="absolute inset-0 bg-black/60" onClick={() => setShowDeleteConfirm(false)} />
-            <div className="relative bg-white dark:bg-[#1C1C1E] border border-[var(--color-border)] rounded-2xl p-6 max-w-sm mx-4 text-center space-y-4">
-              <p className="text-[var(--color-text-primary)] font-semibold">Are you sure?</p>
-              <p className="text-sm text-[var(--color-text-secondary)]">This will permanently delete your account and all associated data including your CV. This cannot be undone.</p>
-              <div className="flex gap-3 justify-center">
-                <button onClick={() => setShowDeleteConfirm(false)} className="px-5 py-2.5 text-sm font-medium text-[var(--color-text-primary)] border border-[var(--color-border)] rounded-full hover:bg-white/5 dark:hover:bg-white/5 transition-colors">
-                  Cancel
-                </button>
-                <button onClick={handleDeleteAccount} disabled={deleting} className="px-5 py-2.5 text-sm font-medium text-white bg-red-500 rounded-full hover:bg-red-600 transition-colors disabled:opacity-50 flex items-center gap-2">
-                  {deleting && <Loader2 size={14} className="animate-spin" />}
-                  Yes, delete everything
-                </button>
-              </div>
+            <div className="absolute inset-0 bg-black/60" onClick={() => { setShowDeleteConfirm(false); setDeleteStep("confirm"); setDeleteCode(["", "", "", "", "", ""]); setDeleteError(""); }} />
+            <div className="relative liquid-glass border border-[var(--color-border)] rounded-2xl p-6 max-w-sm mx-4 text-center space-y-4">
+              {deleteStep === "confirm" ? (
+                <>
+                  <p className="text-[var(--color-text-primary)] font-semibold">Delete your account?</p>
+                  <p className="text-sm text-[var(--color-text-secondary)]">This will permanently delete your account, CV, and all data. This cannot be undone. We'll send a verification code to your email.</p>
+                  <div className="flex gap-3 justify-center">
+                    <button onClick={() => setShowDeleteConfirm(false)} className="px-5 py-2.5 text-sm font-medium text-[var(--color-text-primary)] border border-[var(--color-border)] rounded-full hover:bg-white/5 transition-colors">
+                      Cancel
+                    </button>
+                    <button onClick={handleDeleteAccount} disabled={sendingCode} className="px-5 py-2.5 text-sm font-medium text-white bg-red-500 rounded-full hover:bg-red-600 transition-colors disabled:opacity-50 flex items-center gap-2">
+                      {sendingCode && <Loader2 size={14} className="animate-spin" />}
+                      {sendingCode ? "Sending code..." : "Yes, send me a code"}
+                    </button>
+                  </div>
+                  {deleteError && <p className="text-sm text-red-400">{deleteError}</p>}
+                </>
+              ) : (
+                <>
+                  <p className="text-[var(--color-text-primary)] font-semibold">Enter deletion code</p>
+                  <p className="text-sm text-[var(--color-text-secondary)]">A 6-digit code was sent to your email. Enter it below to confirm deletion.</p>
+                  <div className="flex justify-center gap-2" onPaste={(e: React.ClipboardEvent) => {
+                    e.preventDefault();
+                    const paste = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6);
+                    if (paste.length > 0) {
+                      const next = [...deleteCode];
+                      for (let i = 0; i < 6; i++) next[i] = paste[i] ?? "";
+                      setDeleteCode(next);
+                      if (paste.length === 6) verifyDelete(paste);
+                    }
+                  }}>
+                    {deleteCode.map((digit, i) => (
+                      <input
+                        key={i}
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={1}
+                        value={digit}
+                        onChange={(e) => {
+                          if (!/^\d*$/.test(e.target.value)) return;
+                          const next = [...deleteCode];
+                          next[i] = e.target.value.slice(-1);
+                          setDeleteCode(next);
+                          setDeleteError("");
+                          if (e.target.value && i < 5) {
+                            (document.querySelectorAll(".delete-code-input")[i + 1] as HTMLInputElement)?.focus();
+                          }
+                          const newCode = next.join("");
+                          if (newCode.length === 6) verifyDelete(newCode);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Backspace" && !deleteCode[i] && i > 0) {
+                            (document.querySelectorAll(".delete-code-input")[i - 1] as HTMLInputElement)?.focus();
+                          }
+                        }}
+                        className={`delete-code-input w-12 h-14 text-center text-xl font-bold rounded-xl border-2 transition-colors outline-none text-[var(--color-text-primary)] bg-transparent ${
+                          deleteError ? "border-red-500" : digit ? "border-[var(--color-accent)]" : "border-[var(--color-border)]"
+                        }`}
+                      />
+                    ))}
+                  </div>
+                  {deleteError && <p className="text-sm text-red-400">{deleteError}</p>}
+                  {deleting && (
+                    <div className="flex items-center justify-center gap-2 text-sm text-[var(--color-text-secondary)]">
+                      <Loader2 size={14} className="animate-spin" />
+                      Deleting...
+                    </div>
+                  )}
+                  <button onClick={() => { setDeleteStep("confirm"); setDeleteCode(["", "", "", "", "", ""]); setDeleteError(""); setSendingCode(false); }} className="text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-accent)] transition-colors">
+                    Back
+                  </button>
+                </>
+              )}
             </div>
           </div>
         )}

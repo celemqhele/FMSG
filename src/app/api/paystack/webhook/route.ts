@@ -26,18 +26,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Rate limited" }, { status: 429 });
   }
 
-  // Verify webhook signature
-if (!PAYSTACK_SECRET_KEY) {
-  return NextResponse.json({ error: "Webhook not configured" }, { status: 500 });
-}
+  if (!PAYSTACK_SECRET_KEY) {
+    return NextResponse.json({ error: "Webhook not configured" }, { status: 500 });
+  }
 
-const hash = request.headers.get("x-paystack-signature");
-if (!hash) {
-  return NextResponse.json({ error: "Missing signature" }, { status: 401 });
-}
+  const hash = request.headers.get("x-paystack-signature");
+  if (!hash) {
+    return NextResponse.json({ error: "Missing signature" }, { status: 401 });
+  }
 
-const body = await request.text();
-const expectedHash = await createHmac(body, PAYSTACK_SECRET_KEY);
+  const body = await request.text();
+  const expectedHash = await createHmac(body, PAYSTACK_SECRET_KEY);
   if (hash !== expectedHash) {
     return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
   }
@@ -49,7 +48,7 @@ const expectedHash = await createHmac(body, PAYSTACK_SECRET_KEY);
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  console.log(`[WEBHOOK] Event: ${event.event}`, JSON.stringify(event.data?.subscription ?? {}));
+  console.log(`[WEBHOOK] Event: ${event.event}`);
 
   const subData = event.data;
   if (!subData) return NextResponse.json({ ok: true });
@@ -57,31 +56,66 @@ const expectedHash = await createHmac(body, PAYSTACK_SECRET_KEY);
   try {
     switch (event.event) {
       case "charge.success": {
-        // Recurring payment renewal
         const reference = subData.reference;
-        const subscription = subData.subscription;
-        const paystackSubId = subscription?.subscription_code ?? "";
-        const billingCycle = subData.metadata?.billing_cycle ?? "monthly";
         const email = subData.customer?.email ?? "";
         const authorizationCode = subData.authorization?.authorization_code ?? "";
         const customerCode = subData.customer?.customer_code ?? "";
+        const metadata = subData.metadata ?? {};
 
-        if (!paystackSubId && !reference) break;
+        if (!reference) break;
 
-        // Find existing subscription by paystack reference or subscription code
-        const { data: existingSub, error: subErr } = await supabase
-          .from("subscriptions")
-          .select("id, user_id, plan, expiry_date")
-          .or(`paystack_reference.eq.${reference},paystack_subscription_id.eq.${paystackSubId}`)
-          .maybeSingle();
+        // Card update flow: user changed their card, update the authorization_code
+        if (metadata.purpose === "card_update" && metadata.user_id && authorizationCode) {
+          const { data: activeSub } = await supabase
+            .from("subscriptions")
+            .select("id")
+            .eq("user_id", metadata.user_id)
+            .eq("status", "active")
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
 
-        if (subErr) {
-          console.error("[WEBHOOK] Failed to find subscription:", subErr.message);
-          return NextResponse.json({ error: "DB error" }, { status: 500 });
+          if (activeSub) {
+            await supabase
+              .from("subscriptions")
+              .update({
+                authorization_code: authorizationCode,
+                update_card_credit: subData.amount ?? 100,
+              })
+              .eq("id", activeSub.id);
+            console.log(`[WEBHOOK] Updated authorization_code for user ${metadata.user_id}`);
+          }
+          break;
+        }
+
+        // Normal recurring charge: find subscription by authorization_code or customer_code
+        let existingSub = null;
+        if (authorizationCode) {
+          const { data: sub } = await supabase
+            .from("subscriptions")
+            .select("id, user_id, plan, expiry_date")
+            .eq("authorization_code", authorizationCode)
+            .eq("status", "active")
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          existingSub = sub;
+        }
+
+        if (!existingSub && customerCode) {
+          const { data: sub } = await supabase
+            .from("subscriptions")
+            .select("id, user_id, plan, expiry_date")
+            .eq("customer_code", customerCode)
+            .eq("status", "active")
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          existingSub = sub;
         }
 
         if (existingSub) {
-          // Recurring payment — extend expiry
+          const billingCycle = metadata.billing_cycle ?? "monthly";
           const now = new Date();
           const currentExpiry = existingSub.expiry_date ? new Date(existingSub.expiry_date) : now;
           const baseDate = currentExpiry > now ? currentExpiry : now;
@@ -95,28 +129,21 @@ const expectedHash = await createHmac(body, PAYSTACK_SECRET_KEY);
           const limits = PLAN_LIMITS[existingSub.plan] ?? { searches: 1, cv_gens: 0, pf_balance: 0 };
 
           // Insert payment record
-          const { error: insertErr } = await supabase.from("subscriptions").insert({
+          await supabase.from("subscriptions").insert({
             user_id: existingSub.user_id,
             plan: existingSub.plan,
             billing_cycle: billingCycle,
             paystack_reference: reference,
-            paystack_subscription_id: paystackSubId,
             amount: subData.amount,
             authorization_code: authorizationCode,
             customer_code: customerCode,
             email,
             start_date: now.toISOString(),
             expiry_date: newExpiry.toISOString(),
-            next_payment_date: subscription?.next_payment_date ?? null,
             status: "active",
           });
 
-          if (insertErr) {
-            console.error("[WEBHOOK] Failed to insert payment record:", insertErr.message);
-            return NextResponse.json({ error: "DB error" }, { status: 500 });
-          }
-
-          // Fetch user's pf_refill (custom PF refill count)
+          // Fetch user's pf_refill
           const { data: profile } = await supabase
             .from("profiles")
             .select("*")
@@ -126,7 +153,7 @@ const expectedHash = await createHmac(body, PAYSTACK_SECRET_KEY);
           const pfRefill = profile?.pf_refill ?? limits.pf_balance;
 
           // Extend user's plan
-          const { error: updateErr } = await supabase
+          await supabase
             .from("profiles")
             .update({
               plan_expiry: newExpiry.toISOString(),
@@ -136,136 +163,90 @@ const expectedHash = await createHmac(body, PAYSTACK_SECRET_KEY);
             })
             .eq("id", existingSub.user_id);
 
-          if (updateErr) {
-            console.error("[WEBHOOK] Failed to extend profile:", updateErr.message);
-            return NextResponse.json({ error: "DB error" }, { status: 500 });
-          }
-
-          const planName = existingSub.plan.charAt(0).toUpperCase() + existingSub.plan.slice(1);
-          sendSubscriptionRenewed(email, planName, formatPlanPrice(planName, billingCycle)).catch(() => {});
-        }
-        break;
-      }
-
-      case "subscription.not_renew": {
-        // Payment failed — subscription will not auto-renew
-        const paystackSubId = subData.subscription_code ?? subData.subscription?.subscription_code ?? "";
-        if (!paystackSubId) break;
-
-        // Mark subscription for grace period
-        const { data: existingSub, error: subErr } = await supabase
-          .from("subscriptions")
-          .select("id, user_id, plan")
-          .eq("paystack_subscription_id", paystackSubId)
-          .eq("status", "active")
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        if (subErr) {
-          console.error("[WEBHOOK] Failed to find subscription for not_renew:", subErr.message);
-          return NextResponse.json({ error: "DB error" }, { status: 500 });
-        }
-
-        if (existingSub) {
-          const { error: updateErr } = await supabase
+          // Also update the subscription record
+          await supabase
             .from("subscriptions")
-            .update({ status: "past_due" })
+            .update({
+              authorization_code: authorizationCode || undefined,
+              expiry_date: newExpiry.toISOString(),
+              failed_charge_count: 0,
+            })
             .eq("id", existingSub.id);
 
-          if (updateErr) {
-            console.error("[WEBHOOK] Failed to update subscription to past_due:", updateErr.message);
-            return NextResponse.json({ error: "DB error" }, { status: 500 });
-          }
-
           const planName = existingSub.plan.charAt(0).toUpperCase() + existingSub.plan.slice(1);
-          const customerEmail = subData.customer?.email;
-          if (customerEmail) sendPaymentFailed(customerEmail, planName).catch(() => {});
+          sendSubscriptionRenewed(email, planName, formatPlanPrice(planName, billingCycle)).catch((err) =>
+            console.error("[WEBHOOK] Renewal email failed:", err)
+          );
         }
         break;
       }
 
       case "subscription.disable": {
-        // Subscription cancelled/disabled — check for scheduled downgrade
-        const paystackSubId = subData.subscription_code ?? subData.subscription?.subscription_code ?? "";
-        if (!paystackSubId) break;
+        // Subscription cancelled on Paystack side — handle scheduled downgrade
+        const customerEmail = subData.customer?.email;
+        const customerCode = subData.customer?.customer_code;
 
-        const { data: existingSub, error: subErr } = await supabase
-          .from("subscriptions")
-          .select("id, user_id, plan, expiry_date")
-          .eq("paystack_subscription_id", paystackSubId)
-          .in("status", ["active", "past_due"])
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
+        if (!customerEmail && !customerCode) break;
 
-        if (subErr) {
-          console.error("[WEBHOOK] Failed to find subscription for disable:", subErr.message);
-          return NextResponse.json({ error: "DB error" }, { status: 500 });
+        // Find active subscription for this customer
+        let query = supabase.from("subscriptions").select("id, user_id, plan, expiry_date").in("status", ["active", "past_due"]);
+        if (customerCode) {
+          query = query.eq("customer_code", customerCode);
+        } else if (customerEmail) {
+          query = query.eq("email", customerEmail);
         }
+        const { data: existingSub } = await query.order("created_at", { ascending: false }).limit(1).maybeSingle();
 
         if (existingSub) {
-          // Mark subscription as cancelled
-          const { error: updateErr } = await supabase
+          await supabase
             .from("subscriptions")
             .update({ status: "cancelled", cancelled_at: new Date().toISOString() })
             .eq("id", existingSub.id);
 
-          if (updateErr) {
-            console.error("[WEBHOOK] Failed to cancel subscription:", updateErr.message);
-            return NextResponse.json({ error: "DB error" }, { status: 500 });
-          }
-
           const planName = existingSub.plan.charAt(0).toUpperCase() + existingSub.plan.slice(1);
-          const customerEmail = subData.customer?.email;
-          if (customerEmail) sendSubscriptionCancelled(customerEmail, planName).catch(() => {});
+          if (customerEmail) sendSubscriptionCancelled(customerEmail, planName).catch((err) =>
+            console.error("[WEBHOOK] Cancellation email failed:", err)
+          );
 
-          // Check if there's a scheduled plan change (downgrade)
-          const { data: profile, error: profileErr } = await supabase
-              .from("profiles")
-              .select("*")
+          // Check for scheduled plan change
+          const { data: profile } = await supabase
+            .from("profiles")
+            .select("*")
             .eq("id", existingSub.user_id)
             .single();
 
-          if (!profileErr && profile?.next_plan) {
+          if (profile?.next_plan) {
             const nextPlan = profile.next_plan;
             const limits = PLAN_LIMITS[nextPlan.charAt(0).toUpperCase() + nextPlan.slice(1)] ?? { searches: 1, cv_gens: 0, pf_balance: 0 };
             const now = new Date();
             const newExpiry = new Date(now);
-            // Set a reasonable initial expiry (1 month from now — user can renew)
             newExpiry.setMonth(newExpiry.getMonth() + 1);
 
-              // Apply the scheduled plan change
+            await supabase
+              .from("profiles")
+              .update({
+                plan: nextPlan,
+                plan_expiry: newExpiry.toISOString(),
+                search_balance: limits.searches,
+                cv_generation_balance: limits.cv_gens,
+                persistent_finder_balance: limits.pf_balance,
+                next_plan: null,
+              })
+              .eq("id", existingSub.user_id);
+
+            if (profile.next_pf_refill != null) {
               await supabase
                 .from("profiles")
-                .update({
-                  plan: nextPlan,
-                  plan_expiry: newExpiry.toISOString(),
-                  search_balance: limits.searches,
-                  cv_generation_balance: limits.cv_gens,
-                  persistent_finder_balance: limits.pf_balance,
-                  next_plan: null,
-                })
+                .update({ pf_refill: profile.next_pf_refill, next_pf_refill: null })
                 .eq("id", existingSub.user_id);
+            }
 
-              // Apply scheduled PF refill change if present
-              if (profile.next_pf_refill != null) {
-                await supabase
-                  .from("profiles")
-                  .update({ pf_refill: profile.next_pf_refill, next_pf_refill: null })
-                  .eq("id", existingSub.user_id);
-              }
-
-              console.log(`[WEBHOOK] Applied scheduled downgrade for user ${existingSub.user_id} to ${nextPlan}`);
+            console.log(`[WEBHOOK] Applied scheduled downgrade for user ${existingSub.user_id} to ${nextPlan}`);
           } else {
-            // Check if billing period still has time remaining
             const stillActive = existingSub.expiry_date && new Date(existingSub.expiry_date) > new Date();
-            if (stillActive) {
-              console.log(`[WEBHOOK] Subscription disabled for user ${existingSub.user_id} but expiry_date (${existingSub.expiry_date}) still in future — deferring Free downgrade.`);
-            } else {
-              // No remaining time — downgrade to Free
+            if (!stillActive) {
               const freeLimits = PLAN_LIMITS["Free"] ?? { searches: 1, cv_gens: 0, pf_balance: 0 };
-              const { error: freeErr } = await supabase
+              await supabase
                 .from("profiles")
                 .update({
                   plan: "free",
@@ -275,21 +256,16 @@ const expectedHash = await createHmac(body, PAYSTACK_SECRET_KEY);
                   persistent_finder_balance: freeLimits.pf_balance,
                 })
                 .eq("id", existingSub.user_id);
-
-              if (freeErr) {
-                console.error("[WEBHOOK] Failed to downgrade to Free:", freeErr.message);
-              } else {
-                console.log(`[WEBHOOK] Downgraded user ${existingSub.user_id} to Free (subscription expired).`);
-              }
+              console.log(`[WEBHOOK] Downgraded user ${existingSub.user_id} to Free`);
             }
           }
         }
         break;
       }
 
-      case "subscription.create":
       case "invoice.create":
       case "invoice.update":
+      case "subscription.create":
         // Informational — ignore
         break;
     }
