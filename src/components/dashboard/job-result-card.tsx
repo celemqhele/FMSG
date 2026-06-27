@@ -196,12 +196,14 @@ export function JobResultCard({
       {/* Top row: score badge + domain badge left, delete (X) right */}
       <div className="flex justify-between items-start mb-3.5">
         <div className="flex items-center gap-2 flex-wrap">
-          <button
-            onClick={() => setShowVerdict(true)}
-            className={`text-xs font-medium px-3 py-1 rounded-full ${scoreBg} cursor-pointer hover:opacity-80 transition-opacity`}
-          >
-            {scoreLabel} {matchScore}%
-          </button>
+          {matchScore > 0 && (
+            <button
+              onClick={() => setShowVerdict(true)}
+              className={`text-xs font-medium px-3 py-1 rounded-full ${scoreBg} cursor-pointer hover:opacity-80 transition-opacity`}
+            >
+              {scoreLabel} {matchScore}%
+            </button>
+          )}
           {suggestedCvName && (
             <span className="text-xs font-medium px-3 py-1 rounded-full bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400 border border-purple-500/30">
               CV: {suggestedCvName}
