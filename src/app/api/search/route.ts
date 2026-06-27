@@ -1159,26 +1159,30 @@ Return ONLY valid JSON (no markdown, no code fences):
               return;
             }
 
-            const result = await screenAndAnalyze(
-              rawJobs, jobSpecs, jobUrls, queryUsed,
-              state.profileLocation, state.profileIndustry, state.titles, state.cvTexts,
-              user, searchId, dataClient, state.bannedJobs, state.bannedCompanies,
-              sendStatus, undefined,
-              { history: new Set(state.dedupSets.history), saved: new Set(state.dedupSets.saved), blocked: new Set(state.dedupSets.blocked), rejected: new Set(state.dedupSets.rejected ?? []) },
-              state.maxAgeDays
-            );
-
-            const totalFiltered = result.filteredCounts.history + result.filteredCounts.saved + result.filteredCounts.rejected + result.filteredCounts.blocked;
-            if (totalFiltered > 0) {
-              writer.send({ type: "filtered_summary", ...result.filteredCounts, progress: 50 });
-            }
-
-            if (result.results.length > 0) {
-              const withIds = result.results.map((r: JobRow) => ({ ...r, id: crypto.randomUUID() }));
-              sendComplete({ type: "complete", results: withIds.map(normalize), progress: 100, ...(totalFiltered > 0 ? { filtered_summary: result.filteredCounts } : {}) });
-            } else {
-              sendComplete({ type: "complete", results: [], progress: 100, message: "No strong matches found. Try broadening your criteria." });
-            }
+            // Pause after finding results — user clicks Continue to start AI scoring
+            sendComplete({
+              type: "pause",
+              message: `Found ${rawJobs.length} matching results. Ready to score?`,
+              progress: 20,
+              continuation: Buffer.from(JSON.stringify({
+                mode: "normal",
+                rawJobs,
+                jobSpecs,
+                jobUrls,
+                queryUsed,
+                searchId,
+                titles: state.titles,
+                profileLocation: state.profileLocation,
+                profileIndustry: state.profileIndustry,
+                cvTexts: state.cvTexts,
+                bannedJobs: state.bannedJobs,
+                bannedCompanies: state.bannedCompanies,
+                hiddenJobKeys: state.hiddenJobKeys,
+                query: searchQuery,
+                dedupSets: { history: [...state.dedupSets.history], saved: [...state.dedupSets.saved], blocked: [...state.dedupSets.blocked], rejected: [...state.dedupSets.rejected] },
+                maxAgeDays: state.maxAgeDays,
+              })).toString("base64"),
+            });
             writer.close();
             return;
           }
