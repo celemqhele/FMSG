@@ -85,13 +85,11 @@ export function JobResultCard({
   }, [jobUrl]);
 
   const scoreLabel =
-    pillarScores == null ? "Preliminary" :
     matchScore >= 80 ? "Strong Match" :
     matchScore >= 60 ? "Good Match" :
     "Partial Match";
 
   const scoreBg =
-    pillarScores == null ? "bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400" :
     matchScore >= 80 ? "bg-green-100 dark:bg-green-500/20 text-green-700 dark:text-green-400" :
     matchScore >= 60 ? "bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400" :
     "bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-400";
@@ -200,10 +198,9 @@ export function JobResultCard({
         <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={() => setShowVerdict(true)}
-            title={pillarScores == null ? "Deep analysis unavailable — score may change" : ""}
             className={`text-xs font-medium px-3 py-1 rounded-full ${scoreBg} cursor-pointer hover:opacity-80 transition-opacity`}
           >
-            {scoreLabel} {pillarScores == null ? "~" : ""}{matchScore}%
+            {scoreLabel} {matchScore}%
           </button>
           {suggestedCvName && (
             <span className="text-xs font-medium px-3 py-1 rounded-full bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400 border border-purple-500/30">
@@ -309,7 +306,7 @@ export function JobResultCard({
           >
             <div className="flex items-center justify-between mb-4">
               <span className={`text-sm font-semibold px-3 py-1 rounded-full ${scoreBg}`}>
-            {scoreLabel} {pillarScores == null ? "~" : ""}{matchScore}%
+             {scoreLabel} {matchScore}%
               </span>
               <button
                 onClick={() => setShowVerdict(false)}
