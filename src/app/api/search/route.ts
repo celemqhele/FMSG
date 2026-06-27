@@ -573,6 +573,7 @@ ${blacklistInfo}${bannedInfo}${dateConstraintInfo}`;
   let rawPass1 = "";
   try {
     debugLog(`[SEARCH] Starting Pass 1 batch (${rawJobs.length} jobs)`);
+    onStatus?.({ type: "screening_job", current: 0, total: rawJobs.length, progress: 25 });
     rawPass1 = await callAIWithFallback(
       batchSystemPrompt,
       `Candidate Profile:\n${profileContext}\n\nJobs:\n${JSON.stringify(batchInput, null, 2)}`,
@@ -649,8 +650,6 @@ Return ONLY valid JSON (no markdown, no code fences):
 
     const progress = Math.min(55 + ((i + 1) / rawJobs.length) * 30, 85);
     onStatus?.({ type: "analyzing_job", title: job.title, company: job.company_name, current: i + 1, total: rawJobs.length, progress });
-
-    if (i > 0) await sleep(lastAITier === "gemini" ? 4000 : 1000);
 
     const score = batchResult?.score != null ? Math.round(batchResult.score) : 30;
     const ps = batchResult?.pillar_scores;
