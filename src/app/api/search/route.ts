@@ -485,6 +485,7 @@ SCORING:
 
 INDUSTRY MATCH RULES:
 - If the job's industry is clearly different from the candidate's industry (e.g. Healthcare vs Construction, Education vs Fintech), the score MUST NOT exceed 30.
+- Adjacent tech sectors are not the same: FinTech (payments) ≠ Cybersecurity SaaS, SaaS HR ≠ SaaS FinTech, FinTech ≠ Logistics. Score max 60 for adjacent sectors.
 - Understand that functions like HR, IT, Admin, Finance, or Project Management can span multiple industries — in those cases, assess normally.
 
 RULES:
@@ -534,6 +535,7 @@ SCORING:
 
 INDUSTRY MATCH RULES:
 - If the job's industry is clearly different from the candidate's industry (e.g. Healthcare vs Construction), the score MUST NOT exceed 30.
+- Adjacent tech sectors are not the same: FinTech (payments) ≠ Cybersecurity SaaS, SaaS HR ≠ SaaS FinTech, FinTech ≠ Logistics. Score max 60 for adjacent sectors.
 - Understand that functions like HR, IT, Admin, Finance, or Project Management can span multiple industries — in those cases, assess normally.
 
 RULES:
@@ -768,16 +770,30 @@ OUTPUT BLOCK (Strict JSON - No Markdown, No Extra Text)
               lines.push(`• Deduction: ${t}. Applied as a tax against the final score.`);
             }
           }
-        } else if (taxes.length > 0) {
-          lines.push("What held it back:");
-          for (const t of taxes) {
-            lines.push(`• Deduction: ${t}. Applied as a tax against the final score.`);
+        } else {
+          const reasonText = batchResult?.reason?.trim() || "";
+          if (reasonText) {
+            const bullets = reasonText
+              .split(";")
+              .map((s: string) => s.trim())
+              .filter((s: string) => s.length > 0);
+            if (bullets.length > 1) {
+              lines.push("What the AI noted:");
+              for (const b of bullets) {
+                lines.push(`• ${b}`);
+              }
+            } else {
+              lines.push("What the AI noted:");
+              lines.push(`• ${reasonText}`);
+            }
           }
-        }
-
-        if (batchResult?.reason?.trim()) {
-          lines.push("");
-          lines.push(batchResult.reason.trim());
+          if (taxes.length > 0) {
+            lines.push("");
+            lines.push("What held it back:");
+            for (const t of taxes) {
+              lines.push(`• Deduction: ${t}. Applied as a tax against the final score.`);
+            }
+          }
         }
 
         lines.push("");

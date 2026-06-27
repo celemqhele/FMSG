@@ -85,11 +85,13 @@ export function JobResultCard({
   }, [jobUrl]);
 
   const scoreLabel =
+    pillarScores == null ? "Preliminary" :
     matchScore >= 80 ? "Strong Match" :
     matchScore >= 60 ? "Good Match" :
     "Partial Match";
 
   const scoreBg =
+    pillarScores == null ? "bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400" :
     matchScore >= 80 ? "bg-green-100 dark:bg-green-500/20 text-green-700 dark:text-green-400" :
     matchScore >= 60 ? "bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400" :
     "bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-400";
@@ -200,16 +202,11 @@ export function JobResultCard({
             onClick={() => setShowVerdict(true)}
             className={`text-xs font-medium px-3 py-1 rounded-full ${scoreBg} cursor-pointer hover:opacity-80 transition-opacity`}
           >
-            {scoreLabel} {matchScore}%
+            {scoreLabel} {pillarScores == null ? "~" : ""}{matchScore}%
           </button>
           {suggestedCvName && (
             <span className="text-xs font-medium px-3 py-1 rounded-full bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400 border border-purple-500/30">
               CV: {suggestedCvName}
-            </span>
-          )}
-          {!pillarScores && (
-            <span className="text-xs font-medium px-3 py-1 rounded-full bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-400 border border-red-500/30">
-              Unverified Job Spec
             </span>
           )}
         </div>
@@ -304,14 +301,14 @@ export function JobResultCard({
             onClick={() => setShowVerdict(false)}
           />
           <div
-            className={`relative w-full max-w-xl mx-4 p-6 rounded-2xl liquid-glass max-h-[90vh] overflow-y-auto transition-all duration-200 ${
+            className={`relative w-full max-w-2xl mx-4 p-6 rounded-2xl liquid-glass max-h-[95vh] overflow-y-auto transition-all duration-200 ${
               showVerdict ? "opacity-100 scale-100" : "opacity-0 scale-95"
             }`}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-4">
               <span className={`text-sm font-semibold px-3 py-1 rounded-full ${scoreBg}`}>
-                {scoreLabel} {matchScore}%
+            {scoreLabel} {pillarScores == null ? "~" : ""}{matchScore}%
               </span>
               <button
                 onClick={() => setShowVerdict(false)}
