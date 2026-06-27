@@ -304,7 +304,7 @@ export function JobResultCard({
             onClick={() => setShowVerdict(false)}
           />
           <div
-            className={`relative w-full max-w-sm mx-4 p-6 rounded-2xl liquid-glass max-h-[85vh] overflow-y-auto transition-all duration-200 ${
+            className={`relative w-full max-w-lg mx-4 p-6 rounded-2xl liquid-glass max-h-[85vh] overflow-y-auto transition-all duration-200 ${
               showVerdict ? "opacity-100 scale-100" : "opacity-0 scale-95"
             }`}
             onClick={(e) => e.stopPropagation()}
@@ -322,7 +322,7 @@ export function JobResultCard({
             </div>
 
             {matchSummary && (
-              <p className="text-sm text-[var(--color-text-secondary)] leading-relaxed mb-4 line-clamp-3">
+              <p className="text-sm text-[var(--color-text-secondary)] leading-relaxed mb-4">
                 {matchSummary}
               </p>
             )}

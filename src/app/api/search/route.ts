@@ -724,7 +724,12 @@ OUTPUT BLOCK (Strict JSON - No Markdown, No Extra Text)
       const questions = deepResult.total_questions_asked ?? 0;
       const yes = deepResult.yes_answers ?? 0;
       const verdict = deepResult.recruiter_verdict ?? (deepResult.score >= 75 ? "HIRE" : deepResult.score >= 60 ? "INTERVIEW" : "REJECT");
-      const autoSummary = `Verdict: ${verdict}, met ${yes} of ${questions} requirements.${deepResult.taxes_applied?.length ? " Taxes: " + deepResult.taxes_applied.join(", ") + "." : ""}`;
+
+      const padLine = batchResult?.reason?.trim() || "";
+      const taxes = deepResult.taxes_applied?.filter((t: string) => t.length > 0) ?? [];
+      const downLine = taxes.length > 0 ? `What held it back: ${taxes.join(", ")}.` : "";
+      const reqLine = questions > 0 ? `Met ${yes}/${questions} requirements.` : "";
+      const autoSummary = [padLine, downLine, reqLine, `Verdict: ${verdict}`].filter(Boolean).join("\n\n");
 
       outputs.push({
         user_id: user.id,
