@@ -322,7 +322,7 @@ export function JobResultCard({
             </div>
 
             {matchSummary && (
-              <p className="text-sm text-[var(--color-text-secondary)] leading-relaxed mb-4">
+              <p className="text-sm text-[var(--color-text-secondary)] leading-relaxed mb-4 whitespace-pre-line">
                 {matchSummary}
               </p>
             )}

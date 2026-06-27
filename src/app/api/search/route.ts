@@ -725,11 +725,65 @@ OUTPUT BLOCK (Strict JSON - No Markdown, No Extra Text)
       const yes = deepResult.yes_answers ?? 0;
       const verdict = deepResult.recruiter_verdict ?? (deepResult.score >= 75 ? "HIRE" : deepResult.score >= 60 ? "INTERVIEW" : "REJECT");
 
-      const padLine = batchResult?.reason?.trim() || "";
       const taxes = deepResult.taxes_applied?.filter((t: string) => t.length > 0) ?? [];
-      const downLine = taxes.length > 0 ? `What held it back: ${taxes.join(", ")}.` : "";
-      const reqLine = questions > 0 ? `Met ${yes}/${questions} requirements.` : "";
-      const autoSummary = [padLine, downLine, reqLine, `Verdict: ${verdict}`].filter(Boolean).join("\n\n");
+      const reqLine = questions > 0 ? `Verdict: ${verdict} · Met ${yes}/${questions} requirements` : `Verdict: ${verdict}`;
+
+      const pillarLabels: Record<string, { label: string; weight: string }> = {
+        industry: { label: "Industry alignment", weight: "25%" },
+        function: { label: "Functional match", weight: "30%" },
+        scale: { label: "Experience & scale", weight: "20%" },
+        tools: { label: "Tools & technical fit", weight: "15%" },
+        location: { label: "Location & mobility", weight: "10%" },
+      };
+
+      const autoSummary = (() => {
+        const lines: string[] = [];
+
+        const ps = deepResult.pillar_scores;
+        if (ps) {
+          const pillars = Object.entries(pillarLabels).map(([key, { label, weight }]) => ({
+            key, label, weight,
+            val: (ps as Record<string, number>)[key] ?? 0,
+          }));
+          const sorted = [...pillars].sort((a, b) => b.val - a.val);
+
+          const good = sorted.slice(0, 3).filter(p => p.val >= 60);
+          if (good.length > 0) {
+            lines.push("What worked:");
+            for (const p of good) {
+              lines.push(`• ${p.label} scored ${p.val}% (weighted ${p.weight}). This area strongly aligned with the role's requirements.`);
+            }
+          }
+
+          const bad = [...sorted].reverse().slice(0, 3).filter(p => p.val < 60);
+          const hasTaxes = taxes.length > 0;
+          const badItems = bad.length > 0 || hasTaxes;
+          if (badItems) {
+            lines.push("");
+            lines.push("What held it back:");
+            for (const p of bad) {
+              lines.push(`• ${p.label} scored only ${p.val}% (weighted ${p.weight}). This was a gap that dragged the overall score down.`);
+            }
+            for (const t of taxes) {
+              lines.push(`• Deduction: ${t}. Applied as a tax against the final score.`);
+            }
+          }
+        } else if (taxes.length > 0) {
+          lines.push("What held it back:");
+          for (const t of taxes) {
+            lines.push(`• Deduction: ${t}. Applied as a tax against the final score.`);
+          }
+        }
+
+        if (batchResult?.reason?.trim()) {
+          lines.push("");
+          lines.push(batchResult.reason.trim());
+        }
+
+        lines.push("");
+        lines.push(reqLine);
+        return lines.join("\n");
+      })();
 
       outputs.push({
         user_id: user.id,
