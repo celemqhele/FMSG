@@ -648,6 +648,11 @@ Score = [0-100]
 
 Pillar 2 - Functional Discipline (Weight 30%)
 Group: Questions about daily tasks, sales motion (Hunter/Farmer/Channel), role archetype.
+CRITICAL: This pillar measures FUNCTIONAL transferability — can the candidate DO the day-to-day work?
+- A Key Accounts Manager in FinTech CAN manage key accounts in Renewable Energy. Account management transfers across industries.
+- A Sales Manager in SaaS CAN sell in Logistics. Sales motion transfers across industries.
+- Only penalize this pillar if the actual daily activities differ (e.g., hands-on logistics operations vs strategic account management).
+- Industry knowledge gaps belong in Pillar 1, NOT here.
 Score = [0-100]
 
 Pillar 3 - Experience Depth & Scale (Weight 20%)
@@ -708,11 +713,20 @@ OUTPUT BLOCK (Strict JSON - No Markdown, No Extra Text)
   "knockout_fail": boolean,
   "suggested_cv_name": string (exact filename from provided CV list only),
   "pillar_scores": { "industry": number, "function": number, "scale": number, "tools": number, "location": number },
+  "pillar_reasons": { "industry": "short reason", "function": "short reason", "scale": "short reason", "tools": "short reason", "location": "short reason" },
   "taxes_applied": [string],
   "total_questions_asked": number,
   "yes_answers": number,
   "recruiter_verdict": "HIRE" | "INTERVIEW" | "REJECT"
 }`;
+
+    const pillarLabels: Record<string, { label: string; weight: string }> = {
+      industry: { label: "Industry alignment", weight: "25%" },
+      function: { label: "Functional match", weight: "30%" },
+      scale: { label: "Experience & scale", weight: "20%" },
+      tools: { label: "Tools & technical fit", weight: "15%" },
+      location: { label: "Location & mobility", weight: "10%" },
+    };
 
     try {
       const raw = await callAIWithFallback(
@@ -730,14 +744,6 @@ OUTPUT BLOCK (Strict JSON - No Markdown, No Extra Text)
       const taxes = deepResult.taxes_applied?.filter((t: string) => t.length > 0) ?? [];
       const reqLine = questions > 0 ? `Verdict: ${verdict} · Met ${yes}/${questions} requirements` : `Verdict: ${verdict}`;
 
-      const pillarLabels: Record<string, { label: string; weight: string }> = {
-        industry: { label: "Industry alignment", weight: "25%" },
-        function: { label: "Functional match", weight: "30%" },
-        scale: { label: "Experience & scale", weight: "20%" },
-        tools: { label: "Tools & technical fit", weight: "15%" },
-        location: { label: "Location & mobility", weight: "10%" },
-      };
-
       const autoSummary = (() => {
         const lines: string[] = [];
 
@@ -746,6 +752,7 @@ OUTPUT BLOCK (Strict JSON - No Markdown, No Extra Text)
           const pillars = Object.entries(pillarLabels).map(([key, { label, weight }]) => ({
             key, label, weight,
             val: (ps as Record<string, number>)[key] ?? 0,
+            reason: (deepResult.pillar_reasons as Record<string, string>)?.[key] ?? "",
           }));
           const sorted = [...pillars].sort((a, b) => b.val - a.val);
 
@@ -753,7 +760,8 @@ OUTPUT BLOCK (Strict JSON - No Markdown, No Extra Text)
           if (good.length > 0) {
             lines.push("What worked:");
             for (const p of good) {
-              lines.push(`• ${p.label} scored ${p.val}% (weighted ${p.weight}). This area strongly aligned with the role's requirements.`);
+              const why = p.reason ? ` — ${p.reason}` : "aligned with the role's requirements.";
+              lines.push(`• ${p.label} scored ${p.val}% (weighted ${p.weight})${why}`);
             }
           }
 
@@ -764,7 +772,8 @@ OUTPUT BLOCK (Strict JSON - No Markdown, No Extra Text)
             lines.push("");
             lines.push("What held it back:");
             for (const p of bad) {
-              lines.push(`• ${p.label} scored only ${p.val}% (weighted ${p.weight}). This was a gap that dragged the overall score down.`);
+              const why = p.reason ? ` — ${p.reason}` : "this was a gap that dragged the overall score down.";
+              lines.push(`• ${p.label} scored only ${p.val}% (weighted ${p.weight})${why}`);
             }
             for (const t of taxes) {
               lines.push(`• Deduction: ${t}. Applied as a tax against the final score.`);
@@ -830,6 +839,13 @@ OUTPUT BLOCK (Strict JSON - No Markdown, No Extra Text)
       let fallbackScore = batchResult?.score != null ? Math.round(batchResult.score) : 30;
       let fallbackSummary = batchResult?.reason || "Analysis unavailable";
       let fallbackSalary = batchResult?.estimated_salary || "";
+      let retryCvName = "";
+      let retryKnockout: boolean | null = null;
+      let retryPillars: Record<string, number> | null = null;
+      let retryTaxes: string[] | null = null;
+      let retryQuestions: number | null = null;
+      let retryYes: number | null = null;
+      let retryVerdict: string | null = null;
       try {
         const retryPrompt = `You are a Recruitment Auditor AI. Score this job match for the candidate using a simplified formula.
 ${dateConstraintInfo}
@@ -837,13 +853,16 @@ ${dateConstraintInfo}
 Identify the candidate's specific sub-vertical (NOT macro industry) and the job's sub-vertical. Select the CV variation whose functional content best matches the role's core duties (use exact filename from input).
 
 Evaluate across 5 pillars (each 0-100): Industry (25%), Function (30%), Scale (20%), Tools (15%), Location (10%).
+IMPORTANT — Function measures daily tasks transferability: can the candidate DO the work? A Key Account Manager in FinTech CAN manage accounts in any industry. Industry knowledge gaps belong in the Industry pillar.
 Location guide: same city/remote=100, same province=70, different province=30, different country=0.
 Then apply deductions: Hopper Tax (-15, exempt self-employed/freelance blocks), Overqualified Tax (-10), Vague Achievement Tax (-10), No Degree Tax (-10), Salary Mismatch Tax (-10).
 Final Score = sum(weighted pillars) * 0.95 - total taxes. Cap at 0-95.
 Knockout (score=25) if mandatory degree, license, language, or sub-vertical tenure requirement is unmet.
 
+For each pillar, provide a SHORT reason sentence explaining the score. Examples: "candidate works in FinTech not renewable energy", "manages key accounts daily same as this role", "8 years experience matches seniority".
+
 Return ONLY valid JSON (no markdown, no code fences):
-{ "score": number (integer 0-95), "knockout_fail": boolean, "suggested_cv_name": string, "pillar_scores": { "industry": number, "function": number, "scale": number, "tools": number, "location": number }, "taxes_applied": [string], "total_questions_asked": number, "yes_answers": number, "recruiter_verdict": "HIRE"|"INTERVIEW"|"REJECT" }`;
+{ "score": number (integer 0-95), "knockout_fail": boolean, "suggested_cv_name": string, "pillar_scores": { "industry": number, "function": number, "scale": number, "tools": number, "location": number }, "pillar_reasons": { "industry": "reason", "function": "reason", "scale": "reason", "tools": "reason", "location": "reason" }, "taxes_applied": [string], "total_questions_asked": number, "yes_answers": number, "recruiter_verdict": "HIRE"|"INTERVIEW"|"REJECT" }`;
         const retryRaw = await callAIWithFallback(
           retryPrompt,
           `Candidate Profile:\n${profileContext}\n\nFull Job Specification:\n${fullSpec}\n\nJob Title: ${job.title}\nCompany: ${job.company_name}\nLocation: ${job.location}`,
@@ -852,9 +871,54 @@ Return ONLY valid JSON (no markdown, no code fences):
         );
         const retryResult = JSON.parse(retryRaw);
         fallbackScore = retryResult.score != null ? Math.round(retryResult.score) : fallbackScore;
-        fallbackSummary = retryResult.recruiter_verdict
-          ? `Verdict: ${retryResult.recruiter_verdict}, met ${retryResult.yes_answers ?? "?"} of ${retryResult.total_questions_asked ?? "?"} requirements.`
-          : (retryResult.match_summary || fallbackSummary);
+        retryCvName = retryResult.suggested_cv_name || "";
+        retryKnockout = retryResult.knockout_fail ?? null;
+        retryPillars = retryResult.pillar_scores ?? null;
+        retryTaxes = retryResult.taxes_applied ?? null;
+        retryQuestions = retryResult.total_questions_asked ?? null;
+        retryYes = retryResult.yes_answers ?? null;
+        retryVerdict = retryResult.recruiter_verdict ?? null;
+        const rPs = retryResult.pillar_scores;
+        const rReasons = retryResult.pillar_reasons;
+        const rTaxes = (retryResult.taxes_applied as string[])?.filter((t: string) => t.length > 0) ?? [];
+        const rVerdict = retryResult.recruiter_verdict ?? (fallbackScore >= 75 ? "HIRE" : fallbackScore >= 60 ? "INTERVIEW" : "REJECT");
+
+        if (rPs && rReasons) {
+          const retryLines: string[] = [];
+          const rPillars = Object.entries(pillarLabels).map(([key, { label, weight }]) => ({
+            label, weight, val: (rPs as Record<string, number>)[key] ?? 0,
+            reason: (rReasons as Record<string, string>)[key] ?? "",
+          }));
+          const rSorted = [...rPillars].sort((a, b) => b.val - a.val);
+          const rGood = rSorted.slice(0, 3).filter(p => p.val >= 60);
+          if (rGood.length > 0) {
+            retryLines.push("What worked:");
+            for (const p of rGood) {
+              const why = p.reason ? ` — ${p.reason}` : "aligned with the role's requirements.";
+              retryLines.push(`• ${p.label} scored ${p.val}% (weighted ${p.weight})${why}`);
+            }
+          }
+          const rBad = [...rSorted].reverse().slice(0, 3).filter(p => p.val < 60);
+          const rHasBad = rBad.length > 0 || rTaxes.length > 0;
+          if (rHasBad) {
+            retryLines.push("");
+            retryLines.push("What held it back:");
+            for (const p of rBad) {
+              const why = p.reason ? ` — ${p.reason}` : "this was a gap.";
+              retryLines.push(`• ${p.label} scored only ${p.val}% (weighted ${p.weight})${why}`);
+            }
+            for (const t of rTaxes) {
+              retryLines.push(`• Deduction: ${t}.`);
+            }
+          }
+          retryLines.push("");
+          retryLines.push(`Verdict: ${rVerdict}`);
+          fallbackSummary = retryLines.join("\n");
+        } else {
+          fallbackSummary = retryResult.recruiter_verdict
+            ? `Verdict: ${retryResult.recruiter_verdict}, met ${retryResult.yes_answers ?? "?"} of ${retryResult.total_questions_asked ?? "?"} requirements.`
+            : (retryResult.match_summary || fallbackSummary);
+        }
         fallbackSalary = retryResult.estimated_salary || fallbackSalary;
         debugLog(`[AI] Pass 2 retry succeeded for "${job.title}" at ${job.company_name}`);
       } catch {
@@ -875,13 +939,13 @@ Return ONLY valid JSON (no markdown, no code fences):
         search_query: query,
         posted_at: (job as any)._postedAt ?? "",
         posted_at_ms: (job as any)._postedAtMs ?? 0,
-        suggested_cv: "",
-        knockout_fail: null,
-        pillar_scores: null,
-        taxes_applied: null,
-        total_questions_asked: null,
-        yes_answers: null,
-        recruiter_verdict: null,
+        suggested_cv: retryCvName,
+        knockout_fail: retryKnockout,
+        pillar_scores: retryPillars as { industry: number; function: number; scale: number; tools: number; location: number } | null,
+        taxes_applied: retryTaxes,
+        total_questions_asked: retryQuestions,
+        yes_answers: retryYes,
+        recruiter_verdict: retryVerdict,
       });
     }
 

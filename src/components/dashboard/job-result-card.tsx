@@ -301,7 +301,7 @@ export function JobResultCard({
             onClick={() => setShowVerdict(false)}
           />
           <div
-            className={`relative w-full max-w-2xl mx-4 p-6 rounded-2xl liquid-glass max-h-[95vh] overflow-y-auto transition-all duration-200 ${
+            className={`relative w-full max-w-2xl mx-4 p-6 rounded-2xl liquid-glass max-h-[95vh] overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden transition-all duration-200 ${
               showVerdict ? "opacity-100 scale-100" : "opacity-0 scale-95"
             }`}
             onClick={(e) => e.stopPropagation()}
