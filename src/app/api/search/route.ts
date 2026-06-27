@@ -447,6 +447,30 @@ async function fetchAndFilterJobs(
   }
 }
 
+function extractMandatoryMissing(specLower: string, cvLower: string): string | null {
+  const patterns = [
+    // "Dispensing license - MUST HAVE", "X is required", "X is mandatory"
+    /(?:^|\n|[.;!\-])\s*([\w\s\-/]+?(?:license|licence|certificate|certification|registration|permit))\s*[-:]\s*(must have|required|essential|mandatory|a must)\b/gi,
+    // "MUST HAVE a valid X", "must hold X license"
+    /\b(must have|must hold|must possess)\s+(?:a\s+|an\s+)?(?:valid\s+|current\s+|active\s+)?([\w\s\-/]+?(?:license|licence|certificate|certification|registration|permit))\b/gi,
+    // "X is required/essential/mandatory"
+    /([\w\s\-/]+?(?:license|licence|certificate|certification|registration|permit))\s+(?:is\s+)?(?:required|essential|mandatory)\b/gi,
+  ];
+
+  for (const pattern of patterns) {
+    let match;
+    while ((match = pattern.exec(specLower)) !== null) {
+      const requirement = (pattern === patterns[0] ? match[1] : match[2] || match[1] || "").trim().toLowerCase();
+      if (!requirement || requirement.length < 3) continue;
+      const cleaned = requirement.replace(/^(valid|current|active|relevant)\s+/i, "").trim();
+      if (!cvLower.includes(cleaned)) {
+        return `"${cleaned}" is mandatory but missing from CV`;
+      }
+    }
+  }
+  return null;
+}
+
 async function screenAndAnalyze(
   rawJobs: any[],
   jobSpecsEntries: [number, string][],
@@ -704,6 +728,22 @@ Return ONLY valid JSON (no markdown, no code fences):
       } catch {
         batchResults.push({ index: i, score: 30, reason: "Screening unavailable", estimated_salary: "" });
       }
+    }
+  }
+
+  // Post-scoring sanity check: auto-correct missed mandatory requirements
+  const cvText = cvTexts.map(cv => cv.text).join(" ").toLowerCase();
+  for (const r of batchResults) {
+    if (r.score < 40 || r.knockout_fail) continue;
+    const spec = (jobSpecs.get(r.index) || "").toLowerCase();
+    const mandatory = extractMandatoryMissing(spec, cvText);
+    if (mandatory) {
+      r.score = 25;
+      r.knockout_fail = true;
+      if (r.taxes_applied) r.taxes_applied = [];
+      r.adjustment_note = `Auto-corrected: ${mandatory} is required but absent from CV`;
+      r.recruiter_verdict = "REJECT";
+      debugLog(`[SEARCH] Post-scoring knockout on job ${r.index}: ${mandatory}`);
     }
   }
 
