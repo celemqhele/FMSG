@@ -42,7 +42,7 @@ export default function RootLayout({
         <script src="/theme-init.js" />
         <link rel="sitemap" type="application/xml" href="/sitemap.xml" />
       </head>
-      <body className="min-h-dvh flex flex-col">
+      <body className="min-h-dvh flex flex-col" data-build-id="jun27-v2">
         <ThemeProvider>
           <TransitionProvider>
             {children}
