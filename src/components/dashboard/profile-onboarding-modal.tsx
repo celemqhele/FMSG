@@ -356,7 +356,7 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
           </button>
         </div>
 
-        <div className="px-6 py-6 max-h-[70vh] overflow-y-auto">
+        <div className="px-6 py-6 max-h-[70vh] overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {error && (
             <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-400">
               {error}

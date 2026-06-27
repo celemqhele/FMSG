@@ -912,7 +912,12 @@ Return ONLY valid JSON (no markdown, no code fences):
         yes_answers: lastResult.yes_answers, recruiter_verdict: lastResult.recruiter_verdict,
       }).then(({ error }: any) => {
         if (error) console.error("[SEARCH] Failed to insert incremental result:", error.message);
-      }).catch(() => {});
+      }).catch((e: any) => {
+        // Silently ignore fetch failures on incremental saves — they're non-critical
+        if (e?.message && !e.message.includes("fetch failed")) {
+          console.error("[SEARCH] Unexpected insert error:", e.message);
+        }
+      });
     }
   }
 
