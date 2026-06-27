@@ -503,9 +503,14 @@ CANDIDATE INDUSTRY: ${profileIndustry || "Unknown"}
 RULES:
 
 STEP 0: SUB-VERTICAL IDENTIFICATION & CV SELECTION
-A) Identify the candidate's professional sub-vertical: NOT macro industry. Examples: NOT "Healthcare" → "Pharmaceutical Sales Representative". NOT "Financial Services" → "FinTech Payments Partnerships".
-B) Identify the job's sub-vertical.
-C) Select the CV variation whose day-to-day responsibilities most closely match the role's core duties. Use exact filename from input. Do NOT select based on title keyword similarity.
+A) Identify the candidate's professional sub-vertical from their EMPLOYERS, not their tools.
+   CRITICAL: Industry is where the candidate's COMPANIES operate, not what tools they use.
+   - Digital marketer using Google Ads at Superbalist = E-commerce, NOT SaaS. The tools don't define the industry.
+   - Backend engineer using AWS at a bank = FinTech, NOT Cloud Services.
+   - Recruiter using LinkedIn at a construction firm = Construction, NOT Social Media.
+   Identify sub-vertical from employer names and what those companies sell.
+B) Identify the job's sub-vertical the same way — what does the hiring company sell?
+C) Select the CV variation whose day-to-day responsibilities most closely match the role's core duties. Use exact filename from input.
 D) Set suggested_cv_name to the exact filename.
 
 STEP 1: CATEGORIZE THE JOB DESCRIPTION INTO 5 PILLARS
@@ -515,8 +520,10 @@ PILLAR SCORING (each 0-100):
 
 Pillar 1 - Industry Vertical (Weight 25%)
 - How well does the candidate's sub-vertical match the job's sub-vertical?
-- FinTech (payments) ≠ Cybersecurity SaaS. FinTech ≠ Logistics. FinTech ≠ Renewable Energy.
-- Adjacent tech sectors max 60. Completely different sectors max 30.
+- SAME industry (e-commerce → e-commerce, FinTech → FinTech, construction → construction) = 70-95
+- ADJACENT industry (e-commerce → retail, FinTech → Banking, SaaS HR → SaaS CRM) = 40-65
+- DIFFERENT industry (FinTech ≠ Construction, E-commerce ≠ Healthcare, Education ≠ Logistics) = 0-30
+- WRONG industry with no overlap (FinTech ≠ Renewable Energy, Construction ≠ Cybersecurity) = 0
 
 Pillar 2 - Functional Discipline (Weight 30%)
 - How well do the candidate's DAILY TASKS match the job's day-to-day work?
@@ -539,7 +546,12 @@ Pillar 5 - Location & Mobility (Weight 10%)
 - Different country, no relocation stated on CV = 0
 - If CV states willingness to relocate, apply next tier up.
 
-For each pillar, provide a SHORT reason sentence in pillar_reasons. Examples: "candidate works in FinTech not renewable energy", "manages key accounts daily same as this role", "8 years experience matches seniority", "candidate based in Cape Town, role in Johannesburg".
+For each pillar, provide a SPECIFIC reason sentence in pillar_reasons referencing details from the CV.
+  Bad: "The company operates in e-commerce."
+  Good: "Candidate worked at Superbalist, Takealot, and Woolworths — all e-commerce/retail companies — same industry."
+  Bad: "The tools mentioned align with the candidate's skills."
+  Good: "Candidate knows Google Ads, Meta Ads, and Klaviyo which are essential for this role."
+  Always mention actual employer names, skill names, numbers, locations from the CV.
 
 STEP 2: CHECK KNOCKOUTS (Binary Kill-Switch)
 If ANY answer is NO, trigger knockout → score MUST be 25:
@@ -567,19 +579,19 @@ STEP 5: RECRUITER VERDICT
 
 STEP 6: SELF-VERIFICATION & SCORE ADJUSTMENT
 A) Rule check — review against every rule above. If violated, fix pillar scores and reasons.
-B) Language check — pillar_reasons MUST be plain English explaining the actual gap. Never expose scores/weights/percentages.
-   Bad: "scored 40% due to missing tools"
-   Good: "lacks C++, Kafka, and RabbitMQ which are essential for this role"
-C) Score check — do the gaps match the score?
+B) Pillar-Final consistency check — compute: (Industry×0.25 + Function×0.30 + Scale×0.20 + Tools×0.15 + Location×0.10) × 0.95 - taxes.
+   Does this match your final score? If the score differs by >5 points, either the pillars or the score is wrong — FIX BOTH so they match.
+C) Language check — pillar_reasons MUST mention specific CV details (employer names, skills, numbers, locations).
+   Bad: "The company operates in e-commerce."  Good: "Candidate worked at Superbalist and Takealot, both e-commerce companies."
+   Bad: "The tools mentioned align with the candidate's skills."  Good: "Candidate knows Google Ads, Meta Ads, and Klaviyo essential for this role."
+D) Score check — do the gaps match the score?
    Severe gaps (wrong industry, missing mandatory skills, knockout) → ≤40
    Moderate gaps (missing nice-to-haves, transferable skills) → 41-60
    Strong match with minor gaps → 61-75
    Near-perfect fit → 76+
-D) If the score feels wrong, adjust by ±5 (max ±10). Set adjustment_note to a short sentence explaining the change.
-   Examples: "Adjusted -5: C++ gap more critical than initially weighted"
-             "Adjusted +5: backend function transfers more than tools suggest"
+E) If the score feels wrong, adjust by ±5 (max ±10). Set adjustment_note to a short sentence explaining the change.
    If no adjustment needed, set adjustment_note to null.
-E) score field = FINAL adjusted score.
+F) score field = FINAL adjusted score. pillar_scores MUST reflect the final math.
 
 Return ONLY a JSON array of objects. No markdown, no explanation, no code fences.
 Each object:
@@ -621,7 +633,7 @@ ${blacklistInfo}${bannedInfo}${dateConstraintInfo}`;
           batchSystemPrompt,
           `Candidate Profile:\n${profileContext}\n\nJobs:\n${JSON.stringify(chunk, null, 2)}`,
           `search chunk ${chunkNum}/${totalChunks}${pfRound ? ` (PF round ${pfRound})` : ""}`,
-          { responseMimeType: "application/json", temperature: 0.1, maxOutputTokens: 10000000 }
+          { responseMimeType: "application/json", temperature: 0.1, maxOutputTokens: 16384 }
         );
         const parsed = JSON.parse(rawChunk);
         const unwrapped = unwrapArray(parsed);
@@ -654,14 +666,15 @@ CANDIDATE INDUSTRY: ${profileIndustry || "Unknown"}
 
 PILLARS (each 0-100): Industry 25% | Function 30% | Scale 20% | Tools 15% | Location 10%
 
+INDUSTRY: Identify from EMPLOYERS, not tools. SAME industry=70-95, ADJACENT=40-65, DIFFERENT=0-30. FinTech ≠ Construction. E-commerce ≠ Healthcare.
 FUNCTION: Measures ROLE TYPE transferability, not language/tool skills. C++/Python/Java skills belong in Tools pillar. A backend engineer can do backend work in any stack.
-INDUSTRY: FinTech ≠ Cybersecurity/Logistics/Renewable Energy. Adjacent tech max 60. Different sectors max 30.
 KNOCKOUT (score=25): mandatory degree, license, language, or vertical tenure unmet. Do NOT knockout for "advantageous" or "preferred" degrees.
 TAXES: Hopper(-15, exempt self-employed blocks), Overqualified(-10), Vague Achievement(-10), No Degree(-10, only when REQUIRED), Salary Mismatch(-10).
 FINAL = (Industry×0.25 + Function×0.30 + Scale×0.20 + Tools×0.15 + Location×0.10) × 0.95 - taxes. Cap 0-95.
 VERDICT: >=75 HIRE | >=60 INTERVIEW | <60 REJECT.
 LOCATION: same city/remote=100, same province=70, different province=30, different country=0.
-SELF-VERIFY: review rules. If score feels wrong, adjust by ±5 (max ±10) and set adjustment_note. Fix pillar_reasons to plain English (no scores/weights).
+PILLAR-REASONS: Must reference CV specifics (employer names, skills, numbers). Bad: "company operates in e-commerce." Good: "worked at Superbalist and Takealot, both e-commerce."
+SELF-VERIFY: Compute pillar math — does it match final score? Fix both if they diverge by >5 pts. Adjust by ±5 (max ±10) with adjustment_note. pillar_scores MUST reflect final math.
 
 Return ONLY valid JSON (no markdown, no code fences):
 { "score": number (0-95), "adjustment_note": string|null, "reason": string, "estimated_salary": string, "knockout_fail": boolean, "suggested_cv_name": string, "pillar_scores": { "industry": number, "function": number, "scale": number, "tools": number, "location": number }, "pillar_reasons": { "industry": "plain English reason", "function": "plain English reason", "scale": "plain English reason", "tools": "plain English reason", "location": "plain English reason" }, "taxes_applied": [string], "total_questions_asked": number, "yes_answers": number, "recruiter_verdict": "HIRE"|"INTERVIEW"|"REJECT" }`;
@@ -670,7 +683,7 @@ Return ONLY valid JSON (no markdown, no code fences):
           singlePrompt,
           `Candidate Profile:\n${profileContext}\n\nJob:\n${JSON.stringify(batchInput[i], null, 2)}`,
           `search pass 1 individual${pfRound ? ` (PF round ${pfRound})` : ""}`,
-          { responseMimeType: "application/json", temperature: 0.1, maxOutputTokens: 10000000 }
+          { responseMimeType: "application/json", temperature: 0.1, maxOutputTokens: 16384 }
         );
         const parsed = JSON.parse(rawSingle);
         batchResults.push({

@@ -114,7 +114,7 @@ export function SearchPill({ onSearch, onAbort, searching }: SearchPillProps) {
   const selectDateFilter = (value: number | null) => {
     setDateFilterDays(value);
     setDateFilterMounted(false);
-    setTimeout(() => setShowDateFilter(false), 200);
+    setTimeout(() => setShowDateFilter(false), 300);
   };
 
   const activeDateLabel = DATE_OPTIONS.find((o) => o.value === dateFilterDays)?.label ?? "Any date";
@@ -171,7 +171,7 @@ export function SearchPill({ onSearch, onAbort, searching }: SearchPillProps) {
 
         {showDateFilter && (
           <div
-            className="absolute left-1/2 -translate-x-1/2 top-full mt-2 z-[60] transition-all duration-200 ease-out"
+            className="absolute left-1/2 -translate-x-1/2 top-full mt-2 z-[60] transition-all duration-300 ease-out"
             style={{ opacity: dateFilterMounted ? 1 : 0, transform: dateFilterMounted ? "translateY(0) scale(1)" : "translateY(-4px) scale(0.95)" }}
           >
             <div className="bg-gray-900/95 backdrop-blur-xl border border-white/20 rounded-xl py-1.5 shadow-2xl min-w-[140px]">

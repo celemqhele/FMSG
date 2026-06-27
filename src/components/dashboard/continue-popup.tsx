@@ -12,26 +12,42 @@ interface ContinuePopupProps {
 
 export function ContinuePopup({ isOpen, message, onContinue, onCancel }: ContinuePopupProps) {
   const [mounted, setMounted] = useState(false);
+  const [phase, setPhase] = useState<"closed" | "entering" | "open">("closed");
 
   useEffect(() => {
     if (isOpen) {
-      requestAnimationFrame(() => setMounted(true));
+      setPhase("entering");
+      const t = setTimeout(() => setPhase("open"), 50);
+      return () => clearTimeout(t);
     } else {
+      setPhase("closed");
       setMounted(false);
     }
   }, [isOpen]);
 
-  if (!isOpen && !mounted) return null;
+  useEffect(() => {
+    if (phase === "entering") {
+      requestAnimationFrame(() => setMounted(true));
+    }
+  }, [phase]);
+
+  if (phase === "closed" && !mounted) return null;
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center transition-opacity duration-200"
-      style={{ opacity: mounted ? 1 : 0 }}
+      className="fixed inset-0 z-[60] flex items-center justify-center transition-opacity duration-300 ease-out"
+      style={{ opacity: (phase === "open" && mounted) ? 1 : 0 }}
     >
-      <div className="absolute inset-0 bg-black/50" />
       <div
-        className="relative bg-white border border-gray-200 rounded-2xl p-6 max-w-sm mx-4 text-center shadow-2xl transition-all duration-200 ease-out"
-        style={{ opacity: mounted ? 1 : 0, transform: mounted ? "translateY(0) scale(1)" : "translateY(6px) scale(0.98)" }}
+        className="absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity duration-300 ease-out"
+        style={{ opacity: (phase === "open" && mounted) ? 1 : 0 }}
+      />
+      <div
+        className="relative bg-white border border-gray-200 rounded-2xl p-6 max-w-sm mx-4 text-center shadow-2xl transition-all duration-300 ease-out"
+        style={{
+          opacity: (phase === "open" && mounted) ? 1 : 0,
+          transform: (phase === "open" && mounted) ? "translateY(0) scale(1)" : "translateY(8px) scale(0.97)",
+        }}
       >
         <button
           onClick={onCancel}
