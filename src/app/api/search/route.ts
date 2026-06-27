@@ -496,9 +496,9 @@ Pillar 1 - Industry Vertical (Weight 25%)
 
 Pillar 2 - Functional Discipline (Weight 30%)
 - How well do the candidate's DAILY TASKS match the job's day-to-day work?
-- CRITICAL: This pillar measures FUNCTIONAL transferability, NOT industry knowledge.
-- A Key Account Manager in FinTech CAN manage key accounts in Renewable Energy. Sales transfers across industries.
-- Only penalize if the actual daily activities differ (e.g., managing accounts vs hands-on logistics operations).
+- CRITICAL: Language-specific skills (C++, Python, Java, etc.) belong in Pillar 4 (Tools), NOT here.
+- Do NOT penalize Function for missing a programming language. A backend engineer can do backend work in any stack.
+- Only penalize Function if the ROLE TYPE differs (e.g., backend vs frontend vs data science vs devops).
 - Industry gaps belong in Pillar 1, NOT here.
 
 Pillar 3 - Experience Depth & Scale (Weight 20%)
@@ -541,25 +541,34 @@ If knockout triggered → score = 25.
 STEP 5: RECRUITER VERDICT
 >= 75: "HIRE" | >= 60: "INTERVIEW" | < 60: "REJECT"
 
-STEP 6: SELF-VERIFICATION
-Before outputting, review your entire analysis:
-- Industry: is sub-vertical truly matching? If different, Industry score ≤30 (≤60 for adjacent)?
-- Function: did you penalize Function for industry gaps? If yes, move those to Industry.
-- Knockout: does the job mandate a degree/license the candidate lacks? If yes, apply knockout (score=25).
-- Taxes: Hopper exempts self-employed blocks. No Degree Tax only when degree is REQUIRED, not "advantageous".
-- Sanity: does the final score feel right? If you violated any rule, CORRECT IT NOW.
+STEP 6: SELF-VERIFICATION & SCORE ADJUSTMENT
+A) Rule check — review against every rule above. If violated, fix pillar scores and reasons.
+B) Language check — pillar_reasons MUST be plain English explaining the actual gap. Never expose scores/weights/percentages.
+   Bad: "scored 40% due to missing tools"
+   Good: "lacks C++, Kafka, and RabbitMQ which are essential for this role"
+C) Score check — do the gaps match the score?
+   Severe gaps (wrong industry, missing mandatory skills, knockout) → ≤40
+   Moderate gaps (missing nice-to-haves, transferable skills) → 41-60
+   Strong match with minor gaps → 61-75
+   Near-perfect fit → 76+
+D) If the score feels wrong, adjust by ±5 (max ±10). Set adjustment_note to a short sentence explaining the change.
+   Examples: "Adjusted -5: C++ gap more critical than initially weighted"
+             "Adjusted +5: backend function transfers more than tools suggest"
+   If no adjustment needed, set adjustment_note to null.
+E) score field = FINAL adjusted score.
 
 Return ONLY a JSON array of objects. No markdown, no explanation, no code fences.
 Each object:
 {
   "index": number,
   "score": number (integer 0-95),
+  "adjustment_note": string | null,
   "reason": string (explain the match in 2-3 sentences),
   "estimated_salary": string,
   "knockout_fail": boolean,
   "suggested_cv_name": string (exact CV filename from input),
   "pillar_scores": { "industry": number, "function": number, "scale": number, "tools": number, "location": number },
-  "pillar_reasons": { "industry": "short reason", "function": "short reason", "scale": "short reason", "tools": "short reason", "location": "short reason" },
+  "pillar_reasons": { "industry": "plain English reason", "function": "plain English reason", "scale": "plain English reason", "tools": "plain English reason", "location": "plain English reason" },
   "taxes_applied": [string],
   "total_questions_asked": number,
   "yes_answers": number,
@@ -568,17 +577,17 @@ Each object:
 
 ${blacklistInfo}${bannedInfo}${dateConstraintInfo}`;
 
-  let batchResults: { index: number; score: number; reason: string; estimated_salary: string; knockout_fail?: boolean; suggested_cv_name?: string; pillar_scores?: Record<string, number>; pillar_reasons?: Record<string, string>; taxes_applied?: string[]; total_questions_asked?: number; yes_answers?: number; recruiter_verdict?: string }[] = [];
+  let batchResults: { index: number; score: number; adjustment_note?: string | null; reason: string; estimated_salary: string; knockout_fail?: boolean; suggested_cv_name?: string; pillar_scores?: Record<string, number>; pillar_reasons?: Record<string, string>; taxes_applied?: string[]; total_questions_asked?: number; yes_answers?: number; recruiter_verdict?: string }[] = [];
 
   let rawPass1 = "";
   try {
-    debugLog(`[SEARCH] Starting Pass 1 batch (${rawJobs.length} jobs)`);
+    debugLog(`[SEARCH] Starting scoring (${rawJobs.length} jobs)`);
     onStatus?.({ type: "screening_job", current: 0, total: rawJobs.length, progress: 25 });
     rawPass1 = await callAIWithFallback(
       batchSystemPrompt,
       `Candidate Profile:\n${profileContext}\n\nJobs:\n${JSON.stringify(batchInput, null, 2)}`,
-      `search pass 1${pfRound ? ` (PF round ${pfRound})` : ""}`,
-      { responseMimeType: "application/json", temperature: 0.1, maxOutputTokens: 8192 }
+      `search${pfRound ? ` (PF round ${pfRound})` : ""}`,
+      { responseMimeType: "application/json", temperature: 0.1, maxOutputTokens: 10000000 }
     );
     const parsedPass1 = JSON.parse(rawPass1);
     const unwrappedPass1 = unwrapArray(parsedPass1);
@@ -587,41 +596,41 @@ ${blacklistInfo}${bannedInfo}${dateConstraintInfo}`;
       throw new Error("batch empty");
     }
     batchResults = unwrappedPass1 as typeof batchResults;
-    debugLog(`[SEARCH] Pass 1 batch succeeded via ${lastAITier} (${batchResults.length} results)`);
+    debugLog(`[SEARCH] Scoring succeeded via ${lastAITier} (${batchResults.length} results)`);
   } catch {
-    debugLog(`[SEARCH] Pass 1 batch failed, falling back to individual (${rawJobs.length} jobs)`);
+    debugLog(`[SEARCH] Scoring batch failed, falling back to individual (${rawJobs.length} jobs)`);
     for (let i = 0; i < rawJobs.length; i++) {
       const job = rawJobs[i];
       const progress = Math.min(20 + ((i + 1) / rawJobs.length) * 35, 55);
       onStatus?.({ type: "screening_job", current: i + 1, total: rawJobs.length, progress });
-    if (i > 0) await sleep(lastAITier === "gemini" ? 8000 : 2000);
+    if (i > 0) await sleep(lastAITier === "gemini" ? 4000 : 1000);
       const singlePrompt = `You are a Recruitment Auditor AI scoring a single job match. Follow the same strict rules as the batch version.
 
 CANDIDATE INDUSTRY: ${profileIndustry || "Unknown"}
 
 PILLARS (each 0-100): Industry 25% | Function 30% | Scale 20% | Tools 15% | Location 10%
 
+FUNCTION: Measures ROLE TYPE transferability, not language/tool skills. C++/Python/Java skills belong in Tools pillar. A backend engineer can do backend work in any stack.
 INDUSTRY: FinTech ≠ Cybersecurity/Logistics/Renewable Energy. Adjacent tech max 60. Different sectors max 30.
-FUNCTION: Measures daily task transferability, NOT industry. A Key Account Manager in FinTech CAN manage accounts in Renewable Energy. Industry gaps go in Industry pillar.
 KNOCKOUT (score=25): mandatory degree, license, language, or vertical tenure unmet. Do NOT knockout for "advantageous" or "preferred" degrees.
 TAXES: Hopper(-15, exempt self-employed blocks), Overqualified(-10), Vague Achievement(-10), No Degree(-10, only when REQUIRED), Salary Mismatch(-10).
 FINAL = (Industry×0.25 + Function×0.30 + Scale×0.20 + Tools×0.15 + Location×0.10) × 0.95 - taxes. Cap 0-95.
 VERDICT: >=75 HIRE | >=60 INTERVIEW | <60 REJECT.
 LOCATION: same city/remote=100, same province=70, different province=30, different country=0.
-SELF-VERIFY: review rules before output. Fix violations.
+SELF-VERIFY: review rules. If score feels wrong, adjust by ±5 (max ±10) and set adjustment_note. Fix pillar_reasons to plain English (no scores/weights).
 
 Return ONLY valid JSON (no markdown, no code fences):
-{ "score": number (0-95), "reason": string, "estimated_salary": string, "knockout_fail": boolean, "suggested_cv_name": string, "pillar_scores": { "industry": number, "function": number, "scale": number, "tools": number, "location": number }, "pillar_reasons": { "industry": "short reason", "function": "short reason", "scale": "short reason", "tools": "short reason", "location": "short reason" }, "taxes_applied": [string], "total_questions_asked": number, "yes_answers": number, "recruiter_verdict": "HIRE"|"INTERVIEW"|"REJECT" }`;
+{ "score": number (0-95), "adjustment_note": string|null, "reason": string, "estimated_salary": string, "knockout_fail": boolean, "suggested_cv_name": string, "pillar_scores": { "industry": number, "function": number, "scale": number, "tools": number, "location": number }, "pillar_reasons": { "industry": "plain English reason", "function": "plain English reason", "scale": "plain English reason", "tools": "plain English reason", "location": "plain English reason" }, "taxes_applied": [string], "total_questions_asked": number, "yes_answers": number, "recruiter_verdict": "HIRE"|"INTERVIEW"|"REJECT" }`;
       try {
         const rawSingle = await callAIWithFallback(
           singlePrompt,
           `Candidate Profile:\n${profileContext}\n\nJob:\n${JSON.stringify(batchInput[i], null, 2)}`,
           `search pass 1 individual${pfRound ? ` (PF round ${pfRound})` : ""}`,
-          { responseMimeType: "application/json", temperature: 0.1, maxOutputTokens: 1024 }
+          { responseMimeType: "application/json", temperature: 0.1, maxOutputTokens: 10000000 }
         );
         const parsed = JSON.parse(rawSingle);
         batchResults.push({
-          index: i, score: Math.round(parsed.score), reason: parsed.reason, estimated_salary: parsed.estimated_salary,
+          index: i, score: Math.round(parsed.score), adjustment_note: parsed.adjustment_note, reason: parsed.reason, estimated_salary: parsed.estimated_salary,
           knockout_fail: parsed.knockout_fail, suggested_cv_name: parsed.suggested_cv_name,
           pillar_scores: parsed.pillar_scores, pillar_reasons: parsed.pillar_reasons,
           taxes_applied: parsed.taxes_applied, total_questions_asked: parsed.total_questions_asked,
@@ -659,6 +668,14 @@ Return ONLY valid JSON (no markdown, no code fences):
     const questions = batchResult?.total_questions_asked ?? 0;
     const yes = batchResult?.yes_answers ?? 0;
 
+    const deductionLabels: Record<string, string> = {
+      "Hopper Tax": "Short tenure history — 3+ jobs in 5 years with average under 18 months",
+      "Overqualified": "Current role is more senior — may be screened out as overqualified",
+      "Vague Achievement Tax": "CV lacks specific metrics and measurable achievements",
+      "No Degree Tax": "Role requires a degree which candidate does not have",
+      "Salary Mismatch Tax": "Job salary is below 70% of candidate's market rate",
+    };
+
     const autoSummary = (() => {
       const lines: string[] = [];
 
@@ -670,25 +687,24 @@ Return ONLY valid JSON (no markdown, no code fences):
         }));
         const sorted = [...pillars].sort((a, b) => b.val - a.val);
 
-        const good = sorted.slice(0, 3).filter(p => p.val >= 60);
+        const good = sorted.slice(0, 3).filter(p => p.val >= 60 && p.reason);
         if (good.length > 0) {
           lines.push("What worked:");
           for (const p of good) {
-            const why = p.reason ? ` — ${p.reason}` : "aligned with the role's requirements.";
-            lines.push(`• ${p.label} scored ${p.val}% (weighted ${p.weight})${why}`);
+            lines.push(`• ${p.label}: ${p.reason}.`);
           }
         }
 
-        const bad = [...sorted].reverse().slice(0, 3).filter(p => p.val < 60);
+        const bad = [...sorted].reverse().slice(0, 3).filter(p => p.val < 60 && p.reason);
         if (bad.length > 0 || taxes.length > 0) {
           lines.push("");
           lines.push("What held it back:");
           for (const p of bad) {
-            const why = p.reason ? ` — ${p.reason}` : "this was a gap that dragged the overall score down.";
-            lines.push(`• ${p.label} scored only ${p.val}% (weighted ${p.weight})${why}`);
+            lines.push(`• ${p.label}: ${p.reason}.`);
           }
           for (const t of taxes) {
-            lines.push(`• Deduction: ${t}. Applied as a tax against the final score.`);
+            const human = deductionLabels[t] || t;
+            lines.push(`• ${human}.`);
           }
         }
       } else {
@@ -701,12 +717,21 @@ Return ONLY valid JSON (no markdown, no code fences):
         if (taxes.length > 0) {
           lines.push("");
           lines.push("What held it back:");
-          for (const t of taxes) lines.push(`• Deduction: ${t}.`);
+          for (const t of taxes) {
+            const human = deductionLabels[t] || t;
+            lines.push(`• ${human}.`);
+          }
         }
       }
 
+      const adjustmentNote = batchResult?.adjustment_note;
+      if (adjustmentNote) {
+        lines.push("");
+        lines.push(`Score adjusted: ${adjustmentNote}`);
+      }
+
       lines.push("");
-      lines.push(questions > 0 ? `Verdict: ${verdict} · Met ${yes}/${questions} requirements` : `Verdict: ${verdict}`);
+      lines.push(`Verdict: ${verdict}`);
       return lines.join("\n");
     })();
 
