@@ -463,7 +463,7 @@ async function screenAndAnalyze(
     job_title: sanitiseForJson(j.title),
     company: sanitiseForJson(j.company_name),
     location: sanitiseForJson(j.location),
-    description_snippet: sanitiseForJson(j.description ?? ""),
+    description: sanitiseForJson(jobSpecs.get(i) || ""),
     url: jobUrls.get(i) || "",
   }));
 
