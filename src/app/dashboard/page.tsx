@@ -11,7 +11,7 @@ const PFPurchaseModal = dynamic(() => import("@/components/dashboard/pf-purchase
 const OnboardingForm = dynamic(() => import("@/components/onboarding/onboarding-form").then((mod) => mod.OnboardingForm), { ssr: false });
 import { DashboardTabs, type TabId } from "@/components/dashboard/dashboard-tabs";
 import { BalanceChips } from "@/components/dashboard/balance-chips";
-import { FilterSortBar, type FilterState, type SortMode } from "@/components/dashboard/filter-sort-bar";
+import { FilterSortBar, type SortMode } from "@/components/dashboard/filter-sort-bar";
 import { SearchProgress } from "@/components/dashboard/search-progress";
 import type { FilteredSummary } from "@/lib/search-stream";
 import { SavedJobs } from "@/components/dashboard/saved-jobs";
@@ -217,35 +217,21 @@ export default function DashboardPage() {
 
   const [pfActive, setPfActive] = useState(false);
 
-  // Filter + sort state
-  const [filterState, setFilterState] = useState<FilterState>({
-    scoreHigh: true, scoreMid: true, scoreLow: true,
-  });
-  const [sortMode, setSortMode] = useState<SortMode>("score");
+  // Sort state
+  const [sortMode, setSortMode] = useState<SortMode>("date_newest");
 
-  const filteredResults = useMemo(() => {
-    let filtered = results.filter((r) => {
-      const s = r.match_score;
-      if (!filterState.scoreHigh && s >= 80) return false;
-      if (!filterState.scoreMid && s >= 40 && s < 80) return false;
-      if (!filterState.scoreLow && s < 40) return false;
-      return true;
-    });
-
-    filtered.sort((a, b) => {
+  const sortedResults = useMemo(() => {
+    const sorted = [...results].sort((a, b) => {
       switch (sortMode) {
-        case "date_newest":
-          return new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime();
         case "date_oldest":
           return new Date(a.created_at ?? 0).getTime() - new Date(b.created_at ?? 0).getTime();
-        case "score":
+        case "date_newest":
         default:
-          return (b.match_score ?? 0) - (a.match_score ?? 0);
+          return new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime();
       }
     });
-
-    return filtered;
-  }, [results, filterState, sortMode]);
+    return sorted;
+  }, [results, sortMode]);
 
   const handleSearch = useCallback(async (query: string, profileId?: string | null, pfMode?: boolean, dateFilterDays?: number | null) => {
     console.log("[DASHBOARD] Search clicked:", { query, profileId, pfMode, dateFilterDays, time: new Date().toISOString() });
@@ -651,9 +637,7 @@ export default function DashboardPage() {
             {hasSearched && (
               <div className="flex items-center justify-center">
                 <FilterSortBar
-                  filter={filterState}
                   sort={sortMode}
-                  onFilterChange={setFilterState}
                   onSortChange={setSortMode}
                 />
               </div>
@@ -688,7 +672,7 @@ export default function DashboardPage() {
 
             {!searching && results.length > 0 && (
               <div className="space-y-4">
-                {filteredResults.map((r) => (
+                {sortedResults.map((r) => (
                     <JobResultCard
                       key={r.id}
                       id={r.id}
