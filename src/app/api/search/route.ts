@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { searchGoogleJobs, type SerpJob } from "@/lib/serpapi";
+import { searchGoogleJobs, searchJinaWeb, type SerpJob } from "@/lib/serpapi";
 import { extractTextFromPDF } from "@/lib/pdf";
 import { callAIWithFallback, lastAITier } from "@/lib/gemini";
 import { StreamWriter, type SearchEvent } from "@/lib/search-stream";
@@ -230,15 +230,39 @@ const SERP_PAGE_SIZE = 10;
 async function fetchPaginatedJobs(params: { q: string; location?: string; hl?: string; gl?: string; start?: number }, maxPages: number): Promise<SerpJob[]> {
   const all: SerpJob[] = [];
   const seen = new Set<string>();
-  for (let p = 0; p < maxPages; p++) {
-    const jobs = await searchGoogleJobs({ ...params, start: p * SERP_PAGE_SIZE });
-    if (!jobs || jobs.length === 0) break;
-    for (const j of jobs) {
-      const key = `${j.title ?? ""}|${j.company_name ?? ""}`.toLowerCase();
-      if (!seen.has(key)) { seen.add(key); all.push(j); }
+
+  // Primary: SerpAPI Google Jobs
+  try {
+    for (let p = 0; p < maxPages; p++) {
+      const jobs = await searchGoogleJobs({ ...params, start: p * SERP_PAGE_SIZE });
+      if (!jobs || jobs.length === 0) break;
+      for (const j of jobs) {
+        const key = `${j.title ?? ""}|${j.company_name ?? ""}`.toLowerCase();
+        if (!seen.has(key)) { seen.add(key); all.push(j); }
+      }
+      if (jobs.length < SERP_PAGE_SIZE) break;
     }
-    if (jobs.length < SERP_PAGE_SIZE) break;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    debugLog(`[SEARCH] SerpAPI failed: ${msg.slice(0, 150)}`);
   }
+
+  // Fallback: Jina web search
+  if (all.length === 0) {
+    debugLog(`[SEARCH] SerpAPI returned 0 results, trying Jina search...`);
+    try {
+      const jinaResults = await searchJinaWeb(params);
+      for (const j of jinaResults) {
+        const key = `${j.title ?? ""}|${j.company_name ?? ""}`.toLowerCase();
+        if (!seen.has(key)) { seen.add(key); all.push(j); }
+      }
+      debugLog(`[SEARCH] Jina search returned ${jinaResults.length} results`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      debugLog(`[SEARCH] Jina search also failed: ${msg.slice(0, 150)}`);
+    }
+  }
+
   return all;
 }
 
@@ -579,26 +603,46 @@ ${blacklistInfo}${bannedInfo}${dateConstraintInfo}`;
 
   let batchResults: { index: number; score: number; adjustment_note?: string | null; reason: string; estimated_salary: string; knockout_fail?: boolean; suggested_cv_name?: string; pillar_scores?: Record<string, number>; pillar_reasons?: Record<string, string>; taxes_applied?: string[]; total_questions_asked?: number; yes_answers?: number; recruiter_verdict?: string }[] = [];
 
-  let rawPass1 = "";
-  try {
-    debugLog(`[SEARCH] Starting scoring (${rawJobs.length} jobs)`);
-    onStatus?.({ type: "screening_job", current: 0, total: rawJobs.length, progress: 25 });
-    rawPass1 = await callAIWithFallback(
-      batchSystemPrompt,
-      `Candidate Profile:\n${profileContext}\n\nJobs:\n${JSON.stringify(batchInput, null, 2)}`,
-      `search${pfRound ? ` (PF round ${pfRound})` : ""}`,
-      { responseMimeType: "application/json", temperature: 0.1, maxOutputTokens: 10000000 }
-    );
-    const parsedPass1 = JSON.parse(rawPass1);
-    const unwrappedPass1 = unwrapArray(parsedPass1);
-    if (!Array.isArray(unwrappedPass1) || unwrappedPass1.length === 0) {
-      debugLog(`[SEARCH] Pass 1 batch returned empty/unexpected format, falling back to individual`);
-      throw new Error("batch empty");
+  const BATCH_SIZE = 8;
+  let batchFailed = false;
+
+  if (!batchFailed && batchInput.length > 0) {
+    try {
+      debugLog(`[SEARCH] Starting scoring (${batchInput.length} jobs in ${Math.ceil(batchInput.length / BATCH_SIZE)} chunks)`);
+      onStatus?.({ type: "screening_job", current: 0, total: batchInput.length, progress: 25 });
+
+      for (let chunkStart = 0; chunkStart < batchInput.length; chunkStart += BATCH_SIZE) {
+        const chunk = batchInput.slice(chunkStart, chunkStart + BATCH_SIZE);
+        const chunkNum = Math.floor(chunkStart / BATCH_SIZE) + 1;
+        const totalChunks = Math.ceil(batchInput.length / BATCH_SIZE);
+        debugLog(`[SEARCH] Scoring chunk ${chunkNum}/${totalChunks} (${chunk.length} jobs)`);
+
+        const rawChunk = await callAIWithFallback(
+          batchSystemPrompt,
+          `Candidate Profile:\n${profileContext}\n\nJobs:\n${JSON.stringify(chunk, null, 2)}`,
+          `search chunk ${chunkNum}/${totalChunks}${pfRound ? ` (PF round ${pfRound})` : ""}`,
+          { responseMimeType: "application/json", temperature: 0.1, maxOutputTokens: 10000000 }
+        );
+        const parsed = JSON.parse(rawChunk);
+        const unwrapped = unwrapArray(parsed);
+        if (!Array.isArray(unwrapped) || unwrapped.length === 0) {
+          throw new Error(`chunk ${chunkNum} empty`);
+        }
+        for (const item of unwrapped) {
+          batchResults.push(item as typeof batchResults[0]);
+        }
+      }
+      debugLog(`[SEARCH] Scoring succeeded via ${lastAITier} (${batchResults.length} results)`);
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      debugLog(`[SEARCH] Scoring batch failed: ${errMsg.slice(0, 150)} — falling back to individual`);
+      batchResults = [];
+      batchFailed = true;
     }
-    batchResults = unwrappedPass1 as typeof batchResults;
-    debugLog(`[SEARCH] Scoring succeeded via ${lastAITier} (${batchResults.length} results)`);
-  } catch {
-    debugLog(`[SEARCH] Scoring batch failed, falling back to individual (${rawJobs.length} jobs)`);
+  }
+
+  if (batchFailed) {
+    debugLog(`[SEARCH] Individual fallback for ${rawJobs.length} jobs`);
     for (let i = 0; i < rawJobs.length; i++) {
       const job = rawJobs[i];
       const progress = Math.min(20 + ((i + 1) / rawJobs.length) * 35, 55);

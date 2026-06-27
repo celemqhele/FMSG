@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import { useState } from "react";
-import { Search, Crosshair, Square, X } from "lucide-react";
+import { Search, Crosshair, Square, X, Calendar } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useActiveProfile } from "@/components/dashboard/dashboard-layout";
 
@@ -79,7 +79,7 @@ export function SearchPill({ onSearch, onAbort, searching }: SearchPillProps) {
     }
     const query = [pick, ind, loc].filter(Boolean).join(" ");
     setDisplayTitle(query);
-    onSearch(query, usedProfileId, pfMode, pfMode ? dateFilterDays : null);
+    onSearch(query, usedProfileId, pfMode, dateFilterDays);
   };
 
   const openAbortConfirm = () => {
@@ -98,14 +98,16 @@ export function SearchPill({ onSearch, onAbort, searching }: SearchPillProps) {
   };
 
   const togglePfMode = () => {
-    const next = !pfMode;
-    setPfMode(next);
-    if (next) {
-      setShowDateFilter(true);
-      setTimeout(() => setDateFilterMounted(true), 10);
-    } else {
+    setPfMode(!pfMode);
+  };
+
+  const toggleDateFilter = () => {
+    if (showDateFilter) {
       setDateFilterMounted(false);
       setTimeout(() => setShowDateFilter(false), 200);
+    } else {
+      setShowDateFilter(true);
+      setTimeout(() => setDateFilterMounted(true), 10);
     }
   };
 
@@ -157,13 +159,14 @@ export function SearchPill({ onSearch, onAbort, searching }: SearchPillProps) {
       )}
 
       <div className={`w-full max-w-2xl mx-auto flex items-center h-14 rounded-full bg-white/10 border border-white/20 backdrop-blur-xl overflow-visible transition-transform duration-200 ${bouncing ? "scale-[1.02]" : "scale-100"}`}>
+      {/* Date filter pill */}
       <div className="relative ml-2">
         <button
-          onClick={togglePfMode}
-          className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${pfMode ? "bg-[var(--color-accent)] text-white" : "text-white/60 hover:text-white/90 hover:bg-white/10"}`}
-          title={pfMode ? "Persistent Finder active: searches multiple rounds across all titles" : "Click to enable Persistent Finder"}
+          onClick={toggleDateFilter}
+          className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${dateFilterDays != null ? "bg-[var(--color-accent)] text-white" : "text-white/60 hover:text-white/90 hover:bg-white/10"}`}
+          title={dateFilterDays != null ? `Filtering: ${activeDateLabel}` : "Filter by date"}
         >
-          <Crosshair size={16} />
+          <Calendar size={16} />
         </button>
 
         {showDateFilter && (
@@ -190,8 +193,19 @@ export function SearchPill({ onSearch, onAbort, searching }: SearchPillProps) {
         )}
       </div>
 
+      {/* PF toggle */}
+      <div className="relative ml-1">
+        <button
+          onClick={togglePfMode}
+          className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${pfMode ? "bg-[var(--color-accent)] text-white" : "text-white/60 hover:text-white/90 hover:bg-white/10"}`}
+          title={pfMode ? "Persistent Finder active: searches multiple rounds across all titles" : "Click to enable Persistent Finder"}
+        >
+          <Crosshair size={16} />
+        </button>
+      </div>
+
       <span className="flex-1 text-white/60 text-sm px-3 truncate select-none">
-        {pfMode ? `Persistent Finder (${activeDateLabel})` : displayTitle}
+        {pfMode ? `Persistent Finder (${activeDateLabel})` : dateFilterDays != null ? `Filtered: ${activeDateLabel} · ${displayTitle}` : displayTitle}
       </span>
 
       {searching && (
