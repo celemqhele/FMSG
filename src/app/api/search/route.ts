@@ -46,6 +46,8 @@ const SHORT_SPEC_THRESHOLD = 500;
 
 const BLOCKED_ATS_TRACKERS = [
   '#J-18808-Ljbffr',
+  'jobleads',
+  'getwork',
 ];
 
 const BLACKLISTED_DOMAINS = [
@@ -382,6 +384,27 @@ async function fetchAndFilterJobs(
       passed_domain_filter: true, passed_banned_filter: false,
     }));
     dataClient.from("rejected_jobs").insert(rows).then((r: any) => r.error && debugLog('[SEARCH] Failed to log banned rejected:', r.error));
+  }
+
+  // Pre-filter: reject ATS tracker / job lead aggregator jobs before Jina scraping
+  const atsRejected: any[] = [];
+  rawJobs = rawJobs.filter((j) => {
+    const desc = j.description ?? "";
+    if (BLOCKED_ATS_TRACKERS.some(t => desc.includes(t))) {
+      atsRejected.push(j);
+      return false;
+    }
+    return true;
+  });
+  if (atsRejected.length > 0) {
+    const rows = atsRejected.map(j => ({
+      user_id: user.id, search_id: searchId, search_query: query,
+      job_title: j.title, company: j.company_name, location: j.location ?? '',
+      snippet: (j.description ?? '').slice(0, 500), job_url: buildJobUrl(j),
+      reason: 'ats_tracker', rejection_category: 'spam', rejection_reason: 'ats_tracker_or_lead_aggregator',
+      passed_domain_filter: false, passed_banned_filter: false,
+    }));
+    dataClient.from("rejected_jobs").insert(rows).then((r: any) => r.error && debugLog('[SEARCH] Failed to log ATS rejected:', r.error));
   }
 
   const tempJobUrls = new Map<number, string>();
