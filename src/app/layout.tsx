@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { TransitionProvider } from "@/components/providers/transition-provider";
+import { ErrorPopupProvider } from "@/components/providers/error-popup-provider";
 import { TransitionOverlay } from "@/components/ui/transition-overlay";
 import { CookieConsentBanner } from "@/components/ui/cookie-consent-banner";
 import { AuthHandler } from "@/components/auth/auth-handler";
@@ -45,11 +46,13 @@ export default function RootLayout({
       <body className="min-h-dvh flex flex-col" data-build-id="jun27-v2">
         <ThemeProvider>
           <TransitionProvider>
-            {children}
-            <TransitionOverlay />
-            <AutoLoginGuard />
-            <AuthHandler />
-            <CookieConsentBanner />
+            <ErrorPopupProvider>
+              {children}
+              <TransitionOverlay />
+              <AutoLoginGuard />
+              <AuthHandler />
+              <CookieConsentBanner />
+            </ErrorPopupProvider>
           </TransitionProvider>
         </ThemeProvider>
       </body>
