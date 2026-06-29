@@ -17,7 +17,9 @@ const SYSTEM_PROMPT = `You are a recruiter reviewing a CV. Extract structured in
   "address": string,
   "job_titles": string[],
   "job_types": string[],
-  "preferred_location": string
+  "preferred_location": string,
+  "current_salary": number | null,
+  "desired_salary": number | null
 }
 
 Rules — reason like a recruiter, not a parser:
@@ -27,6 +29,10 @@ job_titles: Based on this candidate's most recent and most substantial work expe
 job_types: Infer what work arrangement the candidate likely wants going forward based on their recent trajectory. Consider whether their recent roles were Remote, Hybrid, or On-site. If the CV shows a consistent pattern (e.g. all recent roles were Remote), list only that type. If it varies or is unclear, list the most common one. Return an array of 1-3 values from: "Remote", "Hybrid", "On-site".
 
 preferred_location: Infer the candidate's likely preferred location going forward based on their most recent role's location and any address info in the CV. Return a single geographic string (city and/or country) — never include descriptors like "Remote" or "Hybrid". If unclear, use "South Africa".
+
+current_salary: Estimate this candidate's gross MONTHLY salary in ZAR for their most recent or current role. Base this on: their total years of experience (infer from work history dates), their seniority level and the job title of their most recent role, their location (major metros like Johannesburg and Cape Town command higher salaries than smaller cities), and your knowledge of typical South African salary bands for that industry and role. Round to the nearest 1000. Return null ONLY if the CV has zero work history or provides no basis to estimate (e.g. a fresh graduate with no internships — still estimate for grad-level roles, but return null if truly no data).
+
+desired_salary: Estimate a realistic gross MONTHLY salary in ZAR that this candidate could target for their next role. This should typically be 10-25% above current_salary depending on their career trajectory, or at market rate for the next-step titles. Round to the nearest 1000. If current_salary is null, estimate directly from market rate for their experience level, titles, and location. Return null ONLY if no basis at all exists.
 
 Use empty arrays and empty strings for missing data. Never invent facts — reason from what the CV actually shows.`;
 
@@ -134,6 +140,8 @@ export async function POST(request: NextRequest) {
       job_titles: parsed.job_titles ?? [],
       job_types: parsed.job_types ?? [],
       preferred_location: parsed.preferred_location ?? "",
+      current_salary: typeof parsed.current_salary === "number" ? parsed.current_salary : null,
+      desired_salary: typeof parsed.desired_salary === "number" ? parsed.desired_salary : null,
       cv_file_path: storagePath,
     });
   } catch (err) {

@@ -12,6 +12,8 @@ interface ExtractedData {
   job_titles: string[];
   job_types: string[];
   preferred_location: string;
+  current_salary: number | null;
+  desired_salary: number | null;
   cv_file_path: string;
 }
 
@@ -70,6 +72,8 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
       setJobTitles(data.job_titles ?? []);
       setJobTypes(data.job_types ?? []);
       setLocation(data.preferred_location ?? "");
+      setCurrentSalary(data.current_salary ?? null);
+      setDesiredSalary(data.desired_salary ?? null);
       setCvFilePath(data.cv_file_path ?? "");
       setStep("review");
     } catch {
@@ -296,27 +300,41 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
 
       <section className="space-y-4">
         <h2 className="text-lg font-semibold text-gray-900">Salary Expectations</h2>
-        <p className="text-xs text-gray-500">These fields are always filled manually.</p>
+        <p className="text-xs text-gray-500">AI estimated from your experience &amp; region — adjust if needed.</p>
         <div className="flex gap-4">
           <div className="flex-1">
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">Current Salary</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              Current Salary
+              {currentSalary != null && <span className="ml-1.5 text-[10px] font-normal text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded">AI estimated</span>}
+            </label>
             <input
               type="number"
               value={currentSalary ?? ""}
               onChange={(e) => setCurrentSalary(e.target.value ? Number(e.target.value) : null)}
-              className="w-full px-4 py-2.5 text-sm rounded-lg bg-yellow-50 border border-yellow-300 text-gray-900 placeholder-gray-400 focus:outline-none focus:border-[var(--color-accent)] transition-colors"
+              className={currentSalary != null
+                ? "w-full px-4 py-2.5 text-sm rounded-lg bg-blue-50 border border-blue-300 text-gray-900 placeholder-gray-400 focus:outline-none focus:border-[var(--color-accent)] transition-colors"
+                : "w-full px-4 py-2.5 text-sm rounded-lg bg-yellow-50 border border-yellow-300 text-gray-900 placeholder-gray-400 focus:outline-none focus:border-[var(--color-accent)] transition-colors"
+              }
               placeholder="Monthly ZAR"
             />
+            {currentSalary == null && <p className="mt-1 text-xs text-yellow-600">Missing — fill in manually</p>}
           </div>
           <div className="flex-1">
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">Desired Salary</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              Desired Salary
+              {desiredSalary != null && <span className="ml-1.5 text-[10px] font-normal text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded">AI estimated</span>}
+            </label>
             <input
               type="number"
               value={desiredSalary ?? ""}
               onChange={(e) => setDesiredSalary(e.target.value ? Number(e.target.value) : null)}
-              className="w-full px-4 py-2.5 text-sm rounded-lg bg-yellow-50 border border-yellow-300 text-gray-900 placeholder-gray-400 focus:outline-none focus:border-[var(--color-accent)] transition-colors"
+              className={desiredSalary != null
+                ? "w-full px-4 py-2.5 text-sm rounded-lg bg-blue-50 border border-blue-300 text-gray-900 placeholder-gray-400 focus:outline-none focus:border-[var(--color-accent)] transition-colors"
+                : "w-full px-4 py-2.5 text-sm rounded-lg bg-yellow-50 border border-yellow-300 text-gray-900 placeholder-gray-400 focus:outline-none focus:border-[var(--color-accent)] transition-colors"
+              }
               placeholder="Monthly ZAR"
             />
+            {desiredSalary == null && <p className="mt-1 text-xs text-yellow-600">Missing — fill in manually</p>}
           </div>
         </div>
       </section>

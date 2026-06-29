@@ -2,6 +2,7 @@
 
 import { useState, useCallback, createContext, useContext, type ReactNode } from "react";
 import { Pencil } from "lucide-react";
+import Image from "next/image";
 import { SpaceVideoBackground } from "@/components/landing/space-video-background";
 import { ProfileSwitcher } from "./profile-switcher";
 import { ProfileDropdown } from "./profile-dropdown";
@@ -70,6 +71,7 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
       <header className="fixed top-4 left-1/2 -translate-x-1/2 z-50 w-[calc(100%-2rem)] max-w-5xl">
         <div className="liquid-glass-surface flex items-center justify-between px-4 py-2 rounded-2xl pr-11">
           <div className="flex items-center gap-2">
+            <Image src="/icon.png" alt="FMSG" width={24} height={24} className="shrink-0" priority />
             <span className="text-base font-semibold text-white select-none">
               FMSG
             </span>

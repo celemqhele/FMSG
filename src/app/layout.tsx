@@ -23,6 +23,18 @@ export const metadata: Metadata = {
   title: "Find Me Some Jobs",
   description:
     "Find jobs that match your skills. Upload your CV, search live jobs, and get matched with opportunities.",
+  icons: {
+    icon: "/icon.png",
+    apple: "/apple-icon.png",
+  },
+  openGraph: {
+    title: "Find Me Some Jobs",
+    description:
+      "Find jobs that match your skills. Upload your CV, search live jobs, and get matched with opportunities.",
+    siteName: "Find Me Some Jobs",
+    type: "website",
+    locale: "en_ZA",
+  },
   other: {
     "theme-color": "#0a0a0a",
   },

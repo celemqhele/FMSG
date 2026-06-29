@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Menu, X } from "lucide-react";
+import Image from "next/image";
 import { TransitionLink } from "@/components/ui/transition-link";
 import "../landing/liquid-glass.css";
 
@@ -24,7 +25,8 @@ export function FloatingNavbar({ onLoginClick, onSignUpClick, isLoggedIn }: Floa
     <nav className="fixed bottom-4 left-1/2 -translate-x-1/2 md:top-4 md:bottom-auto z-50 w-[calc(100%-2rem)] max-w-5xl">
       <div className="relative">
         <div className="liquid-glass-surface flex items-center justify-between px-4 py-2 md:px-6 md:py-3 rounded-2xl">
-          <TransitionLink href="/" className="text-base md:text-lg font-semibold text-white select-none">
+          <TransitionLink href="/" className="flex items-center gap-2 text-base md:text-lg font-semibold text-white select-none">
+            <Image src="/icon.png" alt="FMSG" width={24} height={24} className="shrink-0" priority />
             FMSG
           </TransitionLink>
 
