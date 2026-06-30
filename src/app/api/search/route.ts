@@ -1153,35 +1153,6 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ results: [], code: "NO_TITLES", message: "Add job titles to your search profile first." });
       }
 
-      // Auto-generate industry if missing (runs in parallel with CV downloads)
-      let industryPromise: Promise<string | null> = Promise.resolve(null);
-      if (!profileIndustry && titles.length > 0) {
-        industryPromise = (async () => {
-          try {
-            const industryRaw = await callAIWithFallback(
-              `Based on the given job titles, determine the single most likely industry the candidate works in.
-Rules:
-- Return one concise word or short phrase (e.g. "Fintech", "Healthcare", "SaaS", "E-commerce", "Construction", "Education", "Logistics").
-- Do NOT include the job titles in your response. Just the industry.
-- If unclear, use the most specific industry that fits.
-Return ONLY valid JSON (no markdown, no code fences):
-{ "industry": string }`,
-              `Job titles: ${JSON.stringify(titles)}`,
-              "auto-generate industry",
-              { responseMimeType: "application/json", temperature: 0.3 }
-            );
-            const cleaned = industryRaw.slice(industryRaw.indexOf("{"), industryRaw.lastIndexOf("}") + 1);
-            const industry = JSON.parse(cleaned).industry?.trim() ?? "";
-            if (industry && profile_id) {
-              dataClient.from("search_profiles").update({ industry })
-                .eq("id", profile_id).eq("user_id", user.id)
-                .then(() => {}, () => {});
-              return industry;
-            }
-          } catch {}
-          return null;
-        })();
-      }
 
       // Load CV texts
       let cvTexts: { name: string; text: string }[] = [];
@@ -1200,17 +1171,44 @@ Return ONLY valid JSON (no markdown, no code fences):
         } catch {}
         return null;
       });
-      const [cvResults, generatedIndustry] = await Promise.all([
-        Promise.all(cvDownloads),
-        industryPromise,
-      ]);
+      const cvResults = await Promise.all(cvDownloads);
       cvTexts = cvResults.filter((r): r is { name: string; text: string } => r !== null);
-      if (generatedIndustry) {
-        profileIndustry = generatedIndustry;
-      }
 
       const cvText = cvTexts.map(cv => cv.text).join("\n\n---\n\n");
       debugLog(`[SEARCH] CV variations: ${cvTexts.length}, total text length: ${cvText.length}, titles: ${titles.length}`);
+
+      // Auto-generate industry if missing (now uses full CV text)
+      if (!profileIndustry && titles.length > 0 && cvText.trim()) {
+        try {
+          const industryRaw = await callAIWithFallback(
+            `Determine the single most likely industry the candidate works in by reading their CV.
+
+CRITICAL: Industry is where the candidate's EMPLOYERS/COMPANIES operate, not what their job title suggests.
+- "Customer Success Manager" at a datacenter company = Critical Digital Infrastructure, NOT SaaS.
+- "Digital marketer" at an online retailer = E-commerce, NOT SaaS.
+Look at the actual business of the companies listed in the work history.
+
+Rules:
+- Return one concise label (e.g. "Fintech", "Healthcare", "E-commerce", "Construction", "Critical Digital Infrastructure", "Manufacturing").
+- Do NOT include job titles or company names in your response. Just the industry.
+Return ONLY valid JSON (no markdown, no code fences):
+{ "industry": string }`,
+            `CV text:\n${cvText.slice(0, 8000)}`,
+            "auto-generate industry",
+            { responseMimeType: "application/json", temperature: 0.3 }
+          );
+          const cleaned = industryRaw.slice(industryRaw.indexOf("{"), industryRaw.lastIndexOf("}") + 1);
+          const generatedIndustry = JSON.parse(cleaned).industry?.trim() ?? "";
+          if (generatedIndustry) {
+            profileIndustry = generatedIndustry;
+            if (profile_id) {
+              dataClient.from("search_profiles").update({ industry: generatedIndustry })
+                .eq("id", profile_id).eq("user_id", user.id)
+                .then(() => {}, () => {});
+            }
+          }
+        } catch {}
+      }
 
       // Pre-fetch existing job URLs for dedup
       const [existingResultsRes, existingSavedRes] = await Promise.all([
@@ -1397,18 +1395,24 @@ Return ONLY valid JSON (no markdown, no code fences):
             startRoundIndex = 0;
             seenUrls = new Set([...pfDedupSets.history, ...pfDedupSets.saved, ...pfDedupSets.blocked]);
 
-            // Auto-generate industry if missing
+            // Auto-generate industry if missing (uses CV text when available)
             if (!pfIndustry && pfTitles.length > 0) {
               try {
+                const pfCvText = pfCvTexts?.map(cv => cv.text).join("\n\n") ?? "";
+                const userContent = pfCvText.trim()
+                  ? `CV text:\n${pfCvText.slice(0, 8000)}`
+                  : `Job titles (no CV text available; infer from titles as best you can): ${JSON.stringify(pfTitles)}`;
                 const industryRaw = await callAIWithFallback(
-                  `Based on the given job titles, determine the single most likely industry the candidate works in.
-Rules:
-- Return one concise word or short phrase.
-- Do NOT include the job titles in your response. Just the industry.
-- If unclear, use the most specific industry that fits.
+                  `Determine the single most likely industry the candidate works in.
+
+CRITICAL: Industry is where the candidate's EMPLOYERS/COMPANIES operate, not what their job title suggests.
+- "Customer Success Manager" at a datacenter company = Critical Digital Infrastructure, NOT SaaS.
+- "Digital marketer" at an online retailer = E-commerce, NOT SaaS.
+Look at the actual business of the companies listed in the work history.
+
 Return ONLY valid JSON (no markdown, no code fences):
 { "industry": string }`,
-                  `Job titles: ${JSON.stringify(pfTitles)}`,
+                  userContent,
                   "PF auto-generate industry",
                   { responseMimeType: "application/json", temperature: 0.3 }
                 );

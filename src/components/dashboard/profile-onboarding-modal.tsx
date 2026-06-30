@@ -134,8 +134,8 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
             : [""];
           setJobTitles(titles);
           setLocation(data.preferred_location ?? "");
-          setIndustry("");
-          suggestedIndustryRef.current = false;
+          setIndustry(data.industry ?? "");
+          suggestedIndustryRef.current = true;
           if (data.cv_file_path) {
             setCvVariations([{ name: "CV", file_path: data.cv_file_path }]);
           }
