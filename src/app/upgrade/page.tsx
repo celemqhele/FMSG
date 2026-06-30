@@ -24,13 +24,13 @@ interface Tier {
 
 function getTierFeatures(name: string, limits: { searches: number; cv_gens: number; pf_balance: number }): string[] {
   if (name === "Free") {
-    return ["1 job search per month", "Basic match scoring"];
+    return ["2 job searches per month", "Basic match scoring"];
   }
   const features = [
     `${limits.searches} job searches per month`,
     `${limits.cv_gens} tailored CVs per month`,
   ];
-  if (name === "Seeker") features.push("Full match scoring", "Banned company filtering", `${limits.pf_balance} Persistent Finder rounds`);
+  if (name === "Seeker") features.push("Full match scoring", "Banned company filtering", `${limits.pf_balance} Persistent Finder round`);
   if (name === "Hunter") features.push("Priority AI processing", "Advanced filtering", `${limits.pf_balance} Persistent Finder rounds`);
   if (name === "Pro") features.push("Fastest AI processing", "All features unlocked", `${limits.pf_balance} Persistent Finder rounds`);
   return features;

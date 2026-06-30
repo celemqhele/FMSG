@@ -11,9 +11,9 @@ export interface Balances {
 }
 
 const MAX_BALANCES: Record<string, number> = {
-  search: 60,
-  cv: 25,
-  pf: 50,
+  search: 15,
+  cv: 15,
+  pf: 4,
 };
 
 function AnimatedNumber({ value }: { value: number }) {
