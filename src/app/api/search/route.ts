@@ -1,3 +1,4 @@
+// BUILD_CACHE_BUST: jun30-1
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { searchGoogleJobs, type SerpJob } from "@/lib/serpapi";

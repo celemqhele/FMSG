@@ -1,0 +1,59 @@
+# FMSG Search Token Usage Estimates
+# ===================================
+# Note: Token counting is NOT currently implemented in the codebase.
+# These are estimates based on prompt/code analysis of src/app/api/search/route.ts
+
+
+## Regular Search
+## ---------------
+
+| AI Call                        | Tokens In | Tokens Out |
+|--------------------------------|-----------|------------|
+| Title dedup (if >1 title)      | ~50       | ~20        |
+| Auto-generate industry (if missing) | ~50  | ~10        |
+| Batch scoring (per chunk of 8 jobs) | ~10,000 | ~2,200    |
+
+Typical scenarios:
+  - 5 jobs (1 chunk):   ~10,100 in / ~2,230 out
+  - 30 jobs (4 chunks):  ~40,100 in / ~8,810 out
+  - 50 jobs (7 chunks):  ~70,100 in / ~15,410 out
+
+The dominant factor is the per-chunk cost: each 8-job batch sends a
+~1,900-token system prompt (scoring rules), ~1,500 tokens of CV text,
+and ~6,400 tokens of job descriptions.
+
+
+## Persistent Finder (PF) Search
+## ------------------------------
+
+Adds these on top of the regular search pipe:
+
+| AI Call                   | Tokens In | Tokens Out |
+|---------------------------|-----------|------------|
+| PF auto-generate industry | ~50       | ~10        |
+| Career chain generation   | ~150      | ~300       |
+| Batch scoring x up to 5 rounds | same per-chunk cost as regular |
+
+Typical scenarios:
+  - Early stop (2 rounds, 10 jobs each = 4 chunks):  ~40,200 in / ~9,040 out
+  - Full 5 rounds (20 jobs/round = 15 chunks):       ~150,200 in / ~33,130 out
+
+PF is roughly 3-4x more expensive than regular search in practice,
+since it runs the full search+score pipeline per round across
+expanding title chains.
+
+
+## Cost Optimization Notes
+## ------------------------
+
+1. The ~1,900-token scoring rubric (search/route.ts:563-684) is the
+   biggest single cost driver in the system prompt.
+
+2. CV text truncation is currently 5,000 chars per CV (line 1189).
+   Reducing this would help — CVs often dominate input token count.
+
+3. Job descriptions come from Jina URL extraction and can be 2,000-5,000
+   chars each. These are not currently truncated before being sent to AI.
+
+4. The BATCH_SIZE is 8 jobs per chunk (line 688). Reducing this would
+   lower per-call token counts but increase the number of API calls.
