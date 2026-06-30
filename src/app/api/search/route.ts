@@ -65,6 +65,11 @@ const BLACKLISTED_DOMAINS = [
   'talent.co.uk',
   'talent.ca',
   'talent.au',
+  'joub.co.za',
+];
+
+const BLACKLISTED_COMPANIES = [
+  'joub.co.za',
 ];
 
 function extractDomain(url: string): string | null {
@@ -332,8 +337,11 @@ async function fetchAndFilterJobs(
     const domain = extractDomain(url);
     const viaBlocked = isBlacklistedByVia(j.via);
     const domainBlocked = domain && BLACKLISTED_DOMAINS.some((d) => domain === d || domain?.endsWith(`.${d}`) || domain?.includes(d));
-    if (domainBlocked || viaBlocked) {
-      blacklistRejected.push({ job: j, reason: viaBlocked ? `blacklisted_via: ${j.via}` : `blacklisted_domain: ${domain}` });
+    const companyLower = (j.company_name ?? "").toLowerCase();
+    const companyBlocked = BLACKLISTED_COMPANIES.some((c) => companyLower.includes(c));
+    if (domainBlocked || viaBlocked || companyBlocked) {
+      const reason = viaBlocked ? `blacklisted_via: ${j.via}` : companyBlocked ? `blacklisted_company: ${j.company_name}` : `blacklisted_domain: ${domain}`;
+      blacklistRejected.push({ job: j, reason });
       return false;
     }
     return true;
