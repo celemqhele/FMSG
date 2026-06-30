@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { searchGoogleJobs, searchJinaWeb, type SerpJob } from "@/lib/serpapi";
+import { searchGoogleJobs, type SerpJob } from "@/lib/serpapi";
 import { extractTextFromPDF } from "@/lib/pdf";
 import { callAIWithFallback, lastAITier } from "@/lib/gemini";
 import { StreamWriter, type SearchEvent } from "@/lib/search-stream";
@@ -247,22 +247,6 @@ async function fetchPaginatedJobs(params: { q: string; location?: string; hl?: s
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     debugLog(`[SEARCH] SerpAPI failed: ${msg.slice(0, 150)}`);
-  }
-
-  // Fallback: Jina web search
-  if (all.length === 0) {
-    debugLog(`[SEARCH] SerpAPI returned 0 results, trying Jina search...`);
-    try {
-      const jinaResults = await searchJinaWeb(params);
-      for (const j of jinaResults) {
-        const key = `${j.title ?? ""}|${j.company_name ?? ""}`.toLowerCase();
-        if (!seen.has(key)) { seen.add(key); all.push(j); }
-      }
-      debugLog(`[SEARCH] Jina search returned ${jinaResults.length} results`);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      debugLog(`[SEARCH] Jina search also failed: ${msg.slice(0, 150)}`);
-    }
   }
 
   return all;
