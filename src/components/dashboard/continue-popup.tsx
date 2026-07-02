@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { X, ArrowRight } from "lucide-react";
 
 interface ContinuePopupProps {
@@ -33,7 +34,7 @@ export function ContinuePopup({ isOpen, message, onContinue, onCancel }: Continu
 
   if (phase === "closed" && !mounted) return null;
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-[60] flex items-center justify-center transition-opacity duration-300 ease-out"
       style={{ opacity: (phase === "open" && mounted) ? 1 : 0 }}
@@ -68,6 +69,7 @@ export function ContinuePopup({ isOpen, message, onContinue, onCancel }: Continu
           <ArrowRight size={14} />
         </button>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

@@ -1266,11 +1266,10 @@ Return ONLY valid JSON (no markdown, no code fences):
           const effectivePfMode = state.pf_mode ?? (state.mode === "pf");
 
           if (!effectivePfMode) {
-            let searchQuery = state.query || state.searchQuery;
-            if (!searchQuery) {
-              const normQuery = buildOrQuery(state.titles);
-              searchQuery = [normQuery, state.profileLocation].filter(Boolean).join(" in ");
-            }
+            const titleQuery = buildOrQuery(state.titles);
+            const industryPart = state.profileIndustry ? state.profileIndustry : "";
+            const locationPart = state.profileLocation ? `in ${state.profileLocation}` : "";
+            const searchQuery = [titleQuery, industryPart, locationPart].filter(Boolean).join(" ");
 
             if (!searchQuery || searchQuery === "jobs") {
               writer.send({ type: "error", code: "NO_QUERY", message: "Add job titles to your search profile first.", progress: 0 });

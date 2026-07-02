@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { AlertTriangle } from "lucide-react";
 
 interface ErrorPopupProps {
@@ -35,7 +36,7 @@ export function ErrorPopup({ message, onClose }: ErrorPopupProps) {
 
   if (!message) return null;
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-[120] flex items-center justify-center"
       role="dialog"
@@ -92,6 +93,7 @@ export function ErrorPopup({ message, onClose }: ErrorPopupProps) {
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
