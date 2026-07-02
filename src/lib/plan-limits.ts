@@ -5,16 +5,16 @@ export interface PlanConfig {
 }
 
 export const PLAN_LIMITS: Record<string, PlanConfig> = {
-  Free: { searches: 1, cv_gens: 0, pf_balance: 0 },
-  Seeker: { searches: 10, cv_gens: 5, pf_balance: 5 },
-  Hunter: { searches: 25, cv_gens: 12, pf_balance: 15 },
-  Pro: { searches: 60, cv_gens: 25, pf_balance: 50 },
+  Free: { searches: 2, cv_gens: 0, pf_balance: 0 },
+  Seeker: { searches: 8, cv_gens: 4, pf_balance: 1 },
+  Hunter: { searches: 12, cv_gens: 8, pf_balance: 2 },
+  Pro: { searches: 15, cv_gens: 15, pf_balance: 4 },
 };
 
 export const PLAN_PRICES: Record<string, { monthly: number; annual: number }> = {
-  Seeker: { monthly: 9900, annual: 99000 },
-  Hunter: { monthly: 19900, annual: 199000 },
-  Pro: { monthly: 34900, annual: 349000 },
+  Seeker: { monthly: 7900, annual: 79000 },
+  Hunter: { monthly: 14900, annual: 149000 },
+  Pro: { monthly: 24900, annual: 249000 },
 };
 
 export const PF_DEFAULT_BY_TIER: Record<string, number> = {
@@ -60,10 +60,10 @@ export function formatPFFromPrice(): string {
 export const PLAN_TIER_NAMES = ["Free", "Seeker", "Hunter", "Pro"] as const;
 
 export const TIER_FEATURES: Record<string, string[]> = {
-  Free: ["1 job search per month", "Basic match scoring"],
-  Seeker: ["10 job searches per month", "5 CV generations", "5 PF search rounds", "Priority AI matching"],
-  Hunter: ["25 job searches per month", "12 CV generations", "15 PF search rounds", "Priority AI matching", "Advanced filtering"],
-  Pro: ["60 job searches per month", "25 CV generations", "50 PF search rounds", "Priority AI matching", "Advanced filtering", "Tailored CV output"],
+  Free: ["2 job searches per month", "Basic match scoring"],
+  Seeker: ["8 job searches per month", "4 CV generations", "1 PF search round", "Priority AI matching"],
+  Hunter: ["12 job searches per month", "8 CV generations", "2 PF search rounds", "Priority AI matching", "Advanced filtering"],
+  Pro: ["15 job searches per month", "15 CV generations", "4 PF search rounds", "Priority AI matching", "Advanced filtering", "Tailored CV output"],
 };
 
 export const TIER_POPULAR: Record<string, boolean> = {

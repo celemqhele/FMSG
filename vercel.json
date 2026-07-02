@@ -1,9 +1,11 @@
 {
   "framework": "nextjs",
+  "buildCommand": "rm -rf .next && next build",
   "git": {
     "deploymentEnabled": {
       "beta": true,
-      "production": true
+      "production": true,
+      "production-v2": true
     }
   },
   "crons": [

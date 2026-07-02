@@ -8,12 +8,12 @@ if (!PAYSTACK_SECRET_KEY) {
 }
 
 const PLANS = [
-  { name: "Seeker Monthly", amount: 9900, interval: "monthly", key: "PLAN_CODE_SEEKER_MONTHLY" },
-  { name: "Seeker Annual", amount: 99000, interval: "annually", key: "PLAN_CODE_SEEKER_ANNUAL" },
-  { name: "Hunter Monthly", amount: 19900, interval: "monthly", key: "PLAN_CODE_HUNTER_MONTHLY" },
-  { name: "Hunter Annual", amount: 199000, interval: "annually", key: "PLAN_CODE_HUNTER_ANNUAL" },
-  { name: "Pro Monthly", amount: 34900, interval: "monthly", key: "PLAN_CODE_PRO_MONTHLY" },
-  { name: "Pro Annual", amount: 349000, interval: "annually", key: "PLAN_CODE_PRO_ANNUAL" },
+  { name: "Seeker Monthly", amount: 7900, interval: "monthly", key: "PLAN_CODE_SEEKER_MONTHLY" },
+  { name: "Seeker Annual", amount: 79000, interval: "annually", key: "PLAN_CODE_SEEKER_ANNUAL" },
+  { name: "Hunter Monthly", amount: 14900, interval: "monthly", key: "PLAN_CODE_HUNTER_MONTHLY" },
+  { name: "Hunter Annual", amount: 149000, interval: "annually", key: "PLAN_CODE_HUNTER_ANNUAL" },
+  { name: "Pro Monthly", amount: 24900, interval: "monthly", key: "PLAN_CODE_PRO_MONTHLY" },
+  { name: "Pro Annual", amount: 249000, interval: "annually", key: "PLAN_CODE_PRO_ANNUAL" },
 ];
 
 async function main() {
