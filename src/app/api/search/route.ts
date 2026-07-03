@@ -1269,7 +1269,7 @@ Return ONLY valid JSON (no markdown, no code fences):
             const titleQuery = buildOrQuery(state.titles);
             const industryPart = state.profileIndustry ? state.profileIndustry : "";
             const locationPart = state.profileLocation ? `in ${state.profileLocation}` : "";
-            const searchQuery = [titleQuery, industryPart, locationPart].filter(Boolean).join(" ");
+            const searchQuery = [titleQuery, industryPart, locationPart, "jobs"].filter(Boolean).join(" ");
 
             if (!searchQuery || searchQuery === "jobs") {
               writer.send({ type: "error", code: "NO_QUERY", message: "Add job titles to your search profile first.", progress: 0 });
@@ -1503,7 +1503,7 @@ Return ONLY valid JSON (no markdown, no code fences).`,
 
             const titleQuery = buildOrQuery(titles);
             const industryPart = industry ? industry : "";
-            const fullQuery = [titleQuery, industryPart, pfLocation ? `in ${pfLocation}` : ""].filter(Boolean).join(" ");
+            const fullQuery = [titleQuery, industryPart, pfLocation ? `in ${pfLocation}` : "", "jobs"].filter(Boolean).join(" ");
 
             if (usedQueries.has(fullQuery.toLowerCase())) {
               debugLog(`[PF] Round ${roundNum}: skipping duplicate query "${fullQuery}"`);
