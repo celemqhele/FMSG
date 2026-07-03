@@ -25,7 +25,8 @@ export function SpaceVideoBackground({
         <video
           ref={videoRef}
           className="absolute inset-0 w-full h-full object-cover object-[55%_50%] md:object-center"
-          src={src}
+          // Appending ?v=1 to bust cache. Increment this if the video file changes.
+          src={`${src}?v=1`}
           autoPlay
           muted
           loop
