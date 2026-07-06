@@ -160,24 +160,29 @@ export async function callAIWithFallback(
     if (!isRetryable) throw err;
   }
 
+  const MAX_INPUT_CHARS = 15000;
+  const truncatedText = userText.length > MAX_INPUT_CHARS
+    ? userText.slice(0, MAX_INPUT_CHARS) + "\n\n[truncated]"
+    : userText;
+
   // Tier 2: Groq
   if (GROQ_API_KEY) {
     try {
-      const result = await callGroq(systemPrompt, userText, config);
+      const result = await callGroq(systemPrompt, truncatedText, config);
       lastAITier = "groq";
       debugLog("AI handled by: Groq");
       return result;
     } catch (err: any) {
       const msg = err?.message ?? String(err);
       debugLog(`[AI] Groq error on "${stepName}": ${msg}`);
-      const isRetryable = msg.includes("429") || msg.includes("quota") || msg.includes("401") || msg.includes("403") || /5\d{2}/.test(msg) || /UNAVAILABLE/i.test(msg);
+      const isRetryable = msg.includes("429") || msg.includes("quota") || msg.includes("401") || msg.includes("403") || msg.includes("413") || /5\d{2}/.test(msg) || /UNAVAILABLE/i.test(msg);
       if (!isRetryable) throw err;
     }
   }
 
   // Tier 3: OpenRouter
   try {
-    const result = await callOpenRouter(systemPrompt, userText, config);
+    const result = await callOpenRouter(systemPrompt, truncatedText, config);
     lastAITier = "openrouter";
     debugLog("AI handled by: OpenRouter");
     return result;

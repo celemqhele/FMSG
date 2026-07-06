@@ -266,6 +266,7 @@ async function fetchAndFilterJobs(
   bannedJobs: string[],
   bannedCompanies: string[],
   dataClient: any,
+  profile_id: string | null,
   onStatus?: (event: SearchEvent) => void,
   pfRound?: number,
   hiddenJobKeys?: Set<string>,
@@ -349,6 +350,7 @@ async function fetchAndFilterJobs(
   if (blacklistRejected.length > 0) {
     const rows = blacklistRejected.map(({ job: j, reason }) => ({
       user_id: user.id, search_id: searchId, search_query: query,
+      profile_id: profile_id,
       job_title: j.title, company: j.company_name, location: j.location ?? '',
       snippet: (j.description ?? '').slice(0, 500), job_url: buildJobUrl(j), reason,
       rejection_category: 'domain', rejection_reason: reason,
@@ -370,6 +372,7 @@ async function fetchAndFilterJobs(
   if (bannedRejected.length > 0) {
     const rows = bannedRejected.map(j => ({
       user_id: user.id, search_id: searchId, search_query: query,
+      profile_id: profile_id,
       job_title: j.title, company: j.company_name, location: j.location ?? '',
       snippet: (j.description ?? '').slice(0, 500), job_url: buildJobUrl(j),
       reason: `banned_${bannedJobs.includes(buildJobUrl(j)) ? 'job' : 'company'}`,
@@ -392,6 +395,7 @@ async function fetchAndFilterJobs(
   if (atsRejected.length > 0) {
     const rows = atsRejected.map(j => ({
       user_id: user.id, search_id: searchId, search_query: query,
+      profile_id: profile_id,
       job_title: j.title, company: j.company_name, location: j.location ?? '',
       snippet: (j.description ?? '').slice(0, 500), job_url: buildJobUrl(j),
       reason: 'ats_tracker', rejection_category: 'spam', rejection_reason: 'ats_tracker_or_lead_aggregator',
@@ -425,6 +429,7 @@ async function fetchAndFilterJobs(
   if (noSpecRejected.length > 0) {
     const rows = noSpecRejected.map((j) => ({
       user_id: user.id, search_id: searchId, search_query: query,
+      profile_id: profile_id,
       job_title: j.title, company: j.company_name, location: j.location ?? '',
       snippet: '', job_url: buildJobUrl(j),
       reason: 'jina_read_failed', rejection_category: 'ai', rejection_reason: 'jina_read_failed',
@@ -501,6 +506,7 @@ async function screenAndAnalyze(
   dataClient: any,
   bannedJobs: string[],
   bannedCompanies: string[],
+  profile_id: string | null,
   onStatus?: (event: SearchEvent) => void,
   pfRound?: number,
   dedupSets?: { history: Set<string>; saved: Set<string>; blocked: Set<string>; rejected?: Set<string> },
@@ -917,7 +923,7 @@ Return ONLY valid JSON (no markdown, no code fences):
     const lastResult = outputs[outputs.length - 1];
     if (lastResult) {
       dataClient.from("job_results").insert({
-        id: crypto.randomUUID(), user_id: lastResult.user_id, search_id: lastResult.search_id, profile_id: null,
+        id: crypto.randomUUID(), user_id: lastResult.user_id, search_id: lastResult.search_id, profile_id,
         job_title: lastResult.job_title, company: lastResult.company, location: lastResult.location,
         estimated_salary: lastResult.estimated_salary, match_score: lastResult.match_score,
         match_summary: lastResult.match_summary, job_url: lastResult.job_url, full_spec: lastResult.full_spec,
@@ -940,6 +946,7 @@ Return ONLY valid JSON (no markdown, no code fences):
   if (aiRejectedJobs.length > 0) {
     const rows = aiRejectedJobs.map(({ job, reason, stage }) => ({
       user_id: user.id, search_id: searchId, search_query: query,
+      profile_id: profile_id,
       job_title: job.title, company: job.company_name, location: job.location ?? '',
       snippet: (job.description ?? '').slice(0, 500), job_url: buildJobUrl(job),
       reason: `ai_${stage}: ${reason}`,
@@ -1212,8 +1219,8 @@ Return ONLY valid JSON (no markdown, no code fences):
 
       // Pre-fetch existing job URLs for dedup
       const [existingResultsRes, existingSavedRes] = await Promise.all([
-        dataClient.from("job_results").select("job_url, is_deleted, job_title, company").eq("user_id", user.id),
-        dataClient.from("saved_jobs").select("job_url").eq("user_id", user.id),
+        dataClient.from("job_results").select("job_url, is_deleted, job_title, company").eq("user_id", user.id).eq("profile_id", profile_id),
+        dataClient.from("saved_jobs").select("job_url").eq("user_id", user.id).eq("profile_id", profile_id),
       ]);
       const historyUrls = new Set<string>();
       const rejectedUrls = new Set<string>();
@@ -1242,6 +1249,7 @@ Return ONLY valid JSON (no markdown, no code fences):
         hiddenJobKeys: [...hiddenJobKeys],
         bannedJobs: state.bannedJobs,
         bannedCompanies: state.bannedCompanies,
+        profile_id,
         pf_mode: !!pf_mode,
         query: query ?? "",
         balances: liveBalances,
@@ -1281,7 +1289,7 @@ Return ONLY valid JSON (no markdown, no code fences):
               const result = await screenAndAnalyze(
                 state.rawJobs, state.jobSpecs, state.jobUrls, state.queryUsed,
                 state.profileLocation, state.profileIndustry, state.titles, state.cvTexts,
-                user, searchId, dataClient, state.bannedJobs, state.bannedCompanies,
+                user, searchId, dataClient, state.bannedJobs, state.bannedCompanies, state.profile_id,
                 sendStatus, undefined,
                 { history: new Set(state.dedupSets.history), saved: new Set(state.dedupSets.saved), blocked: new Set(state.dedupSets.blocked), rejected: new Set(state.dedupSets.rejected ?? []) },
                 state.maxAgeDays
@@ -1306,7 +1314,7 @@ Return ONLY valid JSON (no markdown, no code fences):
             const hiddenKeys = state.hiddenJobKeys ? new Set<string>(state.hiddenJobKeys as string[]) : undefined;
             const { rawJobs, jobSpecs, jobUrls, queryUsed } = await fetchAndFilterJobs(
               searchQuery, state.profileLocation, user, searchId,
-              state.bannedJobs, state.bannedCompanies, dataClient, sendStatus, undefined,
+              state.bannedJobs, state.bannedCompanies, dataClient, state.profile_id, sendStatus, undefined,
               hiddenKeys, state.maxAgeDays, 2
             );
 
@@ -1338,6 +1346,7 @@ Return ONLY valid JSON (no markdown, no code fences):
                 query: searchQuery,
                 dedupSets: { history: [...state.dedupSets.history], saved: [...state.dedupSets.saved], blocked: [...state.dedupSets.blocked], rejected: [...state.dedupSets.rejected] },
                 maxAgeDays: state.maxAgeDays,
+                profile_id: state.profile_id,
               })).toString("base64"),
             });
             writer.close();
@@ -1522,7 +1531,7 @@ Return ONLY valid JSON (no markdown, no code fences).`,
               const pfHiddenKeys = state.hiddenJobKeys ? new Set<string>(state.hiddenJobKeys as string[]) : undefined;
               const filtered = await fetchAndFilterJobs(
                 fullQuery, pfLocation, user, searchId,
-                pfBannedJobs, pfBannedCompanies, dataClient, sendStatus, roundNum,
+                pfBannedJobs, pfBannedCompanies, dataClient, state.profile_id, sendStatus, roundNum,
                 pfHiddenKeys, state.maxAgeDays, 5
               );
 
@@ -1533,7 +1542,7 @@ Return ONLY valid JSON (no markdown, no code fences).`,
                 const result = await screenAndAnalyze(
                   filtered.rawJobs, filtered.jobSpecs, filtered.jobUrls, filtered.queryUsed,
                   pfLocation, pfIndustry, pfTitles, pfCvTexts,
-                  user, searchId, dataClient, pfBannedJobs, pfBannedCompanies,
+                  user, searchId, dataClient, pfBannedJobs, pfBannedCompanies, state.profile_id,
                   sendStatus, roundNum,
                   { history: new Set(pfDedupSets.history || []), saved: new Set(pfDedupSets.saved || []), blocked: new Set(pfDedupSets.blocked || []), rejected: new Set(pfDedupSets.rejected || []) },
                   state.maxAgeDays
@@ -1594,6 +1603,7 @@ Return ONLY valid JSON (no markdown, no code fences).`,
                       rejected: pfDedupSets.rejected ? [...pfDedupSets.rejected] : [],
                     },
                     maxAgeDays: state.maxAgeDays,
+                    profile_id: state.profile_id,
                   })).toString("base64"),
                 });
                 writer.close();

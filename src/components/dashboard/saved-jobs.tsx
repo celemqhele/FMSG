@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { JobResultCard } from "./job-result-card";
 import { Bookmark } from "lucide-react";
+import { useActiveProfile } from "./dashboard-layout";
 
 interface SavedJob {
   id: string;
@@ -22,6 +23,7 @@ export function SavedJobs() {
   const [jobs, setJobs] = useState<SavedJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const { activeProfileId } = useActiveProfile();
 
   useEffect(() => {
     const supabase = createClient();
@@ -32,6 +34,7 @@ export function SavedJobs() {
         .from("saved_jobs")
         .select("*")
         .eq("user_id", session.user.id)
+        .eq("profile_id", activeProfileId)
         .order("created_at", { ascending: false })
         .limit(50)
         .then(({ data }: { data: any }) => {

@@ -20,37 +20,43 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
     }
 
     const body = await request.json().catch(() => ({}));
+    const profileId = body.profile_id ?? null;
 
     // Try job_results first, then saved_jobs
-    let { data: job, error: jobErr } = await supabase
+    let query = supabase
       .from("job_results")
       .select("*")
       .eq("id", id)
-      .eq("user_id", user.id)
-      .maybeSingle();
+      .eq("user_id", user.id);
+    if (profileId) query = query.eq("profile_id", profileId);
+    let { data: job, error: jobErr } = await query.maybeSingle();
 
     let isSavedJob = false;
     let useBodyFallback = false;
     if (!job) {
       // Try saved_jobs
-      const { data: savedJob, error: savedErr } = await supabase
+      let savedQuery = supabase
         .from("saved_jobs")
         .select("*")
         .eq("id", id)
-        .eq("user_id", user.id)
-        .maybeSingle();
+        .eq("user_id", user.id);
+      if (profileId) savedQuery = savedQuery.eq("profile_id", profileId);
+      const { data: savedJob, error: savedErr } = await savedQuery.maybeSingle();
 
       if (savedJob) {
         // Found in saved_jobs — remove it from saved list
-        await supabase.from("saved_jobs").delete().eq("id", id).eq("user_id", user.id);
+        let deleteQuery = supabase.from("saved_jobs").delete().eq("id", id).eq("user_id", user.id);
+        if (profileId) deleteQuery = deleteQuery.eq("profile_id", profileId);
+        await deleteQuery;
 
         // Try to find corresponding job_results entry by URL for deeper banning
-        const { data: matchingJob } = await supabase
+        let matchingQuery = supabase
           .from("job_results")
           .select("*")
           .eq("job_url", savedJob.job_url)
-          .eq("user_id", user.id)
-          .maybeSingle();
+          .eq("user_id", user.id);
+        if (profileId) matchingQuery = matchingQuery.eq("profile_id", profileId);
+        const { data: matchingJob } = await matchingQuery.maybeSingle();
 
         if (matchingJob) {
           job = matchingJob;
@@ -130,28 +136,33 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
     if (!isSavedJob) {
       if (useBodyFallback) {
         // Try finding the row by job_url since UUID didn't match
-        const { data: urlMatch } = await supabase
+        let urlQuery = supabase
           .from("job_results")
           .select("id")
           .eq("job_url", body.job_url)
-          .eq("user_id", user.id)
-          .maybeSingle();
+          .eq("user_id", user.id);
+        if (profileId) urlQuery = urlQuery.eq("profile_id", profileId);
+        const { data: urlMatch } = await urlQuery.maybeSingle();
         if (urlMatch) {
-          const { error: deleteErr } = await supabase
+          let deleteQuery = supabase
             .from("job_results")
             .update({ is_deleted: true })
             .eq("id", urlMatch.id)
             .eq("user_id", user.id);
+          if (profileId) deleteQuery = deleteQuery.eq("profile_id", profileId);
+          const { error: deleteErr } = await deleteQuery;
           if (deleteErr) {
             console.error("Failed to mark job as deleted by URL:", deleteErr.message);
           }
         }
       } else {
-        const { error: deleteErr } = await supabase
+        let deleteQuery = supabase
           .from("job_results")
           .update({ is_deleted: true })
           .eq("id", id)
           .eq("user_id", user.id);
+        if (profileId) deleteQuery = deleteQuery.eq("profile_id", profileId);
+        const { error: deleteErr } = await deleteQuery;
 
         if (deleteErr) {
           return NextResponse.json({ error: "Failed to mark job as deleted." }, { status: 500 });

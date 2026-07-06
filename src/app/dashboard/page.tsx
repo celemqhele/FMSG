@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef, startTransition } from "react";
 import { useRouter } from "next/navigation";
 import { X, ArrowRight, Mail, Upload } from "lucide-react";
-import { DashboardLayout } from "@/components/dashboard/dashboard-layout";
+import { DashboardLayout, useActiveProfile } from "@/components/dashboard/dashboard-layout";
 import { SearchPill } from "@/components/dashboard/search-pill";
 import { JobResultCard } from "@/components/dashboard/job-result-card";
 import dynamic from "next/dynamic";
@@ -120,6 +120,7 @@ export default function DashboardPage() {
   const [balances, setBalances] = useState<Balances>({ search: 0, cv: 0, pf: 0 });
   const [plan, setPlan] = useState("free");
   const [pauseMessage, setPauseMessage] = useState("");
+  const { activeProfileId } = useActiveProfile();
 
   useEffect(() => { endTransition(); }, [endTransition]);
 
@@ -206,6 +207,7 @@ export default function DashboardPage() {
         .from("job_results")
         .select("*")
         .eq("user_id", session.user.id)
+        .eq("profile_id", activeProfileId)
         .eq("is_deleted", false)
         .order("created_at", { ascending: false })
         .then(({ data }: { data: any }) => {

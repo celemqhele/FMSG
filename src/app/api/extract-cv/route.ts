@@ -109,10 +109,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Failed to store file.", code: "STORAGE_ERROR" }, { status: 500 });
     }
 
-    // Send to AI (Gemini → Groq fallback)
+    const MAX_CV_CHARS = 20000;
+    const truncatedText = text.length > MAX_CV_CHARS
+      ? text.slice(0, MAX_CV_CHARS) + "\n\n[CV truncated — text exceeded token budget]"
+      : text;
+
     let content: string | null = null;
     try {
-      content = await callAIWithFallback(SYSTEM_PROMPT, text, "CV extraction", { responseMimeType: "application/json" });
+      content = await callAIWithFallback(SYSTEM_PROMPT, truncatedText, "CV extraction", { responseMimeType: "application/json" });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error("AI error:", msg);

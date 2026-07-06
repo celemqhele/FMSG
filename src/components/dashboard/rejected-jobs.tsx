@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { XCircle, ShieldBan } from "lucide-react";
+import { useActiveProfile } from "./dashboard-layout";
 
 interface DeletedJob {
   id: string;
@@ -58,6 +59,7 @@ export function RejectedJobs() {
   const [jobs, setJobs] = useState<DeletedJob[]>([]);
   const [systemRejected, setSystemRejected] = useState<SystemRejected[]>([]);
   const [loading, setLoading] = useState(true);
+  const { activeProfileId } = useActiveProfile();
 
   useEffect(() => {
     const supabase = createClient();
@@ -70,12 +72,14 @@ export function RejectedJobs() {
             .from("job_results")
             .select("*")
             .eq("user_id", session.user.id)
+            .eq("profile_id", activeProfileId)
             .eq("is_deleted", true)
             .order("created_at", { ascending: false }),
           supabase
             .from("rejected_jobs")
             .select("*")
             .eq("user_id", session.user.id)
+            .eq("profile_id", activeProfileId)
             .order("created_at", { ascending: false })
             .limit(50),
         ]).then(([userRes, systemRes]) => {

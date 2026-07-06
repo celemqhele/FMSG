@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { ExternalLink, X, FileText, Bookmark, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { useActiveProfile } from "./dashboard-layout";
 
 interface JobResultCardProps {
   id: string;
@@ -54,6 +55,7 @@ export function JobResultCard({
   const [cvLoading, setCvLoading] = useState(false);
   const [showVerdict, setShowVerdict] = useState(false);
   const [verdictMounted, setVerdictMounted] = useState(false);
+  const { activeProfileId } = useActiveProfile();
 
   useEffect(() => {
     if (showVerdict) {
@@ -75,6 +77,7 @@ export function JobResultCard({
         .from("saved_jobs")
         .select("id")
         .eq("user_id", session.user.id)
+        .eq("profile_id", activeProfileId)
         .eq("job_url", jobUrl)
         .maybeSingle()
         .then(({ data }: { data: any }) => {
@@ -109,7 +112,7 @@ export function JobResultCard({
       const res = await fetch(`/api/job-results/${id}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ ban_job: banJob, ban_company: banCompany, job_url: jobUrl, company }),
+        body: JSON.stringify({ ban_job: banJob, ban_company: banCompany, job_url: jobUrl, company, profile_id: activeProfileId }),
       });
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
@@ -133,6 +136,7 @@ export function JobResultCard({
     if (!session || saved) return;
     const { error } = await supabase.from("saved_jobs").insert({
       user_id: session.user.id,
+      profile_id: activeProfileId,
       job_title: jobTitle,
       company,
       location,
