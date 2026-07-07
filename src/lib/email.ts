@@ -98,11 +98,14 @@ export async function sendWelcomeEmail(to: string, name?: string) {
 }
 
 export async function sendSubscriptionConfirmation(to: string, plan: string, billingCycle: string, amount: string) {
-  const cycleLabel = billingCycle === "annual" ? "year" : "month";
+  const expiryDays = billingCycle === "annual" ? 365 : 30;
+  const expiryDate = new Date(Date.now() + expiryDays * 24 * 60 * 60 * 1000)
+    .toLocaleDateString("en-ZA", { day: "numeric", month: "long", year: "numeric" });
   const subject = `Your ${plan} plan is active`;
   const html = wrap(`
-    <p style="font-size:15px;line-height:1.6;color:#F5F5F7;margin:0 0 16px">Thanks for subscribing to the <strong style="color:#fff">${plan}</strong> plan.</p>
-    ${p(`You're now billed <strong style="color:#F5F5F7">${amount}</strong> per ${cycleLabel}. Access your new limits immediately.`)}
+    <p style="font-size:15px;line-height:1.6;color:#F5F5F7;margin:0 0 16px">Thanks for choosing the <strong style="color:#fff">${plan}</strong> plan.</p>
+    ${p(`You paid <strong style="color:#F5F5F7">${amount}</strong> once-off — no auto-renewal, no surprises. Your plan is active until <strong style="color:#F5F5F7">${expiryDate}</strong>.`)}
+    ${p("Come back and top up whenever you're job hunting again. You only pay when you need it.")}
     ${btn("Start Searching", "https://findmesomejobs.co.za/dashboard")}
     <p style="font-size:12px;color:#8E8E93;margin:12px 0 0">Reference will appear on your statement as "FMSG" or "Find Me Some Jobs".</p>
   `);
@@ -121,21 +124,24 @@ export async function sendPaymentFailed(to: string, plan: string) {
 }
 
 export async function sendSubscriptionRenewed(to: string, plan: string, amount: string) {
-  const subject = `Your ${plan} plan has been renewed`;
+  const expiryDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+    .toLocaleDateString("en-ZA", { day: "numeric", month: "long", year: "numeric" });
+  const subject = `Your ${plan} plan has been topped up`;
   const html = wrap(`
-    <p style="font-size:15px;line-height:1.6;color:#F5F5F7;margin:0 0 16px">Your <strong style="color:#fff">${plan}</strong> plan has been renewed for <strong style="color:#F5F5F7">${amount}</strong>.</p>
-    ${p("Your search and CV generation balances have been reset for the new billing period. No action is needed from you.")}
+    <p style="font-size:15px;line-height:1.6;color:#F5F5F7;margin:0 0 16px">Your <strong style="color:#fff">${plan}</strong> plan has been topped up for <strong style="color:#F5F5F7">${amount}</strong>.</p>
+    ${p(`Your new balances have been added to your account. Your plan is active until <strong style="color:#F5F5F7">${expiryDate}</strong>.`)}
     ${subtleBtn("Go to Dashboard", "https://findmesomejobs.co.za/dashboard")}
   `);
   await sendEmail(to, subject, html, "renewal");
 }
 
 export async function sendSubscriptionCancelled(to: string, plan: string) {
-  const subject = `Your ${plan} subscription has been cancelled`;
+  const subject = `Your ${plan} plan has been cancelled`;
   const html = wrap(`
-    <p style="font-size:15px;line-height:1.6;color:#F5F5F7;margin:0 0 16px">Your <strong style="color:#fff">${plan}</strong> subscription has been cancelled.</p>
-    ${p("You'll retain access to your current plan features until the end of the billing period. After that, your account will switch to the Free tier.")}
-    ${p("You can resubscribe at any time. We'd love to know what we could do better — just reply to this email.")}
+    <p style="font-size:15px;line-height:1.6;color:#F5F5F7;margin:0 0 16px">Your <strong style="color:#fff">${plan}</strong> plan has been cancelled.</p>
+    ${p("You'll retain access to your current plan features until your access expires. No auto-renewal, no surprises.")}
+    ${p("You can purchase again anytime — only pay when you're actually job hunting.")}
+    ${subtleBtn("View Plans", "https://findmesomejobs.co.za/upgrade")}
   `);
   await sendEmail(to, subject, html, "cancellation");
 }
@@ -157,7 +163,7 @@ export async function sendPlanUpgraded(to: string, fromPlan: string, toPlan: str
   const subject = `Plan upgraded to ${toPlan}`;
   const html = wrap(`
     <p style="font-size:15px;line-height:1.6;color:#F5F5F7;margin:0 0 16px">Your plan has been upgraded from <strong style="color:#fff">${fromPlan}</strong> to <strong style="color:#fff">${toPlan}</strong>.</p>
-    ${p(`You were charged a prorated amount of <strong style="color:#F5F5F7">${amount}</strong>. Your new limits are available immediately.`)}
+    ${p(`You were charged <strong style="color:#F5F5F7">${amount}</strong>. Your new plan limits stack on top of your existing balances — nothing is lost.`)}
     ${btn("Go to Dashboard", "https://findmesomejobs.co.za/dashboard")}
   `);
   await sendEmail(to, subject, html, "plan-upgraded");
@@ -171,6 +177,17 @@ export async function sendPlanDowngraded(to: string, fromPlan: string, toPlan: s
     ${subtleBtn("Manage Plan", "https://findmesomejobs.co.za/upgrade")}
   `);
   await sendEmail(to, subject, html, "plan-downgraded");
+}
+
+export async function sendPlanExpired(to: string, plan: string) {
+  const subject = `Your ${plan} plan has expired`;
+  const html = wrap(`
+    <p style="font-size:15px;line-height:1.6;color:#F5F5F7;margin:0 0 16px">Your <strong style="color:#fff">${plan}</strong> plan has expired.</p>
+    ${p("You're now on the Free tier. Your paid allowances have been used up.")}
+    ${p("Purchase again whenever you need — only pay when you're actually job hunting. No subscriptions, no surprises.")}
+    ${btn("Top Up Now", "https://findmesomejobs.co.za/upgrade")}
+  `);
+  await sendEmail(to, subject, html, "plan-expired");
 }
 
 export async function sendAccountDisabled(to: string, reason: string) {

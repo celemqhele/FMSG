@@ -89,13 +89,16 @@ export async function POST(request: NextRequest) {
 
     const now = new Date();
     const newExpiry = new Date(now);
-    const newNextPayment = new Date(now);
+    let newNextPayment: Date | null = null;
     if (billing_cycle === "annual") {
       newExpiry.setFullYear(newExpiry.getFullYear() + 1);
-      newNextPayment.setFullYear(newNextPayment.getFullYear() + 1);
+      newNextPayment = new Date(newExpiry);
+    } else if (billing_cycle === "once") {
+      newExpiry.setMonth(newExpiry.getMonth() + 1);
+      newNextPayment = null;
     } else {
       newExpiry.setMonth(newExpiry.getMonth() + 1);
-      newNextPayment.setMonth(newNextPayment.getMonth() + 1);
+      newNextPayment = new Date(newExpiry);
     }
 
     const limits = PLAN_LIMITS[newPlan] ?? { searches: 1, cv_gens: 0, pf_balance: 0 };
@@ -108,8 +111,8 @@ export async function POST(request: NextRequest) {
       const oldPfTotalKobo = currentPfRefill * oldPricePerRun * 100 * billingMonths;
       const newPfTotalKobo = newPfCount * newPricePerRun * 100 * billingMonths;
 
-      const oldBaseKobo = PLAN_PRICES[currentPlan]?.[sub.billing_cycle as "monthly" | "annual"] ?? 0;
-      const newBaseKobo = PLAN_PRICES[newPlan]?.[billing_cycle as "monthly" | "annual"] ?? 0;
+      const oldBaseKobo = PLAN_PRICES[currentPlan] ?? 0;
+      const newBaseKobo = PLAN_PRICES[newPlan] ?? 0;
       const newFullAmount = newBaseKobo + newPfTotalKobo;
 
       let chargeAmount = newFullAmount; // default: full new price
@@ -169,7 +172,7 @@ export async function POST(request: NextRequest) {
         email: sub.email,
         start_date: now.toISOString(),
         expiry_date: newExpiry.toISOString(),
-        next_payment_date: newNextPayment.toISOString(),
+        next_payment_date: newNextPayment?.toISOString() ?? null,
         status: "active",
       });
 
@@ -179,17 +182,21 @@ export async function POST(request: NextRequest) {
         .update({ status: "changed" })
         .eq("id", sub.id);
 
-      // Update profile immediately
+      // Update profile immediately (stack balances)
       await supabase
         .from("profiles")
         .update({
           plan: newPlan.toLowerCase(),
           plan_expiry: newExpiry.toISOString(),
-          search_balance: limits.searches,
-          cv_generation_balance: limits.cv_gens,
-          persistent_finder_balance: newPfCount,
         })
         .eq("id", user.id);
+
+      await supabase.rpc("stack_plan_balances", {
+        p_user_id: user.id,
+        p_searches: limits.searches,
+        p_cv_gens: limits.cv_gens,
+        p_pf: newPfCount,
+      });
 
       // Set pf_refill
       await supabase

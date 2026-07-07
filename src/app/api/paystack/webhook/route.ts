@@ -152,16 +152,18 @@ export async function POST(request: NextRequest) {
 
           const pfRefill = profile?.pf_refill ?? limits.pf_balance;
 
-          // Extend user's plan
+          // Extend user's plan and stack balances
           await supabase
             .from("profiles")
-            .update({
-              plan_expiry: newExpiry.toISOString(),
-              search_balance: limits.searches,
-              cv_generation_balance: limits.cv_gens,
-              persistent_finder_balance: pfRefill,
-            })
+            .update({ plan_expiry: newExpiry.toISOString() })
             .eq("id", existingSub.user_id);
+
+          await supabase.rpc("stack_plan_balances", {
+            p_user_id: existingSub.user_id,
+            p_searches: limits.searches,
+            p_cv_gens: limits.cv_gens,
+            p_pf: pfRefill,
+          });
 
           // Also update the subscription record
           await supabase
@@ -174,7 +176,7 @@ export async function POST(request: NextRequest) {
             .eq("id", existingSub.id);
 
           const planName = existingSub.plan.charAt(0).toUpperCase() + existingSub.plan.slice(1);
-          sendSubscriptionRenewed(email, planName, formatPlanPrice(planName, billingCycle)).catch((err) =>
+          sendSubscriptionRenewed(email, planName, formatPlanPrice(planName)).catch((err) =>
             console.error("[WEBHOOK] Renewal email failed:", err)
           );
         }

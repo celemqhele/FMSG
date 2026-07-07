@@ -13,8 +13,7 @@ import { PFStepper } from "@/components/pricing/pf-stepper";
 
 interface Tier {
   name: string;
-  monthlyPrice: string;
-  annualPrice: string;
+  price: string;
   searches: number;
   cvGens: number;
   pfBalance: number;
@@ -24,8 +23,7 @@ interface Tier {
 
 const tiers: Tier[] = PLAN_TIER_NAMES.map((name) => ({
   name,
-  monthlyPrice: name === "Free" ? "R0" : formatPlanPrice(name, "monthly"),
-  annualPrice: name === "Free" ? "R0" : formatPlanPrice(name, "annual"),
+  price: name === "Free" ? "R0" : formatPlanPrice(name),
   searches: PLAN_LIMITS[name]?.searches ?? 0,
   cvGens: PLAN_LIMITS[name]?.cv_gens ?? 0,
   pfBalance: PLAN_LIMITS[name]?.pf_balance ?? 0,
@@ -39,17 +37,15 @@ interface PricingCardProps {
   tier: Tier;
   pfCount: number;
   onPFChange: (v: number) => void;
-  annual: boolean;
   processing: string | null;
   loggedIn: boolean;
   onSubscribe: (tier: Tier) => void;
 }
 
-function PricingCard({ tier, pfCount, onPFChange, annual, processing, loggedIn, onSubscribe }: PricingCardProps) {
+function PricingCard({ tier, pfCount, onPFChange, processing, loggedIn, onSubscribe }: PricingCardProps) {
   const pricePerRun = calculatePFPrice(pfCount);
-  const pfTotal = pfCount * pricePerRun * (annual ? 12 : 1);
-  const basePrice = annual ? tier.annualPrice : tier.monthlyPrice;
-  const baseKobo = annual ? PLAN_PRICES[tier.name]?.annual : PLAN_PRICES[tier.name]?.monthly;
+  const pfTotal = pfCount * pricePerRun;
+  const baseKobo = PLAN_PRICES[tier.name];
   const grandTotalKobo = (baseKobo ?? 0) + pfTotal * 100;
   const grandTotal = (grandTotalKobo / 100).toLocaleString("en-ZA", { style: "currency", currency: "ZAR", minimumFractionDigits: 0 });
 
@@ -69,12 +65,12 @@ function PricingCard({ tier, pfCount, onPFChange, annual, processing, loggedIn, 
           {tier.name === "Free" ? "R0" : grandTotal}
         </span>
         <span className="ml-1 text-sm text-white/70">
-          /{annual ? "year" : "month"}
+          /once-off
         </span>
       </div>
       {tier.name !== "Free" && (
         <div className="mt-1 flex items-center gap-1.5 text-xs text-white/60">
-          <span>{basePrice}/{annual ? "yr" : "mo"}</span>
+          <span>{tier.price} base</span>
           {pfCount > 0 && (
             <>
               <span>+</span>
@@ -92,7 +88,6 @@ function PricingCard({ tier, pfCount, onPFChange, annual, processing, loggedIn, 
             planName={tier.name}
             value={pfCount}
             onChange={onPFChange}
-            annual={annual}
           />
         </div>
       )}
@@ -118,7 +113,7 @@ function PricingCard({ tier, pfCount, onPFChange, annual, processing, loggedIn, 
         ) : tier.name === "Free" ? (
           loggedIn ? "Go to Dashboard" : "Get Started"
         ) : (
-          `Subscribe to ${tier.name}`
+          `Get ${tier.name}`
         )}
       </button>
     </LiquidGlassCard>
@@ -126,14 +121,12 @@ function PricingCard({ tier, pfCount, onPFChange, annual, processing, loggedIn, 
 }
 
 function SwipePricingCarousel({
-  annual,
   processing,
   loggedIn,
   pfCounts,
   setPfCounts,
   onSubscribe,
 }: {
-  annual: boolean;
   processing: string | null;
   loggedIn: boolean;
   pfCounts: Record<string, number>;
@@ -221,15 +214,14 @@ function SwipePricingCarousel({
             const pfCount = pfCounts[tier.name] ?? PF_DEFAULT_BY_TIER[tier.name] ?? 0;
             return (
               <div key={tier.name} className="w-full shrink-0 px-1">
-                <PricingCard
-                  tier={tier}
-                  pfCount={pfCount}
-                  onPFChange={(v) => setPfCounts((prev) => ({ ...prev, [tier.name]: v }))}
-                  annual={annual}
-                  processing={processing}
-                  loggedIn={loggedIn}
-                  onSubscribe={onSubscribe}
-                />
+                  <PricingCard
+                    tier={tier}
+                    pfCount={pfCount}
+                    onPFChange={(v) => setPfCounts((prev) => ({ ...prev, [tier.name]: v }))}
+                    processing={processing}
+                    loggedIn={loggedIn}
+                    onSubscribe={onSubscribe}
+                  />
               </div>
             );
           })}
@@ -255,12 +247,11 @@ export function PricingSection() {
   const router = useRouter();
   const supabase = createClient();
 
-  const [annual, setAnnual] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
   const [authTab, setAuthTab] = useState<"login" | "signup">("signup");
   const [processing, setProcessing] = useState<string | null>(null);
   const [loggedIn, setLoggedIn] = useState(false);
-  const [pendingPlan, setPendingPlan] = useState<{ name: string; cycle: string } | null>(null);
+  const [pendingPlan, setPendingPlan] = useState<{ name: string } | null>(null);
   const [paystackReady, setPaystackReady] = useState(false);
   const [pfCounts, setPfCounts] = useState<Record<string, number>>({});
   const [successToast, setSuccessToast] = useState(false);
@@ -289,7 +280,7 @@ export function PricingSection() {
     if (loggedIn && pendingPlan) {
       const p = pendingPlan;
       setPendingPlan(null);
-      startPayment(p.name, p.cycle);
+      startPayment(p.name);
     }
   }, [loggedIn, pendingPlan]);
 
@@ -298,7 +289,7 @@ export function PricingSection() {
     setPendingPlan(null);
   }, []);
 
-  const startPayment = async (planName: string, cycle: string) => {
+  const startPayment = async (planName: string) => {
     if (planName === "Free") return;
     setProcessing(planName);
 
@@ -314,11 +305,10 @@ export function PricingSection() {
       return;
     }
 
-    const baseKobo = cycle === "annual" ? PLAN_PRICES[planName].annual : PLAN_PRICES[planName].monthly;
+    const baseKobo = PLAN_PRICES[planName];
     const extraPf = pfCounts[planName] ?? PF_DEFAULT_BY_TIER[planName] ?? 0;
     const pfPriceZar = calculatePFPrice(extraPf || 1);
-    const billingMonths = cycle === "annual" ? 12 : 1;
-    const pfKobo = extraPf * pfPriceZar * 100 * billingMonths;
+    const pfKobo = extraPf * pfPriceZar * 100;
     const amount = baseKobo + pfKobo;
     const totalPf = (PLAN_LIMITS[planName]?.pf_balance ?? 0) + extraPf;
     const sRes = await supabase.auth.getSession();
@@ -339,12 +329,12 @@ export function PricingSection() {
       amount,
       currency: "ZAR",
       ref: "FMSG-" + Date.now(),
-      metadata: { plan: planName, billing_cycle: cycle, pf_count: totalPf },
+      metadata: { plan: planName, billing_cycle: "once", pf_count: totalPf },
       callback: function (response: { reference: string }) {
         fetch("/api/verify-payment", {
           method: "POST",
           headers: { Authorization: `Bearer ${session!.access_token}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ reference: response.reference, plan: planName, billing_cycle: cycle }),
+          body: JSON.stringify({ reference: response.reference, plan: planName, billing_cycle: "once" }),
         }).then((verifyRes) => {
           if (verifyRes.ok) {
             setProcessing(null);
@@ -376,17 +366,15 @@ export function PricingSection() {
       return;
     }
 
-    const cycle = annual ? "annual" : "monthly";
-
     if (!loggedIn) {
-      setPendingPlan({ name: tier.name, cycle });
+      setPendingPlan({ name: tier.name });
       setAuthTab("signup");
       setAuthOpen(true);
       return;
     }
 
-    await startPayment(tier.name, cycle);
-  }, [loggedIn, annual, supabase, pfCounts, paystackReady]);
+    await startPayment(tier.name);
+  }, [loggedIn, supabase, pfCounts, paystackReady]);
 
   return (
     <>
@@ -397,31 +385,8 @@ export function PricingSection() {
               Find the right plan
             </h2>
             <p className="mt-4 text-white/80">
-              All plans include AI-powered job matching. Upgrade anytime.
+              Pay once, no auto-renewal. Come back and top up whenever you&apos;re job hunting again.
             </p>
-            <div className="mt-8 inline-flex flex-wrap items-center justify-center gap-3 p-1 rounded-full bg-white/10 border border-white/10">
-              <button
-                onClick={() => setAnnual(false)}
-                className={`px-4 py-2 text-sm font-medium rounded-full transition-colors whitespace-nowrap ${
-                  !annual
-                    ? "bg-white/15 text-white shadow-[var(--shadow-sm)]"
-                    : "text-white/80 hover:text-white"
-                }`}
-              >
-                Monthly
-              </button>
-              <button
-                onClick={() => setAnnual(true)}
-                className={`px-4 py-2 text-sm font-medium rounded-full transition-colors whitespace-nowrap ${
-                  annual
-                    ? "bg-white/15 text-white shadow-[var(--shadow-sm)]"
-                    : "text-white/80 hover:text-white"
-                }`}
-              >
-                Annual{" "}
-                <span className="text-[var(--color-success)] whitespace-nowrap">Save 2 months</span>
-              </button>
-            </div>
           </div>
 
           <div className="mb-8 mt-10 liquid-glass rounded-xl p-5 text-center">
@@ -440,7 +405,6 @@ export function PricingSection() {
                   tier={tier}
                   pfCount={pfCount}
                   onPFChange={(v) => setPfCounts((prev) => ({ ...prev, [tier.name]: v }))}
-                  annual={annual}
                   processing={processing}
                   loggedIn={loggedIn}
                   onSubscribe={handleSubscribe}
@@ -451,7 +415,6 @@ export function PricingSection() {
 
           <div className="mt-12 md:mt-16 md:hidden">
             <SwipePricingCarousel
-              annual={annual}
               processing={processing}
               loggedIn={loggedIn}
               pfCounts={pfCounts}

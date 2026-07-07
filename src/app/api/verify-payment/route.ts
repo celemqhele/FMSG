@@ -65,16 +65,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No authorization code returned. Ensure card payment was used (not bank transfer)." }, { status: 400 });
     }
 
-    // Calculate expiry and next payment date
+    // Calculate expiry
     const now = new Date();
     const expiryDate = new Date(now);
-    const nextPaymentDate = new Date(now);
+    let nextPaymentDate: Date | null = null;
     if (billing_cycle === "annual") {
       expiryDate.setFullYear(expiryDate.getFullYear() + 1);
-      nextPaymentDate.setFullYear(nextPaymentDate.getFullYear() + 1);
+      nextPaymentDate = new Date(expiryDate);
+    } else if (billing_cycle === "once") {
+      expiryDate.setMonth(expiryDate.getMonth() + 1);
+      nextPaymentDate = null;
     } else {
       expiryDate.setMonth(expiryDate.getMonth() + 1);
-      nextPaymentDate.setMonth(nextPaymentDate.getMonth() + 1);
+      nextPaymentDate = new Date(expiryDate);
     }
 
     const limits = PLAN_LIMITS[plan] ?? { searches: 1, cv_gens: 0, pf_balance: 0 };
@@ -91,7 +94,7 @@ export async function POST(request: NextRequest) {
       email,
       start_date: now.toISOString(),
       expiry_date: expiryDate.toISOString(),
-      next_payment_date: nextPaymentDate.toISOString(),
+      next_payment_date: nextPaymentDate?.toISOString() ?? null,
       status: "active",
     });
 
@@ -104,21 +107,29 @@ export async function POST(request: NextRequest) {
     const metadataPf = txData.metadata?.pf_count;
     const pfCount = (metadataPf != null && metadataPf > 0) ? metadataPf : limits.pf_balance;
 
-    // Update profile (core fields)
+    // Update profile (stack balances)
     const { error: profileErr } = await supabase
       .from("profiles")
       .update({
         plan: plan.toLowerCase(),
         plan_expiry: expiryDate.toISOString(),
-        search_balance: limits.searches,
-        cv_generation_balance: limits.cv_gens,
-        persistent_finder_balance: pfCount,
       })
       .eq("id", user.id);
 
     if (profileErr) {
       console.error("[VERIFY] Profile update error:", profileErr.message);
       return NextResponse.json({ error: "Failed to update profile" }, { status: 500 });
+    }
+
+    const { error: stackErr } = await supabase.rpc("stack_plan_balances", {
+      p_user_id: user.id,
+      p_searches: limits.searches,
+      p_cv_gens: limits.cv_gens,
+      p_pf: pfCount,
+    });
+
+    if (stackErr) {
+      console.error("[VERIFY] stack_plan_balances failed:", stackErr);
     }
 
     // Set pf_refill separately (column may not exist yet — not fatal)
@@ -131,7 +142,21 @@ export async function POST(request: NextRequest) {
       console.warn("[VERIFY] pf_refill column missing (safe to ignore):", pfRefillErr.message);
     }
 
-    sendSubscriptionConfirmation(email, plan, billing_cycle, formatPlanPrice(plan, billing_cycle)).catch((err) => console.error("[VERIFY] Email failed:", err));
+    sendSubscriptionConfirmation(email, plan, billing_cycle, formatPlanPrice(plan)).catch((err) => console.error("[VERIFY] Email failed:", err));
+
+    const discountCode = txData.metadata?.discount_code;
+    if (discountCode) {
+      const percent = discountCode === "FIRST_ORDER_50" ? 50 : discountCode === "REENGAGEMENT_40" ? 40 : null;
+      if (percent) {
+        await supabase.from("discount_redemptions").insert({
+          user_id: user.id,
+          discount_type: percent === 50 ? "50_percent_first_order" : "40_percent_reengagement",
+          discount_percent: percent,
+          paystack_reference: reference,
+          plan_purchased: plan,
+        });
+      }
+    }
 
     return NextResponse.json({ ok: true, plan: plan.toLowerCase(), balance: limits });
   } catch (err) {

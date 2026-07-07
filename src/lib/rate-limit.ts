@@ -24,6 +24,7 @@ const DEFAULTS: Record<string, RateLimitConfig> = {
   "send-verify": { windowMs: 3_600_000, max: 3 },
   verify:       { windowMs: 300_000, max: 10 },
   appeal:       { windowMs: 3_600_000, max: 2 },
+  guest_search: { windowMs: 86_400_000, max: 1 },
 };
 
 export type RateLimitScope = string;

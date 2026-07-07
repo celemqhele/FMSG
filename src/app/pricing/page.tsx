@@ -18,8 +18,7 @@ import "@/components/landing/liquid-glass.css";
 
 interface Tier {
   name: string;
-  monthlyPrice: string;
-  annualPrice: string;
+  price: string;
   searches: number;
   cvGens: number;
   pfBalance: number;
@@ -29,8 +28,7 @@ interface Tier {
 
 const tiers: Tier[] = PLAN_TIER_NAMES.map((name) => ({
   name,
-  monthlyPrice: name === "Free" ? "R0" : formatPlanPrice(name, "monthly"),
-  annualPrice: name === "Free" ? "R0" : formatPlanPrice(name, "annual"),
+  price: name === "Free" ? "R0" : formatPlanPrice(name),
   searches: PLAN_LIMITS[name]?.searches ?? 0,
   cvGens: PLAN_LIMITS[name]?.cv_gens ?? 0,
   pfBalance: PLAN_LIMITS[name]?.pf_balance ?? 0,
@@ -45,13 +43,12 @@ export default function PricingPage() {
   const { endTransition } = useTransition();
   const supabase = createClient();
 
-  const [annual, setAnnual] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
   const [authTab, setAuthTab] = useState<"login" | "signup">("signup");
   const [processing, setProcessing] = useState<string | null>(null);
   const [paystackReady, setPaystackReady] = useState(false);
   const [loggedIn, setLoggedIn] = useState(false);
-  const [pendingPlan, setPendingPlan] = useState<{ name: string; cycle: string } | null>(null);
+  const [pendingPlan, setPendingPlan] = useState<{ name: string } | null>(null);
   const [successToast, setSuccessToast] = useState(false);
   const [pfCounts, setPfCounts] = useState<Record<string, number>>({});
 
@@ -83,7 +80,7 @@ export default function PricingPage() {
     if (loggedIn && pendingPlan) {
       const p = pendingPlan;
       setPendingPlan(null);
-      startPayment(p.name, p.cycle);
+      startPayment(p.name);
     }
   }, [loggedIn, pendingPlan]);
 
@@ -102,7 +99,7 @@ export default function PricingPage() {
     setPendingPlan(null);
   }, []);
 
-  const startPayment = async (planName: string, cycle: string) => {
+  const startPayment = async (planName: string) => {
     if (planName === "Free") return;
     setProcessing(planName);
 
@@ -118,11 +115,10 @@ export default function PricingPage() {
       return;
     }
 
-    const baseKobo = cycle === "annual" ? PLAN_PRICES[planName].annual : PLAN_PRICES[planName].monthly;
+    const baseKobo = PLAN_PRICES[planName];
     const extraPf = pfCounts[planName] ?? PF_DEFAULT_BY_TIER[planName] ?? 0;
     const pfPriceZar = calculatePFPrice(extraPf || 1);
-    const billingMonths = cycle === "annual" ? 12 : 1;
-    const pfKobo = extraPf * pfPriceZar * 100 * billingMonths;
+    const pfKobo = extraPf * pfPriceZar * 100;
     const amount = baseKobo + pfKobo;
     const totalPf = (PLAN_LIMITS[planName]?.pf_balance ?? 0) + extraPf;
     const sRes = await supabase.auth.getSession();
@@ -143,12 +139,12 @@ export default function PricingPage() {
       amount,
       currency: "ZAR",
       ref: "FMSG-" + Date.now(),
-      metadata: { plan: planName, billing_cycle: cycle, pf_count: totalPf },
+      metadata: { plan: planName, billing_cycle: "once", pf_count: totalPf },
       callback: function (response: { reference: string }) {
         fetch("/api/verify-payment", {
           method: "POST",
           headers: { Authorization: `Bearer ${session!.access_token}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ reference: response.reference, plan: planName, billing_cycle: cycle }),
+          body: JSON.stringify({ reference: response.reference, plan: planName, billing_cycle: "once" }),
         }).then((verifyRes) => {
           if (verifyRes.ok) {
             setProcessing(null);
@@ -180,16 +176,14 @@ export default function PricingPage() {
       return;
     }
 
-    const cycle = annual ? "annual" : "monthly";
-
     if (!loggedIn) {
-      setPendingPlan({ name: tier.name, cycle });
+      setPendingPlan({ name: tier.name });
       setAuthTab("signup");
       setAuthOpen(true);
       return;
     }
 
-    await startPayment(tier.name, cycle);
+    await startPayment(tier.name);
   };
 
   return (
@@ -204,11 +198,7 @@ export default function PricingPage() {
           <div className="max-w-6xl mx-auto">
             <div className="text-center mb-10">
               <h1 className="text-3xl font-bold text-white">Find the right plan</h1>
-              <p className="mt-2 text-sm text-white/70">All plans include AI-powered job matching. Upgrade anytime.</p>
-              <div className="mt-6 inline-flex items-center gap-1 p-1 rounded-full bg-white/10 border border-white/10">
-                <button onClick={() => setAnnual(false)} className={`px-4 py-2 text-sm font-medium rounded-full transition-colors ${!annual ? "bg-white/15 text-white shadow-[var(--shadow-sm)]" : "text-white/80 hover:text-white"}`}>Monthly</button>
-                <button onClick={() => setAnnual(true)} className={`px-4 py-2 text-sm font-medium rounded-full transition-colors ${annual ? "bg-white/15 text-white shadow-[var(--shadow-sm)]" : "text-white/80 hover:text-white"}`}>Annual <span className="text-[var(--color-success)]">Save 2 months</span></button>
-              </div>
+              <p className="mt-2 text-sm text-white/70">Pay once, no auto-renewal. Come back and top up whenever you&apos;re job hunting again.</p>
             </div>
 
             <div className="mb-8 liquid-glass rounded-xl p-5 text-center">
@@ -220,9 +210,8 @@ export default function PricingPage() {
               {tiers.map((tier) => {
                 const pfCount = pfCounts[tier.name] ?? PF_DEFAULT_BY_TIER[tier.name] ?? 0;
                 const pricePerRun = calculatePFPrice(pfCount);
-                const pfTotal = pfCount * pricePerRun * (annual ? 12 : 1);
-                const basePrice = annual ? tier.annualPrice : tier.monthlyPrice;
-                const baseKobo = annual ? PLAN_PRICES[tier.name]?.annual : PLAN_PRICES[tier.name]?.monthly;
+                const pfTotal = pfCount * pricePerRun;
+                const baseKobo = PLAN_PRICES[tier.name];
                 const grandTotalKobo = baseKobo + pfTotal * 100;
                 const grandTotal = (grandTotalKobo / 100).toLocaleString("en-ZA", { style: "currency", currency: "ZAR", minimumFractionDigits: 0 });
 
@@ -238,10 +227,10 @@ export default function PricingPage() {
                   <h3 className="text-lg font-semibold text-white">{tier.name}</h3>
                   <div className="mt-4">
                     <span className="text-3xl font-bold text-white">{tier.name === "Free" ? "R0" : grandTotal}</span>
-                    <span className="ml-1 text-sm text-white/70">/{annual ? "year" : "month"}</span>
+                    <span className="ml-1 text-sm text-white/70">/once-off</span>
                   </div>
                   <div className="mt-1 flex items-center gap-1.5 text-xs text-white/60">
-                    <span>{basePrice}/{annual ? "yr" : "mo"}</span>
+                    <span>{tier.price} base</span>
                     {pfCount > 0 && (
                       <>
                         <span>+</span>
@@ -258,7 +247,6 @@ export default function PricingPage() {
                         planName={tier.name}
                         value={pfCount}
                         onChange={(v) => setPfCounts((prev) => ({ ...prev, [tier.name]: v }))}
-                        annual={annual}
                       />
                     </div>
                   )}
@@ -284,7 +272,7 @@ export default function PricingPage() {
                     ) : tier.name === "Free" ? (
                       loggedIn ? "Go to Dashboard" : "Get Started"
                     ) : (
-                      `Subscribe to ${tier.name}`
+                      `Get ${tier.name}`
                     )}
                   </button>
                 </LiquidGlassCard>

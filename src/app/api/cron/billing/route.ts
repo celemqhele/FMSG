@@ -140,13 +140,15 @@ export async function GET(request: NextRequest) {
 
         await supabase
           .from("profiles")
-          .update({
-            plan_expiry: newExpiry.toISOString(),
-            search_balance: limits.searches,
-            cv_generation_balance: limits.cv_gens,
-            persistent_finder_balance: pfRefill,
-          })
+          .update({ plan_expiry: newExpiry.toISOString() })
           .eq("id", sub.user_id);
+
+        await supabase.rpc("stack_plan_balances", {
+          p_user_id: sub.user_id,
+          p_searches: limits.searches,
+          p_cv_gens: limits.cv_gens,
+          p_pf: pfRefill,
+        });
 
         const planName = sub.plan.charAt(0).toUpperCase() + sub.plan.slice(1);
         sendSubscriptionRenewed(sub.email, planName, `R${(chargeAmount / 100).toFixed(2)}`).catch((err) =>

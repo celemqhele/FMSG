@@ -5,10 +5,15 @@ import { useRouter } from "next/navigation";
 import { X, ArrowRight, Mail, Upload } from "lucide-react";
 import { DashboardLayout, useActiveProfile } from "@/components/dashboard/dashboard-layout";
 import { SearchPill } from "@/components/dashboard/search-pill";
+import { GuestSearchPill } from "@/components/dashboard/guest-search-pill";
 import { JobResultCard } from "@/components/dashboard/job-result-card";
 import dynamic from "next/dynamic";
 const PFPurchaseModal = dynamic(() => import("@/components/dashboard/pf-purchase-modal").then((mod) => mod.PFPurchaseModal), { ssr: false });
 const OnboardingForm = dynamic(() => import("@/components/onboarding/onboarding-form").then((mod) => mod.OnboardingForm), { ssr: false });
+const AuthModal = dynamic(() => import("@/components/auth/auth-modal").then((mod) => mod.AuthModal), { ssr: false });
+import { GuestSearchPopup } from "@/components/dashboard/guest-search-popup";
+import { FirstSearchDiscountPopup } from "@/components/dashboard/first-search-discount-popup";
+import { ReengagementBanner } from "@/components/dashboard/reengagement-banner";
 import { DashboardTabs, type TabId } from "@/components/dashboard/dashboard-tabs";
 import { BalanceChips } from "@/components/dashboard/balance-chips";
 import { FilterSortBar, type SortMode } from "@/components/dashboard/filter-sort-bar";
@@ -112,7 +117,6 @@ export default function DashboardPage() {
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState<"prompt" | "form" | "done">("prompt");
   const [onboardingMounted, setOnboardingMounted] = useState(false);
-  const abortRef = useRef<AbortController | null>(null);
   const [accountStatus, setAccountStatus] = useState<string>("active");
   const [emailVerified, setEmailVerified] = useState<boolean | null>(null);
   const [showVerifyModal, setShowVerifyModal] = useState(false);
@@ -121,6 +125,21 @@ export default function DashboardPage() {
   const [plan, setPlan] = useState("free");
   const [pauseMessage, setPauseMessage] = useState("");
   const { activeProfileId } = useActiveProfile();
+
+  // Guest mode state
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [authOpen, setAuthOpen] = useState(false);
+  const [authTab, setAuthTab] = useState<"login" | "signup">("signup");
+  const [guestFreeUsed, setGuestFreeUsed] = useState(false);
+  const [guestResultCount, setGuestResultCount] = useState(0);
+  const [showGuestPopup, setShowGuestPopup] = useState(false);
+  const [showFirstSearchDiscount, setShowFirstSearchDiscount] = useState(false);
+  const [showReengagementBanner, setShowReengagementBanner] = useState(false);
+  const [guestSearching, setGuestSearching] = useState(false);
+  const [guestProgress, setGuestProgress] = useState(0);
+  const [guestStatusActive, setGuestStatusActive] = useState("");
+  const [guestStatusCompleted, setGuestStatusCompleted] = useState<string[]>([]);
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => { endTransition(); }, [endTransition]);
 
@@ -159,34 +178,77 @@ export default function DashboardPage() {
   useEffect(() => {
     const supabase = createClient();
     supabase.auth.getSession().then(({ data }: { data: { session: any } | null }) => {
-      if (!data?.session) {
-        router.push("/");
-        return;
+      if (data?.session) {
+        setIsLoggedIn(true);
+        setUserEmail(data.session.user?.email ?? "");
+        supabase
+          .from("profiles")
+          .select("onboarding_completed, account_status, email_verified, first_search_completed_at, plan")
+          .maybeSingle()
+          .then(({ data: profile }: { data: any }) => {
+            if (!profile) {
+              setNeedsOnboarding(true);
+              requestAnimationFrame(() => setOnboardingMounted(true));
+            } else {
+              setAuthChecked(true);
+              if (profile.account_status) setAccountStatus(profile.account_status);
+              setEmailVerified(profile.email_verified ?? false);
+              setPlan(profile.plan ?? "free");
+              if (!profile.first_search_completed_at) {
+                checkReengagement(profile.plan);
+              }
+            }
+          });
+      } else {
+        setAuthChecked(true);
+        const stored = localStorage.getItem("fmsg-guest-results");
+        if (stored) {
+          try {
+            const parsed = JSON.parse(stored);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              setResults(parsed);
+              setHasSearched(true);
+            }
+          } catch {}
+        }
+        const freeUsed = localStorage.getItem("fmsg-guest-free-used");
+        if (freeUsed === "true") setGuestFreeUsed(true);
       }
-      setAuthChecked(true);
-      setUserEmail(data.session.user?.email ?? "");
-      supabase
-        .from("profiles")
-        .select("onboarding_completed, account_status, email_verified")
-        .maybeSingle()
-        .then(({ data: profile }: { data: any }) => {
-          if (!profile) {
-            setNeedsOnboarding(true);
-            requestAnimationFrame(() => setOnboardingMounted(true));
-          } else {
-            if (profile.account_status) setAccountStatus(profile.account_status);
-            setEmailVerified(profile.email_verified ?? false);
-          }
-        });
     });
 
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: string, session: any) => {
+      if (session) {
+        setIsLoggedIn(true);
+        setUserEmail(session.user?.email ?? "");
+      } else {
+        setIsLoggedIn(false);
+      }
+    });
+    return () => { subscription.unsubscribe(); };
+  }, [router]);
+
+  const checkReengagement = useCallback(async (userPlan: string) => {
+    if (userPlan !== "free") return;
+    const supabase = createClient();
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+    const res = await fetch("/api/discount/validate?type=reengagement_40", {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.eligible) setShowReengagementBanner(true);
+    }
+  }, []);
+
+  useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail;
       if (detail === "LIMIT_002") setShowLimitModal("LIMIT_002");
     };
     window.addEventListener("show-limit-modal", handler);
     return () => window.removeEventListener("show-limit-modal", handler);
-  }, [router]);
+  }, []);
 
   useEffect(() => {
     if (showLimitModal) {
@@ -321,11 +383,115 @@ export default function DashboardPage() {
     setResultMessage("");
   }, []);
 
+  const handleGuestSearch = useCallback(async (query: string) => {
+    setGuestSearching(true);
+    setGuestProgress(0);
+    setHasSearched(true);
+    setResultMessage("");
+    setGuestStatusCompleted([]);
+    setGuestStatusActive("Searching live job listings");
+    setVideoFast(true);
+
+    abortRef.current = new AbortController();
+
+    try {
+      const res = await fetch("/api/search/guest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query }),
+        signal: abortRef.current.signal,
+      });
+
+      await handleStreamResponse(res);
+    } catch (err) {
+      if ((err as DOMException)?.name !== "AbortError") throw err;
+    }
+  }, [setVideoFast]);
+
+  const handleGuestAbort = useCallback(() => {
+    if (abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
+    }
+    setGuestSearching(false);
+    setGuestProgress(0);
+    setVideoFast(false);
+    setGuestStatusCompleted([]);
+    setGuestStatusActive("");
+  }, []);
+
+  const handleGuestClearResults = useCallback(() => {
+    setResults([]);
+    setHasSearched(false);
+    setResultMessage("");
+    setGuestFreeUsed(false);
+    localStorage.removeItem("fmsg-guest-results");
+    localStorage.removeItem("fmsg-guest-free-used");
+  }, []);
+
+  const handleGuestAuthOpen = useCallback((tab: "login" | "signup") => {
+    setAuthTab(tab);
+    setAuthOpen(true);
+  }, []);
+
+  const handleAuthClose = useCallback(() => {
+    setAuthOpen(false);
+  }, []);
+
+  const handleAuthSuccess = useCallback(async () => {
+    setAuthOpen(false);
+    const supabase = createClient();
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+
+    const guestHistory = [];
+    const storedHistory = localStorage.getItem("fmsg-guest-history");
+    if (storedHistory) {
+      try { guestHistory.push(...JSON.parse(storedHistory)); } catch {}
+    }
+
+    const storedResults = localStorage.getItem("fmsg-guest-results");
+    if (storedResults) {
+      try {
+        const currentQuery = localStorage.getItem("fmsg-guest-last-query") ?? "";
+        const parsed = JSON.parse(storedResults);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          guestHistory.push({ query: currentQuery, timestamp: new Date().toISOString(), results: parsed });
+        }
+      } catch {}
+    }
+
+    fetch("/api/auth/onboard", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ guest_history: guestHistory }),
+    }).catch(console.error);
+
+    localStorage.removeItem("fmsg-guest-results");
+    localStorage.removeItem("fmsg-guest-history");
+    localStorage.removeItem("fmsg-guest-last-query");
+    localStorage.removeItem("fmsg-guest-free-used");
+    localStorage.removeItem("fmsg-guest-popup-dismissed");
+
+    setIsLoggedIn(true);
+    setShowGuestPopup(false);
+    window.location.reload();
+  }, []);
+
   const handleStreamResponse = async (res: Response) => {
     const contentType = res.headers.get("Content-Type") || "";
     if (!contentType.includes("text/plain")) {
       let data: any = {};
       try { data = await res.json(); } catch {}
+
+      if (res.status === 403 && data.code === "GUEST_LIMIT") {
+        setGuestSearching(false);
+        setGuestProgress(0);
+        setVideoFast(false);
+        setGuestFreeUsed(true);
+        localStorage.setItem("fmsg-guest-free-used", "true");
+        return;
+      }
 
       if (res.status === 403 && data.code === "LIMIT_001") {
         setShowLimitModal("LIMIT_001");
@@ -538,10 +704,40 @@ export default function DashboardPage() {
               }
               setResults(event.results ?? []);
               setSearching(false);
+              setGuestSearching(false);
               setProgress(0);
               setVideoFast(false);
               setPfActive(false);
               setContinuationToken(null);
+
+              if (!isLoggedIn && Array.isArray(event.results) && event.results.length > 0) {
+                localStorage.setItem("fmsg-guest-results", JSON.stringify(event.results));
+                localStorage.setItem("fmsg-guest-last-query", "guest-search");
+                setGuestFreeUsed(true);
+                localStorage.setItem("fmsg-guest-free-used", "true");
+                setGuestResultCount(event.results.length);
+                if (!localStorage.getItem("fmsg-guest-popup-dismissed")) {
+                  setTimeout(() => setShowGuestPopup(true), 500);
+                }
+              }
+
+              if (isLoggedIn && plan === "free" && event.results && Array.isArray(event.results) && event.results.length > 0) {
+                const supabaseClient = createClient();
+                (async () => {
+                  const { data: profileCheck } = await supabaseClient
+                    .from("profiles")
+                    .select("first_search_completed_at")
+                    .maybeSingle();
+                  if (profileCheck && !profileCheck.first_search_completed_at) {
+                    const { data: { user } } = await supabaseClient.auth.getUser();
+                    if (user) {
+                      await supabaseClient.from("profiles").update({ first_search_completed_at: new Date().toISOString() }).eq("id", user.id);
+                      setTimeout(() => setShowFirstSearchDiscount(true), 500);
+                    }
+                  }
+                })().catch(() => {});
+              }
+
               if (event.results?.length === 0 && event.message) {
                 setResultMessage(event.message);
               } else if (event.pf_mode && event.pf_rounds) {
@@ -620,13 +816,117 @@ export default function DashboardPage() {
     <DashboardLayout>
       <PageTransitionWrapper>
       <div className="max-w-4xl mx-auto pt-8 space-y-6">
+        {!isLoggedIn && authChecked ? (
+          <>
+            <div className="text-center mb-2">
+              <h1 className="text-2xl font-bold text-white">Find Your Next Job</h1>
+              <p className="text-sm text-white/60 mt-1">1 free AI-powered search — no signup required</p>
+            </div>
+
+            <GuestSearchPill
+              onSearch={(q) => {
+                handleGuestSearch(q);
+                localStorage.setItem("fmsg-guest-last-query", q);
+              }}
+              searching={guestSearching}
+              onAbort={handleGuestAbort}
+            />
+
+            {guestSearching && (
+              <SearchProgress
+                completedLines={guestStatusCompleted}
+                activeLine={guestStatusActive}
+                progress={guestProgress}
+              />
+            )}
+
+            {!guestSearching && hasSearched && results.length > 0 && (
+              <>
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-white/60">
+                    Showing top {results.length} result{results.length > 1 ? "s" : ""}
+                  </p>
+                  <button
+                    onClick={handleGuestClearResults}
+                    className="text-xs text-white/50 hover:text-white/80 transition-colors"
+                  >
+                    Clear Results
+                  </button>
+                </div>
+                <div className="space-y-4">
+                  {results.map((r) => (
+                    <JobResultCard
+                      key={r.id}
+                      id={r.id}
+                      jobTitle={r.job_title}
+                      company={r.company}
+                      location={r.location}
+                      salary={r.estimated_salary}
+                      matchScore={r.match_score}
+                      matchSummary={r.match_summary}
+                      verdictBullets={r.verdict_bullets}
+                      jobUrl={r.job_url}
+                      fullDescription={r.full_description}
+                      suggestedCvName=""
+                      knockoutFail={r.knockout_fail}
+                      pillarScores={r.pillar_scores}
+                      taxesApplied={r.taxes_applied}
+                      totalQuestionsAsked={r.total_questions_asked}
+                      yesAnswers={r.yes_answers}
+                      recruiterVerdict={r.recruiter_verdict}
+                      onDelete={() => {}}
+                    />
+                  ))}
+                </div>
+                <div className="liquid-glass rounded-xl p-4 text-center mt-4">
+                  <p className="text-sm text-white/80 mb-3">
+                    Want to see more results?{" "}
+                    <strong className="text-white">Sign up free</strong> to unlock all matches, save jobs, and keep your history across devices.
+                  </p>
+                  <button
+                    onClick={() => handleGuestAuthOpen("signup")}
+                    className="px-5 py-2.5 text-sm font-medium text-white bg-[var(--color-accent)] rounded-full hover:bg-[var(--color-accent-hover)] transition-colors"
+                  >
+                    Sign Up Free — Get +1 Bonus Search
+                  </button>
+                </div>
+              </>
+            )}
+
+            {!guestSearching && hasSearched && results.length === 0 && !guestFreeUsed && (
+              <div className="text-center py-20">
+                <p className="text-[var(--color-text-secondary)] text-sm">{resultMessage || "No matching jobs found. Try a different search."}</p>
+              </div>
+            )}
+
+            {!guestSearching && guestFreeUsed && results.length === 0 && (
+              <div className="text-center py-20">
+                <p className="text-[var(--color-text-secondary)] text-sm mb-4">You've used your free search. Sign up to continue.</p>
+                <button
+                  onClick={() => handleGuestAuthOpen("signup")}
+                  className="px-6 py-2.5 text-sm font-medium text-white bg-[var(--color-accent)] rounded-full hover:bg-[var(--color-accent-hover)] transition-colors"
+                >
+                  Sign Up Free
+                </button>
+              </div>
+            )}
+
+            {!guestSearching && !hasSearched && (
+              <div className="text-center py-16">
+                <p className="text-[var(--color-text-secondary)] text-sm">Search for jobs to get started — no signup required</p>
+              </div>
+            )}
+          </>
+        ) : (
+        <>
         {accountStatus === "blocked" ? (
           <BlockedAccountPage />
         ) : (
           <>
-            {emailVerified === false && authChecked && (
+            {emailVerified === false && authChecked && isLoggedIn && (
               <VerifyEmailBanner onOpenModal={() => setShowVerifyModal(true)} />
             )}
+            {showReengagementBanner && <ReengagementBanner discountPercent={40} />}
             <DashboardTabs active={activeTab} onChange={setActiveTab} />
 
         {activeTab === "search" && (
@@ -757,6 +1057,8 @@ export default function DashboardPage() {
         {activeTab === "rejected" && <RejectedJobs />}
               </>
             )}
+        </>
+        )}
       </div>
 
       {showLimitModal && (
@@ -783,13 +1085,15 @@ export default function DashboardPage() {
                   : "No remaining credits"}
               </p>
               <p className="text-sm text-white/90">
-                {showLimitModal === "LIMIT_001"
-                  ? "You've used all your free searches. Paid users receive priority AI processing. Upgrade your plan to continue searching."
+                {plan === "Free" && showLimitModal === "LIMIT_001"
+                  ? "You've used your free search. Ready to see more matches? Unlock Seeker for R79, once-off, no recurring charges."
+                  : plan !== "Free"
+                  ? "You've used all your searches this round. Grab another round whenever you need it, only pay when you're actually job hunting."
                   : showLimitModal === "LIMIT_002"
-                  ? "You've used all your CV generations. Upgrade your plan to generate more."
+                  ? "You've used all your CV generations. Top up with Seeker for R79, once-off, no recurring charges."
                   : showLimitModal === "LIMIT_003"
-                  ? "You've used all your Persistent Finder rounds. Upgrade your plan or buy more PF credits."
-                  : "You've run out of credits. Upgrade your plan."}
+                  ? "You've used all your Persistent Finder rounds. Top up or buy more PF credits."
+                  : "You've run out of credits. Grab another round whenever you need it."}
               </p>
               <div className="flex flex-wrap justify-center gap-3">
                 <button
@@ -877,6 +1181,31 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
+
+      <GuestSearchPopup
+        isOpen={showGuestPopup}
+        resultCount={guestResultCount}
+        onSignUp={() => {
+          setShowGuestPopup(false);
+          localStorage.setItem("fmsg-guest-popup-dismissed", "true");
+          handleGuestAuthOpen("signup");
+        }}
+        onDismiss={() => {
+          setShowGuestPopup(false);
+          localStorage.setItem("fmsg-guest-popup-dismissed", "true");
+        }}
+      />
+
+      <FirstSearchDiscountPopup
+        isOpen={showFirstSearchDiscount}
+        onDismiss={() => setShowFirstSearchDiscount(false)}
+      />
+
+      <AuthModal
+        isOpen={authOpen}
+        onClose={() => setAuthOpen(false)}
+        defaultTab={authTab}
+      />
 
       </PageTransitionWrapper>
     </DashboardLayout>

@@ -11,12 +11,9 @@ function getSupabase() {
 }
 
 const PLAN_DEFS = [
-  { name: "Seeker Monthly", key: "Seeker_monthly", interval: "monthly" },
-  { name: "Seeker Annual", key: "Seeker_annual", interval: "annually" },
-  { name: "Hunter Monthly", key: "Hunter_monthly", interval: "monthly" },
-  { name: "Hunter Annual", key: "Hunter_annual", interval: "annually" },
-  { name: "Pro Monthly", key: "Pro_monthly", interval: "monthly" },
-  { name: "Pro Annual", key: "Pro_annual", interval: "annually" },
+  { name: "Seeker", key: "Seeker" },
+  { name: "Hunter", key: "Hunter" },
+  { name: "Pro", key: "Pro" },
 ];
 
 export async function POST(request: NextRequest) {
@@ -47,8 +44,8 @@ export async function POST(request: NextRequest) {
       continue;
     }
 
-    const [planName, cycle] = def.key.split("_") as [string, "monthly" | "annual"];
-    const amount = PLAN_PRICES[planName]?.[cycle === "annual" ? "annual" : "monthly"];
+    const planName = def.key;
+    const amount = PLAN_PRICES[planName];
     if (!amount) {
       console.error(`[PAYSTACK] No price found for ${def.key}`);
       continue;
@@ -64,7 +61,7 @@ export async function POST(request: NextRequest) {
         body: JSON.stringify({
           name: def.name,
           amount,
-          interval: def.interval,
+          interval: "monthly",
           currency: "ZAR",
           description: `FMSG ${def.name} Plan`,
         }),

@@ -7,7 +7,6 @@ interface PFStepperProps {
   planName: string;
   value: number;
   onChange: (v: number) => void;
-  annual: boolean;
 }
 
 function getVolumeLabel(count: number): string {
@@ -19,10 +18,10 @@ function getVolumeLabel(count: number): string {
   return `R${last.price}/run`;
 }
 
-export function PFStepper({ planName, value, onChange, annual }: PFStepperProps) {
+export function PFStepper({ planName, value, onChange }: PFStepperProps) {
   const planPf = PLAN_LIMITS[planName]?.pf_balance ?? 0;
   const pricePerRun = calculatePFPrice(value);
-  const pfTotal = value * pricePerRun * (annual ? 12 : 1);
+  const pfTotal = value * pricePerRun;
   const volumeLabel = getVolumeLabel(value);
 
   return (

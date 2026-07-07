@@ -1055,6 +1055,33 @@ export async function POST(request: NextRequest) {
 
       const isAdmin = profile.is_admin ?? false;
 
+      // Plan expiry enforcement — revert expired paid plans to Free
+      if (!isAdmin && profile.plan !== "free" && profile.plan_expiry && new Date(profile.plan_expiry) < new Date()) {
+        const freeLimits = { searches: 2, cv_gens: 0, pf_balance: 0 };
+        await dataClient.from("profiles").update({
+          plan: "free",
+          plan_expiry: null,
+          search_balance: freeLimits.searches,
+          cv_generation_balance: freeLimits.cv_gens,
+          persistent_finder_balance: freeLimits.pf_balance,
+        }).eq("id", user.id);
+
+        // Send plan expired email in background
+        const planName = profile.plan.charAt(0).toUpperCase() + profile.plan.slice(1);
+        const { sendPlanExpired } = await import("@/lib/email");
+        sendPlanExpired(userEmail, planName).catch(() => {});
+
+        // Refresh profile after revert
+        const { data: refreshedProfile } = await dataClient.from("profiles").select("*").eq("id", user.id).maybeSingle();
+        if (refreshedProfile) {
+          profile.plan = "free";
+          profile.plan_expiry = null;
+          profile.search_balance = freeLimits.searches;
+          profile.cv_generation_balance = freeLimits.cv_gens;
+          profile.persistent_finder_balance = freeLimits.pf_balance;
+        }
+      }
+
       // Account security gates
       if (!isAdmin) {
         if (profile.account_status === "blocked") {

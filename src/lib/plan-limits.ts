@@ -11,10 +11,10 @@ export const PLAN_LIMITS: Record<string, PlanConfig> = {
   Pro: { searches: 15, cv_gens: 15, pf_balance: 4 },
 };
 
-export const PLAN_PRICES: Record<string, { monthly: number; annual: number }> = {
-  Seeker: { monthly: 7900, annual: 79000 },
-  Hunter: { monthly: 14900, annual: 149000 },
-  Pro: { monthly: 24900, annual: 249000 },
+export const PLAN_PRICES: Record<string, number> = {
+  Seeker: 7900,
+  Hunter: 14900,
+  Pro: 24900,
 };
 
 export const PF_DEFAULT_BY_TIER: Record<string, number> = {
@@ -39,16 +39,13 @@ export function calculatePFPrice(count: number): number {
 }
 
 export const PAYSTACK_PLAN_CODES: Record<string, string> = {
-  Seeker_monthly: process.env.NEXT_PUBLIC_PLAN_CODE_SEEKER_MONTHLY ?? "",
-  Seeker_annual: process.env.NEXT_PUBLIC_PLAN_CODE_SEEKER_ANNUAL ?? "",
-  Hunter_monthly: process.env.NEXT_PUBLIC_PLAN_CODE_HUNTER_MONTHLY ?? "",
-  Hunter_annual: process.env.NEXT_PUBLIC_PLAN_CODE_HUNTER_ANNUAL ?? "",
-  Pro_monthly: process.env.NEXT_PUBLIC_PLAN_CODE_PRO_MONTHLY ?? "",
-  Pro_annual: process.env.NEXT_PUBLIC_PLAN_CODE_PRO_ANNUAL ?? "",
+  Seeker: process.env.NEXT_PUBLIC_PLAN_CODE_SEEKER ?? "",
+  Hunter: process.env.NEXT_PUBLIC_PLAN_CODE_HUNTER ?? "",
+  Pro: process.env.NEXT_PUBLIC_PLAN_CODE_PRO ?? "",
 };
 
-export function formatPlanPrice(plan: string, cycle: "monthly" | "annual"): string {
-  const kobo = PLAN_PRICES[plan]?.[cycle] ?? 0;
+export function formatPlanPrice(plan: string): string {
+  const kobo = PLAN_PRICES[plan] ?? 0;
   return `R${(kobo / 100).toLocaleString("en-ZA", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 }
 
@@ -60,10 +57,10 @@ export function formatPFFromPrice(): string {
 export const PLAN_TIER_NAMES = ["Free", "Seeker", "Hunter", "Pro"] as const;
 
 export const TIER_FEATURES: Record<string, string[]> = {
-  Free: ["2 job searches per month", "Basic match scoring"],
-  Seeker: ["8 job searches per month", "4 CV generations", "1 PF search round", "Priority AI matching"],
-  Hunter: ["12 job searches per month", "8 CV generations", "2 PF search rounds", "Priority AI matching", "Advanced filtering"],
-  Pro: ["15 job searches per month", "15 CV generations", "4 PF search rounds", "Priority AI matching", "Advanced filtering", "Tailored CV output"],
+  Free: ["2 job searches", "Basic match scoring"],
+  Seeker: ["8 job searches", "4 CV generations", "1 PF search round", "Priority AI matching"],
+  Hunter: ["12 job searches", "8 CV generations", "2 PF search rounds", "Priority AI matching", "Advanced filtering"],
+  Pro: ["15 job searches", "15 CV generations", "4 PF search rounds", "Priority AI matching", "Advanced filtering", "Tailored CV output"],
 };
 
 export const TIER_POPULAR: Record<string, boolean> = {

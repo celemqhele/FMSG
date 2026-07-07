@@ -76,15 +76,15 @@ function WelcomeContent() {
               <div className="grid grid-cols-3 gap-4 mb-6">
                 <div className="text-center p-3 rounded-lg bg-white/5">
                   <div className="text-2xl font-bold text-white">{limits.searches}</div>
-                  <div className="text-xs text-white/70 mt-1">Searches / mo</div>
+                  <div className="text-xs text-white/70 mt-1">Searches</div>
                 </div>
                 <div className="text-center p-3 rounded-lg bg-white/5">
                   <div className="text-2xl font-bold text-white">{limits.cv_gens}</div>
-                  <div className="text-xs text-white/70 mt-1">CVs / mo</div>
+                  <div className="text-xs text-white/70 mt-1">CVs</div>
                 </div>
                 <div className="text-center p-3 rounded-lg bg-white/5">
                   <div className="text-2xl font-bold text-white">{limits.pf_balance}</div>
-                  <div className="text-xs text-white/70 mt-1">PF Rounds / mo</div>
+                  <div className="text-xs text-white/70 mt-1">PF Rounds</div>
                 </div>
               </div>
 

@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard/dashboard-layout";
 import { LiquidGlassCard } from "@/components/landing/liquid-glass-card";
 import { Loader2, Check, ArrowRight, ArrowLeft, CreditCard, Ban, Crosshair, ShoppingCart, X } from "lucide-react";
@@ -13,8 +13,7 @@ import { PFStepper } from "@/components/pricing/pf-stepper";
 
 interface Tier {
   name: string;
-  monthlyPrice: string;
-  annualPrice: string;
+  price: string;
   searches: number;
   cvGens: number;
   pfBalance: number;
@@ -24,11 +23,11 @@ interface Tier {
 
 function getTierFeatures(name: string, limits: { searches: number; cv_gens: number; pf_balance: number }): string[] {
   if (name === "Free") {
-    return ["2 job searches per month", "Basic match scoring"];
+    return ["2 job searches", "Basic match scoring"];
   }
   const features = [
-    `${limits.searches} job searches per month`,
-    `${limits.cv_gens} tailored CVs per month`,
+    `${limits.searches} job searches`,
+    `${limits.cv_gens} tailored CVs`,
   ];
   if (name === "Seeker") features.push("Full match scoring", "Banned company filtering", `${limits.pf_balance} Persistent Finder round`);
   if (name === "Hunter") features.push("Priority AI processing", "Advanced filtering", `${limits.pf_balance} Persistent Finder rounds`);
@@ -40,8 +39,7 @@ const tiers: Tier[] = PLAN_TIER_NAMES.map((name) => {
   const limits = PLAN_LIMITS[name] ?? { searches: 0, cv_gens: 0, pf_balance: 0 };
   return {
     name,
-    monthlyPrice: name === "Free" ? "R0" : formatPlanPrice(name, "monthly"),
-    annualPrice: name === "Free" ? "R0" : formatPlanPrice(name, "annual"),
+    price: name === "Free" ? "R0" : formatPlanPrice(name),
     searches: limits.searches,
     cvGens: limits.cv_gens,
     pfBalance: limits.pf_balance,
@@ -60,9 +58,9 @@ function daysRemaining(expiryDate: string): number {
 
 export default function ManageSubscriptionPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { startTransition, endTransition } = useTransition();
   const supabase = createClient();
-  const [annual, setAnnual] = useState(false);
   const [processing, setProcessing] = useState<string | null>(null);
   const [successToast, setSuccessToast] = useState(false);
   const [successMsg, setSuccessMsg] = useState("");
@@ -70,6 +68,9 @@ export default function ManageSubscriptionPage() {
   const [hasSubscription, setHasSubscription] = useState(false);
   const [paystackReady, setPaystackReady] = useState(false);
   const [pfCounts, setPfCounts] = useState<Record<string, number>>({});
+  const [discountPercent, setDiscountPercent] = useState<number | null>(null);
+  const [discountType, setDiscountType] = useState<string | null>(null);
+  const [discountValidated, setDiscountValidated] = useState(false);
 
   // Subscription overview state
   const [loading, setLoading] = useState(true);
@@ -88,6 +89,31 @@ export default function ManageSubscriptionPage() {
   const [buyingPf, setBuyingPf] = useState(false);
 
   useEffect(() => { endTransition(); }, [endTransition]);
+
+  useEffect(() => {
+    const discountParam = searchParams.get("discount");
+    if (!discountParam) return;
+
+    const type = discountParam === "first_order" ? "first_order" : discountParam === "reengagement_40" ? "reengagement_40" : null;
+    if (!type) return;
+
+    supabase.auth.getSession().then(async ({ data: { session } }: { data: { session: any } }) => {
+      if (!session) return;
+      try {
+        const res = await fetch(`/api/discount/validate?type=${type}`, {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.eligible) {
+            setDiscountPercent(data.discount_percent);
+            setDiscountType(type === "first_order" ? "FIRST_ORDER_50" : "REENGAGEMENT_40");
+          }
+        }
+      } catch {}
+      setDiscountValidated(true);
+    });
+  }, [searchParams, supabase]);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -333,7 +359,7 @@ export default function ManageSubscriptionPage() {
           },
           body: JSON.stringify({
             plan: tier.name,
-            billing_cycle: annual ? "annual" : "monthly",
+            billing_cycle: "once",
             pf_count: totalPf,
           }),
         });
@@ -367,13 +393,17 @@ export default function ManageSubscriptionPage() {
         return;
       }
 
-      const baseKobo = (PLAN_PRICES[tier.name] ?? { monthly: 0, annual: 0 })[annual ? "annual" : "monthly"];
+      const baseKobo = (PLAN_PRICES[tier.name] ?? 0);
       const extraPf = pfCounts[tier.name] ?? PF_DEFAULT_BY_TIER[tier.name] ?? 0;
       const basePf = PLAN_LIMITS[tier.name]?.pf_balance ?? 0;
       const totalPf = basePf + extraPf;
       const pfPriceZar = calculatePFPrice(extraPf);
-      const pfKobo = extraPf * pfPriceZar * 100 * (annual ? 12 : 1);
-      const amount = baseKobo + pfKobo;
+      const pfKobo = extraPf * pfPriceZar * 100;
+      let amount = baseKobo + pfKobo;
+
+      if (discountPercent && discountType) {
+        amount = Math.round(amount * (1 - discountPercent / 100));
+      }
 
       try {
         const sRes = await supabase.auth.getSession();
@@ -394,12 +424,12 @@ export default function ManageSubscriptionPage() {
           amount,
           currency: "ZAR",
           ref: "FMSG-" + Date.now(),
-          metadata: { plan: tier.name, billing_cycle: annual ? "annual" : "monthly", pf_count: totalPf },
+          metadata: { plan: tier.name, billing_cycle: "once", pf_count: totalPf, ...(discountType ? { discount_code: discountType } : {}) },
           callback: function (response: { reference: string }) {
             fetch("/api/verify-payment", {
               method: "POST",
               headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" },
-              body: JSON.stringify({ reference: response.reference, plan: tier.name, billing_cycle: annual ? "annual" : "monthly" }),
+              body: JSON.stringify({ reference: response.reference, plan: tier.name, billing_cycle: "once" }),
             }).then((verifyRes) => {
               if (verifyRes.ok) {
                 setProcessing(null);
@@ -479,11 +509,11 @@ export default function ManageSubscriptionPage() {
               <div>
                 <span className="text-xs text-white/70 block mb-1">Billing</span>
                 <span className="text-lg font-semibold text-white capitalize">
-                  {subscription.billing_cycle === "annual" ? "Annual" : "Monthly"}
+                  Once-off
                 </span>
                 {subscription.amount && (
                   <span className="text-xs text-white/60 ml-2">
-                    R{(subscription.amount / 100).toLocaleString("en-ZA")}/{subscription.billing_cycle === "annual" ? "yr" : "mo"}
+                    R{(subscription.amount / 100).toLocaleString("en-ZA")}
                   </span>
                 )}
               </div>
@@ -524,7 +554,7 @@ export default function ManageSubscriptionPage() {
             {/* Buy PF Credits */}
             <div className="mt-6 pt-6 border-t border-white/10">
               <h3 className="text-sm font-medium text-white mb-3">Buy Extra PF Runs</h3>
-              <p className="text-xs text-white/70 mb-3">Purchase one-time Persistent Finder runs that are added to your balance immediately. To change your monthly refill amount, switch to a different plan.</p>
+              <p className="text-xs text-white/70 mb-3">Purchase one-time Persistent Finder runs that are added to your balance immediately.</p>
               <div className="flex items-center gap-4 flex-wrap">
                 <div className="flex items-center gap-3">
                   <button
@@ -623,21 +653,28 @@ export default function ManageSubscriptionPage() {
           </div>
         )}
 
+        {discountPercent && (
+          <div className="mb-6 p-4 rounded-xl bg-green-500/10 border border-green-500/30 text-center">
+            <p className="text-sm font-semibold text-green-400">
+              {discountPercent}% off applied — one-time offer
+            </p>
+            <p className="text-xs text-green-400/80 mt-1">
+              This discount will be applied at checkout. Only valid for this purchase.
+            </p>
+          </div>
+        )}
+
         {/* Switch Plan Section */}
         <div className="mb-8">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-bold text-white">Switch Plan</h2>
-            <div className="inline-flex items-center gap-1 p-1 rounded-full bg-white/10 border border-white/10">
-              <button onClick={() => setAnnual(false)} className={`px-4 py-2 text-sm font-medium rounded-full transition-colors ${!annual ? "bg-white/15 text-white shadow-[var(--shadow-sm)]" : "text-white/80 hover:text-white"}`}>Monthly</button>
-              <button onClick={() => setAnnual(true)} className={`px-4 py-2 text-sm font-medium rounded-full transition-colors ${annual ? "bg-white/15 text-white shadow-[var(--shadow-sm)]" : "text-white/80 hover:text-white"}`}>Annual <span className="text-[var(--color-success)]">Save 2 months</span></button>
-            </div>
           </div>
           <p className="text-sm text-white/70 mb-6">
             {subscription && subscription.status === "cancelled" && subscription.expiry_date && new Date(subscription.expiry_date) > new Date()
-              ? "Your subscription is cancelled. You can switch to a new plan or re-subscribe."
+              ? "Your current access is cancelled. Top up anytime when you need more searches."
               : hasSubscription
-              ? "Upgrades take effect immediately. Downgrades apply at the end of your current billing period."
-              : "Select a plan to start your subscription."}
+              ? "Top up anytime. You only pay when you're actually job hunting."
+              : "Pay once, no auto-renewal. Come back and top up whenever you're job hunting again."}
           </p>
         </div>
 
@@ -646,9 +683,8 @@ export default function ManageSubscriptionPage() {
             const isCurrent = tier.name.toLowerCase() === currentPlan;
             const pfCount = pfCounts[tier.name] ?? PF_DEFAULT_BY_TIER[tier.name] ?? 0;
             const pricePerRun = calculatePFPrice(pfCount);
-            const pfTotal = pfCount * pricePerRun * (annual ? 12 : 1);
-            const basePrice = annual ? tier.annualPrice : tier.monthlyPrice;
-            const baseKobo = (PLAN_PRICES[tier.name] ?? { monthly: 0, annual: 0 })[annual ? "annual" : "monthly"];
+            const pfTotal = pfCount * pricePerRun;
+            const baseKobo = (PLAN_PRICES[tier.name] ?? 0);
             const grandTotalKobo = baseKobo + pfTotal * 100;
             const grandTotal = (grandTotalKobo / 100).toLocaleString("en-ZA", { style: "currency", currency: "ZAR", minimumFractionDigits: 0 });
 
@@ -664,10 +700,10 @@ export default function ManageSubscriptionPage() {
                 <h3 className="text-lg font-semibold text-white">{tier.name}</h3>
                 <div className="mt-4">
                   <span className="text-3xl font-bold text-white">{tier.name === "Free" ? "R0" : grandTotal}</span>
-                  <span className="ml-1 text-sm text-white/70">/{annual ? "year" : "month"}</span>
+                  <span className="ml-1 text-sm text-white/70">/once-off</span>
                 </div>
                 <div className="mt-1 flex items-center gap-1.5 text-xs text-white/60">
-                  <span>{basePrice}/{annual ? "yr" : "mo"}</span>
+                  <span>{tier.price} base</span>
                   {pfCount > 0 && (
                     <>
                       <span>+</span>
@@ -684,7 +720,6 @@ export default function ManageSubscriptionPage() {
                       planName={tier.name}
                       value={pfCount}
                       onChange={(v) => setPfCounts((prev) => ({ ...prev, [tier.name]: v }))}
-                      annual={annual}
                     />
                   </div>
                 )}
@@ -712,7 +747,7 @@ export default function ManageSubscriptionPage() {
                   ) : tier.name === "Free" ? (
                     "Free"
                   ) : (
-                    `Switch to ${tier.name}`
+                    `Get ${tier.name}`
                   )}
                 </button>
               </LiquidGlassCard>
@@ -749,7 +784,7 @@ export default function ManageSubscriptionPage() {
               <p className="text-sm text-gray-500 mb-4">
                 A <strong className="text-gray-700">R1.00</strong> verification charge
                 will be placed on your card. This amount will be credited toward
-                your next bill.
+                your account.
               </p>
               <div className="flex justify-center gap-3">
                 <button
@@ -787,13 +822,13 @@ export default function ManageSubscriptionPage() {
             >
               <p className="text-gray-900 font-semibold mb-2">Cancel {subscription?.plan ? subscription.plan.charAt(0).toUpperCase() + subscription.plan.slice(1) : ""} plan?</p>
               <p className="text-sm text-gray-500 mb-4">
-                You'll keep access to your current plan features until{" "}
+                You&apos;ll keep access to your current plan features until{" "}
                 <strong className="text-gray-700">
                   {subscription?.expiry_date
                     ? new Date(subscription.expiry_date).toLocaleDateString("en-ZA", { day: "numeric", month: "long", year: "numeric" })
-                    : "the end of your billing period"}
+                    : "your access expires"}
                 </strong>.
-                After that, your account will switch to the Free tier.
+                After that, your account will switch to the Free tier. No auto-renewal, no surprises.
               </p>
               <div className="flex justify-center gap-3">
                 <button
