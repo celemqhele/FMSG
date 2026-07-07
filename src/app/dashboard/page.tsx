@@ -14,6 +14,8 @@ const AuthModal = dynamic(() => import("@/components/auth/auth-modal").then((mod
 import { GuestSearchPopup } from "@/components/dashboard/guest-search-popup";
 import { FirstSearchDiscountPopup } from "@/components/dashboard/first-search-discount-popup";
 import { ReengagementBanner } from "@/components/dashboard/reengagement-banner";
+import { GuestPFWalkthrough } from "@/components/dashboard/guest-pf-walkthrough";
+import { GuestCVModal } from "@/components/dashboard/guest-cv-modal";
 import { DashboardTabs, type TabId } from "@/components/dashboard/dashboard-tabs";
 import { BalanceChips } from "@/components/dashboard/balance-chips";
 import { FilterSortBar, type SortMode } from "@/components/dashboard/filter-sort-bar";
@@ -135,6 +137,11 @@ export default function DashboardPage() {
   const [showGuestPopup, setShowGuestPopup] = useState(false);
   const [showFirstSearchDiscount, setShowFirstSearchDiscount] = useState(false);
   const [showReengagementBanner, setShowReengagementBanner] = useState(false);
+  const [showPFWalkthrough, setShowPFWalkthrough] = useState(false);
+  const [showCVModal, setShowCVModal] = useState(false);
+  const [guestPFMode, setGuestPFMode] = useState(false);
+  const [guestDateFilter, setGuestDateFilter] = useState<number | null>(null);
+  const [guestProfile, setGuestProfile] = useState<{ job_titles: string[]; location: string; industry: string } | null>(null);
   const [guestSearching, setGuestSearching] = useState(false);
   const [guestProgress, setGuestProgress] = useState(0);
   const [guestStatusActive, setGuestStatusActive] = useState("");
@@ -213,6 +220,22 @@ export default function DashboardPage() {
         }
         const freeUsed = localStorage.getItem("fmsg-guest-free-used");
         if (freeUsed === "true") setGuestFreeUsed(true);
+
+        const storedProfile = localStorage.getItem("fmsg-guest-profile");
+        if (storedProfile) {
+          try {
+            const p = JSON.parse(storedProfile);
+            if (p.job_titles?.length > 0) {
+              setGuestProfile(p);
+            }
+          } catch {}
+        }
+
+        if (!storedProfile) {
+          setShowCVModal(true);
+        } else if (!localStorage.getItem("fmsg-pf-walkthrough-dismissed")) {
+          setShowPFWalkthrough(true);
+        }
       }
     });
 
@@ -383,13 +406,13 @@ export default function DashboardPage() {
     setResultMessage("");
   }, []);
 
-  const handleGuestSearch = useCallback(async (query: string) => {
+  const handleGuestSearch = useCallback(async (query: string, pfMode?: boolean, dateFilterDays?: number | null) => {
     setGuestSearching(true);
     setGuestProgress(0);
     setHasSearched(true);
     setResultMessage("");
     setGuestStatusCompleted([]);
-    setGuestStatusActive("Searching live job listings");
+    setGuestStatusActive(pfMode ? "Generating search variations..." : "Searching live job listings");
     setVideoFast(true);
 
     abortRef.current = new AbortController();
@@ -398,7 +421,7 @@ export default function DashboardPage() {
       const res = await fetch("/api/search/guest", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query }),
+        body: JSON.stringify({ query, pf_mode: pfMode, date_filter_days: dateFilterDays ?? undefined }),
         signal: abortRef.current.signal,
       });
 
@@ -438,6 +461,32 @@ export default function DashboardPage() {
     setAuthOpen(false);
   }, []);
 
+  const handleCVComplete = useCallback((profile: { job_titles: string[]; location: string; industry: string }) => {
+    setGuestProfile(profile);
+    localStorage.setItem("fmsg-guest-profile", JSON.stringify(profile));
+    setShowCVModal(false);
+    setShowPFWalkthrough(true);
+  }, []);
+
+  const handleCVSkip = useCallback(() => {
+    setShowCVModal(false);
+    if (!localStorage.getItem("fmsg-pf-walkthrough-dismissed")) {
+      setShowPFWalkthrough(true);
+    }
+  }, []);
+
+  const handlePFWalkthroughStart = useCallback(() => {
+    setShowPFWalkthrough(false);
+    localStorage.setItem("fmsg-pf-walkthrough-dismissed", "true");
+    setGuestPFMode(true);
+    setGuestDateFilter(7);
+  }, []);
+
+  const handlePFWalkthroughDismiss = useCallback(() => {
+    setShowPFWalkthrough(false);
+    localStorage.setItem("fmsg-pf-walkthrough-dismissed", "true");
+  }, []);
+
   const handleAuthSuccess = useCallback(async () => {
     setAuthOpen(false);
     const supabase = createClient();
@@ -461,10 +510,18 @@ export default function DashboardPage() {
       } catch {}
     }
 
+    const guestCookieId = document.cookie.split("; ").find(row => row.startsWith("fmsg-guest="))?.split("=")[1] ?? "";
+
+    const storedProfile = localStorage.getItem("fmsg-guest-profile");
+    let guestProfile = null;
+    if (storedProfile) {
+      try { guestProfile = JSON.parse(storedProfile); } catch {}
+    }
+
     fetch("/api/auth/onboard", {
       method: "POST",
       headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ guest_history: guestHistory }),
+      body: JSON.stringify({ guest_history: guestHistory, guest_cookie_id: guestCookieId, guest_profile: guestProfile }),
     }).catch(console.error);
 
     localStorage.removeItem("fmsg-guest-results");
@@ -840,12 +897,14 @@ export default function DashboardPage() {
             </div>
 
             <GuestSearchPill
-              onSearch={(q) => {
-                handleGuestSearch(q);
+              onSearch={(q, pfMode, dateFilter) => {
                 localStorage.setItem("fmsg-guest-last-query", q);
+                handleGuestSearch(q, pfMode, dateFilter);
               }}
               searching={guestSearching}
               onAbort={handleGuestAbort}
+              initialPfMode={guestPFMode}
+              initialDateFilter={guestDateFilter}
             />
 
             {guestSearching && (
@@ -1205,6 +1264,18 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
+
+      <GuestPFWalkthrough
+        isOpen={showPFWalkthrough}
+        onStart={handlePFWalkthroughStart}
+        onDismiss={handlePFWalkthroughDismiss}
+      />
+
+      <GuestCVModal
+        isOpen={showCVModal}
+        onComplete={handleCVComplete}
+        onSkip={handleCVSkip}
+      />
 
       <GuestSearchPopup
         isOpen={showGuestPopup}

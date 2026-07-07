@@ -11,7 +11,7 @@ export function Hero({ onCtaClick, isLoggedIn }: HeroProps) {
   return (
     <section className="flex flex-col items-center justify-center px-6 pt-28 pb-20 md:pt-48 md:pb-32 text-center">
       <h1 className="max-w-3xl text-3xl md:text-6xl font-semibold tracking-tight text-white leading-tight">
-        Stop guessing if your CV works. Get AI-matched to jobs that actually fit, pay once, use it, come back whenever you need it again. No subscriptions, no surprises.
+        Get AI-matched to jobs that actually fit. Pay once, no subscriptions.
       </h1>
       <p className="mt-5 md:mt-6 max-w-xl text-base md:text-xl text-white/80 leading-relaxed">
         Upload your CV once. AI matches you to live job listings that fit your

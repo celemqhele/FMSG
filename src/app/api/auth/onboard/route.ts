@@ -4,6 +4,12 @@ import { createClient } from "@supabase/supabase-js";
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
+function getIP(request: NextRequest): string {
+  return request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
+    ?? request.headers.get("x-real-ip")
+    ?? "127.0.0.1";
+}
+
 export async function POST(request: NextRequest) {
   const authHeader = request.headers.get("Authorization")?.replace("Bearer ", "");
   if (!authHeader) {
@@ -18,11 +24,11 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json();
-  const { guest_history } = body;
+  const { guest_history, guest_cookie_id, guest_profile } = body;
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("search_balance, created_at")
+    .select("search_balance, persistent_finder_balance, created_at")
     .eq("id", user.id)
     .maybeSingle();
 
@@ -34,11 +40,35 @@ export async function POST(request: NextRequest) {
   const isNewSignup = profile.created_at && new Date(profile.created_at) > fiveMinAgo;
 
   let newSearchBalance = profile.search_balance ?? 2;
+  let pfBonus = 0;
   let migrated = 0;
+  let profileMigrated = false;
 
   if (isNewSignup) {
     newSearchBalance += 1;
     await supabase.from("profiles").update({ search_balance: newSearchBalance }).eq("id", user.id);
+
+    // Check if guest already used their free PF
+    const ip = getIP(request);
+    const { data: guestRow } = await supabase
+      .from("guest_searches")
+      .select("used_pf")
+      .or(`ip.eq.${ip}${guest_cookie_id ? `,cookie_id.eq.${guest_cookie_id}` : ""}`)
+      .order("searched_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const alreadyUsedPf = guestRow?.used_pf === true;
+
+    if (!alreadyUsedPf) {
+      pfBonus = 1;
+      await supabase.rpc("stack_plan_balances", {
+        p_user_id: user.id,
+        p_searches: 0,
+        p_cv_gens: 0,
+        p_pf: pfBonus,
+      });
+    }
   }
 
   if (Array.isArray(guest_history) && guest_history.length > 0) {
@@ -73,5 +103,17 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  return NextResponse.json({ ok: true, search_balance: newSearchBalance, migrated });
+  if (guest_profile && guest_profile.job_titles?.length > 0) {
+    await supabase.from("search_profiles").delete().eq("user_id", user.id).eq("is_default", true);
+    const { error: spErr } = await supabase.from("search_profiles").insert({
+      user_id: user.id,
+      name: "Imported from CV",
+      job_titles: guest_profile.job_titles ?? [],
+      location: guest_profile.location ?? "",
+      is_default: true,
+    });
+    if (!spErr) profileMigrated = true;
+  }
+
+  return NextResponse.json({ ok: true, search_balance: newSearchBalance, pf_bonus: pfBonus, migrated, profile_migrated: profileMigrated });
 }

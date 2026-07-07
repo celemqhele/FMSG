@@ -1,23 +1,35 @@
 "use client";
 
 import { useState } from "react";
-import { Search, X } from "lucide-react";
+import { Search, Crosshair, X, Calendar } from "lucide-react";
 
 interface GuestSearchPillProps {
-  onSearch: (query: string) => void;
+  onSearch: (query: string, pfMode?: boolean, dateFilterDays?: number | null) => void;
   searching: boolean;
   onAbort: () => void;
+  initialPfMode?: boolean;
+  initialDateFilter?: number | null;
 }
 
-export function GuestSearchPill({ onSearch, onAbort, searching }: GuestSearchPillProps) {
+export function GuestSearchPill({ onSearch, onAbort, searching, initialPfMode = false, initialDateFilter = null }: GuestSearchPillProps) {
   const [query, setQuery] = useState("");
+  const [pfMode, setPfMode] = useState(initialPfMode);
   const [showAbortConfirm, setShowAbortConfirm] = useState(false);
   const [abortMounted, setAbortMounted] = useState(false);
+  const [dateFilterDays, setDateFilterDays] = useState<number | null>(initialDateFilter);
+  const [showDateFilter, setShowDateFilter] = useState(false);
+
+  const DATE_OPTIONS = [
+    { label: "Any date", value: null },
+    { label: "Last 24h", value: 1 },
+    { label: "Last 7d", value: 7 },
+    { label: "Last 3w", value: 21 },
+  ] as const;
 
   const handleSearch = () => {
     const trimmed = query.trim();
     if (!trimmed || searching) return;
-    onSearch(trimmed);
+    onSearch(trimmed, pfMode, dateFilterDays);
   };
 
   const openAbortConfirm = () => {
@@ -36,7 +48,7 @@ export function GuestSearchPill({ onSearch, onAbort, searching }: GuestSearchPil
   };
 
   return (
-    <div className="w-full max-w-2xl mx-auto">
+    <div className="w-full max-w-2xl mx-auto space-y-2">
       <div className="liquid-glass rounded-full px-4 py-3 flex items-center gap-3">
         {searching ? (
           <button
@@ -54,7 +66,7 @@ export function GuestSearchPill({ onSearch, onAbort, searching }: GuestSearchPil
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") handleSearch(); }}
-          placeholder="Try: Software Developer Johannesburg"
+          placeholder={pfMode ? "Try: Software Developer Johannesburg" : "Try: Software Developer Johannesburg"}
           disabled={searching}
           className="flex-1 bg-transparent text-white placeholder-white/40 text-base outline-none"
         />
@@ -68,8 +80,55 @@ export function GuestSearchPill({ onSearch, onAbort, searching }: GuestSearchPil
           </button>
         )}
       </div>
-      <p className="text-center text-xs text-white/40 mt-2">
-        1 free search — no signup required
+
+      <div className="flex items-center justify-center gap-2">
+        <button
+          onClick={() => setPfMode(!pfMode)}
+          className={`inline-flex items-center gap-1.5 px-3 py-1 text-xs rounded-full transition-colors ${
+            pfMode
+              ? "bg-[var(--color-accent)]/20 text-[var(--color-accent)] border border-[var(--color-accent)]/30"
+              : "text-white/50 hover:text-white/80 border border-white/10 hover:border-white/20"
+          }`}
+        >
+          <Crosshair size={12} />
+          Persistent Finder {pfMode && "(on)"}
+        </button>
+
+        <div className="relative">
+          <button
+            onClick={() => setShowDateFilter(!showDateFilter)}
+            className={`inline-flex items-center gap-1.5 px-3 py-1 text-xs rounded-full transition-colors ${
+              dateFilterDays != null
+                ? "bg-[var(--color-accent)]/20 text-[var(--color-accent)] border border-[var(--color-accent)]/30"
+                : "text-white/50 hover:text-white/80 border border-white/10 hover:border-white/20"
+            }`}
+          >
+            <Calendar size={12} />
+            {dateFilterDays != null ? DATE_OPTIONS.find(o => o.value === dateFilterDays)?.label : "Any date"}
+          </button>
+
+          {showDateFilter && (
+            <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 liquid-glass rounded-xl p-1 z-10 min-w-[140px]">
+              {DATE_OPTIONS.map((opt) => (
+                <button
+                  key={opt.label}
+                  onClick={() => { setDateFilterDays(opt.value); setShowDateFilter(false); }}
+                  className={`block w-full text-left px-3 py-2 text-xs rounded-lg transition-colors ${
+                    dateFilterDays === opt.value
+                      ? "bg-white/10 text-white"
+                      : "text-white/70 hover:text-white hover:bg-white/5"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <p className="text-center text-xs text-white/40">
+        {pfMode ? "1 free PF search — multi-round AI matching" : "1 free search — no signup required"}
       </p>
 
       {showAbortConfirm && (

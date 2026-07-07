@@ -197,21 +197,32 @@ export async function POST(request: NextRequest) {
 
   const { data: existing } = await supabase
     .from("guest_searches")
-    .select("id")
+    .select("id, used_pf")
     .or(`ip.eq.${ip},cookie_id.eq.${cookieId}`)
     .limit(1)
     .maybeSingle();
 
-  if (existing) {
-    const headers = new Headers();
-    headers.set("Set-Cookie", `fmsg-guest=${cookieId}; Path=/; Max-Age=86400; SameSite=Lax`);
-    return NextResponse.json({ code: "GUEST_LIMIT", free_search_used: true, message: "You've used your free search. Sign up for more." }, { status: 403, headers });
-  }
-
   const body = await request.json();
-  const { query } = body;
+  const { query, pf_mode, date_filter_days } = body;
   if (!query || typeof query !== "string" || query.trim().length === 0) {
     return NextResponse.json({ error: "Missing search query" }, { status: 400 });
+  }
+
+  const isPfMode = !!pf_mode;
+  const dateDays = date_filter_days ? parseInt(String(date_filter_days), 10) : undefined;
+
+  if (existing) {
+    if (isPfMode) {
+      if (existing.used_pf) {
+        const headers = new Headers();
+        headers.set("Set-Cookie", `fmsg-guest=${cookieId}; Path=/; Max-Age=86400; SameSite=Lax`);
+        return NextResponse.json({ code: "PF_LIMIT", message: "You've already used your free PF search. Sign up for more." }, { status: 403, headers });
+      }
+    } else {
+      const headers = new Headers();
+      headers.set("Set-Cookie", `fmsg-guest=${cookieId}; Path=/; Max-Age=86400; SameSite=Lax`);
+      return NextResponse.json({ code: "GUEST_LIMIT", free_search_used: true, message: "You've used your free search. Sign up for more." }, { status: 403, headers });
+    }
   }
 
   const q = query.trim();
@@ -223,35 +234,81 @@ export async function POST(request: NextRequest) {
       try {
         writer.send({ type: "found_results", count: 0, progress: 10 });
 
-        let rawJobs: SerpJob[] = [];
-        try {
-          rawJobs = await searchGoogleJobs({ q, hl: "en", gl: "za" });
-        } catch (err) {
-          console.error("[GUEST] SerpAPI error:", err);
-          writer.send({ type: "error", code: "SEARCH_FAILED", message: "Search service unavailable. Try again later.", progress: 0 });
-          writer.close();
-          return;
+        let queries: string[] = [q];
+
+        if (isPfMode) {
+          writer.send({ type: "pf_round", round: 0, max: 3, query: "Generating search variations...", progress: 10 });
+          try {
+            const expansion = await callAIWithFallback(
+              "You are a job search assistant. Generate 3 alternative search queries for the given job search. Vary the wording, synonyms, and related job titles. Return ONLY a JSON array of 3 strings. No explanation.",
+              `Original query: "${q}". Generate 3 alternative Google job search queries.`,
+              "guest-pf-expand",
+              { responseMimeType: "application/json", temperature: 0.7, maxOutputTokens: 512 },
+            );
+            const parsed = JSON.parse(expansion);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              queries = [q, ...parsed.slice(0, 3)];
+            }
+          } catch (err) {
+            console.error("[GUEST] PF query expansion failed:", err);
+          }
         }
 
-        if (!rawJobs || rawJobs.length === 0) {
+        const allRaw: SerpJob[] = [];
+        const seenKeys = new Set<string>();
+
+        for (let round = 0; round < queries.length; round++) {
+          const searchQuery = queries[round];
+          if (isPfMode) {
+            writer.send({ type: "pf_round", round: round + 1, max: queries.length, query: searchQuery, progress: 15 + Math.round((round / queries.length) * 20) });
+          }
+
+          try {
+            const jobs = await searchGoogleJobs({ q: searchQuery, hl: "en", gl: "za" });
+            if (jobs && jobs.length > 0) {
+              for (const job of jobs) {
+                const key = `${(job.title ?? "").toLowerCase()}|${(job.company_name ?? "").toLowerCase()}`;
+                if (!seenKeys.has(key)) {
+                  seenKeys.add(key);
+                  allRaw.push(job);
+                }
+              }
+            }
+          } catch (err) {
+            console.error(`[GUEST] Search round ${round + 1} failed:`, err);
+          }
+
+          if (allRaw.length >= 30) break;
+        }
+
+        if (!allRaw || allRaw.length === 0) {
           writer.send({ type: "complete", results: [], progress: 100, message: "No jobs found for your search. Try a different query." });
           writer.close();
-          await supabase.from("guest_searches").insert({ ip, cookie_id: cookieId });
+          await supabase.from("guest_searches").insert({ ip, cookie_id: cookieId, used_pf: isPfMode });
           return;
         }
 
-        const filtered = rawJobs.filter((j: any) => {
+        const filtered = allRaw.filter((j: any) => {
           const url = buildJobUrl(j);
           return !isBlacklistedByDomain(url);
         });
 
-        writer.send({ type: "found_results", count: filtered.length, progress: 20 });
+        if (dateDays) {
+          const cutoff = Date.now() - dateDays * 24 * 60 * 60 * 1000;
+          filtered.sort((a: any, b: any) => {
+            const aMs = (a as any)._postedAtMs ?? 0;
+            const bMs = (b as any)._postedAtMs ?? 0;
+            return bMs - aMs;
+          });
+        }
 
-        const MAX_JOBS = 10;
+        writer.send({ type: "found_results", count: filtered.length, progress: 40 });
+
+        const MAX_JOBS = isPfMode ? Math.min(filtered.length, 15) : 10;
         const toScore = filtered.slice(0, MAX_JOBS);
 
         for (let i = 0; i < toScore.length; i++) {
-          writer.send({ type: "screening_job", current: i + 1, total: toScore.length, progress: 30 + Math.round((i / toScore.length) * 15) });
+          writer.send({ type: "screening_job", current: i + 1, total: toScore.length, progress: 45 + Math.round((i / toScore.length) * 15) });
         }
 
         const scored: any[] = [];
@@ -265,9 +322,9 @@ export async function POST(request: NextRequest) {
 
         writer.send({ type: "almost_done", progress: 95 });
 
-        await supabase.from("guest_searches").insert({ ip, cookie_id: cookieId });
+        await supabase.from("guest_searches").insert({ ip, cookie_id: cookieId, used_pf: isPfMode });
 
-        writer.send({ type: "complete", results: top3, progress: 100 });
+        writer.send({ type: "complete", results: top3, progress: 100, pf_mode: isPfMode, pf_rounds: isPfMode ? queries.length : undefined });
         writer.close();
       } catch (err) {
         console.error("[GUEST] Stream error:", err);
