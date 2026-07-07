@@ -25,9 +25,11 @@ const JOB_TYPE_OPTIONS = [
 
 interface OnboardingFormProps {
   onOnboarded?: () => void;
+  guestMode?: boolean;
+  onGuestComplete?: (data: { job_titles: string[]; location: string; industry: string }) => void;
 }
 
-export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
+export function OnboardingForm({ onOnboarded, guestMode, onGuestComplete }: OnboardingFormProps) {
   const [step, setStep] = useState<Step>("upload");
   const [dragOver, setDragOver] = useState(false);
   const [error, setError] = useState("");
@@ -54,28 +56,36 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
     const formData = new FormData();
     formData.append("file", file);
     try {
-      const res = await fetch("/api/extract-cv", {
-        method: "POST",
-        headers: session ? { Authorization: `Bearer ${session.access_token}` } : {},
-        body: formData,
-      });
+      const apiUrl = guestMode ? "/api/cv/parse-guest" : "/api/extract-cv";
+      const headers: Record<string, string> = {};
+      if (session && !guestMode) headers["Authorization"] = `Bearer ${session.access_token}`;
+
+      const res = await fetch(apiUrl, { method: "POST", headers, body: formData });
       const data = await res.json();
       if (!res.ok) {
-        setError(data.code ? `${data.code}: ${data.error}` : data.error || "Extraction failed.");
+        setError(data.error || "Extraction failed.");
         setStep("upload");
         return;
       }
-      setName(data.name ?? "");
-      setSurname(data.surname ?? "");
-      setPhone(data.phone ?? "");
-      setAddress(data.address ?? "");
-      setJobTitles(data.job_titles ?? []);
-      setJobTypes(data.job_types ?? []);
-      setLocation(data.preferred_location ?? "");
-      setCurrentSalary(data.current_salary ?? null);
-      setDesiredSalary(data.desired_salary ?? null);
-      setCvFilePath(data.cv_file_path ?? "");
-      setStep("review");
+      if (guestMode) {
+        onGuestComplete?.({
+          job_titles: data.job_titles ?? [],
+          location: data.location ?? "",
+          industry: data.industry ?? "",
+        });
+      } else {
+        setName(data.name ?? "");
+        setSurname(data.surname ?? "");
+        setPhone(data.phone ?? "");
+        setAddress(data.address ?? "");
+        setJobTitles(data.job_titles ?? []);
+        setJobTypes(data.job_types ?? []);
+        setLocation(data.preferred_location ?? "");
+        setCurrentSalary(data.current_salary ?? null);
+        setDesiredSalary(data.desired_salary ?? null);
+        setCvFilePath(data.cv_file_path ?? "");
+        setStep("review");
+      }
     } catch {
       setError("Could not analyze CV. Please try again.");
       setStep("upload");

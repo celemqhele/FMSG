@@ -15,7 +15,6 @@ import { GuestSearchPopup } from "@/components/dashboard/guest-search-popup";
 import { FirstSearchDiscountPopup } from "@/components/dashboard/first-search-discount-popup";
 import { ReengagementBanner } from "@/components/dashboard/reengagement-banner";
 import { GuestPFWalkthrough } from "@/components/dashboard/guest-pf-walkthrough";
-import { GuestCVModal } from "@/components/dashboard/guest-cv-modal";
 import { DashboardTabs, type TabId } from "@/components/dashboard/dashboard-tabs";
 import { BalanceChips } from "@/components/dashboard/balance-chips";
 import { FilterSortBar, type SortMode } from "@/components/dashboard/filter-sort-bar";
@@ -461,20 +460,6 @@ export default function DashboardPage() {
     setAuthOpen(false);
   }, []);
 
-  const handleCVComplete = useCallback((profile: { job_titles: string[]; location: string; industry: string }) => {
-    setGuestProfile(profile);
-    localStorage.setItem("fmsg-guest-profile", JSON.stringify(profile));
-    setShowCVModal(false);
-    setShowPFWalkthrough(true);
-  }, []);
-
-  const handleCVSkip = useCallback(() => {
-    setShowCVModal(false);
-    if (!localStorage.getItem("fmsg-pf-walkthrough-dismissed")) {
-      setShowPFWalkthrough(true);
-    }
-  }, []);
-
   const handlePFWalkthroughStart = useCallback(() => {
     setShowPFWalkthrough(false);
     localStorage.setItem("fmsg-pf-walkthrough-dismissed", "true");
@@ -485,6 +470,13 @@ export default function DashboardPage() {
   const handlePFWalkthroughDismiss = useCallback(() => {
     setShowPFWalkthrough(false);
     localStorage.setItem("fmsg-pf-walkthrough-dismissed", "true");
+  }, []);
+
+  const handleCVSkip = useCallback(() => {
+    setShowCVModal(false);
+    if (!localStorage.getItem("fmsg-pf-walkthrough-dismissed")) {
+      setShowPFWalkthrough(true);
+    }
   }, []);
 
   const handleAuthSuccess = useCallback(async () => {
@@ -1271,11 +1263,36 @@ export default function DashboardPage() {
         onDismiss={handlePFWalkthroughDismiss}
       />
 
-      <GuestCVModal
-        isOpen={showCVModal}
-        onComplete={handleCVComplete}
-        onSkip={handleCVSkip}
-      />
+      {showCVModal && (
+        <div
+          className="fixed inset-0 z-[200] flex items-start justify-center pt-24 bg-black/60 backdrop-blur-sm transition-opacity duration-500"
+          style={{ opacity: 1 }}
+        >
+          <div className="w-full max-w-lg mx-4 rounded-2xl bg-white shadow-2xl overflow-hidden transition-all duration-500 ease-out relative">
+            <button
+              onClick={handleCVSkip}
+              className="absolute top-4 right-4 z-10 p-1.5 text-gray-400 hover:text-gray-600 transition-colors"
+            >
+              <X size={20} />
+            </button>
+            <div className="relative z-10 px-6 py-6 max-h-[80vh] overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+              <OnboardingForm
+                guestMode
+                onGuestComplete={(profile) => {
+                  setGuestProfile(profile);
+                  localStorage.setItem("fmsg-guest-profile", JSON.stringify(profile));
+                  setShowCVModal(false);
+                  setShowPFWalkthrough(true);
+                }}
+                onOnboarded={() => {
+                  setShowCVModal(false);
+                  setShowPFWalkthrough(true);
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       <GuestSearchPopup
         isOpen={showGuestPopup}
