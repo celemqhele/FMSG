@@ -7,8 +7,9 @@ import { TransitionLink } from "@/components/ui/transition-link";
 import "../landing/liquid-glass.css";
 
 interface FloatingNavbarProps {
-  isLoggedIn?: boolean;
+  onLoginClick?: () => void;
   onSignUpClick?: () => void;
+  isLoggedIn?: boolean;
 }
 
 const navLinks = [
@@ -17,7 +18,7 @@ const navLinks = [
   { label: "About", href: "/about" },
 ];
 
-export function FloatingNavbar({ isLoggedIn, onSignUpClick }: FloatingNavbarProps) {
+export function FloatingNavbar({ onLoginClick, onSignUpClick, isLoggedIn }: FloatingNavbarProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (
@@ -49,14 +50,14 @@ export function FloatingNavbar({ isLoggedIn, onSignUpClick }: FloatingNavbarProp
               >
                 Go to Dashboard
               </TransitionLink>
-            ) : (
+            ) : onLoginClick && onSignUpClick ? (
               <>
-                <TransitionLink
-                  href="/pricing"
-                  className="px-5 py-2 text-sm font-medium text-white/90 hover:text-white transition-colors"
+                <button
+                  onClick={onLoginClick}
+                  className="px-5 py-2 text-sm font-medium text-white hover:text-white/90 transition-colors"
                 >
-                  See Plans
-                </TransitionLink>
+                  Log In
+                </button>
                 <button
                   onClick={onSignUpClick}
                   className="px-5 py-2 text-sm font-medium text-white bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] rounded-full transition-colors"
@@ -64,7 +65,7 @@ export function FloatingNavbar({ isLoggedIn, onSignUpClick }: FloatingNavbarProp
                   Sign Up
                 </button>
               </>
-            )}
+            ) : null}
           </div>
 
           <button

@@ -2,19 +2,13 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef, startTransition } from "react";
 import { useRouter } from "next/navigation";
-import { X, Upload } from "lucide-react";
+import { X, ArrowRight, Mail, Upload } from "lucide-react";
 import { DashboardLayout, useActiveProfile } from "@/components/dashboard/dashboard-layout";
 import { SearchPill } from "@/components/dashboard/search-pill";
-import { GuestSearchPill } from "@/components/dashboard/guest-search-pill";
 import { JobResultCard } from "@/components/dashboard/job-result-card";
 import dynamic from "next/dynamic";
 const PFPurchaseModal = dynamic(() => import("@/components/dashboard/pf-purchase-modal").then((mod) => mod.PFPurchaseModal), { ssr: false });
 const OnboardingForm = dynamic(() => import("@/components/onboarding/onboarding-form").then((mod) => mod.OnboardingForm), { ssr: false });
-const AuthModal = dynamic(() => import("@/components/auth/auth-modal").then((mod) => mod.AuthModal), { ssr: false });
-import { GuestSearchPopup } from "@/components/dashboard/guest-search-popup";
-import { FirstSearchDiscountPopup } from "@/components/dashboard/first-search-discount-popup";
-import { ReengagementBanner } from "@/components/dashboard/reengagement-banner";
-import { GuestPFWalkthrough } from "@/components/dashboard/guest-pf-walkthrough";
 import { DashboardTabs, type TabId } from "@/components/dashboard/dashboard-tabs";
 import { BalanceChips } from "@/components/dashboard/balance-chips";
 import { FilterSortBar, type SortMode } from "@/components/dashboard/filter-sort-bar";
@@ -118,6 +112,7 @@ export default function DashboardPage() {
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState<"prompt" | "form" | "done">("prompt");
   const [onboardingMounted, setOnboardingMounted] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
   const [accountStatus, setAccountStatus] = useState<string>("active");
   const [emailVerified, setEmailVerified] = useState<boolean | null>(null);
   const [showVerifyModal, setShowVerifyModal] = useState(false);
@@ -126,26 +121,6 @@ export default function DashboardPage() {
   const [plan, setPlan] = useState("free");
   const [pauseMessage, setPauseMessage] = useState("");
   const { activeProfileId } = useActiveProfile();
-
-  // Guest mode state
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [authOpen, setAuthOpen] = useState(false);
-  const [authTab, setAuthTab] = useState<"login" | "signup">("signup");
-  const [guestFreeUsed, setGuestFreeUsed] = useState(false);
-  const [guestResultCount, setGuestResultCount] = useState(0);
-  const [showGuestPopup, setShowGuestPopup] = useState(false);
-  const [showFirstSearchDiscount, setShowFirstSearchDiscount] = useState(false);
-  const [showReengagementBanner, setShowReengagementBanner] = useState(false);
-  const [showPFWalkthrough, setShowPFWalkthrough] = useState(false);
-  const [showCVModal, setShowCVModal] = useState(false);
-  const [guestPFMode, setGuestPFMode] = useState(false);
-  const [guestDateFilter, setGuestDateFilter] = useState<number | null>(null);
-  const [guestProfile, setGuestProfile] = useState<{ job_titles: string[]; location: string; industry: string } | null>(null);
-  const [guestSearching, setGuestSearching] = useState(false);
-  const [guestProgress, setGuestProgress] = useState(0);
-  const [guestStatusActive, setGuestStatusActive] = useState("");
-  const [guestStatusCompleted, setGuestStatusCompleted] = useState<string[]>([]);
-  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => { endTransition(); }, [endTransition]);
 
@@ -184,93 +159,34 @@ export default function DashboardPage() {
   useEffect(() => {
     const supabase = createClient();
     supabase.auth.getSession().then(({ data }: { data: { session: any } | null }) => {
-      if (data?.session) {
-        setIsLoggedIn(true);
-        setUserEmail(data.session.user?.email ?? "");
-        supabase
-          .from("profiles")
-          .select("onboarding_completed, account_status, email_verified, first_search_completed_at, plan")
-          .maybeSingle()
-          .then(({ data: profile }: { data: any }) => {
-            if (!profile) {
-              setNeedsOnboarding(true);
-              requestAnimationFrame(() => setOnboardingMounted(true));
-            } else {
-              setAuthChecked(true);
-              if (profile.account_status) setAccountStatus(profile.account_status);
-              setEmailVerified(profile.email_verified ?? false);
-              setPlan(profile.plan ?? "free");
-              if (!profile.first_search_completed_at) {
-                checkReengagement(profile.plan);
-              }
-            }
-          });
-      } else {
-        setAuthChecked(true);
-        const stored = localStorage.getItem("fmsg-guest-results");
-        if (stored) {
-          try {
-            const parsed = JSON.parse(stored);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              setResults(parsed);
-              setHasSearched(true);
-            }
-          } catch {}
-        }
-        const freeUsed = localStorage.getItem("fmsg-guest-free-used");
-        if (freeUsed === "true") setGuestFreeUsed(true);
-
-        const storedProfile = localStorage.getItem("fmsg-guest-profile");
-        if (storedProfile) {
-          try {
-            const p = JSON.parse(storedProfile);
-            if (p.job_titles?.length > 0) {
-              setGuestProfile(p);
-            }
-          } catch {}
-        }
-
-        if (!storedProfile) {
-          setShowCVModal(true);
-        } else if (!localStorage.getItem("fmsg-pf-walkthrough-dismissed")) {
-          setShowPFWalkthrough(true);
-        }
+      if (!data?.session) {
+        router.push("/");
+        return;
       }
+      setAuthChecked(true);
+      setUserEmail(data.session.user?.email ?? "");
+      supabase
+        .from("profiles")
+        .select("onboarding_completed, account_status, email_verified")
+        .maybeSingle()
+        .then(({ data: profile }: { data: any }) => {
+          if (!profile) {
+            setNeedsOnboarding(true);
+            requestAnimationFrame(() => setOnboardingMounted(true));
+          } else {
+            if (profile.account_status) setAccountStatus(profile.account_status);
+            setEmailVerified(profile.email_verified ?? false);
+          }
+        });
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: string, session: any) => {
-      if (session) {
-        setIsLoggedIn(true);
-        setUserEmail(session.user?.email ?? "");
-      } else {
-        setIsLoggedIn(false);
-      }
-    });
-    return () => { subscription.unsubscribe(); };
-  }, [router]);
-
-  const checkReengagement = useCallback(async (userPlan: string) => {
-    if (userPlan !== "free") return;
-    const supabase = createClient();
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) return;
-    const res = await fetch("/api/discount/validate?type=reengagement_40", {
-      headers: { Authorization: `Bearer ${session.access_token}` },
-    });
-    if (res.ok) {
-      const data = await res.json();
-      if (data.eligible) setShowReengagementBanner(true);
-    }
-  }, []);
-
-  useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail;
       if (detail === "LIMIT_002") setShowLimitModal("LIMIT_002");
     };
     window.addEventListener("show-limit-modal", handler);
     return () => window.removeEventListener("show-limit-modal", handler);
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     if (showLimitModal) {
@@ -405,158 +321,11 @@ export default function DashboardPage() {
     setResultMessage("");
   }, []);
 
-  const handleGuestSearch = useCallback(async (query: string, pfMode?: boolean, dateFilterDays?: number | null) => {
-    setGuestSearching(true);
-    setGuestProgress(0);
-    setHasSearched(true);
-    setResultMessage("");
-    setGuestStatusCompleted([]);
-    setGuestStatusActive(pfMode ? "Generating search variations..." : "Searching live job listings");
-    setVideoFast(true);
-
-    abortRef.current = new AbortController();
-
-    try {
-      const res = await fetch("/api/search/guest", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query, pf_mode: pfMode, date_filter_days: dateFilterDays ?? undefined }),
-        signal: abortRef.current.signal,
-      });
-
-      await handleStreamResponse(res);
-    } catch (err) {
-      if ((err as DOMException)?.name !== "AbortError") throw err;
-    }
-  }, [setVideoFast]);
-
-  const handleGuestAbort = useCallback(() => {
-    if (abortRef.current) {
-      abortRef.current.abort();
-      abortRef.current = null;
-    }
-    setGuestSearching(false);
-    setGuestProgress(0);
-    setVideoFast(false);
-    setGuestStatusCompleted([]);
-    setGuestStatusActive("");
-  }, []);
-
-  const handleGuestClearResults = useCallback(() => {
-    setResults([]);
-    setHasSearched(false);
-    setResultMessage("");
-    setGuestFreeUsed(false);
-    localStorage.removeItem("fmsg-guest-results");
-    localStorage.removeItem("fmsg-guest-free-used");
-  }, []);
-
-  const handleGuestAuthOpen = useCallback((tab: "login" | "signup") => {
-    setAuthTab(tab);
-    setAuthOpen(true);
-  }, []);
-
-  const handleAuthClose = useCallback(() => {
-    setAuthOpen(false);
-  }, []);
-
-  const handlePFWalkthroughStart = useCallback(() => {
-    setShowPFWalkthrough(false);
-    localStorage.setItem("fmsg-pf-walkthrough-dismissed", "true");
-    setGuestPFMode(true);
-    setGuestDateFilter(7);
-  }, []);
-
-  const handlePFWalkthroughDismiss = useCallback(() => {
-    setShowPFWalkthrough(false);
-    localStorage.setItem("fmsg-pf-walkthrough-dismissed", "true");
-  }, []);
-
-  const handleCVSkip = useCallback(() => {
-    setShowCVModal(false);
-    if (!localStorage.getItem("fmsg-pf-walkthrough-dismissed")) {
-      setShowPFWalkthrough(true);
-    }
-  }, []);
-
-  const handleAuthSuccess = useCallback(async () => {
-    setAuthOpen(false);
-    const supabase = createClient();
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) return;
-
-    const guestHistory = [];
-    const storedHistory = localStorage.getItem("fmsg-guest-history");
-    if (storedHistory) {
-      try { guestHistory.push(...JSON.parse(storedHistory)); } catch {}
-    }
-
-    const storedResults = localStorage.getItem("fmsg-guest-results");
-    if (storedResults) {
-      try {
-        const currentQuery = localStorage.getItem("fmsg-guest-last-query") ?? "";
-        const parsed = JSON.parse(storedResults);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          guestHistory.push({ query: currentQuery, timestamp: new Date().toISOString(), results: parsed });
-        }
-      } catch {}
-    }
-
-    const guestCookieId = document.cookie.split("; ").find(row => row.startsWith("fmsg-guest="))?.split("=")[1] ?? "";
-
-    const storedProfile = localStorage.getItem("fmsg-guest-profile");
-    let guestProfile = null;
-    if (storedProfile) {
-      try { guestProfile = JSON.parse(storedProfile); } catch {}
-    }
-
-    fetch("/api/auth/onboard", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ guest_history: guestHistory, guest_cookie_id: guestCookieId, guest_profile: guestProfile }),
-    }).catch(console.error);
-
-    localStorage.removeItem("fmsg-guest-results");
-    localStorage.removeItem("fmsg-guest-history");
-    localStorage.removeItem("fmsg-guest-last-query");
-    localStorage.removeItem("fmsg-guest-free-used");
-    localStorage.removeItem("fmsg-guest-popup-dismissed");
-
-    setIsLoggedIn(true);
-    setShowGuestPopup(false);
-    window.location.reload();
-  }, []);
-
   const handleStreamResponse = async (res: Response) => {
     const contentType = res.headers.get("Content-Type") || "";
     if (!contentType.includes("text/plain")) {
       let data: any = {};
       try { data = await res.json(); } catch {}
-
-      if (res.status === 403 && data.code === "GUEST_LIMIT") {
-        setGuestSearching(false);
-        setGuestProgress(0);
-        setVideoFast(false);
-        setGuestFreeUsed(true);
-        localStorage.setItem("fmsg-guest-free-used", "true");
-        return;
-      }
-
-      if (res.status === 403 && data.code === "VPN_DETECTED") {
-        setGuestSearching(false);
-        setGuestProgress(0);
-        setVideoFast(false);
-        setShowLimitModal("VPN_DETECTED");
-        return;
-      }
-
-      if (res.status === 429 && data.code === "RATE_LIMITED") {
-        setGuestSearching(false);
-        setGuestProgress(0);
-        setVideoFast(false);
-        setShowLimitModal("GUEST_RATE_LIMITED");
-        return;
-      }
 
       if (res.status === 403 && data.code === "LIMIT_001") {
         setShowLimitModal("LIMIT_001");
@@ -769,40 +538,10 @@ export default function DashboardPage() {
               }
               setResults(event.results ?? []);
               setSearching(false);
-              setGuestSearching(false);
               setProgress(0);
               setVideoFast(false);
               setPfActive(false);
               setContinuationToken(null);
-
-              if (!isLoggedIn && Array.isArray(event.results) && event.results.length > 0) {
-                localStorage.setItem("fmsg-guest-results", JSON.stringify(event.results));
-                localStorage.setItem("fmsg-guest-last-query", "guest-search");
-                setGuestFreeUsed(true);
-                localStorage.setItem("fmsg-guest-free-used", "true");
-                setGuestResultCount(event.results.length);
-                if (!localStorage.getItem("fmsg-guest-popup-dismissed")) {
-                  setTimeout(() => setShowGuestPopup(true), 500);
-                }
-              }
-
-              if (isLoggedIn && plan === "free" && event.results && Array.isArray(event.results) && event.results.length > 0) {
-                const supabaseClient = createClient();
-                (async () => {
-                  const { data: profileCheck } = await supabaseClient
-                    .from("profiles")
-                    .select("first_search_completed_at")
-                    .maybeSingle();
-                  if (profileCheck && !profileCheck.first_search_completed_at) {
-                    const { data: { user } } = await supabaseClient.auth.getUser();
-                    if (user) {
-                      await supabaseClient.from("profiles").update({ first_search_completed_at: new Date().toISOString() }).eq("id", user.id);
-                      setTimeout(() => setShowFirstSearchDiscount(true), 500);
-                    }
-                  }
-                })().catch(() => {});
-              }
-
               if (event.results?.length === 0 && event.message) {
                 setResultMessage(event.message);
               } else if (event.pf_mode && event.pf_rounds) {
@@ -881,119 +620,13 @@ export default function DashboardPage() {
     <DashboardLayout>
       <PageTransitionWrapper>
       <div className="max-w-4xl mx-auto pt-8 space-y-6">
-        {!isLoggedIn && authChecked ? (
-          <>
-            <div className="text-center mb-2">
-              <h1 className="text-2xl font-bold text-white">Find Your Next Job</h1>
-              <p className="text-sm text-white/60 mt-1">1 free AI-powered search — no signup required</p>
-            </div>
-
-            <GuestSearchPill
-              onSearch={(q, pfMode, dateFilter) => {
-                localStorage.setItem("fmsg-guest-last-query", q);
-                handleGuestSearch(q, pfMode, dateFilter);
-              }}
-              searching={guestSearching}
-              onAbort={handleGuestAbort}
-              initialPfMode={guestPFMode}
-              initialDateFilter={guestDateFilter}
-            />
-
-            {guestSearching && (
-              <SearchProgress
-                completedLines={guestStatusCompleted}
-                activeLine={guestStatusActive}
-                progress={guestProgress}
-              />
-            )}
-
-            {!guestSearching && hasSearched && results.length > 0 && (
-              <>
-                <div className="flex items-center justify-between">
-                  <p className="text-sm text-white/60">
-                    Showing top {results.length} result{results.length > 1 ? "s" : ""}
-                  </p>
-                  <button
-                    onClick={handleGuestClearResults}
-                    className="text-xs text-white/50 hover:text-white/80 transition-colors"
-                  >
-                    Clear Results
-                  </button>
-                </div>
-                <div className="space-y-4">
-                  {results.map((r) => (
-                    <JobResultCard
-                      key={r.id}
-                      id={r.id}
-                      jobTitle={r.job_title}
-                      company={r.company}
-                      location={r.location}
-                      salary={r.estimated_salary}
-                      matchScore={r.match_score}
-                      matchSummary={r.match_summary}
-                      verdictBullets={r.verdict_bullets}
-                      jobUrl={r.job_url}
-                      fullDescription={r.full_description}
-                      suggestedCvName=""
-                      knockoutFail={r.knockout_fail}
-                      pillarScores={r.pillar_scores}
-                      taxesApplied={r.taxes_applied}
-                      totalQuestionsAsked={r.total_questions_asked}
-                      yesAnswers={r.yes_answers}
-                      recruiterVerdict={r.recruiter_verdict}
-                      onDelete={() => {}}
-                    />
-                  ))}
-                </div>
-                <div className="liquid-glass rounded-xl p-4 text-center mt-4">
-                  <p className="text-sm text-white/80 mb-3">
-                    Want to see more results?{" "}
-                    <strong className="text-white">Sign up free</strong> to unlock all matches, save jobs, and keep your history across devices.
-                  </p>
-                  <button
-                    onClick={() => handleGuestAuthOpen("signup")}
-                    className="px-5 py-2.5 text-sm font-medium text-white bg-[var(--color-accent)] rounded-full hover:bg-[var(--color-accent-hover)] transition-colors"
-                  >
-                    Sign Up Free — Get +1 Bonus Search
-                  </button>
-                </div>
-              </>
-            )}
-
-            {!guestSearching && hasSearched && results.length === 0 && !guestFreeUsed && (
-              <div className="text-center py-20">
-                <p className="text-[var(--color-text-secondary)] text-sm">{resultMessage || "No matching jobs found. Try a different search."}</p>
-              </div>
-            )}
-
-            {!guestSearching && guestFreeUsed && results.length === 0 && (
-              <div className="text-center py-20">
-                <p className="text-[var(--color-text-secondary)] text-sm mb-4">You've used your free search. Sign up to continue.</p>
-                <button
-                  onClick={() => handleGuestAuthOpen("signup")}
-                  className="px-6 py-2.5 text-sm font-medium text-white bg-[var(--color-accent)] rounded-full hover:bg-[var(--color-accent-hover)] transition-colors"
-                >
-                  Sign Up Free
-                </button>
-              </div>
-            )}
-
-            {!guestSearching && !hasSearched && (
-              <div className="text-center py-16">
-                <p className="text-[var(--color-text-secondary)] text-sm">Search for jobs to get started — no signup required</p>
-              </div>
-            )}
-          </>
-        ) : (
-        <>
         {accountStatus === "blocked" ? (
           <BlockedAccountPage />
         ) : (
           <>
-            {emailVerified === false && authChecked && isLoggedIn && (
+            {emailVerified === false && authChecked && (
               <VerifyEmailBanner onOpenModal={() => setShowVerifyModal(true)} />
             )}
-            {showReengagementBanner && <ReengagementBanner discountPercent={40} />}
             <DashboardTabs active={activeTab} onChange={setActiveTab} />
 
         {activeTab === "search" && (
@@ -1124,8 +757,6 @@ export default function DashboardPage() {
         {activeTab === "rejected" && <RejectedJobs />}
               </>
             )}
-        </>
-        )}
       </div>
 
       {showLimitModal && (
@@ -1143,11 +774,7 @@ export default function DashboardPage() {
               style={{ opacity: limitModalMounted ? 1 : 0, transform: limitModalMounted ? "translateY(0) scale(1)" : "translateY(8px) scale(0.97)" }}
             >
               <p className="text-white font-semibold">
-                {showLimitModal === "VPN_DETECTED"
-                  ? "VPN or proxy detected"
-                  : showLimitModal === "GUEST_RATE_LIMITED"
-                  ? "Free search limit reached"
-                  : showLimitModal === "LIMIT_001"
+                {showLimitModal === "LIMIT_001"
                   ? "No searches remaining"
                   : showLimitModal === "LIMIT_002"
                   ? "No CV generations remaining"
@@ -1156,19 +783,13 @@ export default function DashboardPage() {
                   : "No remaining credits"}
               </p>
               <p className="text-sm text-white/90">
-                {showLimitModal === "VPN_DETECTED"
-                  ? "Please disable your VPN or proxy to use the free search. Sign up for unrestricted access from anywhere."
-                  : showLimitModal === "GUEST_RATE_LIMITED"
-                  ? "You've used your free search for today. Come back tomorrow or sign up for unlimited searches."
-                  : plan === "Free" && showLimitModal === "LIMIT_001"
-                  ? "You've used your free search. Ready to see more matches? Unlock Seeker for R79, once-off, no recurring charges."
-                  : plan !== "Free"
-                  ? "You've used all your searches this round. Grab another round whenever you need it, only pay when you're actually job hunting."
+                {showLimitModal === "LIMIT_001"
+                  ? "You've used all your free searches. Paid users receive priority AI processing. Upgrade your plan to continue searching."
                   : showLimitModal === "LIMIT_002"
-                  ? "You've used all your CV generations. Top up with Seeker for R79, once-off, no recurring charges."
+                  ? "You've used all your CV generations. Upgrade your plan to generate more."
                   : showLimitModal === "LIMIT_003"
-                  ? "You've used all your Persistent Finder rounds. Top up or buy more PF credits."
-                  : "You've run out of credits. Grab another round whenever you need it."}
+                  ? "You've used all your Persistent Finder rounds. Upgrade your plan or buy more PF credits."
+                  : "You've run out of credits. Upgrade your plan."}
               </p>
               <div className="flex flex-wrap justify-center gap-3">
                 <button
@@ -1205,7 +826,9 @@ export default function DashboardPage() {
           className="fixed inset-0 z-[200] flex items-start justify-center pt-24 bg-black/60 backdrop-blur-sm transition-opacity duration-500"
           style={{ opacity: onboardingStep === "done" ? 1 : 1 }}
         >
-          <div className="w-full max-w-lg mx-4 rounded-2xl bg-white shadow-2xl overflow-hidden transition-all duration-500 ease-out">
+          <div
+            className="w-full max-w-lg mx-4 rounded-2xl bg-white shadow-2xl overflow-hidden transition-all duration-500 ease-out"
+          >
             <div className="relative z-10 px-6 py-6 max-h-[80vh] overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
               {onboardingStep === "prompt" && (
                 <div className="flex flex-col items-center gap-5 py-8">
@@ -1213,7 +836,7 @@ export default function DashboardPage() {
                     <Upload size={28} className="text-[var(--color-accent)]" />
                   </div>
                   <div className="text-center space-y-2">
-                    <h2 className="text-xl font-semibold text-gray-900">Set Up Your Profile</h2>
+                    <h2 className="text-xl font-semibold text-gray-900">Set Up Your Account</h2>
                     <p className="text-sm text-gray-500 max-w-xs">
                       Upload your CV and let AI fill in your profile details automatically.
                     </p>
@@ -1222,7 +845,7 @@ export default function DashboardPage() {
                     onClick={() => setOnboardingStep("form")}
                     className="px-6 py-2.5 text-sm font-medium text-white bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] rounded-full transition-colors"
                   >
-                    Upload CV
+                    Set up account
                   </button>
                 </div>
               )}
@@ -1239,14 +862,14 @@ export default function DashboardPage() {
                     <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-500"><polyline points="20 6 9 17 4 12" /></svg>
                   </div>
                   <div className="text-center space-y-2">
-                    <h2 className="text-xl font-semibold text-gray-900">Profile set up!</h2>
-                    <p className="text-sm text-gray-500">Your CV has been analyzed and your profile is ready.</p>
+                    <h2 className="text-xl font-semibold text-gray-900">Account set up!</h2>
+                    <p className="text-sm text-gray-500">Your profile is ready to go.</p>
                   </div>
                   <button
                     onClick={() => { setNeedsOnboarding(false); setOnboardingMounted(false); window.location.reload(); }}
                     className="px-6 py-2.5 text-sm font-medium text-white bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] rounded-full transition-colors"
                   >
-                    Start Searching
+                    Go to Dashboard
                   </button>
                 </div>
               )}
@@ -1254,69 +877,6 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
-
-      {showCVModal && (
-        <div
-          className="fixed inset-0 z-[200] flex items-start justify-center pt-24 bg-black/60 backdrop-blur-sm transition-opacity duration-500"
-          style={{ opacity: 1 }}
-        >
-          <div className="w-full max-w-lg mx-4 rounded-2xl bg-white shadow-2xl overflow-hidden transition-all duration-500 ease-out relative">
-            <button
-              onClick={handleCVSkip}
-              className="absolute top-4 right-4 z-10 p-1.5 text-gray-400 hover:text-gray-600 transition-colors"
-            >
-              <X size={20} />
-            </button>
-            <div className="relative z-10 px-6 py-6 max-h-[80vh] overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-              <OnboardingForm
-                guestMode
-                onGuestProfile={(profile) => {
-                  localStorage.setItem("fmsg-guest-profile", JSON.stringify({
-                    job_titles: profile.job_titles,
-                    location: profile.location,
-                    industry: "",
-                    job_types: profile.job_types,
-                  }));
-                  setGuestProfile({
-                    job_titles: profile.job_titles,
-                    location: profile.location,
-                    industry: "",
-                  });
-                }}
-                onOnboarded={() => {
-                  setShowCVModal(false);
-                  setShowPFWalkthrough(true);
-                }}
-              />
-            </div>
-          </div>
-        </div>
-      )}
-
-      <GuestSearchPopup
-        isOpen={showGuestPopup}
-        resultCount={guestResultCount}
-        onSignUp={() => {
-          setShowGuestPopup(false);
-          localStorage.setItem("fmsg-guest-popup-dismissed", "true");
-          handleGuestAuthOpen("signup");
-        }}
-        onDismiss={() => {
-          setShowGuestPopup(false);
-          localStorage.setItem("fmsg-guest-popup-dismissed", "true");
-        }}
-      />
-
-      <FirstSearchDiscountPopup
-        isOpen={showFirstSearchDiscount}
-        onDismiss={() => setShowFirstSearchDiscount(false)}
-      />
-
-      <AuthModal
-        isOpen={authOpen}
-        onClose={() => setAuthOpen(false)}
-        defaultTab={authTab}
-      />
 
       </PageTransitionWrapper>
     </DashboardLayout>

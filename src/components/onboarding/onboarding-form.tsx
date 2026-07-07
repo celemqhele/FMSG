@@ -25,11 +25,9 @@ const JOB_TYPE_OPTIONS = [
 
 interface OnboardingFormProps {
   onOnboarded?: () => void;
-  guestMode?: boolean;
-  onGuestProfile?: (data: { job_titles: string[]; location: string; job_types: string[]; name: string; surname: string; phone: string; address: string; current_salary: number | null; desired_salary: number | null }) => void;
 }
 
-export function OnboardingForm({ onOnboarded, guestMode, onGuestProfile }: OnboardingFormProps) {
+export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
   const [step, setStep] = useState<Step>("upload");
   const [dragOver, setDragOver] = useState(false);
   const [error, setError] = useState("");
@@ -56,14 +54,14 @@ export function OnboardingForm({ onOnboarded, guestMode, onGuestProfile }: Onboa
     const formData = new FormData();
     formData.append("file", file);
     try {
-      const apiUrl = guestMode ? "/api/cv/parse-guest" : "/api/extract-cv";
-      const headers: Record<string, string> = {};
-      if (session && !guestMode) headers["Authorization"] = `Bearer ${session.access_token}`;
-
-      const res = await fetch(apiUrl, { method: "POST", headers, body: formData });
+      const res = await fetch("/api/extract-cv", {
+        method: "POST",
+        headers: session ? { Authorization: `Bearer ${session.access_token}` } : {},
+        body: formData,
+      });
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || "Extraction failed.");
+        setError(data.code ? `${data.code}: ${data.error}` : data.error || "Extraction failed.");
         setStep("upload");
         return;
       }
@@ -73,7 +71,7 @@ export function OnboardingForm({ onOnboarded, guestMode, onGuestProfile }: Onboa
       setAddress(data.address ?? "");
       setJobTitles(data.job_titles ?? []);
       setJobTypes(data.job_types ?? []);
-      setLocation(data.preferred_location ?? data.location ?? "");
+      setLocation(data.preferred_location ?? "");
       setCurrentSalary(data.current_salary ?? null);
       setDesiredSalary(data.desired_salary ?? null);
       setCvFilePath(data.cv_file_path ?? "");
@@ -99,24 +97,6 @@ export function OnboardingForm({ onOnboarded, guestMode, onGuestProfile }: Onboa
   const handleSave = async () => {
     setSaving(true);
     setError("");
-
-    if (guestMode) {
-      onGuestProfile?.({
-        job_titles: jobTitles,
-        location,
-        job_types: jobTypes,
-        name,
-        surname,
-        phone,
-        address,
-        current_salary: currentSalary,
-        desired_salary: desiredSalary,
-      });
-      setSaving(false);
-      onOnboarded?.();
-      return;
-    }
-
     const supabase = createClient();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { setError("Not authenticated."); setSaving(false); return; }
