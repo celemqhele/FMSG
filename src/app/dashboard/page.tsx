@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef, startTransition } from "react";
 import { useRouter } from "next/navigation";
-import { X } from "lucide-react";
+import { X, Upload } from "lucide-react";
 import { DashboardLayout, useActiveProfile } from "@/components/dashboard/dashboard-layout";
 import { SearchPill } from "@/components/dashboard/search-pill";
 import { GuestSearchPill } from "@/components/dashboard/guest-search-pill";
@@ -1199,6 +1199,61 @@ export default function DashboardPage() {
         onClose={() => setShowVerifyModal(false)}
         onVerified={() => { setEmailVerified(true); window.dispatchEvent(new Event("refresh-balances")); }}
       />
+
+      {needsOnboarding && onboardingMounted && (
+        <div
+          className="fixed inset-0 z-[200] flex items-start justify-center pt-24 bg-black/60 backdrop-blur-sm transition-opacity duration-500"
+          style={{ opacity: onboardingStep === "done" ? 1 : 1 }}
+        >
+          <div className="w-full max-w-lg mx-4 rounded-2xl bg-white shadow-2xl overflow-hidden transition-all duration-500 ease-out">
+            <div className="relative z-10 px-6 py-6 max-h-[80vh] overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+              {onboardingStep === "prompt" && (
+                <div className="flex flex-col items-center gap-5 py-8">
+                  <div className="w-16 h-16 rounded-full bg-[var(--color-accent)]/10 flex items-center justify-center">
+                    <Upload size={28} className="text-[var(--color-accent)]" />
+                  </div>
+                  <div className="text-center space-y-2">
+                    <h2 className="text-xl font-semibold text-gray-900">Set Up Your Profile</h2>
+                    <p className="text-sm text-gray-500 max-w-xs">
+                      Upload your CV and let AI fill in your profile details automatically.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setOnboardingStep("form")}
+                    className="px-6 py-2.5 text-sm font-medium text-white bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] rounded-full transition-colors"
+                  >
+                    Upload CV
+                  </button>
+                </div>
+              )}
+
+              {onboardingStep === "form" && (
+                <OnboardingForm
+                  onOnboarded={() => setOnboardingStep("done")}
+                />
+              )}
+
+              {onboardingStep === "done" && (
+                <div className="flex flex-col items-center gap-5 py-8">
+                  <div className="w-16 h-16 rounded-full bg-emerald-500/20 flex items-center justify-center">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-500"><polyline points="20 6 9 17 4 12" /></svg>
+                  </div>
+                  <div className="text-center space-y-2">
+                    <h2 className="text-xl font-semibold text-gray-900">Profile set up!</h2>
+                    <p className="text-sm text-gray-500">Your CV has been analyzed and your profile is ready.</p>
+                  </div>
+                  <button
+                    onClick={() => { setNeedsOnboarding(false); setOnboardingMounted(false); window.location.reload(); }}
+                    className="px-6 py-2.5 text-sm font-medium text-white bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] rounded-full transition-colors"
+                  >
+                    Start Searching
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {showCVModal && (
         <div
