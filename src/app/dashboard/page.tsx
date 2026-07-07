@@ -493,6 +493,22 @@ export default function DashboardPage() {
         return;
       }
 
+      if (res.status === 403 && data.code === "VPN_DETECTED") {
+        setGuestSearching(false);
+        setGuestProgress(0);
+        setVideoFast(false);
+        setShowLimitModal("VPN_DETECTED");
+        return;
+      }
+
+      if (res.status === 429 && data.code === "RATE_LIMITED") {
+        setGuestSearching(false);
+        setGuestProgress(0);
+        setVideoFast(false);
+        setShowLimitModal("GUEST_RATE_LIMITED");
+        return;
+      }
+
       if (res.status === 403 && data.code === "LIMIT_001") {
         setShowLimitModal("LIMIT_001");
         setSearching(false);
@@ -1076,7 +1092,11 @@ export default function DashboardPage() {
               style={{ opacity: limitModalMounted ? 1 : 0, transform: limitModalMounted ? "translateY(0) scale(1)" : "translateY(8px) scale(0.97)" }}
             >
               <p className="text-white font-semibold">
-                {showLimitModal === "LIMIT_001"
+                {showLimitModal === "VPN_DETECTED"
+                  ? "VPN or proxy detected"
+                  : showLimitModal === "GUEST_RATE_LIMITED"
+                  ? "Free search limit reached"
+                  : showLimitModal === "LIMIT_001"
                   ? "No searches remaining"
                   : showLimitModal === "LIMIT_002"
                   ? "No CV generations remaining"
@@ -1085,7 +1105,11 @@ export default function DashboardPage() {
                   : "No remaining credits"}
               </p>
               <p className="text-sm text-white/90">
-                {plan === "Free" && showLimitModal === "LIMIT_001"
+                {showLimitModal === "VPN_DETECTED"
+                  ? "Please disable your VPN or proxy to use the free search. Sign up for unrestricted access from anywhere."
+                  : showLimitModal === "GUEST_RATE_LIMITED"
+                  ? "You've used your free search for today. Come back tomorrow or sign up for unlimited searches."
+                  : plan === "Free" && showLimitModal === "LIMIT_001"
                   ? "You've used your free search. Ready to see more matches? Unlock Seeker for R79, once-off, no recurring charges."
                   : plan !== "Free"
                   ? "You've used all your searches this round. Grab another round whenever you need it, only pay when you're actually job hunting."

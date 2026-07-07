@@ -36,7 +36,7 @@ export async function checkVPN(ip: string): Promise<{ isSuspicious: boolean }> {
     const sec = data.security ?? {};
     const isSuspicious = !!(sec.vpn || sec.proxy || sec.tor || sec.relay);
 
-    cache.set(ip, { result: isSuspicious, ttl: Date.now() + 3600000 });
+    cache.set(ip, { result: isSuspicious, ttl: Date.now() + 86_400_000 });
 
     return { isSuspicious };
   } catch (err) {
