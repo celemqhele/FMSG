@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { PLAN_LIMITS, PLAN_TIER_NAMES, PLAN_PRICES, calculatePFPrice } from "@/lib/plan-limits";
-import { sendPlanUpgraded, sendPlanDowngraded } from "@/lib/email";
+import { sendPlanUpgraded } from "@/lib/email";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -217,38 +217,37 @@ export async function POST(request: NextRequest) {
         pf_refill: newPfCount,
       });
     } else {
-      // Downgrade: schedule the change — keep current plan until expiry, then switch
-      // Cancel current subscription (won't auto-renew)
-      await supabase
-        .from("subscriptions")
-        .update({ status: "cancelled", cancelled_at: now.toISOString() })
-        .eq("id", sub.id);
+      // Stack: apply new plan credits immediately, no scheduling
+      const now = new Date();
+      const newExpiry = new Date(now);
+      newExpiry.setMonth(newExpiry.getMonth() + 1);
 
-      // Schedule the downgrade in profiles
       await supabase
         .from("profiles")
-        .update({ next_plan: newPlan.toLowerCase() })
+        .update({ plan: newPlan.toLowerCase(), plan_expiry: newExpiry.toISOString() })
         .eq("id", user.id);
 
-      if (pf_count != null) {
-        await supabase
-          .from("profiles")
-          .update({ next_pf_refill: pf_count })
-          .eq("id", user.id);
-      }
+      await supabase.rpc("stack_plan_balances", {
+        p_user_id: user.id,
+        p_searches: limits.searches,
+        p_cv_gens: limits.cv_gens,
+        p_pf: newPfCount,
+      });
 
-      const effectiveDate = sub.expiry_date
-        ? new Date(sub.expiry_date).toLocaleDateString("en-ZA", { year: "numeric", month: "long", day: "numeric" })
-        : "the end of your billing period";
-      sendPlanDowngraded(user.email ?? "", currentPlan, newPlan, effectiveDate).catch((err) =>
-        console.error("[CHANGE_PLAN] Downgrade email failed:", err)
+      await supabase
+        .from("profiles")
+        .update({ pf_refill: newPfCount, next_plan: null, next_pf_refill: null })
+        .eq("id", user.id);
+
+      sendPlanUpgraded(user.email ?? "", currentPlan, newPlan, `R${((PLAN_PRICES[newPlan] ?? 0) / 100).toFixed(2)}`).catch((err) =>
+        console.error("[CHANGE_PLAN] Plan change email failed:", err)
       );
 
       return NextResponse.json({
         ok: true,
-        type: "downgrade",
+        type: "upgrade",
         plan: newPlan.toLowerCase(),
-        message: `Your plan will switch to ${newPlan} when the current billing period ends.`,
+        message: `${newPlan} credits stacked onto your account.`,
       });
     }
   } catch (err) {

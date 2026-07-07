@@ -368,11 +368,7 @@ function ManageSubscriptionContent() {
 
         if (res.ok && data.ok) {
           setProcessing(null);
-          if (data.type === "downgrade") {
-            setSuccessMsg(data.message ?? "Plan change scheduled.");
-          } else {
-            setSuccessMsg(`Upgraded to ${tier.name}!`);
-          }
+          setSuccessMsg(data.message ?? `${tier.name} credits stacked!`);
           setSuccessToast(true);
           setTimeout(() => {
             setSuccessToast(false);
