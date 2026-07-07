@@ -190,7 +190,6 @@ export default function PricingPage() {
     <>
       <SpaceVideoBackground src="/videos/space.mp4" />
       <FloatingNavbar
-        onLoginClick={() => { setAuthTab("login"); setAuthOpen(true); }}
         onSignUpClick={() => { setAuthTab("signup"); setAuthOpen(true); }}
       />
       <PageTransitionWrapper>

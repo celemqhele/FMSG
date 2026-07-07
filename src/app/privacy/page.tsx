@@ -1,10 +1,9 @@
 ﻿"use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useEffect } from "react";
 import { FloatingNavbar } from "@/components/layout/floating-navbar";
 import { Footer } from "@/components/layout/footer";
 import { SpaceVideoBackground } from "@/components/landing/space-video-background";
-import { AuthModal } from "@/components/auth/auth-modal";
 import { PageTransitionWrapper } from "@/components/ui/page-transition-wrapper";
 import { useTransition } from "@/components/providers/transition-provider";
 import { FileText } from "lucide-react";
@@ -58,36 +57,16 @@ const sections = [
 ];
 
 export default function PrivacyPage() {
-  const [authOpen, setAuthOpen] = useState(false);
-  const [authTab, setAuthTab] = useState<"login" | "signup">("signup");
-  const { startTransition, endTransition } = useTransition();
+  const { endTransition } = useTransition();
 
   useEffect(() => {
     endTransition();
   }, [endTransition]);
 
-  useEffect(() => {
-    if (authOpen) {
-      startTransition();
-      const timer = setTimeout(endTransition, 800);
-      return () => clearTimeout(timer);
-    }
-  }, [authOpen, startTransition, endTransition]);
-
-  const openAuth = (tab: "login" | "signup") => {
-    setAuthTab(tab);
-    setAuthOpen(true);
-  };
-
-  const handleClose = useCallback(() => setAuthOpen(false), []);
-
   return (
     <>
       <SpaceVideoBackground src="/videos/space.mp4" />
-      <FloatingNavbar
-        onLoginClick={() => openAuth("login")}
-        onSignUpClick={() => openAuth("signup")}
-      />
+      <FloatingNavbar />
       <PageTransitionWrapper>
         <main className="flex-1 px-6 py-24 md:py-32">
           <div className="max-w-3xl mx-auto text-center">
@@ -114,11 +93,6 @@ export default function PrivacyPage() {
         </main>
       </PageTransitionWrapper>
       <Footer />
-      <AuthModal
-        isOpen={authOpen}
-        onClose={handleClose}
-        defaultTab={authTab}
-      />
     </>
   );
 }

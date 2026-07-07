@@ -7,9 +7,8 @@ import { TransitionLink } from "@/components/ui/transition-link";
 import "../landing/liquid-glass.css";
 
 interface FloatingNavbarProps {
-  onLoginClick?: () => void;
-  onSignUpClick?: () => void;
   isLoggedIn?: boolean;
+  onSignUpClick?: () => void;
 }
 
 const navLinks = [
@@ -18,7 +17,7 @@ const navLinks = [
   { label: "About", href: "/about" },
 ];
 
-export function FloatingNavbar({ onLoginClick, onSignUpClick, isLoggedIn }: FloatingNavbarProps) {
+export function FloatingNavbar({ isLoggedIn, onSignUpClick }: FloatingNavbarProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (
@@ -43,12 +42,29 @@ export function FloatingNavbar({ onLoginClick, onSignUpClick, isLoggedIn }: Floa
           </div>
 
           <div className="hidden md:flex items-center gap-3">
-            <TransitionLink
-              href="/dashboard"
-              className="px-5 py-2 text-sm font-medium text-white bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] rounded-full transition-colors"
-            >
-              Go to Dashboard
-            </TransitionLink>
+            {isLoggedIn ? (
+              <TransitionLink
+                href="/dashboard"
+                className="px-5 py-2 text-sm font-medium text-white bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] rounded-full transition-colors"
+              >
+                Go to Dashboard
+              </TransitionLink>
+            ) : (
+              <>
+                <TransitionLink
+                  href="/pricing"
+                  className="px-5 py-2 text-sm font-medium text-white/90 hover:text-white transition-colors"
+                >
+                  See Plans
+                </TransitionLink>
+                <button
+                  onClick={onSignUpClick}
+                  className="px-5 py-2 text-sm font-medium text-white bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] rounded-full transition-colors"
+                >
+                  Sign Up
+                </button>
+              </>
+            )}
           </div>
 
           <button
