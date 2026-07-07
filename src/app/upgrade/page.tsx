@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard/dashboard-layout";
 import { LiquidGlassCard } from "@/components/landing/liquid-glass-card";
@@ -56,7 +56,7 @@ function daysRemaining(expiryDate: string): number {
   return Math.max(0, Math.ceil((expiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
 }
 
-export default function ManageSubscriptionPage() {
+function ManageSubscriptionContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { startTransition, endTransition } = useTransition();
@@ -852,5 +852,17 @@ export default function ManageSubscriptionPage() {
       )}
       </PageTransitionWrapper>
     </DashboardLayout>
+  );
+}
+
+export default function ManageSubscriptionPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex-1 flex items-center justify-center">
+        <Loader2 size={24} className="animate-spin text-white/80" />
+      </div>
+    }>
+      <ManageSubscriptionContent />
+    </Suspense>
   );
 }
