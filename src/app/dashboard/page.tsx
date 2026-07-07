@@ -1270,11 +1270,18 @@ export default function DashboardPage() {
             <div className="relative z-10 px-6 py-6 max-h-[80vh] overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
               <OnboardingForm
                 guestMode
-                onGuestComplete={(profile) => {
-                  setGuestProfile(profile);
-                  localStorage.setItem("fmsg-guest-profile", JSON.stringify(profile));
-                  setShowCVModal(false);
-                  setShowPFWalkthrough(true);
+                onGuestProfile={(profile) => {
+                  localStorage.setItem("fmsg-guest-profile", JSON.stringify({
+                    job_titles: profile.job_titles,
+                    location: profile.location,
+                    industry: "",
+                    job_types: profile.job_types,
+                  }));
+                  setGuestProfile({
+                    job_titles: profile.job_titles,
+                    location: profile.location,
+                    industry: "",
+                  });
                 }}
                 onOnboarded={() => {
                   setShowCVModal(false);

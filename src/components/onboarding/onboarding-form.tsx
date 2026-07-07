@@ -26,10 +26,10 @@ const JOB_TYPE_OPTIONS = [
 interface OnboardingFormProps {
   onOnboarded?: () => void;
   guestMode?: boolean;
-  onGuestComplete?: (data: { job_titles: string[]; location: string; industry: string }) => void;
+  onGuestProfile?: (data: { job_titles: string[]; location: string; job_types: string[]; name: string; surname: string; phone: string; address: string; current_salary: number | null; desired_salary: number | null }) => void;
 }
 
-export function OnboardingForm({ onOnboarded, guestMode, onGuestComplete }: OnboardingFormProps) {
+export function OnboardingForm({ onOnboarded, guestMode, onGuestProfile }: OnboardingFormProps) {
   const [step, setStep] = useState<Step>("upload");
   const [dragOver, setDragOver] = useState(false);
   const [error, setError] = useState("");
@@ -67,25 +67,17 @@ export function OnboardingForm({ onOnboarded, guestMode, onGuestComplete }: Onbo
         setStep("upload");
         return;
       }
-      if (guestMode) {
-        onGuestComplete?.({
-          job_titles: data.job_titles ?? [],
-          location: data.location ?? "",
-          industry: data.industry ?? "",
-        });
-      } else {
-        setName(data.name ?? "");
-        setSurname(data.surname ?? "");
-        setPhone(data.phone ?? "");
-        setAddress(data.address ?? "");
-        setJobTitles(data.job_titles ?? []);
-        setJobTypes(data.job_types ?? []);
-        setLocation(data.preferred_location ?? "");
-        setCurrentSalary(data.current_salary ?? null);
-        setDesiredSalary(data.desired_salary ?? null);
-        setCvFilePath(data.cv_file_path ?? "");
-        setStep("review");
-      }
+      setName(data.name ?? "");
+      setSurname(data.surname ?? "");
+      setPhone(data.phone ?? "");
+      setAddress(data.address ?? "");
+      setJobTitles(data.job_titles ?? []);
+      setJobTypes(data.job_types ?? []);
+      setLocation(data.preferred_location ?? data.location ?? "");
+      setCurrentSalary(data.current_salary ?? null);
+      setDesiredSalary(data.desired_salary ?? null);
+      setCvFilePath(data.cv_file_path ?? "");
+      setStep("review");
     } catch {
       setError("Could not analyze CV. Please try again.");
       setStep("upload");
@@ -107,6 +99,24 @@ export function OnboardingForm({ onOnboarded, guestMode, onGuestComplete }: Onbo
   const handleSave = async () => {
     setSaving(true);
     setError("");
+
+    if (guestMode) {
+      onGuestProfile?.({
+        job_titles: jobTitles,
+        location,
+        job_types: jobTypes,
+        name,
+        surname,
+        phone,
+        address,
+        current_salary: currentSalary,
+        desired_salary: desiredSalary,
+      });
+      setSaving(false);
+      onOnboarded?.();
+      return;
+    }
+
     const supabase = createClient();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { setError("Not authenticated."); setSaving(false); return; }
