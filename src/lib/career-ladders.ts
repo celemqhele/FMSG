@@ -149,18 +149,14 @@ export async function generateIndustryLadder(industry: string): Promise<Industry
   }
 
   const branch = await getTaxonomyBranch(industry.trim());
-  if (branch.length === 0) {
-    const step = industry.trim();
-    return {
-      step_1: step, step_1_taxonomy_id: null, step_2: step, step_2_taxonomy_id: null,
-      step_3: step, step_3_taxonomy_id: null, step_4: step, step_4_taxonomy_id: null,
-      step_5: step, step_5_taxonomy_id: null,
-    };
-  }
+  const hasTaxonomy = branch.length > 0;
 
-  const branchJson = branch.map((n) => `  ${n.id} | depth=${n.depth} | ${n.name}`).join("\n");
+  const branchJson = hasTaxonomy
+    ? branch.map((n) => `  ${n.id} | depth=${n.depth} | ${n.name}`).join("\n")
+    : "";
 
-  const systemPrompt = `You are a career matching specialist. Given a candidate's specific industry
+  const systemPrompt = hasTaxonomy
+    ? `You are a career matching specialist. Given a candidate's specific industry
 and a constrained industry taxonomy, build a 5-step industry ladder.
 
 TAXONOMY (only the branch containing the candidate's industry):
@@ -176,15 +172,10 @@ TASK:
    - step 3 = next level broader
    - step 4 = next level broader
    - step 5 = the depth-0 broad economic sector
-4. If the taxonomy path has fewer than 5 nodes, pad by repeating step 5
-   at the remaining positions.
-5. If the taxonomy path has more than 5 nodes, keep the most specific and most
-   broad and select intermediate steps that best distribute the broadening evenly.
-6. For each step, include the taxonomy_id (UUID) of the matched taxonomy node if one
-   exists, otherwise set taxonomy_id to null.
+4. If the taxonomy path has fewer than 5 nodes, pad by repeating step 5.
+5. For each step, include the taxonomy_id (UUID) if one exists, otherwise null.
 
-The ladder MUST stay within the taxonomy branch — never cross into an
-unrelated sector (e.g. Pharmaceuticals must not ladder into Technology).
+The ladder MUST stay within the taxonomy branch — never cross sectors.
 
 Return ONLY valid JSON:
 {
@@ -194,6 +185,36 @@ Return ONLY valid JSON:
     { "step": 3, "value": "...", "taxonomy_id": "uuid-or-null" },
     { "step": 4, "value": "...", "taxonomy_id": "uuid-or-null" },
     { "step": 5, "value": "...", "taxonomy_id": "uuid-or-null" }
+  ]
+}`
+    : `You are a career matching specialist. Given a candidate's specific industry,
+build a 5-step industry broadening ladder using your knowledge of real-world
+industry hierarchies.
+
+RULES:
+- step 1 = the most specific niche within the candidate's industry
+- step 2 = one level broader (adjacent parent category)
+- step 3 = next level broader
+- step 4 = next level broader
+- step 5 = the broadest economic sector this industry belongs to
+- Each step must be a genuine, real-world industry category.
+- Ladder must stay in the same sector — Pharmaceuticals must not broaden into Technology.
+
+Example: "Private Wealth Banking"
+→ ["Private Wealth Banking", "Wealth Management", "Banking", "Financial Services", "Financial Services"]
+Example: "E-commerce"
+→ ["E-commerce", "Online Retail", "Retail", "Retail & Consumer Goods", "Consumer Goods"]
+Example: "Pharmaceuticals"
+→ ["Pharmaceutical R&D", "Pharmaceuticals", "Healthcare Products", "Healthcare", "Healthcare"]
+
+Return ONLY valid JSON:
+{
+  "steps": [
+    { "step": 1, "value": "Pharmaceutical R&D", "taxonomy_id": null },
+    { "step": 2, "value": "Pharmaceuticals", "taxonomy_id": null },
+    { "step": 3, "value": "Healthcare Products", "taxonomy_id": null },
+    { "step": 4, "value": "Healthcare", "taxonomy_id": null },
+    { "step": 5, "value": "Healthcare", "taxonomy_id": null }
   ]
 }`;
 
