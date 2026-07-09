@@ -317,6 +317,16 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
       return;
     }
 
+    // Fire-and-forget: generate career ladders in the background
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session) {
+      fetch("/api/generate-ladders", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ profile_id: profileId, force: true }),
+      }).catch(() => {});
+    }
+
     onSaved?.();
     onClose();
   };

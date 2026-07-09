@@ -1,0 +1,557 @@
+================================================================================
+CAREER LADDERS PLAN — Cached Dual-Ladder Career Chains + Industry Taxonomy
+================================================================================
+Date: 2026-07-09
+Target: FMSG Persistent Finder (PF) job matching system
+
+TABLE OF CONTENTS
+  1. Problem Statement
+  2. Architecture Overview
+  3. SQL Migration (022_career_ladders.sql)
+  4. Prompt A — Seed Industry Taxonomy (run once)
+  5. Prompt B — Generate Profile Industry Ladder (per profile, at CV analysis)
+  6. Prompt C — Generate Title Ladders Per CV (per CV variation, at CV analysis)
+  7. Search-Time Usage (replaces live PF chain generation)
+  8. Regeneration Triggers
+  9. File Change Summary
+
+
+================================================================================
+1. PROBLEM STATEMENT
+================================================================================
+
+Currently, PF generates a single AI-driven expansion chain per search (title
+broadening + industry broadening combined), live, every search. This causes:
+
+  a) Drift — e.g. Pharmaceuticals incorrectly broadening into Technology
+     because the industry ladder has no fixed structure and is freely generated
+     off a single unrelated example each time.
+
+  b) Cost — AI calls on every PF search to regenerate chains that rarely change.
+
+Fix: split into TWO independent, purpose-built ladders:
+
+  INDUSTRY LADDER (profile-level): Generated once against a constrained
+  taxonomy (AI selects/walks the correct branch rather than freely inventing).
+  5 editable steps from hyper-niche -> niche -> sub-sector -> industry ->
+  broad economic sector. Stored in profile_industry_ladder table with UUID
+  FK references to industry_taxonomy + text fallback for freeform overrides.
+  AI fills all 5 steps; user can edit any step afterward via profile UI.
+  Reused across all CVs unless user manually edits or a new CV signals a
+  different industry.
+
+  TITLE LADDER (per CV/angle): Generated per CV variation at analysis time.
+  5 steps from hyper-niche title -> niche title -> intermediate role ->
+  broader role -> generic function. Cached in cv_variations[].title_ladder
+  on search_profiles.
+
+Both ladders generated once, cached in the database, and read at search time
+with zero AI calls. Each step maps 1:1 to a PF search round (round 1 = step 1,
+round 5 = step 5).
+
+
+================================================================================
+2. ARCHITECTURE OVERVIEW
+================================================================================
+
+                    ┌────────────────────────────┐
+                    │   industry_taxonomy table   │  ← seeded ONCE by Prompt A
+                    │   (AI-generated hierarchy)  │     depth 0-3, ~200-400 rows
+                    └──────────┬─────────────────┘
+                               │ relevant subtree pulled as context
+                               ▼
+┌──────────────────┐   ┌──────────────────────────────────┐
+│   Prompt B       │   │          Prompt C                │
+│ Industry Ladder  │   │       Title Ladders              │
+│ (profile-level)  │   │    (per CV variation)            │
+│ AI fills 5 steps │   │    AI fills 5 steps per title    │
+│ user can edit    │   │    stored in JSONB on existing   │
+│ each step        │   │    cv_variations column          │
+└────────┬─────────┘   └────────────┬─────────────────────┘
+         │ stored in                 │ stored in
+         ▼                           ▼
+  profile_industry_ladder      cv_variations[].title_ladder
+  (dedicated 1:1 table,        (JSONB, 5 strings per title)
+   5 text cols + 5 FK cols)          │
+         │                           │
+         └──────────┬────────────────┘
+                    │ read at search time (zero AI calls)
+                    ▼
+            PF search rounds 1-5 use
+            step_1 through step_5
+            from each ladder
+
+Profile UI flow:
+  1. AI analysis fills all 5 steps in profile_industry_ladder,
+     linking each to a taxonomy node (FK) where possible.
+  2. User sees 5 editable inputs in their profile settings.
+  3. Each input has a dropdown suggestions list from industry_taxonomy,
+     pre-filtered to the relevant taxonomy branch.
+  4. If user picks a taxonomy node → both the text value and FK update.
+  5. If user types freely → text updates, FK goes NULL (fallback).
+  6. Changes take effect on the next PF search — no regeneration needed.
+
+
+================================================================================
+3. SQL MIGRATION (022_career_ladders.sql)
+================================================================================
+
+-- ============================================================
+-- Feature 1: Cached dual-ladder career chains + industry taxonomy
+-- Feature 2: Multi-CV reanalysis tracking
+-- ============================================================
+
+-- 1. Industry taxonomy tree (seeded once by Prompt A)
+CREATE TABLE IF NOT EXISTS industry_taxonomy (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL UNIQUE,
+  parent_id UUID REFERENCES industry_taxonomy(id) ON DELETE SET NULL,
+  depth INTEGER NOT NULL CHECK (depth >= 0 AND depth <= 3),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- 2. Profile industry ladder — dedicated 1:1 table (keeps profiles lean)
+--    5 editable steps: hyper-niche → niche → sub-sector → industry → broad
+--    Each step has a TEXT value + optional UUID FK to industry_taxonomy.
+--    FK provides the constrained path; TEXT is the fallback for freeform edits.
+CREATE TABLE IF NOT EXISTS profile_industry_ladder (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE UNIQUE,
+
+  step_1 TEXT NOT NULL,
+  step_1_taxonomy_id UUID REFERENCES industry_taxonomy(id) ON DELETE SET NULL,
+  step_2 TEXT NOT NULL,
+  step_2_taxonomy_id UUID REFERENCES industry_taxonomy(id) ON DELETE SET NULL,
+  step_3 TEXT NOT NULL,
+  step_3_taxonomy_id UUID REFERENCES industry_taxonomy(id) ON DELETE SET NULL,
+  step_4 TEXT NOT NULL,
+  step_4_taxonomy_id UUID REFERENCES industry_taxonomy(id) ON DELETE SET NULL,
+  step_5 TEXT NOT NULL,
+  step_5_taxonomy_id UUID REFERENCES industry_taxonomy(id) ON DELETE SET NULL,
+
+  generated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ
+);
+
+-- 3. Profile-level industry (top-level label, kept for display/search_pill reads)
+ALTER TABLE profiles
+  ADD COLUMN IF NOT EXISTS industry TEXT;
+
+-- 4. Formalise the phantom industry column on search_profiles
+--    (code already reads/writes it; now making it official)
+ALTER TABLE search_profiles
+  ADD COLUMN IF NOT EXISTS industry TEXT;
+
+-- 5. Reanalysis tracking for search_profiles
+ALTER TABLE search_profiles
+  ADD COLUMN IF NOT EXISTS needs_reanalysis BOOLEAN DEFAULT false,
+  ADD COLUMN IF NOT EXISTS last_analysed_at TIMESTAMPTZ;
+
+-- 6. Indexes
+CREATE INDEX IF NOT EXISTS idx_industry_taxonomy_parent
+  ON industry_taxonomy(parent_id);
+
+CREATE INDEX IF NOT EXISTS idx_industry_taxonomy_depth
+  ON industry_taxonomy(depth);
+
+CREATE INDEX IF NOT EXISTS idx_profile_industry_ladder_user
+  ON profile_industry_ladder(user_id);
+
+-- 7. RLS on profile_industry_ladder
+ALTER TABLE profile_industry_ladder ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view own industry ladder"
+  ON profile_industry_ladder FOR SELECT
+  USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert own industry ladder"
+  ON profile_industry_ladder FOR INSERT
+  WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update own industry ladder"
+  ON profile_industry_ladder FOR UPDATE
+  USING (auth.uid() = user_id);
+
+-- NOTE: No schema change needed for title ladders.
+-- The existing cv_variations JSONB column on search_profiles absorbs the
+-- new label, title_ladder (5-step array), and title_ladder_generated_at
+-- fields per entry. App code just writes/reads the enriched shape:
+
+-- From:
+--   [{ "name": "CV", "file_path": "abc/cv1.pdf" }]
+--
+-- To:
+--   [{
+--     "label": "Cybersecurity angle",
+--     "file_path": "abc/cv1.pdf",
+--     "title_ladder": ["Penetration Tester", "Cybersecurity Analyst",
+--                       "IT Security Specialist", "IT Administrator",
+--                       "Technology Professional"],
+--     "title_ladder_generated_at": "2026-07-09T15:00:00Z"
+--   }]
+
+
+================================================================================
+4. PROMPT A — SEED INDUSTRY TAXONOMY (RUN ONCE)
+================================================================================
+
+Called from: a one-time setup script or admin endpoint.
+Populates: industry_taxonomy table.
+
+PROMPT:
+---
+You are building a global industry taxonomy for a job matching system.
+Generate a comprehensive 4-level hierarchical taxonomy.
+
+Rules:
+- Level 0 = broadest economic sectors
+- Level 1 = sub-sectors
+- Level 2 = industry niches
+- Level 3 = hyper-niche (most specific)
+- Every node at depth 1-3 must have a parent at depth-1 that is a genuine
+  broader category. No fictional or crossover paths.
+- This is about INDUSTRIES (where employers operate), NOT job titles.
+  "Cybersecurity" is an industry. "Penetration Tester" is a title — do not
+  include titles.
+
+Cover these major sectors at minimum: Financial Services, Technology,
+Healthcare, Manufacturing, Energy & Utilities, Retail & E-commerce,
+Education, Government & Public Sector, Transportation & Logistics,
+Media & Entertainment, Agriculture & Food, Legal Services, Real Estate,
+Hospitality & Tourism, Telecommunications, Construction & Engineering,
+Insurance, Mining & Resources, Pharmaceuticals, Automotive,
+Aerospace & Defence.
+
+Return a flat JSON array where each node has:
+- name (string): the industry name
+- parent (string | null): exact name of the parent node, null for depth 0
+- depth (number): 0-3
+
+Return ONLY valid JSON, no markdown, no code fences.
+---
+
+Expected output shape:
+[
+  { "name": "Financial Services", "parent": null, "depth": 0 },
+  { "name": "Banking", "parent": "Financial Services", "depth": 1 },
+  { "name": "Wealth Management", "parent": "Banking", "depth": 2 },
+  { "name": "Private Wealth Banking", "parent": "Wealth Management", "depth": 3 },
+  ...
+]
+
+Post-processing: insert all nodes into industry_taxonomy, resolving parent
+name references to UUIDs.
+
+Caching: This is effectively static. Regenerate only if the taxonomy feels
+stale or new sectors emerge. The table grows to approximately 200-400 rows
+for a comprehensive taxonomy.
+
+
+================================================================================
+5. PROMPT B — GENERATE PROFILE INDUSTRY LADDER (PER PROFILE, AT CV ANALYSIS)
+================================================================================
+
+Called from: CV extraction flow (extract-cv/route.ts) or profile save handler.
+Inserts/updates: profile_industry_ladder table.
+Also sets: profiles.industry, search_profiles.industry.
+
+HOW THE TAXONOMY SUBTREE IS FETCHED:
+  1. CV extraction gives a candidate industry string (e.g. "Private Wealth
+     Banking").
+  2. Find the closest taxonomy match via ilike.
+  3. Walk up to find the depth-0 root ancestor.
+  4. Pull the full branch (root + all descendants) as context for the AI.
+  5. Feed that branch into Prompt B.
+
+PROMPT:
+---
+You are a career matching specialist. Given a candidate's specific industry
+and a constrained industry taxonomy, build a 5-step industry ladder.
+
+TAXONOMY (only the branch containing the candidate's industry):
+{taxonomyBranchRows}
+
+CANDIDATE'S INDUSTRY: "{industry}"
+
+TASK:
+1. Find the closest matching taxonomy node to the candidate's industry.
+2. Walk upward through each parent to depth 0.
+3. Build a 5-step ladder:
+   - step 1 = the hyper-niche (deepest taxonomy match, depth 3 if available)
+   - step 2 = one level broader (parent)
+   - step 3 = next level broader
+   - step 4 = next level broader
+   - step 5 = the depth-0 broad economic sector
+4. If the taxonomy path has fewer than 5 nodes, pad by repeating step 5
+   at the remaining positions.
+5. If the taxonomy path has more than 5 nodes, keep the most specific and
+   most broad and select intermediate steps that best distribute the
+   broadening evenly.
+
+Example:
+Candidate: "Private Wealth Banking"
+Taxonomy path up = [Private Wealth Banking > Wealth Management > Banking >
+                    Financial Services]  (4 nodes)
+Steps: 1=Private Wealth Banking, 2=Wealth Management, 3=Banking,
+       4=Financial Services, 5=Financial Services (repeated/padded)
+
+The ladder MUST stay within the taxonomy branch — never cross into an
+unrelated sector (e.g. Pharmaceuticals must not ladder into Technology).
+
+Return ONLY valid JSON:
+{
+  "steps": [
+    { "step": 1, "value": "Private Wealth Banking", "taxonomy_id": "<uuid-from-table>" },
+    { "step": 2, "value": "Wealth Management", "taxonomy_id": "<uuid-from-table>" },
+    { "step": 3, "value": "Banking", "taxonomy_id": "<uuid-from-table>" },
+    { "step": 4, "value": "Financial Services", "taxonomy_id": "<uuid-from-table>" },
+    { "step": 5, "value": "Financial Services", "taxonomy_id": "<uuid-from-table>" }
+  ]
+}
+---
+
+CACHING:
+  profile_industry_ladder.step_1..5 = result.steps[0..4].value
+  profile_industry_ladder.step_1..5_taxonomy_id = result.steps[0..4].taxonomy_id
+  profiles.industry = result.steps[4].value (broadest)
+  search_profiles.industry = result.steps[4].value
+  profile_industry_ladder.generated_at = now()
+
+USER EDITING:
+  The profile UI shows 5 inputs labelled "Industry Step 1" through "Step 5".
+  Each input has a typeahead/dropdown populated from industry_taxonomy rows
+  filtered to the relevant branch. Picking a taxonomy node sets both the
+  text value and the FK. Freeform typing sets only the text and nulls the FK.
+  Saving the form upserts profile_industry_ladder.
+
+
+================================================================================
+6. PROMPT C — GENERATE TITLE LADDERS PER CV (PER VARIATION, AT CV ANALYSIS)
+================================================================================
+
+Called from: CV extraction or profile save.
+Stores on: cv_variations[].title_ladder (5 strings per title),
+           cv_variations[].label (AI-generated descriptive name),
+           cv_variations[].title_ladder_generated_at
+
+Also sets: search_profiles.needs_reanalysis = false,
+           search_profiles.last_analysed_at = now()
+
+PROMPT:
+---
+You are a career expansion specialist. Given a CV's content and the job
+titles the candidate is targeting, generate an expanding career ladder for
+each title.
+
+RULES:
+- For EACH title, generate a 5-step ladder where [0] is the most specific
+  (the candidate's exact title or closest match), and [4] is the most
+  generic function-level description of that role.
+- Each step must be a real, searchable job board title.
+- Each step must share overlapping skills with the previous step.
+- Adjacent roles broaden naturally — don't jump across unrelated functions.
+- The ladder reflects what the candidate COULD do, based on their actual
+  CV content and skills.
+
+Example:
+Title: "Penetration Tester" (CV shows cybersecurity skills)
+Ladder: ["Penetration Tester", "Cybersecurity Analyst",
+         "IT Security Specialist", "IT Administrator",
+         "Technology Professional"]
+
+Title: "React Developer" (CV shows frontend skills)
+Ladder: ["React Developer", "Frontend Developer", "Full Stack Developer",
+         "Software Developer", "IT Professional"]
+
+CV TEXT:
+{cvText}
+
+JOB TITLES:
+{titles}
+
+For each title, return a 5-step ladder. The ladder should be realistic and
+based on the actual skills shown in this CV — not a generic template.
+
+Return ONLY valid JSON:
+{
+  "title_ladders": {
+    "Penetration Tester": [
+      "Penetration Tester", "Cybersecurity Analyst",
+      "IT Security Specialist", "IT Administrator",
+      "Technology Professional"
+    ],
+    "React Developer": [
+      "React Developer", "Frontend Developer",
+      "Full Stack Developer", "Software Developer",
+      "IT Professional"
+    ]
+  },
+  "cv_label": "Cybersecurity angle"
+}
+---
+
+NOTES ON cv_label:
+  The AI generates a short descriptive name for this CV based on what
+  differentiates it from others the same person might have (Feature 2
+  requirement). The first CV uploaded gets a label based on its dominant
+  angle. When multiple CVs already exist, include their existing labels
+  in the prompt so the AI can differentiate:
+
+  EXISTING CV LABELS: ["Software Engineer angle"]
+  → New CV might get label: "IT Auditor angle"
+
+
+================================================================================
+7. SEARCH-TIME USAGE (REPLACES LIVE PF CHAIN GENERATION)
+================================================================================
+
+Replaces live PF chain generation in src/app/api/search/route.ts
+(currently lines ~1459-1518). Zero AI calls at search time.
+
+PSEUDOCODE:
+---
+// 1. Read cached industry ladder (one row per user)
+const { data: ladder } = await supabase
+  .from("profile_industry_ladder")
+  .select("step_1, step_2, step_3, step_4, step_5")
+  .eq("user_id", user.id)
+  .maybeSingle();
+
+const industryChain = ladder
+  ? [ladder.step_1, ladder.step_2, ladder.step_3, ladder.step_4, ladder.step_5]
+  : [];
+// ["Private Wealth Banking", "Wealth Management", "Banking",
+//  "Financial Services", "Financial Services"]
+
+// 2. Read cached title ladders from cv_variations
+const { data: searchProfile } = await supabase
+  .from("search_profiles")
+  .select("cv_variations")
+  .eq("id", profile_id)
+  .single();
+
+const cvVariations: CvVariation[] = searchProfile.cv_variations ?? [];
+
+// 3. Merge title ladders across all CVs per round
+const titleSteps: string[][] = Array.from({ length: MAX_ROUNDS }, () => []);
+const seenPerRound = Array.from({ length: MAX_ROUNDS }, () => new Set<string>());
+
+for (const cv of cvVariations) {
+  const ladder = cv.title_ladder; // 5-step array per CV
+  if (!ladder || ladder.length === 0) continue;
+  for (let round = 0; round < MAX_ROUNDS && round < ladder.length; round++) {
+    const term = ladder[round]?.trim();
+    if (term && !seenPerRound[round].has(term.toLowerCase())) {
+      seenPerRound[round].add(term.toLowerCase());
+      titleSteps[round].push(term);
+    }
+  }
+}
+
+// 4. Execute rounds using cached ladder steps
+for (let round = 0; round < MAX_ROUNDS; round++) {
+  const titleQuery = buildOrQuery(titleSteps[round]);
+  const industryPart = industryChain[round] || industryChain[industryChain.length - 1];
+  const fullQuery = [titleQuery, industryPart, pfLocation, "jobs"]
+    .filter(Boolean).join(" ");
+
+  sendStatus({ type: "pf_round", round: round + 1, max: MAX_ROUNDS, query: fullQuery });
+
+  const jobResults = await searchAndScore(fullQuery, ...);
+  // ... deduplicate, accumulate ...
+}
+---
+
+EARLY STOP CONDITIONS (unchanged):
+  - If 5+ jobs score >= 80, PF stops early (hard stop)
+  - After 4 minutes elapsed, PF stops
+
+FALLBACK (no cached ladders yet — e.g. legacy profiles):
+  - If no profile_industry_ladder row exists, prompt the user to run analysis
+    or fall back to the old live chain generation path as a one-time bridge.
+
+
+================================================================================
+8. REGENERATION TRIGGERS
+================================================================================
+
+Industry ladder regeneration (re-runs Prompt B):
+  a) User manually edits any of the 5 step fields in profile settings
+  b) New CV uploaded, AI-extracted industry mismatches profiles.industry
+  c) Manual "reanalyse" button in the dashboard
+
+Title ladder regeneration (re-runs Prompt C):
+  a) New CV variation uploaded (triggers Prompt C for that CV)
+  b) CV replaced with updated file
+  c) Manual "reanalyse" action
+  d) search_profiles.needs_reanalysis = true (set by any trigger above)
+
+Reanalysis flow (Feature 2):
+  1. User uploads additional CV via profile modal
+  2. CV is extracted (extract-cv/route.ts returns structured data)
+  3. App checks: does the extracted industry match profiles.industry?
+     - YES: just run Prompt C for the new CV, store its title ladder,
+            set cv_label by including existing labels as context
+     - NO:  show popup — "New CV added, want us to reanalyse your profile?"
+            On confirm → rerun Prompt B + C across all CVs.
+            On decline → skip industry ladder, just run Prompt C for the
+            new CV with a warning that industry may not match.
+  4. search_profiles.needs_reanalysis = false
+  5. search_profiles.last_analysed_at = now()
+
+User manual edits to industry ladder steps:
+  1. User opens profile settings
+  2. Sees 5 labelled inputs (Step 1 through Step 5)
+  3. Each input has a typeahead dropdown from industry_taxonomy
+  4. User modifies one or more steps
+  5. On save: upsert profile_industry_ladder with new text values
+     and FK references (or NULL if freeform)
+  6. No AI regeneration needed — the user's edits ARE the new ladder
+
+
+================================================================================
+9. FILE CHANGE SUMMARY
+================================================================================
+
+NEW FILES:
+  supabase/migrations/022_career_ladders.sql     — Migration (Section 3)
+  src/lib/career-ladders.ts                      — Prompt A/B/C functions,
+                                                    taxonomy subtree fetcher,
+                                                    ladder cache read/write to DB
+
+MODIFIED FILES:
+  src/app/api/extract-cv/route.ts                — After CV extraction,
+                                                    trigger Prompt B + C,
+                                                    insert/update ladders in DB
+
+  src/app/api/search/route.ts                    — Replace live PF chain
+                                                    generation (~lines 1459-1518)
+                                                    with cached ladder reads
+                                                    from profile_industry_ladder
+                                                    and cv_variations.
+                                                    Remove AI call for career chains.
+
+  src/components/dashboard/profile-onboarding-modal.tsx
+                                                  — On save: upsert
+                                                    profile_industry_ladder +
+                                                    write title ladders to
+                                                    cv_variations.
+                                                  — Add 5 editable industry
+                                                    step inputs with taxonomy
+                                                    dropdown.
+                                                  — On new CV add: show
+                                                    reanalyse popup if
+                                                    industry mismatches.
+                                                  — Use cv_label from Prompt C
+                                                    instead of generic "CV" names.
+
+  src/app/profile/page.tsx                       — Add 5 industry ladder
+                                                    step inputs (editable)
+                                                    with taxonomy typeahead.
+
+POTENTIALLY NEW:
+  An admin endpoint or one-time script to run Prompt A and seed the
+  industry_taxonomy table. Could be:
+  - A Next.js API route (e.g. /api/admin/seed-taxonomy)
+  - A standalone Node.js script
+  - A Supabase Edge Function

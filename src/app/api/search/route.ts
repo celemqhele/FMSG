@@ -4,6 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import { searchGoogleJobs, type SerpJob } from "@/lib/serpapi";
 import { extractTextFromPDF } from "@/lib/pdf";
 import { callAIWithFallback, lastAITier } from "@/lib/gemini";
+import { readCachedLadders } from "@/lib/career-ladders";
 import { StreamWriter, type SearchEvent } from "@/lib/search-stream";
 import { debugLog } from "@/lib/debug";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -1164,7 +1165,7 @@ export async function POST(request: NextRequest) {
       let titles: string[] = [];
       let profileLocation = "";
       let profileIndustry = "";
-      let cvVariations: { name: string; file_path: string }[] = [];
+      let cvVariations: { name: string; label?: string; file_path: string; title_ladders?: Record<string, string[]> }[] = [];
 
       if (profile_id) {
         const { data: searchProfile } = await dataClient
@@ -1395,9 +1396,9 @@ Return ONLY valid JSON (no markdown, no code fences):
           let pfBannedJobs: string[];
           let pfBannedCompanies: string[];
           let pfDedupSets: any;
-          let startRoundIndex: number;
-          let titleChainSteps: string[][]; // [step][titles] — 5 steps, each is all titles for that round
-          let industryChain: string[];    // [step] — 5 industry terms
+          let startRoundIndex: number = 0;
+          let titleChainSteps: string[][] = []; // [step][titles] — 5 steps, each is all titles for that round
+          let industryChain: string[] = [];    // [step] — 5 industry terms
           let hardStop = false;
 
           if (isContinuation && state.mode === "pf") {
@@ -1430,15 +1431,22 @@ Return ONLY valid JSON (no markdown, no code fences):
             startRoundIndex = 0;
             seenUrls = new Set([...pfDedupSets.history, ...pfDedupSets.saved, ...pfDedupSets.blocked]);
 
-            // Auto-generate industry if missing (uses CV text when available)
-            if (!pfIndustry && pfTitles.length > 0) {
-              try {
-                const pfCvText = pfCvTexts?.map(cv => cv.text).join("\n\n") ?? "";
-                const userContent = pfCvText.trim()
-                  ? `CV text:\n${pfCvText.slice(0, 8000)}`
-                  : `Job titles (no CV text available; infer from titles as best you can): ${JSON.stringify(pfTitles)}`;
-                const industryRaw = await callAIWithFallback(
-                  `Determine the single most likely industry the candidate works in.
+            // Read cached career ladders (or fall back to live AI generation)
+            const cached = await readCachedLadders(user.id, state.profile_id ?? "").catch(() => null);
+
+            if (cached?.industryChain?.length) {
+              industryChain = cached.industryChain;
+              debugLog(`[PF] Using cached industry ladder: ${industryChain.join(" > ")}`);
+            } else {
+              // Fallback: legacy path — auto-generate industry if missing
+              if (!pfIndustry && pfTitles.length > 0) {
+                try {
+                  const pfCvText = pfCvTexts?.map(cv => cv.text).join("\n\n") ?? "";
+                  const userContent = pfCvText.trim()
+                    ? `CV text:\n${pfCvText.slice(0, 8000)}`
+                    : `Job titles (no CV text available; infer from titles as best you can): ${JSON.stringify(pfTitles)}`;
+                  const industryRaw = await callAIWithFallback(
+                    `Determine the single most likely industry the candidate works in.
 
 CRITICAL: Industry is where the candidate's EMPLOYERS/COMPANIES operate, not what their job title suggests.
 - "Customer Success Manager" at a datacenter company = Critical Digital Infrastructure, NOT SaaS.
@@ -1447,19 +1455,42 @@ Look at the actual business of the companies listed in the work history.
 
 Return ONLY valid JSON (no markdown, no code fences):
 { "industry": string }`,
-                  userContent,
-                  "PF auto-generate industry",
-                  { responseMimeType: "application/json", temperature: 0.3 }
-                );
-                const cleaned = industryRaw.slice(industryRaw.indexOf("{"), industryRaw.lastIndexOf("}") + 1);
-                pfIndustry = JSON.parse(cleaned).industry?.trim() ?? "";
-              } catch { /* proceed without industry */ }
+                    userContent,
+                    "PF auto-generate industry",
+                    { responseMimeType: "application/json", temperature: 0.3 }
+                  );
+                  const cleaned = industryRaw.slice(industryRaw.indexOf("{"), industryRaw.lastIndexOf("}") + 1);
+                  pfIndustry = JSON.parse(cleaned).industry?.trim() ?? "";
+                } catch { /* proceed without industry */ }
+              }
             }
 
-            // AI-generated career chains: title + industry expansion
-            try {
-              const chainsRaw = await callAIWithFallback(
-                `You are a career expansion specialist. Given a candidate's job titles and industry, generate expanding career chains.
+            if (cached?.titleLaddersByCv?.length) {
+              titleChainSteps = Array.from({ length: MAX_ROUNDS }, () => [] as string[]);
+              const seen = Array.from({ length: MAX_ROUNDS }, () => new Set<string>());
+              for (const cv of cached.titleLaddersByCv) {
+                for (const ladder of Object.values(cv.title_ladders)) {
+                  if (!Array.isArray(ladder)) continue;
+                  for (let s = 0; s < MAX_ROUNDS && s < ladder.length; s++) {
+                    const term = ladder[s]?.trim();
+                    if (term && !seen[s].has(term.toLowerCase())) {
+                      seen[s].add(term.toLowerCase());
+                      titleChainSteps[s].push(term);
+                    }
+                  }
+                }
+              }
+              for (let s = 0; s < MAX_ROUNDS; s++) {
+                if (titleChainSteps[s].length === 0) titleChainSteps[s] = [...pfTitles];
+              }
+              debugLog(`[PF] Using cached title ladders from ${cached.titleLaddersByCv.length} CV variation(s)`);
+            }
+
+            // If cached industry chain missing, try legacy AI generation
+            if (!industryChain || industryChain.length === 0) {
+              try {
+                const chainsRaw = await callAIWithFallback(
+                  `You are a career expansion specialist. Given a candidate's job titles and industry, generate expanding career chains.
 
 TITLE CHAINS: For EACH title, generate a ${MAX_ROUNDS}-step expansion where each step broadens into an adjacent role sharing overlapping skills. Each step must be a genuine, searchable job board title. Move broader with each step — step 1 is the original or closest match, step 5 is the most generic form of the role.
 
@@ -1478,43 +1509,54 @@ Return:
 }
 
 Return ONLY valid JSON (no markdown, no code fences).`,
-                `Job titles: ${JSON.stringify(pfTitles)}\nIndustry: ${pfIndustry || "Unknown"}`,
-                "PF generate career chains",
-                { responseMimeType: "application/json", temperature: 0.5 }
-              );
-              const cleaned = chainsRaw.slice(chainsRaw.indexOf("{"), chainsRaw.lastIndexOf("}") + 1);
-              const chainData = JSON.parse(cleaned);
-              const rawTitleChains: Record<string, string[]> = chainData.title_chains || {};
-              industryChain = chainData.industry_chain || [];
+                  `Job titles: ${JSON.stringify(pfTitles)}\nIndustry: ${pfIndustry || "Unknown"}`,
+                  "PF generate career chains",
+                  { responseMimeType: "application/json", temperature: 0.5 }
+                );
+                const cleaned = chainsRaw.slice(chainsRaw.indexOf("{"), chainsRaw.lastIndexOf("}") + 1);
+                const chainData = JSON.parse(cleaned);
+                const rawTitleChains: Record<string, string[]> = chainData.title_chains || {};
+                industryChain = chainData.industry_chain || [];
 
-              // Merge chains into step arrays: step[i] = all titles from all chains at position i, deduplicated
-              titleChainSteps = Array.from({ length: MAX_ROUNDS }, () => [] as string[]);
-              const seen = Array.from({ length: MAX_ROUNDS }, () => new Set<string>());
-              for (const title of pfTitles) {
-                const chain = rawTitleChains[title];
-                if (chain && Array.isArray(chain)) {
-                  for (let s = 0; s < MAX_ROUNDS && s < chain.length; s++) {
-                    const term = chain[s]?.trim();
-                    if (term && !seen[s].has(term.toLowerCase())) {
-                      seen[s].add(term.toLowerCase());
-                      titleChainSteps[s].push(term);
+                if (!titleChainSteps || titleChainSteps.every(s => s.length === 0)) {
+                  titleChainSteps = Array.from({ length: MAX_ROUNDS }, () => [] as string[]);
+                  const seen = Array.from({ length: MAX_ROUNDS }, () => new Set<string>());
+                  for (const title of pfTitles) {
+                    const chain = rawTitleChains[title];
+                    if (chain && Array.isArray(chain)) {
+                      for (let s = 0; s < MAX_ROUNDS && s < chain.length; s++) {
+                        const term = chain[s]?.trim();
+                        if (term && !seen[s].has(term.toLowerCase())) {
+                          seen[s].add(term.toLowerCase());
+                          titleChainSteps[s].push(term);
+                        }
+                      }
                     }
                   }
+                  for (let s = 0; s < MAX_ROUNDS; s++) {
+                    if (titleChainSteps[s].length === 0) titleChainSteps[s] = [...pfTitles];
+                  }
+                }
+                if (industryChain.length < MAX_ROUNDS) {
+                  while (industryChain.length < MAX_ROUNDS) industryChain.push(industryChain[industryChain.length - 1] || pfIndustry);
+                }
+              } catch {
+                debugLog(`[PF] Career chain generation failed, falling back to original titles`);
+                if (!titleChainSteps || titleChainSteps.every(s => s.length === 0)) {
+                  titleChainSteps = Array.from({ length: MAX_ROUNDS }, () => [...pfTitles]);
+                }
+                if (!industryChain || industryChain.length === 0) {
+                  industryChain = Array.from({ length: MAX_ROUNDS }, () => pfIndustry);
                 }
               }
-              // Fallback: handle missing chains
-              for (let s = 0; s < MAX_ROUNDS; s++) {
-                if (titleChainSteps[s].length === 0) titleChainSteps[s] = [...pfTitles];
-              }
-              // Industry chain fallback
-              if (industryChain.length < MAX_ROUNDS) {
-                while (industryChain.length < MAX_ROUNDS) industryChain.push(industryChain[industryChain.length - 1] || pfIndustry);
-              }
-            } catch {
-              // AI chain generation failed — use original titles for all rounds
-              debugLog(`[PF] Career chain generation failed, falling back to original titles`);
+            }
+
+            // Ensure both arrays are populated
+            if (!titleChainSteps || titleChainSteps.length === 0) {
               titleChainSteps = Array.from({ length: MAX_ROUNDS }, () => [...pfTitles]);
-              industryChain = Array.from({ length: MAX_ROUNDS }, () => pfIndustry);
+            }
+            if (!industryChain || industryChain.length === 0) {
+              industryChain = Array.from({ length: MAX_ROUNDS }, () => pfIndustry || "");
             }
           }
 
