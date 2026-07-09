@@ -159,6 +159,25 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
           if (data.cv_file_path) {
             setCvVariations([{ name: "CV", file_path: data.cv_file_path }]);
           }
+          // Auto-populate industry ladder from taxonomy
+          if (data.industry) {
+            fetch("/api/suggest-industry-ladder", {
+              method: "POST",
+              headers: session ? { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" } : {},
+              body: JSON.stringify({ industry: data.industry }),
+            }).then(async (r) => {
+              if (r.ok) {
+                const ladder = await r.json();
+                if (ladder.steps) {
+                  setIndustryStep1(ladder.steps[0]?.value ?? "");
+                  setIndustryStep2(ladder.steps[1]?.value ?? "");
+                  setIndustryStep3(ladder.steps[2]?.value ?? "");
+                  setIndustryStep4(ladder.steps[3]?.value ?? "");
+                  setIndustryStep5(ladder.steps[4]?.value ?? "");
+                }
+              }
+            }).catch(() => {});
+          }
           setStep("form");
         })
         .catch(() => {
@@ -321,6 +340,12 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
       job_titles: filtered,
       location: cleanedLocation,
       industry: industry.trim(),
+      industry_step_1: industryStep1,
+      industry_step_2: industryStep2,
+      industry_step_3: industryStep3,
+      industry_step_4: industryStep4,
+      industry_step_5: industryStep5,
+      industry_ladder_generated_at: new Date().toISOString(),
       job_types: jobTypes,
       cv_variations: namedCvs,
     };
@@ -335,29 +360,6 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
       setError(updateErr.message);
       setSaving(false);
       return;
-    }
-
-    // Save industry ladder steps
-    const hasLadderValues = [industryStep1, industryStep2, industryStep3, industryStep4, industryStep5].some(s => s.trim());
-    if (hasLadderValues) {
-      supabase.from("profile_industry_ladder").upsert({
-        search_profile_id: profileId,
-        step_1: industryStep1, step_2: industryStep2, step_3: industryStep3,
-        step_4: industryStep4, step_5: industryStep5,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: "search_profile_id" }).then(({ error: ladderErr }: { error: any }) => {
-        if (ladderErr) console.error("Failed to save industry ladder:", ladderErr.message);
-      });
-    }
-
-    // Fire-and-forget: generate career ladders in the background
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session) {
-      fetch("/api/generate-ladders", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ profile_id: profileId, force: true }),
-      }).catch(() => {});
     }
 
     onSaved?.();
@@ -485,24 +487,10 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
                 <p className="mt-1 text-xs text-white/50">City or country only. Select work type below.</p>
               </div>
 
-              <div>
-                <label className="text-sm font-medium text-white mb-1.5 block">Industry</label>
-                <div className="flex items-center gap-2">
-                  <input
-                    value={industry}
-                    onChange={(e) => setIndustry(e.target.value)}
-                    placeholder="e.g. Fintech, Healthcare, SaaS"
-                    className="flex-1 px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-white placeholder-white/30 focus:outline-none focus:border-[var(--color-accent)] transition-colors"
-                  />
-                  {suggestingIndustry && <Loader2 size={16} className="text-[var(--color-accent)] animate-spin shrink-0" />}
-                </div>
-                <p className="mt-1 text-xs text-white/50">Your target industry. Used in search queries and scoring.</p>
-              </div>
-
               {/* Industry Ladder */}
               <div>
                 <label className="text-sm font-medium text-white mb-1.5 block">
-                  Industry Ladder <span className="text-white/50 font-normal">(auto-filled by AI — edit any step)</span>
+                  Industry Ladder <span className="text-white/50 font-normal">(AI-populated — edit any step)</span>
                 </label>
                 <p className="text-xs text-white/50 mb-2">
                   Controls how Persistent Finder broadens your industry across 5 search rounds. Step 1 is your hyper-niche, Step 5 is the broadest sector.

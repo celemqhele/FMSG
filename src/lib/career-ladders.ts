@@ -22,11 +22,6 @@ export interface IndustryLadderSteps {
   step_5_taxonomy_id: string | null;
 }
 
-export interface TitleLadders {
-  title_ladders: Record<string, string[]>;
-  cv_label: string;
-}
-
 // ─── Prompt A: Seed industry taxonomy ────────────────────────────────────
 
 const PROMPT_SEED_TAXONOMY = `You are building a global industry taxonomy for a job matching system.
@@ -144,7 +139,7 @@ async function getTaxonomyBranch(industry: string): Promise<{ id: string; name: 
 
 // ─── Prompt B: Generate profile industry ladder ──────────────────────────
 
-export async function generateIndustryLadder(industry: string, options?: { cvText?: string }): Promise<IndustryLadderSteps> {
+export async function generateIndustryLadder(industry: string): Promise<IndustryLadderSteps> {
   if (!industry?.trim()) {
     return {
       step_1: "", step_1_taxonomy_id: null, step_2: "", step_2_taxonomy_id: null,
@@ -155,7 +150,6 @@ export async function generateIndustryLadder(industry: string, options?: { cvTex
 
   const branch = await getTaxonomyBranch(industry.trim());
   if (branch.length === 0) {
-    debugLog(`[LADDER] No taxonomy match for industry "${industry}", returning flat ladder`);
     const step = industry.trim();
     return {
       step_1: step, step_1_taxonomy_id: null, step_2: step, step_2_taxonomy_id: null,
@@ -228,10 +222,8 @@ Return ONLY valid JSON:
       }
     }
 
-    debugLog(`[LADDER] Generated industry ladder: ${[result.step_1, result.step_2, result.step_3, result.step_4, result.step_5].filter(Boolean).join(" > ")}`);
     return result;
   } catch (err) {
-    debugLog(`[LADDER] Industry ladder generation failed: ${err instanceof Error ? err.message : String(err)}`);
     const step = industry.trim();
     return {
       step_1: step, step_1_taxonomy_id: null, step_2: step, step_2_taxonomy_id: null,
@@ -241,148 +233,30 @@ Return ONLY valid JSON:
   }
 }
 
-// ─── Prompt C: Generate title ladders per CV ─────────────────────────────
-
-export async function generateTitleLadders(
-  titles: string[],
-  cvText: string,
-  existingLabels: string[] = [],
-): Promise<TitleLadders> {
-  const titlesStr = JSON.stringify(titles);
-  const existingLabelsStr = existingLabels.length > 0
-    ? `\nEXISTING CV LABELS for this profile: ${JSON.stringify(existingLabels)}\nThe cv_label you generate should differentiate this CV from the existing ones.`
-    : "";
-
-  const systemPrompt = `You are a career expansion specialist. Given a CV's content and the job
-titles the candidate is targeting, generate an expanding career ladder for
-each title.
-
-RULES:
-- For EACH title, generate a 5-step ladder where [0] is the most specific
-  (the candidate's exact title or closest match), and [4] is the most
-  generic function-level description of that role.
-- Each step must be a real, searchable job board title.
-- Each step must share overlapping skills with the previous step.
-- Adjacent roles broaden naturally — don't jump across unrelated functions.
-- The ladder reflects what the candidate COULD do, based on their actual
-  CV content and skills.${existingLabelsStr}
-
-Example:
-Title: "Penetration Tester" (CV shows cybersecurity skills)
-Ladder: ["Penetration Tester", "Cybersecurity Analyst",
-         "IT Security Specialist", "IT Administrator",
-         "Technology Professional"]
-
-Title: "React Developer" (CV shows frontend skills)
-Ladder: ["React Developer", "Frontend Developer", "Full Stack Developer",
-         "Software Developer", "IT Professional"]
-
-Return ONLY valid JSON:
-{
-  "title_ladders": {
-    "Penetration Tester": ["Penetration Tester", "Cybersecurity Analyst", "IT Security Specialist", "IT Administrator", "Technology Professional"],
-    "React Developer": ["React Developer", "Frontend Developer", "Full Stack Developer", "Software Developer", "IT Professional"]
-  },
-  "cv_label": "Cybersecurity angle"
-}`;
-
-  try {
-    const raw = await callAIWithFallback(
-      systemPrompt,
-      `CV TEXT:\n${cvText.slice(0, 15000)}\n\nJOB TITLES:\n${titlesStr}`,
-      "generate title ladders",
-      { responseMimeType: "application/json", temperature: 0.4 },
-    );
-    const cleaned = raw.slice(raw.indexOf("{"), raw.lastIndexOf("}") + 1);
-    const data = JSON.parse(cleaned);
-    debugLog(`[LADDER] Generated title ladders for ${Object.keys(data.title_ladders ?? {}).length} titles, label: "${data.cv_label}"`);
-    return {
-      title_ladders: data.title_ladders ?? {},
-      cv_label: data.cv_label ?? "CV",
-    };
-  } catch (err) {
-    debugLog(`[LADDER] Title ladder generation failed: ${err instanceof Error ? err.message : String(err)}`);
-    const fallback: Record<string, string[]> = {};
-    for (const title of titles) {
-      fallback[title] = [title, title, title, title, title];
-    }
-    return { title_ladders: fallback, cv_label: "CV" };
-  }
-}
-
-// ─── Upsert industry ladder to DB ────────────────────────────────────────
+// ─── Upsert industry ladder directly on search_profiles ──────────────────
 
 export async function upsertIndustryLadder(searchProfileId: string, steps: IndustryLadderSteps): Promise<void> {
   const supabase = getSupabase();
   const { error } = await supabase
-    .from("profile_industry_ladder")
-    .upsert({
-      search_profile_id: searchProfileId,
-      step_1: steps.step_1, step_1_taxonomy_id: steps.step_1_taxonomy_id,
-      step_2: steps.step_2, step_2_taxonomy_id: steps.step_2_taxonomy_id,
-      step_3: steps.step_3, step_3_taxonomy_id: steps.step_3_taxonomy_id,
-      step_4: steps.step_4, step_4_taxonomy_id: steps.step_4_taxonomy_id,
-      step_5: steps.step_5, step_5_taxonomy_id: steps.step_5_taxonomy_id,
-      generated_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    }, { onConflict: "search_profile_id" });
+    .from("search_profiles")
+    .update({
+      industry_step_1: steps.step_1, industry_step_1_taxonomy_id: steps.step_1_taxonomy_id,
+      industry_step_2: steps.step_2, industry_step_2_taxonomy_id: steps.step_2_taxonomy_id,
+      industry_step_3: steps.step_3, industry_step_3_taxonomy_id: steps.step_3_taxonomy_id,
+      industry_step_4: steps.step_4, industry_step_4_taxonomy_id: steps.step_4_taxonomy_id,
+      industry_step_5: steps.step_5, industry_step_5_taxonomy_id: steps.step_5_taxonomy_id,
+      industry_ladder_generated_at: new Date().toISOString(),
+      needs_reanalysis: false,
+      last_analysed_at: new Date().toISOString(),
+    })
+    .eq("id", searchProfileId);
   if (error) {
     debugLog(`[LADDER] Failed to upsert industry ladder: ${error.message}`);
     throw error;
   }
 }
 
-// ─── Read cached ladders for PF search ───────────────────────────────────
-
-export async function readCachedLadders(searchProfileId: string): Promise<{
-  industryChain: string[];
-  titleLaddersByCv: Array<{ label: string; title_ladders: Record<string, string[]> }>;
-} | null> {
-  const supabase = getSupabase();
-
-  const { data: ladder } = await supabase
-    .from("profile_industry_ladder")
-    .select("step_1, step_2, step_3, step_4, step_5")
-    .eq("search_profile_id", searchProfileId)
-    .maybeSingle();
-
-  const industryChain = ladder
-    ? [ladder.step_1, ladder.step_2, ladder.step_3, ladder.step_4, ladder.step_5]
-    : null;
-
-  const { data: searchProfile } = await supabase
-    .from("search_profiles")
-    .select("cv_variations")
-    .eq("id", searchProfileId)
-    .maybeSingle();
-
-  const cvVariations: Array<{
-    label?: string;
-    title_ladders?: Record<string, string[]>;
-    title_ladder?: string[];
-    file_path: string;
-  }> = (searchProfile as any)?.cv_variations ?? [];
-
-  const titleLaddersByCv = cvVariations
-    .map((cv) => {
-      if (cv.title_ladders && typeof cv.title_ladders === "object") {
-        return { label: cv.label ?? "CV", title_ladders: cv.title_ladders };
-      }
-      if (cv.title_ladder && Array.isArray(cv.title_ladder) && cv.title_ladder.length > 0) {
-        const singles: Record<string, string[]> = {};
-        singles[cv.label ?? "CV"] = cv.title_ladder;
-        return { label: cv.label ?? "CV", title_ladders: singles };
-      }
-      return null;
-    })
-    .filter((cv): cv is { label: string; title_ladders: Record<string, string[]> } => cv !== null);
-
-  if (!industryChain && titleLaddersByCv.length === 0) return null;
-
-  return { industryChain: industryChain ?? [], titleLaddersByCv };
-}
-
-// ─── Read taxonomy rows for UI dropdowns ─────────────────────────────────
+// ─── Read taxonomy for UI dropdowns ──────────────────────────────────────
 
 export async function getTaxonomyForBranch(industry: string): Promise<
   { id: string; name: string; depth: number; parent_id: string | null }[]
