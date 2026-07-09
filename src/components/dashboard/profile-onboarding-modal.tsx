@@ -40,6 +40,7 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [uploadingCv, setUploadingCv] = useState(false);
+  const [labellingPaths, setLabellingPaths] = useState<Set<string>>(new Set());
   const inputRef = useRef<HTMLInputElement>(null);
   const addInputRef = useRef<HTMLInputElement>(null);
   const suggestedIndustryRef = useRef(false);
@@ -229,7 +230,8 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
     setUploadingCv(false);
     if (addInputRef.current) addInputRef.current.value = "";
 
-    // Auto-generate CV label via AI
+    // Auto-generate CV label via AI with loading indicator
+    setLabellingPaths((prev) => new Set(prev).add(filePath));
     fetch("/api/suggest-cv-label", {
       method: "POST",
       headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" },
@@ -246,7 +248,13 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
           });
         }
       }
-    }).catch(() => {});
+    }).catch(() => {}).finally(() => {
+      setLabellingPaths((prev) => {
+        const next = new Set(prev);
+        next.delete(filePath);
+        return next;
+      });
+    });
   };
 
   const handleReplaceCv = (index: number) => {
@@ -569,12 +577,21 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
                     <div key={i} className="flex flex-col gap-1.5 p-3 rounded-lg bg-white/5 border border-white/10">
                       <div className="flex items-center gap-2">
                         <FileText size={14} className="text-white/50 shrink-0" />
-                        <input
-                          value={cv.name}
-                          onChange={(e) => handleCvNameChange(i, e.target.value)}
-                          placeholder="e.g. General, Tech Focus, Senior"
-                          className="flex-1 px-2 py-1.5 rounded-lg bg-white/5 border border-white/10 text-sm text-white placeholder-white/30 focus:outline-none focus:border-[var(--color-accent)] transition-colors"
-                        />
+                        {labellingPaths.has(cv.file_path) ? (
+                          <>
+                            <div className="flex-1 flex items-center gap-2 px-2 py-1.5 rounded-lg bg-white/5 border border-white/10">
+                              <Loader2 size={12} className="text-white/40 animate-spin" />
+                              <span className="text-sm text-white/40">Identifying CV focus...</span>
+                            </div>
+                          </>
+                        ) : (
+                          <input
+                            value={cv.name}
+                            onChange={(e) => handleCvNameChange(i, e.target.value)}
+                            placeholder="e.g. General, Tech Focus, Senior"
+                            className="flex-1 px-2 py-1.5 rounded-lg bg-white/5 border border-white/10 text-sm text-white placeholder-white/30 focus:outline-none focus:border-[var(--color-accent)] transition-colors"
+                          />
+                        )}
                       </div>
                       <div className="flex items-center gap-2 text-xs text-white/60 pl-6">
                         <span className="truncate flex-1">{cv.file_path.split('/').pop()}</span>

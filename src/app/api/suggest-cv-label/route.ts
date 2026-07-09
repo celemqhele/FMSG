@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { callAIWithFallback } from "@/lib/gemini";
 import { extractTextFromPDF } from "@/lib/pdf";
+import { debugLog } from "@/lib/debug";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -31,39 +32,70 @@ export async function POST(request: NextRequest) {
     }
 
     const buffer = Buffer.from(await fileData.arrayBuffer());
-    const cvText = await extractTextFromPDF(buffer);
+    const cvText = await extractTextFromPDF(buffer).catch(() => "");
+    const text = cvText.trim();
 
-    if (!cvText.trim()) {
-      return NextResponse.json({ label: "CV" });
+    // Derive filename fallback from path (e.g. "Key_Account_Manager_CV.pdf" → "Key Account Manager")
+    const rawName = filePath.split("/").pop()?.replace(/\.[^/.]+$/, "") ?? "";
+    const filenameLabel = rawName
+      .replace(/[_-]/g, " ")
+      .replace(/\b\w/g, (c: string) => c.toUpperCase())
+      .trim();
+
+    if (!text || text.length < 50) {
+      debugLog(`[CV-LABEL] Text extraction returned ${text.length} chars, using filename fallback`);
+      return NextResponse.json({ label: filenameLabel || "CV" });
     }
 
-    const raw = await callAIWithFallback(
-      `Read this CV and determine the primary job title or role the candidate
-is targeting based on their most recent experience and skills. Return a
-concise, descriptive label in this format: "[Role] CV".
+    let label = "CV";
+
+    try {
+      const raw = await callAIWithFallback(
+        `You are reading a candidate's CV. Based on their most recent job title
+and primary experience, generate a short, descriptive label for this CV.
+
+Rules:
+- Format: "[Role] CV"
+- Use the candidate's most recent or strongest role — not their first job.
+- Pick ONE clear role. Do not combine multiple roles.
+- Do NOT return just "CV" — always include the role.
 
 Examples:
-- "Key Account Manager CV"
-- "Regional Sales Manager CV"
-- "Software Engineer CV"
-- "Senior IT Auditor CV"
-- "Cybersecurity Analyst CV"
+"Key Account Manager CV"
+"Regional Sales Manager CV"
+"Software Engineer CV"
+"Senior IT Auditor CV"
+"DevOps Engineer CV"
+"Financial Analyst CV"
+"Marketing Manager CV"
 
-If the CV targets multiple distinct angles, pick the most prominent one.
+Return ONLY valid JSON with no markdown:
+{ "label": "Key Account Manager CV" }`,
+        text.slice(0, 10000),
+        "suggest CV label",
+        { responseMimeType: "application/json", temperature: 0.3 },
+      );
 
-Return ONLY valid JSON: { "label": "Key Account Manager CV" }`,
-      cvText.slice(0, 8000),
-      "suggest CV label",
-      { responseMimeType: "application/json", temperature: 0.3 },
-    );
+      try {
+        const cleaned = raw.slice(raw.indexOf("{"), raw.lastIndexOf("}") + 1);
+        const data = JSON.parse(cleaned);
+        const parsed = (data.label ?? "").trim();
+        if (parsed && parsed.toLowerCase() !== "cv") {
+          label = parsed;
+        }
+      } catch (parseErr) {
+        debugLog(`[CV-LABEL] JSON parse failed, using filename fallback`);
+      }
+    } catch (aiErr) {
+      debugLog(`[CV-LABEL] AI call failed: ${aiErr instanceof Error ? aiErr.message : String(aiErr)}`);
+    }
 
-    const cleaned = raw.slice(raw.indexOf("{"), raw.lastIndexOf("}") + 1);
-    const data = JSON.parse(cleaned);
-    const label = (data.label ?? "CV").trim();
-
-    return NextResponse.json({ label: label || "CV" });
+    const final = label !== "CV" ? label : filenameLabel;
+    debugLog(`[CV-LABEL] Final label: "${final}"`);
+    return NextResponse.json({ label: final || "CV" });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    debugLog(`[CV-LABEL] Fatal error: ${msg}`);
     return NextResponse.json({ label: "CV", error: msg });
   }
 }
