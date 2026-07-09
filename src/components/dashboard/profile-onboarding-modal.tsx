@@ -228,6 +228,25 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
     setCvVariations((prev) => [...prev, { name: "", file_path: filePath }]);
     setUploadingCv(false);
     if (addInputRef.current) addInputRef.current.value = "";
+
+    // Auto-generate CV label via AI
+    fetch("/api/suggest-cv-label", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ file_path: filePath }),
+    }).then(async (r) => {
+      if (r.ok) {
+        const { label } = await r.json();
+        if (label) {
+          setCvVariations((prev) => {
+            const next = [...prev];
+            const idx = next.findIndex((cv) => cv.file_path === filePath);
+            if (idx !== -1) next[idx] = { ...next[idx], name: label };
+            return next;
+          });
+        }
+      }
+    }).catch(() => {});
   };
 
   const handleReplaceCv = (index: number) => {
