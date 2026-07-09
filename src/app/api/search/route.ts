@@ -1432,7 +1432,7 @@ Return ONLY valid JSON (no markdown, no code fences):
             seenUrls = new Set([...pfDedupSets.history, ...pfDedupSets.saved, ...pfDedupSets.blocked]);
 
             // Read cached career ladders (or fall back to live AI generation)
-            const cached = await readCachedLadders(user.id, state.profile_id ?? "").catch(() => null);
+            const cached = await readCachedLadders(state.profile_id ?? "").catch(() => null);
 
             if (cached?.industryChain?.length) {
               industryChain = cached.industryChain;

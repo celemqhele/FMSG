@@ -56,11 +56,10 @@ export async function POST(request: NextRequest) {
     if (profileIndustry?.trim()) {
       try {
         const steps = await generateIndustryLadder(profileIndustry);
-        await upsertIndustryLadder(user.id, steps);
+        await upsertIndustryLadder(profileId, steps);
         industryLadderSteps = steps;
 
         const broadest = steps.step_5 || steps.step_4 || profileIndustry;
-        await supabase.from("profiles").update({ industry: broadest }).eq("id", user.id);
         await supabase.from("search_profiles").update({ industry: broadest }).eq("id", profileId);
       } catch (err) {
         debugLog(`[LADDER] Industry ladder generation failed: ${err instanceof Error ? err.message : String(err)}`);

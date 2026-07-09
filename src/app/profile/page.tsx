@@ -36,13 +36,6 @@ export default function ProfilePage() {
   const [jobTypes, setJobTypes] = useState<string[]>([]);
   const [location, setLocation] = useState("");
 
-  // Industry ladder
-  const [industryStep1, setIndustryStep1] = useState("");
-  const [industryStep2, setIndustryStep2] = useState("");
-  const [industryStep3, setIndustryStep3] = useState("");
-  const [industryStep4, setIndustryStep4] = useState("");
-  const [industryStep5, setIndustryStep5] = useState("");
-
   // CV
   const [cvFileName, setCvFileName] = useState("");
   const [cvUploadDate, setCvUploadDate] = useState("");
@@ -78,17 +71,6 @@ export default function ProfilePage() {
         }
         setLoading(false);
       });
-      // Load industry ladder
-      supabase.from("profile_industry_ladder").select("*").eq("user_id", u.id).maybeSingle()
-        .then(({ data: ladderData }: { data: any }) => {
-          if (ladderData) {
-            setIndustryStep1(ladderData.step_1 ?? "");
-            setIndustryStep2(ladderData.step_2 ?? "");
-            setIndustryStep3(ladderData.step_3 ?? "");
-            setIndustryStep4(ladderData.step_4 ?? "");
-            setIndustryStep5(ladderData.step_5 ?? "");
-          }
-        });
     });
   }, [router, supabase]);
 
@@ -124,20 +106,6 @@ export default function ProfilePage() {
     if (!userId) return;
     const { error: err } = await supabase.from("profiles").update({ job_titles: jobTitles, job_types: jobTypes, location }).eq("id", userId);
     if (err) console.error("Failed to save job prefs:", err.message);
-    setSaving(null);
-  };
-
-  const saveIndustryLadder = async () => {
-    setSaving("industry");
-    const userId = await getUserId();
-    if (!userId) return;
-    const { error } = await supabase.from("profile_industry_ladder").upsert({
-      user_id: userId,
-      step_1: industryStep1, step_2: industryStep2, step_3: industryStep3,
-      step_4: industryStep4, step_5: industryStep5,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: "user_id" });
-    if (error) console.error("Failed to save industry ladder:", error.message);
     setSaving(null);
   };
 
@@ -340,46 +308,6 @@ export default function ProfilePage() {
             className="px-5 py-2.5 text-sm font-medium text-white bg-[var(--color-accent)] rounded-full hover:bg-[var(--color-accent-hover)] transition-colors disabled:opacity-50 flex items-center gap-2"
           >
             {saving === "jobs" && <Loader2 size={14} className="animate-spin" />}
-            Save
-          </button>
-        </div>
-
-        {/* Section 2.5: Industry Ladder */}
-        <div className="liquid-glass rounded-xl p-6 space-y-5">
-          <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">Industry Ladder</h2>
-          <p className="text-sm text-[var(--color-text-secondary)]">
-            Controls how Persistent Finder broadens your industry across 5 search rounds.
-            Step 1 is the most niche (your specific industry), Step 5 is the broadest category.
-            AI fills these during CV analysis — edit any step to refine your search.
-          </p>
-          <div className="space-y-3">
-            <div className="space-y-1">
-              <label className="text-xs text-[var(--color-text-secondary)]">Step 1 — Hyper-Niche</label>
-              <input value={industryStep1} onChange={(e) => setIndustryStep1(e.target.value)} placeholder="e.g. Private Wealth Banking" className="w-full px-3 py-2 text-sm rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)]" />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs text-[var(--color-text-secondary)]">Step 2 — Niche</label>
-              <input value={industryStep2} onChange={(e) => setIndustryStep2(e.target.value)} placeholder="e.g. Wealth Management" className="w-full px-3 py-2 text-sm rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)]" />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs text-[var(--color-text-secondary)]">Step 3 — Sub-Sector</label>
-              <input value={industryStep3} onChange={(e) => setIndustryStep3(e.target.value)} placeholder="e.g. Banking" className="w-full px-3 py-2 text-sm rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)]" />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs text-[var(--color-text-secondary)]">Step 4 — Industry</label>
-              <input value={industryStep4} onChange={(e) => setIndustryStep4(e.target.value)} placeholder="e.g. Financial Services" className="w-full px-3 py-2 text-sm rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)]" />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs text-[var(--color-text-secondary)]">Step 5 — Broad Sector</label>
-              <input value={industryStep5} onChange={(e) => setIndustryStep5(e.target.value)} placeholder="e.g. Financial Services" className="w-full px-3 py-2 text-sm rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)]" />
-            </div>
-          </div>
-          <button
-            onClick={saveIndustryLadder}
-            disabled={saving === "industry"}
-            className="px-5 py-2.5 text-sm font-medium text-white bg-[var(--color-accent)] rounded-full hover:bg-[var(--color-accent-hover)] transition-colors disabled:opacity-50 flex items-center gap-2"
-          >
-            {saving === "industry" && <Loader2 size={14} className="animate-spin" />}
             Save
           </button>
         </div>

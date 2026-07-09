@@ -312,12 +312,12 @@ Return ONLY valid JSON:
 
 // ─── Upsert industry ladder to DB ────────────────────────────────────────
 
-export async function upsertIndustryLadder(userId: string, steps: IndustryLadderSteps): Promise<void> {
+export async function upsertIndustryLadder(searchProfileId: string, steps: IndustryLadderSteps): Promise<void> {
   const supabase = getSupabase();
   const { error } = await supabase
     .from("profile_industry_ladder")
     .upsert({
-      user_id: userId,
+      search_profile_id: searchProfileId,
       step_1: steps.step_1, step_1_taxonomy_id: steps.step_1_taxonomy_id,
       step_2: steps.step_2, step_2_taxonomy_id: steps.step_2_taxonomy_id,
       step_3: steps.step_3, step_3_taxonomy_id: steps.step_3_taxonomy_id,
@@ -325,7 +325,7 @@ export async function upsertIndustryLadder(userId: string, steps: IndustryLadder
       step_5: steps.step_5, step_5_taxonomy_id: steps.step_5_taxonomy_id,
       generated_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
-    }, { onConflict: "user_id" });
+    }, { onConflict: "search_profile_id" });
   if (error) {
     debugLog(`[LADDER] Failed to upsert industry ladder: ${error.message}`);
     throw error;
@@ -334,7 +334,7 @@ export async function upsertIndustryLadder(userId: string, steps: IndustryLadder
 
 // ─── Read cached ladders for PF search ───────────────────────────────────
 
-export async function readCachedLadders(userId: string, profileId: string): Promise<{
+export async function readCachedLadders(searchProfileId: string): Promise<{
   industryChain: string[];
   titleLaddersByCv: Array<{ label: string; title_ladders: Record<string, string[]> }>;
 } | null> {
@@ -343,7 +343,7 @@ export async function readCachedLadders(userId: string, profileId: string): Prom
   const { data: ladder } = await supabase
     .from("profile_industry_ladder")
     .select("step_1, step_2, step_3, step_4, step_5")
-    .eq("user_id", userId)
+    .eq("search_profile_id", searchProfileId)
     .maybeSingle();
 
   const industryChain = ladder
@@ -353,8 +353,7 @@ export async function readCachedLadders(userId: string, profileId: string): Prom
   const { data: searchProfile } = await supabase
     .from("search_profiles")
     .select("cv_variations")
-    .eq("id", profileId)
-    .eq("user_id", userId)
+    .eq("id", searchProfileId)
     .maybeSingle();
 
   const cvVariations: Array<{

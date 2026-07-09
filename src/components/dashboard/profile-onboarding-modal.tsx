@@ -26,6 +26,11 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
   const [jobTitles, setJobTitles] = useState<string[]>([""]);
   const [location, setLocation] = useState("");
   const [industry, setIndustry] = useState("");
+  const [industryStep1, setIndustryStep1] = useState("");
+  const [industryStep2, setIndustryStep2] = useState("");
+  const [industryStep3, setIndustryStep3] = useState("");
+  const [industryStep4, setIndustryStep4] = useState("");
+  const [industryStep5, setIndustryStep5] = useState("");
   const [suggestingIndustry, setSuggestingIndustry] = useState(false);
   const [jobTypes, setJobTypes] = useState<string[]>([]);
   const [cvVariations, setCvVariations] = useState<CvVariation[]>([]);
@@ -60,6 +65,21 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
           setCvVariations(data.cv_variations?.length ? data.cv_variations : []);
         }
         setLoadingProfile(false);
+      });
+    // Load industry ladder
+    supabase
+      .from("profile_industry_ladder")
+      .select("step_1, step_2, step_3, step_4, step_5")
+      .eq("search_profile_id", profileId)
+      .maybeSingle()
+      .then(({ data: ladderData }: { data: any }) => {
+        if (ladderData) {
+          setIndustryStep1(ladderData.step_1 ?? "");
+          setIndustryStep2(ladderData.step_2 ?? "");
+          setIndustryStep3(ladderData.step_3 ?? "");
+          setIndustryStep4(ladderData.step_4 ?? "");
+          setIndustryStep5(ladderData.step_5 ?? "");
+        }
       });
   }, [profileId]);
 
@@ -317,6 +337,19 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
       return;
     }
 
+    // Save industry ladder steps
+    const hasLadderValues = [industryStep1, industryStep2, industryStep3, industryStep4, industryStep5].some(s => s.trim());
+    if (hasLadderValues) {
+      supabase.from("profile_industry_ladder").upsert({
+        search_profile_id: profileId,
+        step_1: industryStep1, step_2: industryStep2, step_3: industryStep3,
+        step_4: industryStep4, step_5: industryStep5,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "search_profile_id" }).then(({ error: ladderErr }: { error: any }) => {
+        if (ladderErr) console.error("Failed to save industry ladder:", ladderErr.message);
+      });
+    }
+
     // Fire-and-forget: generate career ladders in the background
     const { data: { session } } = await supabase.auth.getSession();
     if (session) {
@@ -464,6 +497,35 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
                   {suggestingIndustry && <Loader2 size={16} className="text-[var(--color-accent)] animate-spin shrink-0" />}
                 </div>
                 <p className="mt-1 text-xs text-white/50">Your target industry. Used in search queries and scoring.</p>
+              </div>
+
+              {/* Industry Ladder */}
+              <div>
+                <label className="text-sm font-medium text-white mb-1.5 block">
+                  Industry Ladder <span className="text-white/50 font-normal">(auto-filled by AI — edit any step)</span>
+                </label>
+                <p className="text-xs text-white/50 mb-2">
+                  Controls how Persistent Finder broadens your industry across 5 search rounds. Step 1 is your hyper-niche, Step 5 is the broadest sector.
+                </p>
+                <div className="space-y-2">
+                  {[
+                    { label: "Step 1 — Hyper-Niche", value: industryStep1, setter: setIndustryStep1, placeholder: "e.g. Private Wealth Banking" },
+                    { label: "Step 2 — Niche", value: industryStep2, setter: setIndustryStep2, placeholder: "e.g. Wealth Management" },
+                    { label: "Step 3 — Sub-Sector", value: industryStep3, setter: setIndustryStep3, placeholder: "e.g. Banking" },
+                    { label: "Step 4 — Industry", value: industryStep4, setter: setIndustryStep4, placeholder: "e.g. Financial Services" },
+                    { label: "Step 5 — Broad Sector", value: industryStep5, setter: setIndustryStep5, placeholder: "e.g. Financial Services" },
+                  ].map((s) => (
+                    <div key={s.label} className="space-y-0.5">
+                      <label className="text-[11px] text-white/40">{s.label}</label>
+                      <input
+                        value={s.value}
+                        onChange={(e) => s.setter(e.target.value)}
+                        placeholder={s.placeholder}
+                        className="w-full px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-sm text-white placeholder-white/30 focus:outline-none focus:border-[var(--color-accent)] transition-colors"
+                      />
+                    </div>
+                  ))}
+                </div>
               </div>
 
               <div>
