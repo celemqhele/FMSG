@@ -101,15 +101,19 @@ export function SearchPill({ onSearch, onAbort, searching }: SearchPillProps) {
   };
 
   const cycleDateLeft = () => {
-    const newIndex = dateFilterIndex === 0 ? DATE_OPTIONS.length - 1 : dateFilterIndex - 1;
-    setDateFilterIndex(newIndex);
-    setDateFilterDays(DATE_OPTIONS[newIndex].value);
+    if (dateFilterIndex > 0) {
+      const newIndex = dateFilterIndex - 1;
+      setDateFilterIndex(newIndex);
+      setDateFilterDays(DATE_OPTIONS[newIndex].value);
+    }
   };
 
   const cycleDateRight = () => {
-    const newIndex = dateFilterIndex === DATE_OPTIONS.length - 1 ? 0 : dateFilterIndex + 1;
-    setDateFilterIndex(newIndex);
-    setDateFilterDays(DATE_OPTIONS[newIndex].value);
+    if (dateFilterIndex < DATE_OPTIONS.length - 1) {
+      const newIndex = dateFilterIndex + 1;
+      setDateFilterIndex(newIndex);
+      setDateFilterDays(DATE_OPTIONS[newIndex].value);
+    }
   };
 
   const activeDateLabel = DATE_OPTIONS[dateFilterIndex].label;
@@ -158,7 +162,8 @@ export function SearchPill({ onSearch, onAbort, searching }: SearchPillProps) {
       <div className="flex items-center gap-0.5 ml-2">
         <button
           onClick={cycleDateLeft}
-          className="w-7 h-7 rounded-full flex items-center justify-center text-white/50 hover:text-white/90 hover:bg-white/10 transition-colors"
+          disabled={dateFilterIndex === 0}
+          className="w-7 h-7 rounded-full flex items-center justify-center text-white/50 hover:text-white/90 hover:bg-white/10 transition-colors disabled:opacity-20 disabled:hover:bg-transparent disabled:hover:text-white/50"
           title="Previous date filter"
         >
           <ChevronLeft size={14} />
@@ -168,7 +173,8 @@ export function SearchPill({ onSearch, onAbort, searching }: SearchPillProps) {
         </span>
         <button
           onClick={cycleDateRight}
-          className="w-7 h-7 rounded-full flex items-center justify-center text-white/50 hover:text-white/90 hover:bg-white/10 transition-colors"
+          disabled={dateFilterIndex === DATE_OPTIONS.length - 1}
+          className="w-7 h-7 rounded-full flex items-center justify-center text-white/50 hover:text-white/90 hover:bg-white/10 transition-colors disabled:opacity-20 disabled:hover:bg-transparent disabled:hover:text-white/50"
           title="Next date filter"
         >
           <ChevronRight size={14} />
