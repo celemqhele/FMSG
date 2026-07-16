@@ -168,7 +168,7 @@ export function SearchPill({ onSearch, onAbort, searching }: SearchPillProps) {
         >
           <ChevronLeft size={14} />
         </button>
-        <span className={`text-[11px] font-medium px-1.5 select-none whitespace-nowrap ${dateFilterDays != null ? "text-[var(--color-accent)]" : "text-white/60"}`}>
+        <span className={`text-[11px] font-medium px-1.5 select-none whitespace-nowrap w-[56px] text-center ${dateFilterDays != null ? "text-[var(--color-accent)]" : "text-white/60"}`}>
           {activeDateLabel}
         </span>
         <button
