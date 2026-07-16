@@ -24,7 +24,7 @@ async function callGemini(systemPrompt: string, userText: string, config?: AICon
   }
 
   const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent`,
     {
       method: "POST",
       headers: {
@@ -77,7 +77,7 @@ export async function callGroq(systemPrompt: string, userText: string, config?: 
 
 const OPENROUTER_FALLBACK_MODELS = [
   "openai/gpt-4o-mini",
-  "google/gemini-2.5-flash",
+  "google/gemini-3.1-flash-lite",
   "deepseek/deepseek-chat",
 ];
 

@@ -606,23 +606,39 @@ C) Select the CV variation whose day-to-day responsibilities most closely match 
 D) Set suggested_cv_name to the exact CV filename.
 
 STEP 1: EXTRACT REQUIREMENTS FROM THE JOB SPEC
-Read the FULL job description. Extract EVERY requirement stated.
+Read the FULL job description. Extract EVERY requirement INDIVIDUALLY — do NOT group, summarize, or combine requirements.
+
+BAD (grouped): "Experience with digital marketing platforms"
+GOOD (individual): "Experience with Google Ads", "Experience with Facebook Ads", "Experience with SEO"
+
+Each bullet point, each tool name, each skill mentioned in the requirements section is a SEPARATE requirement.
+
 For each, classify as:
 - MANDATORY: stated with words like "required", "must have", "essential", "mandatory", "necessary", "minimum"
 - PREFERRED: stated with words like "preferred", "advantageous", "nice to have", "desirable", "ideal", "bonus"
+If neither label is explicitly used, treat as MANDATORY unless the context clearly implies optional (e.g. "a bonus", "would be nice").
 
 Include: certifications, licenses, tools, platforms, languages, experience thresholds (years, team size, deal size, revenue), industry background, specific responsibilities, soft skills if stated as requirements.
 
-CRITICAL RULE — DEGREES: Only extract a degree requirement if the JD EXPLICITLY mentions one (e.g., "Bachelor's degree required", "Degree in Marketing", "NQF level 7", "tertiary qualification"). If the JD lists only skills, tools, experience, and responsibilities with NO mention of a degree, do NOT create a degree requirement. Do NOT infer that a professional role requires a degree just because it is skilled work.
+CRITICAL RULE — DEGREES: NEVER create a degree requirement unless the JD contains an EXPLICIT phrase like:
+  "Bachelor's degree required", "Degree in X", "NQF level 7+", "tertiary qualification required"
+If the JD lists skills, experience, tools, and responsibilities WITHOUT explicitly stating a degree is needed, NO degree requirement may be created. A professional job listing does NOT imply a degree requirement.
 
 STEP 2: GENERATE YES/NO QUESTIONS
-For EACH extracted requirement, generate ONE yes/no question.
+For EACH extracted requirement, generate ONE specific yes/no question.
+The question must reference the EXACT tool/skill/requirement from the spec.
+
+BAD: "Does the candidate have marketing tool experience?"
+GOOD: "Does the candidate have experience with Google Ads?"
+
 Categorize each into the correct pillar:
 - "industry": sub-vertical match, sector experience, employer background
 - "function": role type, daily responsibilities, task experience
 - "scale": years of experience, team size, revenue managed, stakeholder level
 - "tools": specific tools, certifications, platforms, methodologies, licenses
 - "location": geography, relocation, remote/hybrid/wfh
+
+If the spec lists 15 requirements, you MUST generate 15 questions. Do not reduce.
 
 STEP 3: ANSWER FROM CV
 For each question, check the CV text and answer:
@@ -657,7 +673,7 @@ STEP 6: TAXES
 - Hopper Tax (-15): 3+ jobs in last 5 years AND avg tenure < 18 months. EXEMPT: self-employed, freelance, founder periods count as one continuous block.
 - Overqualified Tax (-10): Current title is significantly MORE senior than JD title.
 - Vague Achievement Tax (-10): CV has fewer than 3 specific numbers/percentages.
-- No Degree Tax (-10): JD EXPLICITLY requires a degree AND CV has none. NEVER apply if CV has ANY tertiary qualification. NEVER apply if JD says "advantageous" or "preferred." NEVER apply if the JD does not mention a degree at all — if the JD only lists skills and experience with no degree requirement, this tax is forbidden.
+- No Degree Tax (-10): ONLY if the JD contains an EXPLICIT degree requirement (e.g. "Bachelor's degree required", "Degree in X", "NQF level 7+", "tertiary qualification required") AND the candidate has no tertiary qualification. If the JD does not contain one of these explicit phrases, this tax is FORBIDDEN. Do NOT assume professional roles require degrees.
 - Salary Mismatch Tax (-10): JD max salary is below 70% of candidate's implied market rate.
 
 STEP 7: FINAL SCORE
