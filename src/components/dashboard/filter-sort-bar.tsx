@@ -37,7 +37,7 @@ export function FilterSortBar({ sort, onSortChange }: SortBarProps) {
       <div className="relative" style={{ zIndex: sortOpen ? 50 : undefined }}>
         <button
           onClick={sortOpen ? closeSort : openSort}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-white/20 text-xs font-medium text-white/80 hover:text-white hover:bg-white/10 transition-colors"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-white/20 text-xs font-medium text-white/80 hover:text-white hover:bg-white/10 transition-colors whitespace-nowrap"
         >
           <ArrowUpDown size={13} />
           {SORT_OPTIONS.find((o) => o.value === sort)?.label ?? "Date (newest)"}
@@ -47,7 +47,7 @@ export function FilterSortBar({ sort, onSortChange }: SortBarProps) {
           <>
             <div className="fixed inset-0 z-40" onClick={closeSort} />
             <div
-              className={`absolute left-0 top-8 z-50 w-44 rounded-xl p-2 transition-all duration-200 ${
+              className={`absolute left-0 top-8 z-50 w-56 rounded-xl p-2 transition-all duration-200 ${
                 sortMounted ? "opacity-100 scale-100" : "opacity-0 scale-95"
               }`}
               style={{

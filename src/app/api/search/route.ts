@@ -282,6 +282,7 @@ async function fetchAndFilterJobs(
   hiddenJobKeys?: Set<string>,
   maxAgeDays?: number,
   maxPages?: number,
+  allowedPlatforms?: string[] | null,
 ): Promise<{ rawJobs: any[]; jobSpecs: [number, string][]; jobUrls: [number, string][]; queryUsed: string }> {
   function sanitiseLocation(raw: string): string | undefined {
     if (!raw) return undefined;
@@ -390,6 +391,19 @@ async function fetchAndFilterJobs(
       passed_domain_filter: true, passed_banned_filter: false,
     }));
     dataClient.from("rejected_jobs").insert(rows).then((r: any) => r.error && debugLog('[SEARCH] Failed to log banned rejected:', r.error));
+  }
+
+  // Platform filter: keep only jobs from allowed platforms
+  if (allowedPlatforms && allowedPlatforms.length > 0) {
+    const before = rawJobs.length;
+    rawJobs = rawJobs.filter((j) => {
+      const via = (j.via ?? "").toLowerCase();
+      const url = buildJobUrl(j).toLowerCase();
+      return allowedPlatforms.some((p) => via.includes(p) || url.includes(p));
+    });
+    if (rawJobs.length < before) {
+      debugLog(`[SEARCH] Platform filter: ${before - rawJobs.length} jobs removed, ${rawJobs.length} kept`);
+    }
   }
 
   // Pre-filter: reject ATS tracker / job lead aggregator jobs before Jina scraping
@@ -896,7 +910,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { query, profile_id, pf_mode, continuation, date_filter_days } = body;
+    const { query, profile_id, pf_mode, continuation, date_filter_days, platforms } = body;
     const maxAgeDays = date_filter_days ? parseInt(String(date_filter_days), 10) : undefined;
     const isContinuation = !!continuation;
 
@@ -1235,7 +1249,7 @@ Return ONLY valid JSON (no markdown, no code fences):
             const { rawJobs, jobSpecs, jobUrls, queryUsed } = await fetchAndFilterJobs(
               searchQuery, state.profileLocation, user, searchId,
               state.bannedJobs, state.bannedCompanies, dataClient, state.profile_id, sendStatus, undefined,
-              hiddenKeys, state.maxAgeDays, 2
+              hiddenKeys, state.maxAgeDays, 2, platforms
             );
 
             if (rawJobs.length === 0) {
@@ -1385,7 +1399,7 @@ Return ONLY valid JSON (no markdown, no code fences):
               const filtered = await fetchAndFilterJobs(
                 fullQuery, pfLocation, user, searchId,
                 pfBannedJobs, pfBannedCompanies, dataClient, state.profile_id, sendStatus, roundNum,
-                pfHiddenKeys, state.maxAgeDays, 5
+                pfHiddenKeys, state.maxAgeDays, 5, platforms
               );
 
               let roundResults: JobRow[] = [];

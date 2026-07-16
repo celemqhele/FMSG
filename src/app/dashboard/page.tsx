@@ -12,6 +12,7 @@ const OnboardingForm = dynamic(() => import("@/components/onboarding/onboarding-
 import { DashboardTabs, type TabId } from "@/components/dashboard/dashboard-tabs";
 import { BalanceChips } from "@/components/dashboard/balance-chips";
 import { FilterSortBar, type SortMode } from "@/components/dashboard/filter-sort-bar";
+import { PlatformFilter, type PlatformId } from "@/components/dashboard/platform-filter";
 import { SearchProgress } from "@/components/dashboard/search-progress";
 import type { FilteredSummary } from "@/lib/search-stream";
 import { SavedJobs } from "@/components/dashboard/saved-jobs";
@@ -224,6 +225,9 @@ export default function DashboardPage() {
   // Sort state
   const [sortMode, setSortMode] = useState<SortMode>("date_newest");
 
+  // Platform filter state
+  const [selectedPlatforms, setSelectedPlatforms] = useState<PlatformId[]>(["all"]);
+
   const sortedResults = useMemo(() => {
     const sorted = [...results].sort((a, b) => {
       switch (sortMode) {
@@ -271,7 +275,7 @@ export default function DashboardPage() {
           Authorization: `Bearer ${session.access_token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ query, profile_id: profileId, pf_mode: pfMode, date_filter_days: dateFilterDays ?? null }),
+        body: JSON.stringify({ query, profile_id: profileId, pf_mode: pfMode, date_filter_days: dateFilterDays ?? null, platforms: selectedPlatforms.includes("all") ? null : selectedPlatforms }),
         signal: abortRef.current.signal,
       });
 
@@ -643,10 +647,16 @@ export default function DashboardPage() {
             </div>
 
             {hasSearched && (
-              <div className="flex items-center justify-center">
-                <FilterSortBar
-                  sort={sortMode}
-                  onSortChange={setSortMode}
+              <div className="sticky top-0 z-30 bg-[var(--color-bg)]/80 backdrop-blur-xl py-2 space-y-2">
+                <div className="flex items-center justify-center">
+                  <FilterSortBar
+                    sort={sortMode}
+                    onSortChange={setSortMode}
+                  />
+                </div>
+                <PlatformFilter
+                  selected={selectedPlatforms}
+                  onChange={setSelectedPlatforms}
                 />
               </div>
             )}
