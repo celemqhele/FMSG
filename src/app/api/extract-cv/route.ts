@@ -25,7 +25,22 @@ const SYSTEM_PROMPT = `You are a recruiter reviewing a CV. Extract structured in
 
 Rules — reason like a recruiter, not a parser:
 
-job_titles: Generate a 5-step career broadening ladder for this candidate. Step [0] is the single most specific, niche title they should search for (their current/most recent role, translated to industry-standard). Each subsequent step broadens into an adjacent role sharing overlapping skills, with step [4] being the most generic function-level description. The ladder should reflect what the candidate COULD do based on their actual experience — not a generic template. Each step must be a genuine, searchable job board title. Avoid compound titles — use the titles job boards actually have. Return exactly 5 titles. Example output: ["Penetration Tester", "Cybersecurity Analyst", "IT Security Specialist", "IT Administrator", "Technology Professional"].
+job_titles: Generate a 5-step job title broadening ladder. CRITICAL: This ladder broadens LATERALLY through related specialties at the SAME seniority level — it never climbs the seniority hierarchy. Think of it like broadening through umbrellas: a niche role sits under a sub-umbrella that sits under an umbrella, and each step moves one umbrella outward while staying at the same level.
+
+Rules:
+- Step [0] = the candidate's exact current/most recent role, translated to industry-standard job board title.
+- Steps [1]-[3] = LATERAL moves at the SAME seniority level. Broaden into adjacent specialties that share overlapping skills but sit in different sub-domains. Same level of seniority, different flavour of the work. The candidate's CV qualifications should match these roles.
+- Step [4] = the broadest generic function-level description (e.g. "IT Professional", "Business Professional", "Engineering Professional").
+- NEVER include titles that represent seniority escalation: Manager, Senior, Lead, Principal, Director, VP, Head of, Chief, CISO, CTO, or any C-suite — unless the candidate already holds that exact seniority. A Penetration Tester does NOT broaden into Security Manager or CSO. They broaden into Cyber Security Analyst, SOC Analyst, Vulnerability Assessor.
+- Each step must be a genuine, searchable job board title. Avoid compound titles.
+- The ladder should reflect what the candidate COULD do based on their actual experience — not a generic template.
+- Return exactly 5 titles.
+
+Examples:
+["Penetration Tester", "Cyber Security Analyst", "SOC Analyst", "Vulnerability Assessor", "IT Professional"]
+["Software Engineer", "Backend Developer", "Full Stack Developer", "Platform Engineer", "IT Developer"]
+["Data Analyst", "Business Intelligence Analyst", "Reporting Analyst", "Operations Analyst", "Business Professional"]
+["Graphic Designer", "UX Designer", "UI Designer", "Visual Designer", "Creative Professional"]
 
 job_types: Infer what work arrangement the candidate likely wants going forward based on their recent trajectory. Consider whether their recent roles were Remote, Hybrid, or On-site. If the CV shows a consistent pattern (e.g. all recent roles were Remote), list only that type. If it varies or is unclear, list the most common one. Return an array of 1-3 values from: "Remote", "Hybrid", "On-site".
 
