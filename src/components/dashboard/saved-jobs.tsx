@@ -17,6 +17,13 @@ interface SavedJob {
   job_url: string;
   full_spec: string;
   suggested_cv?: string;
+  knockout_fail?: boolean | null;
+  pillar_scores?: { industry: number; function: number; scale: number; tools: number; location: number } | null;
+  taxes_applied?: string[] | null;
+  total_questions_asked?: number | null;
+  yes_answers?: number | null;
+  recruiter_verdict?: string | null;
+  dynamic_requirements?: { requirement: string; mandatory: boolean; pillar: string; met: boolean; evidence: string }[] | null;
 }
 
 export function SavedJobs() {
@@ -86,9 +93,17 @@ export function SavedJobs() {
           location={j.location}
           salary={j.estimated_salary}
           matchScore={j.match_score}
+          matchSummary={j.match_summary}
           jobUrl={j.job_url}
           fullDescription={j.full_spec}
           suggestedCvName={j.suggested_cv ?? ""}
+          knockoutFail={j.knockout_fail}
+          pillarScores={j.pillar_scores}
+          taxesApplied={j.taxes_applied}
+          totalQuestionsAsked={j.total_questions_asked}
+          yesAnswers={j.yes_answers}
+          recruiterVerdict={j.recruiter_verdict}
+          dynamicRequirements={j.dynamic_requirements}
           onDelete={(id) => setJobs((prev) => prev.filter((x) => x.id !== id))}
         />
       ))}

@@ -3,7 +3,7 @@
 import { useState, useCallback } from "react";
 import { ArrowUpDown } from "lucide-react";
 
-export type SortMode = "date_newest" | "date_oldest";
+export type SortMode = "date_newest" | "date_oldest" | "score_highest" | "score_lowest";
 
 interface SortBarProps {
   sort: SortMode;
@@ -13,6 +13,8 @@ interface SortBarProps {
 const SORT_OPTIONS: { value: SortMode; label: string }[] = [
   { value: "date_newest", label: "Date (newest)" },
   { value: "date_oldest", label: "Date (oldest)" },
+  { value: "score_highest", label: "Match score (highest)" },
+  { value: "score_lowest", label: "Match score (lowest)" },
 ];
 
 export function FilterSortBar({ sort, onSortChange }: SortBarProps) {

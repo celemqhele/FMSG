@@ -24,6 +24,7 @@ interface JobResultCardProps {
   totalQuestionsAsked?: number | null;
   yesAnswers?: number | null;
   recruiterVerdict?: string | null;
+  dynamicRequirements?: { requirement: string; mandatory: boolean; pillar: string; met: boolean; evidence: string }[] | null;
   onDelete: (id: string) => void;
 }
 
@@ -45,6 +46,7 @@ export function JobResultCard({
   totalQuestionsAsked,
   yesAnswers,
   recruiterVerdict,
+  dynamicRequirements,
   onDelete,
 }: JobResultCardProps) {
   const [showDeleteMenu, setShowDeleteMenu] = useState(false);
@@ -310,10 +312,22 @@ export function JobResultCard({
             }`}
             onClick={(e) => e.stopPropagation()}
           >
+            {/* Header */}
             <div className="flex items-center justify-between mb-4">
-              <span className={`text-sm font-semibold px-3 py-1 rounded-full ${scoreBg}`}>
-             {scoreLabel} {matchScore}%
-              </span>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className={`text-sm font-semibold px-3 py-1 rounded-full ${scoreBg}`}>
+                  {scoreLabel} {matchScore}%
+                </span>
+                {recruiterVerdict && (
+                  <span className={`text-xs font-semibold px-3 py-1 rounded-full ${
+                    recruiterVerdict === "HIRE" ? "bg-green-500/20 text-green-400" :
+                    recruiterVerdict === "INTERVIEW" ? "bg-amber-500/20 text-amber-400" :
+                    "bg-red-500/20 text-red-400"
+                  }`}>
+                    {recruiterVerdict}
+                  </span>
+                )}
+              </div>
               <button
                 onClick={() => setShowVerdict(false)}
                 className="text-white/60 hover:text-white transition-colors"
@@ -322,20 +336,106 @@ export function JobResultCard({
               </button>
             </div>
 
+            {/* Summary */}
             {matchSummary && (
               <p className="text-sm text-[var(--color-text-secondary)] leading-relaxed mb-4 whitespace-pre-line">
                 {matchSummary}
               </p>
             )}
 
+            {/* Knockout warning */}
             {knockoutFail && (
               <div className="px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20 mb-4">
                 <p className="text-xs text-red-400 font-medium">Knockout triggered — mandatory requirement not met.</p>
               </div>
             )}
 
+            {/* Dynamic requirements checklist */}
+            {dynamicRequirements && dynamicRequirements.length > 0 && (() => {
+              const pillarLabels: Record<string, string> = { industry: "Industry", function: "Function", scale: "Experience", tools: "Tools", location: "Location" };
+              const pillarOrder = ["industry", "function", "scale", "tools", "location"];
+              const grouped: Record<string, typeof dynamicRequirements> = {};
+              for (const req of dynamicRequirements) {
+                const p = req.pillar || "other";
+                if (!grouped[p]) grouped[p] = [];
+                grouped[p].push(req);
+              }
+              const orderedPillars = pillarOrder.filter(p => grouped[p]);
+              const extraPillars = Object.keys(grouped).filter(p => !pillarOrder.includes(p));
+              return (
+                <div className="mb-4">
+                  <p className="text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider mb-2">Requirements Checklist</p>
+                  <div className="space-y-3">
+                    {[...orderedPillars, ...extraPillars].map(pillar => {
+                      const reqs = grouped[pillar];
+                      const met = reqs.filter(r => r.met).length;
+                      const total = reqs.length;
+                      const score = pillarScores?.[pillar as keyof typeof pillarScores];
+                      return (
+                        <div key={pillar} className="rounded-lg bg-white/[0.03] border border-white/[0.06] p-3">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-xs font-semibold text-[var(--color-text-primary)]">
+                              {pillarLabels[pillar] || pillar}
+                            </span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] text-[var(--color-text-secondary)]">{met}/{total} met</span>
+                              {score != null && (
+                                <div className="w-16 h-1.5 rounded-full bg-white/10 overflow-hidden">
+                                  <div
+                                    className={`h-full rounded-full ${score >= 70 ? "bg-green-400" : score >= 40 ? "bg-amber-400" : "bg-red-400"}`}
+                                    style={{ width: `${Math.min(score, 100)}%` }}
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          <div className="space-y-1.5">
+                            {reqs.map((r, i) => (
+                              <div key={i} className="flex items-start gap-2">
+                                {r.met ? (
+                                  <span className="text-green-400 mt-0.5 shrink-0">&#10003;</span>
+                                ) : (
+                                  <span className="text-red-400 mt-0.5 shrink-0">&#10007;</span>
+                                )}
+                                <div className="min-w-0">
+                                  <span className={`text-xs ${r.met ? "text-[var(--color-text-primary)]" : "text-[var(--color-text-secondary)]"}`}>
+                                    {r.requirement}
+                                    {r.mandatory && !r.met && (
+                                      <span className="ml-1.5 text-[10px] font-medium text-red-400 bg-red-500/10 px-1.5 py-0.5 rounded">required</span>
+                                    )}
+                                  </span>
+                                  {r.evidence && (
+                                    <p className="text-[10px] text-[var(--color-text-secondary)] opacity-60 mt-0.5 leading-relaxed">{r.evidence}</p>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Taxes */}
+            {taxesApplied && taxesApplied.length > 0 && (
+              <div className="mb-4">
+                <p className="text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider mb-1.5">Deductions</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {taxesApplied.map((t, i) => (
+                    <span key={i} className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                      {t}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Suggested CV */}
             {suggestedCvName && (
-              <div className="pt-3 border-t border-white/[0.06]">
+              <div className="pt-3 border-t border-white/[0.06] mb-2">
                 <p className="text-xs text-[var(--color-text-secondary)]/60">
                   Suggested CV: <span className="text-white font-medium">{suggestedCvName}</span>
                 </p>

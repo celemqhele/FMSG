@@ -112,94 +112,155 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
   if (loadingProfile) return null;
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    if (f.type !== "application/pdf") {
+    const fileList = e.target.files;
+    if (!fileList || fileList.length === 0) return;
+
+    const files = Array.from(fileList).slice(0, 4);
+    const invalid = files.find((f) => f.type !== "application/pdf");
+    if (invalid) {
       setError("Only PDF files are supported.");
       return;
     }
-    if (f.size > 10 * 1024 * 1024) {
-      setError("File too large. Max 10MB.");
+    const oversized = files.find((f) => f.size > 10 * 1024 * 1024);
+    if (oversized) {
+      setError("File too large. Max 10MB per file.");
       return;
     }
-    setFile(f);
+
     setError("");
     setStep("extracting");
 
     const supabase = createClient();
-    const formData = new FormData();
-    formData.append("file", f);
-
-    supabase.auth.getSession().then(({ data }: { data: { session: { access_token: string } | null } }) => {
+    supabase.auth.getSession().then(async ({ data }: { data: { session: { access_token: string; user: { id: string } } | null } }) => {
       const session = data?.session;
-      fetch("/api/extract-cv", {
-        method: "POST",
-        headers: session ? { Authorization: `Bearer ${session.access_token}` } : {},
-        body: formData,
-      })
-        .then(async (r) => {
-          if (!r.ok) {
-            const errData = await r.json().catch(() => ({}));
-            throw new Error(errData.error || "Failed to extract CV");
-          }
-          return r.json();
-        })
-        .then((data) => {
-          if (data.error) {
-            setError(data.error);
-            setStep("upload");
-            return;
-          }
-          const titles = Array.isArray(data.job_titles) && data.job_titles.length > 0
-            ? data.job_titles
-            : [""];
-          setJobTitles(titles);
-          setLocation(data.preferred_location ?? "");
-          setIndustry(data.industry ?? "");
-          suggestedIndustryRef.current = true;
-          if (data.cv_file_path) {
-            setCvVariations([{ name: "CV", file_path: data.cv_file_path }]);
-          }
-          // Auto-populate industry ladder from taxonomy
-          if (data.industry) {
-            fetch("/api/suggest-industry-ladder", {
-              method: "POST",
-              headers: session ? { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" } : {},
-              body: JSON.stringify({ industry: data.industry }),
-            }).then(async (r) => {
-              if (r.ok) {
-                const ladder = await r.json();
-                if (ladder.steps) {
-                  setIndustryStep1(ladder.steps[0]?.value ?? "");
-                  setIndustryStep2(ladder.steps[1]?.value ?? "");
-                  setIndustryStep3(ladder.steps[2]?.value ?? "");
-                  setIndustryStep4(ladder.steps[3]?.value ?? "");
-                  setIndustryStep5(ladder.steps[4]?.value ?? "");
-                }
-              }
-            }).catch(() => {});
-          }
-          setStep("form");
-        })
-        .catch(() => {
-          setError("Failed to extract CV. Please try again.");
-          setStep("upload");
+      if (!session) { setError("Not authenticated."); setStep("upload"); return; }
+
+      try {
+        // Upload all files to storage in parallel
+        const uploads = files.map(async (f) => {
+          const ext = f.name.split('.').pop();
+          const filePath = `${session.user.id}/${crypto.randomUUID()}.${ext}`;
+          const { error: uploadErr } = await supabase.storage
+            .from("cv-files")
+            .upload(filePath, f, { contentType: "application/pdf" });
+          if (uploadErr) throw new Error("Failed to upload CV.");
+          return { file: f, filePath };
         });
+
+        const uploaded = await Promise.all(uploads);
+        const allPaths = uploaded.map((u) => u.filePath);
+
+        // Extract profile data from the first file only
+        const firstFile = uploaded[0].file;
+        const formData = new FormData();
+        formData.append("file", firstFile);
+        const res = await fetch("/api/extract-cv", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${session.access_token}` },
+          body: formData,
+        });
+        const data = await res.json();
+        if (!res.ok || data.error) {
+          setError(data.error || "Failed to extract CV");
+          setStep("upload");
+          return;
+        }
+
+        const titles = Array.isArray(data.job_titles) && data.job_titles.length > 0
+          ? data.job_titles
+          : [""];
+        setJobTitles(titles);
+        setLocation(data.preferred_location ?? "");
+        setIndustry(data.industry ?? "");
+        suggestedIndustryRef.current = true;
+
+        // Build variations with empty names, then label each via AI
+        const variations: CvVariation[] = allPaths.map((p) => ({ name: "", file_path: p }));
+        setCvVariations(variations);
+
+        // Fire AI labelling for all files in parallel
+        const labelPaths = new Set(allPaths);
+        setLabellingPaths((prev) => new Set([...prev, ...allPaths]));
+
+        allPaths.forEach((filePath) => {
+          fetch("/api/suggest-cv-label", {
+            method: "POST",
+            headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ file_path: filePath }),
+          }).then(async (r) => {
+            if (r.ok) {
+              const { label } = await r.json();
+              if (label) {
+                setCvVariations((prev) => {
+                  const next = [...prev];
+                  const idx = next.findIndex((cv) => cv.file_path === filePath);
+                  if (idx !== -1) next[idx] = { ...next[idx], name: label };
+                  return next;
+                });
+              }
+            }
+          }).catch(() => {}).finally(() => {
+            setLabellingPaths((prev) => {
+              const next = new Set(prev);
+              next.delete(filePath);
+              return next;
+            });
+          });
+        });
+
+        // Auto-populate industry ladder from taxonomy
+        if (data.industry) {
+          fetch("/api/suggest-industry-ladder", {
+            method: "POST",
+            headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ industry: data.industry }),
+          }).then(async (r) => {
+            if (r.ok) {
+              const ladder = await r.json();
+              if (ladder.steps) {
+                setIndustryStep1(ladder.steps[0]?.value ?? "");
+                setIndustryStep2(ladder.steps[1]?.value ?? "");
+                setIndustryStep3(ladder.steps[2]?.value ?? "");
+                setIndustryStep4(ladder.steps[3]?.value ?? "");
+                setIndustryStep5(ladder.steps[4]?.value ?? "");
+              }
+            }
+          }).catch(() => {});
+        }
+
+        setStep("form");
+      } catch {
+        setError("Failed to extract CV. Please try again.");
+        setStep("upload");
+      }
     });
   };
 
   const handleAddCvUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    if (f.type !== "application/pdf") {
+    const fileList = e.target.files;
+    if (!fileList || fileList.length === 0) return;
+    if (e.target) e.target.value = "";
+
+    const files = Array.from(fileList);
+    const invalid = files.find((f) => f.type !== "application/pdf");
+    if (invalid) {
       setError("Only PDF files are supported.");
-      if (e.target) e.target.value = "";
       return;
     }
-    if (f.size > 10 * 1024 * 1024) {
-      setError("File too large. Max 10MB.");
-      if (e.target) e.target.value = "";
+    const oversized = files.find((f) => f.size > 10 * 1024 * 1024);
+    if (oversized) {
+      setError("File too large. Max 10MB per file.");
       return;
+    }
+
+    const remaining = 4 - cvVariations.length;
+    if (remaining <= 0) {
+      setError("Maximum 4 CV variations allowed.");
+      return;
+    }
+    const toUpload = files.slice(0, remaining);
+    if (files.length > remaining) {
+      setError(`Only ${remaining} more CV${remaining > 1 ? "s" : ""} can be added. Uploaded ${remaining} of ${files.length}.`);
     }
 
     setUploadingCv(true);
@@ -213,46 +274,51 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
       return;
     }
 
-    const fileExt = f.name.split('.').pop();
-    const filePath = `${session.user.id}/${crypto.randomUUID()}.${fileExt}`;
-    const { error: uploadErr } = await supabase.storage
-      .from("cv-files")
-      .upload(filePath, f, { contentType: "application/pdf" });
+    const uploadedPaths: string[] = [];
 
-    if (uploadErr) {
-      setError("Failed to upload CV. Please try again.");
-      setUploadingCv(false);
-      if (e.target) e.target.value = "";
-      return;
+    for (const f of toUpload) {
+      const fileExt = f.name.split('.').pop();
+      const filePath = `${session.user.id}/${crypto.randomUUID()}.${fileExt}`;
+      const { error: uploadErr } = await supabase.storage
+        .from("cv-files")
+        .upload(filePath, f, { contentType: "application/pdf" });
+
+      if (uploadErr) {
+        setError("Failed to upload CV. Please try again.");
+        setUploadingCv(false);
+        return;
+      }
+      uploadedPaths.push(filePath);
     }
 
-    setCvVariations((prev) => [...prev, { name: "", file_path: filePath }]);
+    setCvVariations((prev) => [...prev, ...uploadedPaths.map((p) => ({ name: "", file_path: p }))]);
     setUploadingCv(false);
-    if (addInputRef.current) addInputRef.current.value = "";
 
-    // Auto-generate CV label via AI with loading indicator
-    setLabellingPaths((prev) => new Set(prev).add(filePath));
-    fetch("/api/suggest-cv-label", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ file_path: filePath }),
-    }).then(async (r) => {
-      if (r.ok) {
-        const { label } = await r.json();
-        if (label) {
-          setCvVariations((prev) => {
-            const next = [...prev];
-            const idx = next.findIndex((cv) => cv.file_path === filePath);
-            if (idx !== -1) next[idx] = { ...next[idx], name: label };
-            return next;
-          });
+    // Auto-generate CV labels via AI with loading indicator
+    setLabellingPaths((prev) => new Set([...prev, ...uploadedPaths]));
+    uploadedPaths.forEach((filePath) => {
+      fetch("/api/suggest-cv-label", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ file_path: filePath }),
+      }).then(async (r) => {
+        if (r.ok) {
+          const { label } = await r.json();
+          if (label) {
+            setCvVariations((prev) => {
+              const next = [...prev];
+              const idx = next.findIndex((cv) => cv.file_path === filePath);
+              if (idx !== -1) next[idx] = { ...next[idx], name: label };
+              return next;
+            });
+          }
         }
-      }
-    }).catch(() => {}).finally(() => {
-      setLabellingPaths((prev) => {
-        const next = new Set(prev);
-        next.delete(filePath);
-        return next;
+      }).catch(() => {}).finally(() => {
+        setLabellingPaths((prev) => {
+          const next = new Set(prev);
+          next.delete(filePath);
+          return next;
+        });
       });
     });
   };
@@ -444,13 +510,14 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
                 <Upload size={22} className="text-white/60" />
               </div>
               <p className="text-sm text-white/80 text-center">
-                Upload your CV (PDF) to auto-fill job titles and location
+                Upload your CVs (PDF) to auto-fill job titles and location
               </p>
-              <p className="text-xs text-white/50">Max 10MB</p>
+              <p className="text-xs text-white/50">Max 10MB per file, up to 4 CVs</p>
               <input
                 ref={inputRef}
                 type="file"
                 accept=".pdf,application/pdf"
+                multiple
                 className="hidden"
                 onChange={handleFileChange}
               />
@@ -460,7 +527,7 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
           {step === "extracting" && (
             <div className="flex flex-col items-center gap-3 py-10">
               <Loader2 size={28} className="text-[var(--color-accent)] animate-spin" />
-              <p className="text-sm text-white/80">Extracting info from your CV...</p>
+              <p className="text-sm text-white/80">Extracting info from your CVs...</p>
             </div>
           )}
 
@@ -617,6 +684,7 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
                       ref={addInputRef}
                       type="file"
                       accept=".pdf,application/pdf"
+                      multiple
                       className="hidden"
                       onChange={handleAddCvUpload}
                     />
@@ -630,7 +698,7 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
                       ) : (
                         <Plus size={12} />
                       )}
-                      {uploadingCv ? "Uploading..." : `Add CV (${cvVariations.length}/4)`}
+                      {uploadingCv ? "Uploading..." : `Add CV${cvVariations.length < 3 ? "s" : ""} (${cvVariations.length}/4)`}
                     </button>
                   </>
                 )}

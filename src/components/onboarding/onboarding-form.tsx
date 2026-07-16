@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import { useState, useRef, type ReactNode } from "react";
-import { Upload, Loader2, Plus, X } from "lucide-react";
+import { Upload, Loader2, Plus, X, FileText } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 interface ExtractedData {
@@ -44,16 +44,39 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
   const [location, setLocation] = useState("");
   const [currentSalary, setCurrentSalary] = useState<number | null>(null);
   const [desiredSalary, setDesiredSalary] = useState<number | null>(null);
-  const [cvFilePath, setCvFilePath] = useState("");
+  const [cvVariations, setCvVariations] = useState<{ name: string; file_path: string }[]>([]);
+  const [labellingPaths, setLabellingPaths] = useState<Set<string>>(new Set());
 
-  const handleFile = async (file: File) => {
+  const handleFile = async (files: FileList | File[]) => {
     setError("");
+    const fileArr = Array.from(files).slice(0, 4);
+    const invalid = fileArr.find((f) => f.type !== "application/pdf");
+    if (invalid) { setError("Only PDF files are supported."); return; }
+    const oversized = fileArr.find((f) => f.size > 10 * 1024 * 1024);
+    if (oversized) { setError("File too large. Max 10MB per file."); return; }
+
     setStep("extracting");
     const supabase = createClient();
     const { data: { session } } = await supabase.auth.getSession();
-    const formData = new FormData();
-    formData.append("file", file);
+
     try {
+      // Upload all files to storage in parallel
+      const uploads = fileArr.map(async (f) => {
+        const ext = f.name.split('.').pop();
+        const filePath = `${session?.user?.id ?? "unknown"}/${crypto.randomUUID()}.${ext}`;
+        const { error: uploadErr } = await supabase.storage
+          .from("cv-files")
+          .upload(filePath, f, { contentType: "application/pdf" });
+        if (uploadErr) throw new Error("Failed to upload CV.");
+        return { file: f, filePath };
+      });
+
+      const uploaded = await Promise.all(uploads);
+      const allPaths = uploaded.map((u) => u.filePath);
+
+      // Extract profile data from the first file only
+      const formData = new FormData();
+      formData.append("file", uploaded[0].file);
       const res = await fetch("/api/extract-cv", {
         method: "POST",
         headers: session ? { Authorization: `Bearer ${session.access_token}` } : {},
@@ -74,7 +97,39 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
       setLocation(data.preferred_location ?? "");
       setCurrentSalary(data.current_salary ?? null);
       setDesiredSalary(data.desired_salary ?? null);
-      setCvFilePath(data.cv_file_path ?? "");
+
+      // Build variations with empty names
+      const variations = allPaths.map((p) => ({ name: "", file_path: p }));
+      setCvVariations(variations);
+
+      // Fire AI labelling for all files in parallel
+      setLabellingPaths(new Set(allPaths));
+      allPaths.forEach((filePath) => {
+        fetch("/api/suggest-cv-label", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${session?.access_token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ file_path: filePath }),
+        }).then(async (r) => {
+          if (r.ok) {
+            const { label } = await r.json();
+            if (label) {
+              setCvVariations((prev) => {
+                const next = [...prev];
+                const idx = next.findIndex((cv) => cv.file_path === filePath);
+                if (idx !== -1) next[idx] = { ...next[idx], name: label };
+                return next;
+              });
+            }
+          }
+        }).catch(() => {}).finally(() => {
+          setLabellingPaths((prev) => {
+            const next = new Set(prev);
+            next.delete(filePath);
+            return next;
+          });
+        });
+      });
+
       setStep("review");
     } catch {
       setError("Could not analyze CV. Please try again.");
@@ -114,7 +169,7 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
       preferred_location: location,
       job_types: jobTypes,
       onboarding_completed: true,
-      cv_file_path: cvFilePath,
+      cv_file_path: cvVariations[0]?.file_path ?? "",
       search_balance: 1,
       cv_generation_balance: 0,
       persistent_finder_balance: 0,
@@ -131,10 +186,10 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
         job_titles: jobTitles,
         job_types: jobTypes,
         location,
-        cv_variations: cvFilePath ? [{ name: "CV", file_path: cvFilePath }] : [],
+        cv_variations: cvVariations.map((cv) => ({ name: cv.name || "CV", file_path: cv.file_path })),
       }).eq("user_id", user.id);
     } else {
-      const variations = cvFilePath ? [{ name: "CV", file_path: cvFilePath }] : [];
+      const variations = cvVariations.map((cv) => ({ name: cv.name || "CV", file_path: cv.file_path }));
       await supabase.from("search_profiles").insert({
         user_id: user.id,
         name: profileName,
@@ -155,17 +210,17 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
       <div className="flex flex-col items-center gap-8">
         <div className="text-center">
           <h1 className="text-3xl md:text-4xl font-semibold text-gray-900 tracking-tight">
-            Upload your CV
+            Upload your CVs
           </h1>
           <p className="mt-3 text-gray-500">
-            PDF only, max 10MB. Your file is stored securely.
+            PDF only, max 10MB per file, up to 4 CVs. Your files are stored securely.
           </p>
         </div>
         {error && <p className="text-sm text-red-500 text-center">{error}</p>}
         <div
           onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
           onDragLeave={() => setDragOver(false)}
-          onDrop={(e) => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }}
+          onDrop={(e) => { e.preventDefault(); setDragOver(false); if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files); }}
           onClick={() => inputRef.current?.click()}
           className={`w-full max-w-md p-12 rounded-2xl border-2 border-dashed cursor-pointer transition-all text-center ${
             dragOver
@@ -175,14 +230,15 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
         >
           <Upload size={36} className="mx-auto text-gray-400" />
           <p className="mt-4 text-sm text-gray-700">
-            Drag and drop your CV here, or click to browse
+            Drag and drop your CVs here, or click to browse
           </p>
-          <p className="mt-1 text-xs text-gray-400">PDF only (max 10MB)</p>
+          <p className="mt-1 text-xs text-gray-400">PDF only (max 10MB each, up to 4)</p>
           <input
             ref={inputRef}
             type="file"
             accept=".pdf,application/pdf"
-            onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
+            multiple
+            onChange={(e) => { if (e.target.files?.length) handleFile(e.target.files); }}
             className="hidden"
           />
         </div>
@@ -297,6 +353,29 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
       <p className="text-xs text-gray-500">
         A search profile will be created from this data. You can edit or add more profiles later in Settings.
       </p>
+
+      {cvVariations.length > 0 && (
+        <section className="space-y-2">
+          <h2 className="text-lg font-semibold text-gray-900">CV Variations</h2>
+          <p className="text-xs text-gray-500">AI is identifying each CV's focus area. You can edit the labels after saving.</p>
+          <div className="flex flex-col gap-2">
+            {cvVariations.map((cv, i) => (
+              <div key={i} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-50 border border-gray-200">
+                <FileText size={14} className="text-gray-400 shrink-0" />
+                {labellingPaths.has(cv.file_path) ? (
+                  <div className="flex items-center gap-2 flex-1">
+                    <Loader2 size={12} className="text-gray-400 animate-spin" />
+                    <span className="text-sm text-gray-400">Identifying CV focus...</span>
+                  </div>
+                ) : (
+                  <span className="text-sm text-gray-700 flex-1">{cv.name || "CV"}</span>
+                )}
+                <span className="text-xs text-gray-400 truncate">{cv.file_path.split('/').pop()}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="space-y-4">
         <h2 className="text-lg font-semibold text-gray-900">Salary Expectations</h2>

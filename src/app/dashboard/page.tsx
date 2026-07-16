@@ -44,6 +44,7 @@ interface JobResult {
   total_questions_asked?: number | null;
   yes_answers?: number | null;
   recruiter_verdict?: string | null;
+  dynamic_requirements?: { requirement: string; mandatory: boolean; pillar: string; met: boolean; evidence: string }[] | null;
 }
 
 interface HistoryResult {
@@ -64,6 +65,7 @@ interface HistoryResult {
   total_questions_asked?: number | null;
   yes_answers?: number | null;
   recruiter_verdict?: string | null;
+  dynamic_requirements?: { requirement: string; mandatory: boolean; pillar: string; met: boolean; evidence: string }[] | null;
 }
 
 interface Balances {
@@ -227,6 +229,10 @@ export default function DashboardPage() {
       switch (sortMode) {
         case "date_oldest":
           return new Date(a.created_at ?? 0).getTime() - new Date(b.created_at ?? 0).getTime();
+        case "score_highest":
+          return b.match_score - a.match_score;
+        case "score_lowest":
+          return a.match_score - b.match_score;
         case "date_newest":
         default:
           return new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime();
@@ -694,6 +700,7 @@ export default function DashboardPage() {
                       totalQuestionsAsked={r.total_questions_asked}
                       yesAnswers={r.yes_answers}
                       recruiterVerdict={r.recruiter_verdict}
+                      dynamicRequirements={r.dynamic_requirements}
                       onDelete={handleDelete}
                     />
                 ))}
@@ -743,6 +750,7 @@ export default function DashboardPage() {
                   totalQuestionsAsked={r.total_questions_asked}
                   yesAnswers={r.yes_answers}
                   recruiterVerdict={r.recruiter_verdict}
+                  dynamicRequirements={r.dynamic_requirements}
                   onDelete={(id) => setHistoryResults((prev) => prev.filter((x) => x.id !== id))}
                 />
               ))}

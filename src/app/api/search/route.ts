@@ -171,6 +171,7 @@ interface JobRow {
   total_questions_asked: number | null;
   yes_answers: number | null;
   recruiter_verdict: string | null;
+  dynamic_requirements: { requirement: string; mandatory: boolean; pillar: string; met: boolean; evidence: string }[] | null;
 }
 
 function normalize(r: any) {
@@ -542,6 +543,7 @@ async function screenAndAnalyze(
       total_questions_asked: null,
       yes_answers: null,
       recruiter_verdict: null,
+      dynamic_requirements: null,
     }));
     onStatus?.({ type: "almost_done", progress: 90 });
     return { results, queryUsed: query, filteredCounts };
@@ -560,274 +562,168 @@ async function screenAndAnalyze(
       : [{ name: "No CV", text: "No CV provided" }],
   });
 
-  const batchInput = rawJobs.map((j, i) => ({
-    index: i,
-    job_title: sanitiseForJson(j.title),
-    company: sanitiseForJson(j.company_name),
-    location: sanitiseForJson(j.location),
-    description: sanitiseForJson(jobSpecs.get(i) || ""),
-    url: jobUrls.get(i) || "",
-  }));
-
   const blacklistInfo = `BLACKLISTED_DOMAINS: ${BLACKLISTED_DOMAINS.join(", ")}`;
   const bannedInfo = bannedCompanies.length > 0 ? `\nUSER-BANNED COMPANIES: ${bannedCompanies.join(", ")}` : "";
   const dateConstraintInfo = maxAgeDays
     ? `\nDATE CONSTRAINT: Only consider jobs posted within the last ${maxAgeDays} day(s). If no posted date is available, assume it passes. Jobs older than ${maxAgeDays} days are irrelevant — score them 0 with reason "Posted outside date filter".`
     : "";
 
-  const batchSystemPrompt = `You are a strict, budget-conscious Recruitment Auditor acting as a hiring manager. You review CVs and score job matches across multiple pillars.
+  const dynamicScoringPrompt = `You are a strict Recruitment Auditor acting as a hiring manager. You analyze ONE job spec against the candidate's CV and score the match.
 
 CANDIDATE INDUSTRY: ${profileIndustry || "Unknown"}
 
 ---
-RULES:
+PROCESS:
 
 STEP 0: SUB-VERTICAL IDENTIFICATION & CV SELECTION
 A) Identify the candidate's professional sub-vertical from their EMPLOYERS, not their tools.
-   CRITICAL: Industry is where the candidate's COMPANIES operate, not what tools they use.
-   - Digital marketer using Google Ads at Superbalist = E-commerce, NOT SaaS. The tools don't define the industry.
-   - Backend engineer using AWS at a bank = FinTech, NOT Cloud Services.
-   - Recruiter using LinkedIn at a construction firm = Construction, NOT Social Media.
-   Identify sub-vertical from employer names and what those companies sell.
-B) Identify the job's sub-vertical the same way — what does the hiring company sell?
-C) Select the CV variation whose day-to-day responsibilities most closely match the role's core duties. Use exact filename from input.
-D) Set suggested_cv_name to the exact filename.
+   Industry is where the COMPANIES operate. Digital marketer at Superbalist = E-commerce, NOT SaaS.
+B) Identify the job's sub-vertical — what does the hiring company sell?
+C) Select the CV variation whose day-to-day responsibilities most closely match the role.
+D) Set suggested_cv_name to the exact CV filename.
 
-STEP 1: CATEGORIZE THE JOB DESCRIPTION INTO 5 PILLARS
-Read the job description. For each pillar, assign a score based on how well the candidate's CV matches.
+STEP 1: EXTRACT REQUIREMENTS FROM THE JOB SPEC
+Read the FULL job description. Extract EVERY requirement stated.
+For each, classify as:
+- MANDATORY: stated with words like "required", "must have", "essential", "mandatory", "necessary", "minimum"
+- PREFERRED: stated with words like "preferred", "advantageous", "nice to have", "desirable", "ideal", "bonus"
 
-PILLAR SCORING (each 0-100):
+Include: degrees, certifications, licenses, tools, platforms, languages, experience thresholds (years, team size, deal size, revenue), industry background, specific responsibilities, soft skills if stated as requirements.
 
-Pillar 1 - Industry Vertical (Weight 25%)
-- How well does the candidate's sub-vertical match the job's sub-vertical?
-- SAME industry (e-commerce → e-commerce, FinTech → FinTech, construction → construction) = 70-95
-- ADJACENT industry (e-commerce → retail, FinTech → Banking, SaaS HR → SaaS CRM) = 40-65
-- DIFFERENT industry (FinTech ≠ Construction, E-commerce ≠ Healthcare, Education ≠ Logistics) = 0-30
-- WRONG industry with no overlap (FinTech ≠ Renewable Energy, Construction ≠ Cybersecurity) = 0
+STEP 2: GENERATE YES/NO QUESTIONS
+For EACH extracted requirement, generate ONE yes/no question.
+Categorize each into the correct pillar:
+- "industry": sub-vertical match, sector experience, employer background
+- "function": role type, daily responsibilities, task experience
+- "scale": years of experience, team size, revenue managed, stakeholder level
+- "tools": specific tools, certifications, platforms, methodologies, licenses
+- "location": geography, relocation, remote/hybrid/wfh
 
-Pillar 2 - Functional Discipline (Weight 30%)
-- How well do the candidate's DAILY TASKS match the job's day-to-day work?
-- CRITICAL: Language-specific skills (C++, Python, Java, etc.) belong in Pillar 4 (Tools), NOT here.
-- Do NOT penalize Function for missing a programming language. A backend engineer can do backend work in any stack.
-- Only penalize Function if the ROLE TYPE differs (e.g., backend vs frontend vs data science vs devops).
-- Industry gaps belong in Pillar 1, NOT here.
+STEP 3: ANSWER FROM CV
+For each question, check the CV text and answer:
+- "met": true if the CV provides evidence of meeting the requirement
+- "met": false if the CV has no evidence or contradicts the requirement
+- "evidence": specific quote/detail from the CV (employer names, skills, dates, numbers)
 
-Pillar 3 - Experience Depth & Scale (Weight 20%)
-- Years of experience, deal size, team size, stakeholder level, revenue managed.
-- CRITICAL: If the candidate has MORE years than the job requires, that is a POSITIVE — not a negative.
-  Example: Job requires 2-5 years, candidate has 6 years = positive. Scale should be 80+.
-  Only penalize if the candidate has LESS experience than the minimum.
+RULES FOR ANSWERING:
+- If the CV doesn't mention it at all → met: false
+- If the role says "bilingual Afrikaans/English" and CV shows no Afrikaans → met: false
+- Transferable skills count: Salesforce→HubSpot CRM = met, Python→Java backend = met
+- MORE years than required = met (overqualification is positive)
+- Equivalent qualifications count: BA Economics meets BCom, BEng meets BSc, LLB satisfies any "degree"
 
-Pillar 4 - Technical & Tool Competencies (Weight 15%)
-- Specific tools, methodologies, platforms, domain software.
-- Salesforce/HubSpot vs Zoho/other CRM is NOT a major gap — CRM skills transfer.
+STEP 4: SCORE PILLARS (each 0-100)
+For each pillar, calculate: (questions answered met:true / total questions in that pillar) × 100
+Then adjust based on these rules:
+- Industry: SAME sub-vertical=70-95, ADJACENT=40-65, DIFFERENT=0-30
+- Function: Same role type=70-95, Adjacent role=40-65, Different role type=0-30
+- Scale: MORE years than required=positive (≥80), LESS than minimum=negative
+- Tools: Direct match=80-95, Transferable/adjacent=50-75, Missing critical=0-30
+- Location: Same city or remote no restriction=100, Same province=70, Different province=30, Different country=0
 
-Pillar 5 - Location & Mobility (Weight 10%)
-- Same city or role is remote/hybrid with no restriction = 100
-- Different city, same province = 70
-- Different province, no relocation stated on CV = 30
-- Different country, no relocation stated on CV = 0
-- If CV states willingness to relocate, apply next tier up.
+For each pillar, provide a SPECIFIC reason in pillar_reasons referencing CV details.
+Good: "Candidate worked at Superbalist and Takealot — both e-commerce, same sub-vertical."
+Bad: "Company operates in e-commerce."
 
-For each pillar, provide a SPECIFIC reason sentence in pillar_reasons referencing details from the CV.
-  Bad: "The company operates in e-commerce."
-  Good: "Candidate worked at Superbalist, Takealot, and Woolworths — all e-commerce/retail companies — same industry."
-  Bad: "The tools mentioned align with the candidate's skills."
-  Good: "Candidate knows Google Ads, Meta Ads, and Klaviyo which are essential for this role."
-  Always mention actual employer names, skill names, numbers, locations from the CV.
+STEP 5: KNOCKOUT
+If ANY MANDATORY requirement question is met:false → knockout_fail = true → score = 25.
 
-STEP 2: CHECK KNOCKOUTS (Binary Kill-Switch)
-If ANY answer is NO, trigger knockout → score MUST be 25:
-- Does the user meet the mandatory DEGREE requirement? (Avoid this tax if degree is "advantageous" or "preferred" only)
-- Does the user meet the mandatory LICENSE/CERT requirement (Driver's, Passport, etc.)?
-- Does the user meet the mandatory LANGUAGE requirement? If the role lists "bilingual Afrikaans/English" as a firm requirement (NOT "advantageous"), and the candidate's CV shows no evidence of that language, trigger knockout.
-- Does the user meet the mandatory VERTICAL TENURE requirement (8+ years in that specific sub-vertical)?
-Related or equivalent degrees count (e.g., BA Economics meets BCom requirement, BEng meets BSc, LLB satisfies any "degree" requirement).
+STEP 6: TAXES
+- Hopper Tax (-15): 3+ jobs in last 5 years AND avg tenure < 18 months. EXEMPT: self-employed, freelance, founder periods count as one continuous block.
+- Overqualified Tax (-10): Current title is significantly MORE senior than JD title.
+- Vague Achievement Tax (-10): CV has fewer than 3 specific numbers/percentages.
+- No Degree Tax (-10): JD requires a degree AND CV has none. NEVER apply if CV has ANY tertiary qualification. NEVER apply if JD says "advantageous" or "preferred."
+- Salary Mismatch Tax (-10): JD max salary is below 70% of candidate's implied market rate.
 
-STEP 3: APPLY TAXES (Strict Deductions)
-Hopper Tax (-15): 3+ jobs in last 5 years AND avg tenure < 18 months. EXCEPTION: Self-employed, freelance, and Founder tenures are treated as a SINGLE continuous period.
-Overqualified Tax (-10): Current title is significantly MORE senior than JD title.
-Vague Achievement Tax (-10): CV has fewer than 3 specific dollar or percentage figures.
-No Degree Tax (-10): JD mentions a degree AND CV has none. Do NOT apply if JD says "advantageous" or "preferred." CRITICAL: If the candidate has ANY tertiary qualification (LLB, BCom, BSc, Diploma, etc.), this tax is NEVER applied — even if the JD asks for a specific degree type.
-Salary Mismatch Tax (-10): JD max salary is below 70% of the candidate's implied market rate. State the implied rate before checking.
-
-STEP 4: CALCULATE FINAL SCORE
+STEP 7: FINAL SCORE
 Core = Industry×0.25 + Function×0.30 + Scale×0.20 + Tools×0.15 + Location×0.10
-Core = Core × 0.95 (5% competition penalty)
-Final = Core - total taxes. Cap between 0 and 95.
-If knockout triggered → score = 25.
+Core = Core × 0.95 (competition penalty)
+Final = Core − total taxes. Cap 0-95.
+If knockout → score = 25.
 
-STEP 5: RECRUITER VERDICT
+STEP 8: VERDICT
 >= 75: "HIRE" | >= 60: "INTERVIEW" | < 60: "REJECT"
 
-STEP 6: SELF-VERIFICATION & SCORE ADJUSTMENT
-A) Rule check — review against every rule above. If violated, fix pillar scores and reasons.
-B) Pillar-Final consistency check — compute: (Industry×0.25 + Function×0.30 + Scale×0.20 + Tools×0.15 + Location×0.10) × 0.95 - taxes.
-   Does this match your final score? If the score differs by >5 points, either the pillars or the score is wrong — FIX BOTH so they match.
-C) Language check — pillar_reasons MUST mention specific CV details (employer names, skills, numbers, locations).
-   Bad: "The company operates in e-commerce."  Good: "Candidate worked at Superbalist and Takealot, both e-commerce companies."
-   Bad: "The tools mentioned align with the candidate's skills."  Good: "Candidate knows Google Ads, Meta Ads, and Klaviyo essential for this role."
-D) Score check — do the gaps match the score?
-    Severe gaps (wrong industry, missing mandatory skills, knockout) → ≤40
-    Moderate gaps (missing nice-to-haves, transferable skills) → 41-60
-    Strong match with minor gaps → 61-80
-    Near-perfect fit (all pillars strong, zero gaps, same industry) → 81-95
-E) Experience logic: if candidate has MORE years than required → positive, Scale ≥70. If candidate has less → negative.
-   Language: if role mandates a language the CV doesn't mention → flag in reasons, knockout only if "essential"/"mandatory."
-F) If the score feels wrong, adjust by ±5 (max ±10). Set adjustment_note explaining the change.
-   If no adjustment needed, set adjustment_note to null.
-G) score field = FINAL adjusted score. pillar_scores MUST reflect the final math.
+STEP 9: SELF-VERIFY
+A) Compute: (Industry×0.25 + Function×0.30 + Scale×0.20 + Tools×0.15 + Location×0.10) × 0.95 − taxes.
+   Does this match final score? Fix both if diverge by >5 pts.
+B) Reasons MUST reference CV specifics (employer names, skills, numbers).
+C) Adjust by ±5 (max ±10) if score feels wrong. Set adjustment_note.
+D) pillar_scores MUST reflect the final math.
 
-Return ONLY a JSON array of objects. No markdown, no explanation, no code fences.
-Each object:
+Return ONLY valid JSON (no markdown, no code fences):
 {
-  "index": number,
   "score": number (integer 0-95),
   "adjustment_note": string | null,
-  "reason": string (explain the match in 2-3 sentences),
+  "reason": string (2-3 sentence match explanation),
   "estimated_salary": string,
   "knockout_fail": boolean,
-  "suggested_cv_name": string (exact CV filename from input),
+  "suggested_cv_name": string,
   "pillar_scores": { "industry": number, "function": number, "scale": number, "tools": number, "location": number },
-  "pillar_reasons": { "industry": "plain English reason", "function": "plain English reason", "scale": "plain English reason", "tools": "plain English reason", "location": "plain English reason" },
+  "pillar_reasons": { "industry": "...", "function": "...", "scale": "...", "tools": "...", "location": "..." },
   "taxes_applied": [string],
   "total_questions_asked": number,
   "yes_answers": number,
-  "recruiter_verdict": "HIRE" | "INTERVIEW" | "REJECT"
+  "recruiter_verdict": "HIRE" | "INTERVIEW" | "REJECT",
+  "dynamic_requirements": [
+    { "requirement": "...", "mandatory": boolean, "pillar": "industry|function|scale|tools|location", "met": boolean, "evidence": "..." }
+  ]
 }
 
 ${blacklistInfo}${bannedInfo}${dateConstraintInfo}`;
 
-  let batchResults: { index: number; score: number; adjustment_note?: string | null; reason: string; estimated_salary: string; knockout_fail?: boolean; suggested_cv_name?: string; pillar_scores?: Record<string, number>; pillar_reasons?: Record<string, string>; taxes_applied?: string[]; total_questions_asked?: number; yes_answers?: number; recruiter_verdict?: string }[] = [];
-
-  const BATCH_SIZE = 8;
-  let batchFailed = false;
-
-  if (!batchFailed && batchInput.length > 0) {
-    try {
-      debugLog(`[SEARCH] Starting scoring (${batchInput.length} jobs in ${Math.ceil(batchInput.length / BATCH_SIZE)} chunks)`);
-      onStatus?.({ type: "screening_job", current: 0, total: batchInput.length, progress: 25 });
-
-      for (let chunkStart = 0; chunkStart < batchInput.length; chunkStart += BATCH_SIZE) {
-        const chunk = batchInput.slice(chunkStart, chunkStart + BATCH_SIZE);
-        const chunkNum = Math.floor(chunkStart / BATCH_SIZE) + 1;
-        const totalChunks = Math.ceil(batchInput.length / BATCH_SIZE);
-        debugLog(`[SEARCH] Scoring chunk ${chunkNum}/${totalChunks} (${chunk.length} jobs)`);
-
-        const rawChunk = await callAIWithFallback(
-          batchSystemPrompt,
-          `Candidate Profile:\n${profileContext}\n\nJobs:\n${JSON.stringify(chunk, null, 2)}`,
-          `search chunk ${chunkNum}/${totalChunks}${pfRound ? ` (PF round ${pfRound})` : ""}`,
-          { responseMimeType: "application/json", temperature: 0.1, maxOutputTokens: 16384 }
-        );
-        const parsed = JSON.parse(rawChunk);
-        const unwrapped = unwrapArray(parsed);
-        if (!Array.isArray(unwrapped) || unwrapped.length === 0) {
-          throw new Error(`chunk ${chunkNum} empty`);
-        }
-        for (const item of unwrapped) {
-          batchResults.push(item as typeof batchResults[0]);
-        }
-      }
-      debugLog(`[SEARCH] Scoring succeeded via ${lastAITier} (${batchResults.length} results)`);
-    } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      debugLog(`[SEARCH] Scoring batch failed: ${errMsg.slice(0, 150)} — falling back to individual`);
-      batchResults = [];
-      batchFailed = true;
-    }
-  }
-
-  if (batchFailed) {
-    debugLog(`[SEARCH] Individual fallback for ${rawJobs.length} jobs`);
-    for (let i = 0; i < rawJobs.length; i++) {
-      const job = rawJobs[i];
-      const progress = Math.min(20 + ((i + 1) / rawJobs.length) * 35, 55);
-      onStatus?.({ type: "screening_job", current: i + 1, total: rawJobs.length, progress });
-    if (i > 0) await sleep(lastAITier === "gemini" ? 4000 : 1000);
-      const singlePrompt = `You are a Recruitment Auditor AI scoring a single job match. Follow the same strict rules as the batch version.
-
-CANDIDATE INDUSTRY: ${profileIndustry || "Unknown"}
-
-PILLARS (each 0-100): Industry 25% | Function 30% | Scale 20% | Tools 15% | Location 10%
-
-INDUSTRY: Identify from EMPLOYERS, not tools. SAME industry=70-95, ADJACENT=40-65, DIFFERENT=0-30. FinTech ≠ Construction. E-commerce ≠ Healthcare.
-FUNCTION: Measures ROLE TYPE transferability, not language/tool skills. C++/Python/Java skills belong in Tools pillar. A backend engineer can do backend work in any stack.
-SCALE: More years than required = POSITIVE. Job asks 2-5yrs, candidate has 6yrs → Scale 80+. Only penalize if LESS than minimum.
-KNOCKOUT: Apply for mandatory degree (not "advantageous"), mandatory license, mandatory LANGUAGE (if "bilingual" required and CV shows no evidence), or vertical tenure gap. LLB satisfies any degree requirement.
-No Degree Tax: NEVER apply if candidate has ANY tertiary qualification.
-NEAR-PERFECT fits (all pillars strong, zero gaps, same industry) → 81-95. Do not cap at 75.
-TAXES: Hopper(-15, exempt self-employed blocks), Overqualified(-10), Vague Achievement(-10), No Degree(-10, only when REQUIRED), Salary Mismatch(-10).
-FINAL = (Industry×0.25 + Function×0.30 + Scale×0.20 + Tools×0.15 + Location×0.10) × 0.95 - taxes. Cap 0-95.
-VERDICT: >=75 HIRE | >=60 INTERVIEW | <60 REJECT.
-LOCATION: same city/remote=100, same province=70, different province=30, different country=0.
-PILLAR-REASONS: Must reference CV specifics (employer names, skills, numbers). Bad: "company operates in e-commerce." Good: "worked at Superbalist and Takealot, both e-commerce."
-SELF-VERIFY: Compute pillar math — does it match final score? Fix both if they diverge by >5 pts. Adjust by ±5 (max ±10) with adjustment_note. pillar_scores MUST reflect final math.
-
-Return ONLY valid JSON (no markdown, no code fences):
-{ "score": number (0-95), "adjustment_note": string|null, "reason": string, "estimated_salary": string, "knockout_fail": boolean, "suggested_cv_name": string, "pillar_scores": { "industry": number, "function": number, "scale": number, "tools": number, "location": number }, "pillar_reasons": { "industry": "plain English reason", "function": "plain English reason", "scale": "plain English reason", "tools": "plain English reason", "location": "plain English reason" }, "taxes_applied": [string], "total_questions_asked": number, "yes_answers": number, "recruiter_verdict": "HIRE"|"INTERVIEW"|"REJECT" }`;
-      try {
-        const rawSingle = await callAIWithFallback(
-          singlePrompt,
-          `Candidate Profile:\n${profileContext}\n\nJob:\n${JSON.stringify(batchInput[i], null, 2)}`,
-          `search pass 1 individual${pfRound ? ` (PF round ${pfRound})` : ""}`,
-          { responseMimeType: "application/json", temperature: 0.1, maxOutputTokens: 16384 }
-        );
-        const parsed = JSON.parse(rawSingle);
-        batchResults.push({
-          index: i, score: Math.round(parsed.score), adjustment_note: parsed.adjustment_note, reason: parsed.reason, estimated_salary: parsed.estimated_salary,
-          knockout_fail: parsed.knockout_fail, suggested_cv_name: parsed.suggested_cv_name,
-          pillar_scores: parsed.pillar_scores, pillar_reasons: parsed.pillar_reasons,
-          taxes_applied: parsed.taxes_applied, total_questions_asked: parsed.total_questions_asked,
-          yes_answers: parsed.yes_answers, recruiter_verdict: parsed.recruiter_verdict,
-        });
-      } catch {
-        batchResults.push({ index: i, score: 30, reason: "Screening unavailable", estimated_salary: "" });
-      }
-    }
-  }
-
-  // Post-scoring sanity check: auto-correct missed mandatory requirements
-  const cvText = cvTexts.map(cv => cv.text).join(" ").toLowerCase();
-  for (const r of batchResults) {
-    if (r.score < 40 || r.knockout_fail) continue;
-    const spec = (jobSpecs.get(r.index) || "").toLowerCase();
-    const mandatory = extractMandatoryMissing(spec, cvText);
-    if (mandatory) {
-      r.score = 25;
-      r.knockout_fail = true;
-      if (r.taxes_applied) r.taxes_applied = [];
-      r.adjustment_note = `Auto-corrected: ${mandatory} is required but absent from CV`;
-      r.recruiter_verdict = "REJECT";
-      debugLog(`[SEARCH] Post-scoring knockout on job ${r.index}: ${mandatory}`);
-    }
-  }
-
-  const pillarLabels: Record<string, { label: string; weight: string }> = {
-    industry: { label: "Industry alignment", weight: "25%" },
-    function: { label: "Functional match", weight: "30%" },
-    scale: { label: "Experience & scale", weight: "20%" },
-    tools: { label: "Tools & technical fit", weight: "15%" },
-    location: { label: "Location & mobility", weight: "10%" },
-  };
-
   let outputs: JobRow[] = [];
+
+  debugLog(`[SEARCH] Starting one-by-one scoring (${rawJobs.length} jobs)`);
+  onStatus?.({ type: "screening_job", current: 0, total: rawJobs.length, progress: 25 });
+
   for (let i = 0; i < rawJobs.length; i++) {
     const job = rawJobs[i];
-    const batchResult = batchResults.find((r) => r.index === i);
     const jobUrl = jobUrls.get(i) || buildJobUrl(job);
     const fullSpec = jobSpecs.get(i) || "";
 
-    const progress = Math.min(55 + ((i + 1) / rawJobs.length) * 30, 85);
+    const progress = Math.min(25 + ((i + 1) / rawJobs.length) * 55, 80);
     onStatus?.({ type: "analyzing_job", title: job.title, company: job.company_name, current: i + 1, total: rawJobs.length, progress });
 
-    const score = batchResult?.score != null ? Math.round(batchResult.score) : 30;
-    const ps = batchResult?.pillar_scores;
-    const pr = batchResult?.pillar_reasons;
-    const taxes = (batchResult?.taxes_applied as string[])?.filter((t: string) => t.length > 0) ?? [];
-    const verdict = batchResult?.recruiter_verdict ?? (score >= 75 ? "HIRE" : score >= 60 ? "INTERVIEW" : "REJECT");
-    const questions = batchResult?.total_questions_asked ?? 0;
-    const yes = batchResult?.yes_answers ?? 0;
+    if (i > 0) await sleep(lastAITier === "gemini" ? 4000 : 1000);
+
+    let result: any = null;
+    try {
+      const jobInput = sanitiseForJson(fullSpec);
+      const raw = await callAIWithFallback(
+        dynamicScoringPrompt,
+        `Candidate Profile:\n${profileContext}\n\nJob:\n${JSON.stringify({ job_title: job.title, company: job.company_name, location: job.location, description: jobInput, url: jobUrl }, null, 2)}`,
+        `one-by-one scoring ${i + 1}/${rawJobs.length}${pfRound ? ` (PF round ${pfRound})` : ""}`,
+        { responseMimeType: "application/json", temperature: 0.1, maxOutputTokens: 16384 }
+      );
+      result = JSON.parse(raw);
+      debugLog(`[SEARCH] Job ${i + 1}/${rawJobs.length}: "${job.title}" scored ${result.score} (${result.recruiter_verdict})`);
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      debugLog(`[SEARCH] Job ${i + 1}/${rawJobs.length} AI failed: ${errMsg.slice(0, 100)}`);
+      result = { score: 30, reason: "Screening unavailable", estimated_salary: "", dynamic_requirements: null };
+    }
+
+    // Post-scoring sanity check
+    if (result.score >= 40 && !result.knockout_fail) {
+      const cvTextLower = cvTexts.map(cv => cv.text).join(" ").toLowerCase();
+      const specLower = fullSpec.toLowerCase();
+      const mandatory = extractMandatoryMissing(specLower, cvTextLower);
+      if (mandatory) {
+        result.score = 25;
+        result.knockout_fail = true;
+        result.taxes_applied = [];
+        result.adjustment_note = `Auto-corrected: ${mandatory} is required but absent from CV`;
+        result.recruiter_verdict = "REJECT";
+        debugLog(`[SEARCH] Post-scoring knockout on job ${i + 1}: ${mandatory}`);
+      }
+    }
+
+    const score = Math.round(result.score ?? 30);
+    const ps = result.pillar_scores;
+    const taxes = (result.taxes_applied as string[])?.filter((t: string) => t.length > 0) ?? [];
+    const verdict = result.recruiter_verdict ?? (score >= 75 ? "HIRE" : score >= 60 ? "INTERVIEW" : "REJECT");
+    const dr = result.dynamic_requirements ?? null;
 
     const deductionLabels: Record<string, string> = {
       "Hopper Tax": "Short tenure history — 3+ jobs in 5 years with average under 18 months",
@@ -839,59 +735,37 @@ Return ONLY valid JSON (no markdown, no code fences):
 
     const autoSummary = (() => {
       const lines: string[] = [];
-
+      if (dr && dr.length > 0) {
+        const met = dr.filter((r: any) => r.met).length;
+        lines.push(`Requirements: ${met} of ${dr.length} met`);
+      }
       if (ps) {
-        const pillars = Object.entries(pillarLabels).map(([key, { label, weight }]) => ({
-          key, label, weight,
-          val: (ps as Record<string, number>)[key] ?? 0,
-          reason: (pr as Record<string, string>)?.[key] ?? "",
-        }));
-        const sorted = [...pillars].sort((a, b) => b.val - a.val);
-
-        const good = sorted.slice(0, 3).filter(p => p.val >= 60 && p.reason);
+        const pillarLabels: Record<string, string> = { industry: "Industry", function: "Function", scale: "Experience", tools: "Tools", location: "Location" };
+        const psEntries = Object.entries(ps as Record<string, number>);
+        const sorted = psEntries.sort((a, b) => (b[1] ?? 0) - (a[1] ?? 0));
+        const good = sorted.filter(([, v]) => (v ?? 0) >= 60).slice(0, 2);
+        const bad = sorted.filter(([, v]) => (v ?? 0) < 60).slice(0, 2);
         if (good.length > 0) {
-          lines.push("What worked:");
-          for (const p of good) {
-            lines.push(`• ${p.label}: ${p.reason}.`);
+          for (const [k] of good) {
+            const reason = (result.pillar_reasons as Record<string, string>)?.[k] ?? "";
+            if (reason) lines.push(`• ${pillarLabels[k] || k}: ${reason}`);
           }
         }
-
-        const bad = [...sorted].reverse().slice(0, 3).filter(p => p.val < 60 && p.reason);
-        if (bad.length > 0 || taxes.length > 0) {
-          lines.push("");
-          lines.push("What held it back:");
-          for (const p of bad) {
-            lines.push(`• ${p.label}: ${p.reason}.`);
-          }
-          for (const t of taxes) {
-            const human = deductionLabels[t] || t;
-            lines.push(`• ${human}.`);
+        if (bad.length > 0) {
+          for (const [k] of bad) {
+            const reason = (result.pillar_reasons as Record<string, string>)?.[k] ?? "";
+            if (reason) lines.push(`• ${pillarLabels[k] || k}: ${reason}`);
           }
         }
       } else {
-        const reasonText = batchResult?.reason?.trim() || "";
-        if (reasonText) {
-          const bullets = reasonText.split(";").map((s: string) => s.trim()).filter((s: string) => s.length > 0);
-          lines.push("What the AI noted:");
-          for (const b of bullets) lines.push(`• ${b}`);
-        }
-        if (taxes.length > 0) {
-          lines.push("");
-          lines.push("What held it back:");
-          for (const t of taxes) {
-            const human = deductionLabels[t] || t;
-            lines.push(`• ${human}.`);
-          }
-        }
+        const reasonText = result.reason?.trim() || "";
+        if (reasonText) lines.push(reasonText);
       }
-
-      const adjustmentNote = batchResult?.adjustment_note;
-      if (adjustmentNote) {
-        lines.push("");
-        lines.push(`Score adjusted: ${adjustmentNote}`);
+      for (const t of taxes) {
+        const human = deductionLabels[t] || t;
+        lines.push(`• ${human}`);
       }
-
-      lines.push("");
+      if (result.adjustment_note) lines.push(`Score adjusted: ${result.adjustment_note}`);
       lines.push(`Verdict: ${verdict}`);
       return lines.join("\n");
     })();
@@ -902,7 +776,7 @@ Return ONLY valid JSON (no markdown, no code fences):
       job_title: job.title,
       company: job.company_name,
       location: job.location,
-      estimated_salary: batchResult?.estimated_salary || "",
+      estimated_salary: result.estimated_salary || "",
       match_score: score,
       match_summary: autoSummary,
       verdict_bullets: null,
@@ -911,13 +785,14 @@ Return ONLY valid JSON (no markdown, no code fences):
       search_query: query,
       posted_at: (job as any)._postedAt ?? "",
       posted_at_ms: (job as any)._postedAtMs ?? 0,
-      suggested_cv: batchResult?.suggested_cv_name || "",
-      knockout_fail: batchResult?.knockout_fail ?? null,
+      suggested_cv: result.suggested_cv_name || "",
+      knockout_fail: result.knockout_fail ?? null,
       pillar_scores: ps as { industry: number; function: number; scale: number; tools: number; location: number } | null,
       taxes_applied: taxes as string[] | null,
-      total_questions_asked: questions > 0 ? questions : null,
-      yes_answers: yes > 0 ? yes : null,
+      total_questions_asked: result.total_questions_asked ?? null,
+      yes_answers: result.yes_answers ?? null,
       recruiter_verdict: verdict,
+      dynamic_requirements: dr,
     });
 
     const lastResult = outputs[outputs.length - 1];
@@ -932,10 +807,10 @@ Return ONLY valid JSON (no markdown, no code fences):
         knockout_fail: lastResult.knockout_fail, pillar_scores: lastResult.pillar_scores,
         taxes_applied: lastResult.taxes_applied, total_questions_asked: lastResult.total_questions_asked,
         yes_answers: lastResult.yes_answers, recruiter_verdict: lastResult.recruiter_verdict,
+        dynamic_requirements: lastResult.dynamic_requirements,
       }).then(({ error }: any) => {
         if (error) console.error("[SEARCH] Failed to insert incremental result:", error.message);
       }).catch((e: any) => {
-        // Silently ignore fetch failures on incremental saves — they're non-critical
         if (e?.message && !e.message.includes("fetch failed")) {
           console.error("[SEARCH] Unexpected insert error:", e.message);
         }
