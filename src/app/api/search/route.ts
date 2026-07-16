@@ -71,6 +71,8 @@ const BLACKLISTED_DOMAINS = [
   'jooble.co.za',
   'executiveplacements.com',
   'executiveplacements.co.za',
+  'whatjobs.com',
+  'en-za.whatjobs.com',
 ];
 
 const BLACKLISTED_COMPANIES = [
@@ -595,7 +597,9 @@ For each, classify as:
 - MANDATORY: stated with words like "required", "must have", "essential", "mandatory", "necessary", "minimum"
 - PREFERRED: stated with words like "preferred", "advantageous", "nice to have", "desirable", "ideal", "bonus"
 
-Include: degrees, certifications, licenses, tools, platforms, languages, experience thresholds (years, team size, deal size, revenue), industry background, specific responsibilities, soft skills if stated as requirements.
+Include: certifications, licenses, tools, platforms, languages, experience thresholds (years, team size, deal size, revenue), industry background, specific responsibilities, soft skills if stated as requirements.
+
+CRITICAL RULE — DEGREES: Only extract a degree requirement if the JD EXPLICITLY mentions one (e.g., "Bachelor's degree required", "Degree in Marketing", "NQF level 7", "tertiary qualification"). If the JD lists only skills, tools, experience, and responsibilities with NO mention of a degree, do NOT create a degree requirement. Do NOT infer that a professional role requires a degree just because it is skilled work.
 
 STEP 2: GENERATE YES/NO QUESTIONS
 For EACH extracted requirement, generate ONE yes/no question.
@@ -639,7 +643,7 @@ STEP 6: TAXES
 - Hopper Tax (-15): 3+ jobs in last 5 years AND avg tenure < 18 months. EXEMPT: self-employed, freelance, founder periods count as one continuous block.
 - Overqualified Tax (-10): Current title is significantly MORE senior than JD title.
 - Vague Achievement Tax (-10): CV has fewer than 3 specific numbers/percentages.
-- No Degree Tax (-10): JD requires a degree AND CV has none. NEVER apply if CV has ANY tertiary qualification. NEVER apply if JD says "advantageous" or "preferred."
+- No Degree Tax (-10): JD EXPLICITLY requires a degree AND CV has none. NEVER apply if CV has ANY tertiary qualification. NEVER apply if JD says "advantageous" or "preferred." NEVER apply if the JD does not mention a degree at all — if the JD only lists skills and experience with no degree requirement, this tax is forbidden.
 - Salary Mismatch Tax (-10): JD max salary is below 70% of candidate's implied market rate.
 
 STEP 7: FINAL SCORE
