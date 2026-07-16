@@ -646,7 +646,7 @@ export default function DashboardPage() {
               <BalanceChips balances={balances} plan={plan} />
             </div>
 
-            <div className="sticky top-0 z-30 bg-[var(--color-bg)]/80 backdrop-blur-xl py-2 space-y-2">
+            <div className="sticky top-0 z-30 -mt-4 backdrop-blur-xl py-2 space-y-2">
               <div className="flex items-center justify-center">
                 <FilterSortBar
                   sort={sortMode}
