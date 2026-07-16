@@ -1,8 +1,7 @@
 ﻿"use client";
 
-import { useState, useRef } from "react";
-import { createPortal } from "react-dom";
-import { Search, Crosshair, Square, X, Calendar } from "lucide-react";
+import { useState } from "react";
+import { Search, Crosshair, Square, X, ChevronLeft, ChevronRight } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useActiveProfile } from "@/components/dashboard/dashboard-layout";
 
@@ -20,16 +19,13 @@ export function SearchPill({ onSearch, onAbort, searching }: SearchPillProps) {
   const [showAbortConfirm, setShowAbortConfirm] = useState(false);
   const [abortMounted, setAbortMounted] = useState(false);
   const [dateFilterDays, setDateFilterDays] = useState<number | null>(null);
-  const [showDateFilter, setShowDateFilter] = useState(false);
-  const [dateFilterMounted, setDateFilterMounted] = useState(false);
-  const [dateFilterPos, setDateFilterPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
-  const calendarBtnRef = useRef<HTMLButtonElement>(null);
+  const [dateFilterIndex, setDateFilterIndex] = useState(0);
 
   const DATE_OPTIONS = [
-    { label: "Any date", value: null },
-    { label: "Last 24h", value: 1 },
-    { label: "Last 7d", value: 7 },
-    { label: "Last 3w", value: 21 },
+    { label: "Any time", value: null },
+    { label: "24h", value: 1 },
+    { label: "7 days", value: 7 },
+    { label: "3 weeks", value: 21 },
   ] as const;
 
   const handleSearch = async () => {
@@ -104,27 +100,19 @@ export function SearchPill({ onSearch, onAbort, searching }: SearchPillProps) {
     setPfMode(!pfMode);
   };
 
-  const toggleDateFilter = () => {
-    if (showDateFilter) {
-      setDateFilterMounted(false);
-      setTimeout(() => setShowDateFilter(false), 200);
-    } else {
-      if (calendarBtnRef.current) {
-        const rect = calendarBtnRef.current.getBoundingClientRect();
-        setDateFilterPos({ top: rect.bottom + 8, left: rect.left + rect.width / 2 });
-      }
-      setShowDateFilter(true);
-      setTimeout(() => setDateFilterMounted(true), 10);
-    }
+  const cycleDateLeft = () => {
+    const newIndex = dateFilterIndex === 0 ? DATE_OPTIONS.length - 1 : dateFilterIndex - 1;
+    setDateFilterIndex(newIndex);
+    setDateFilterDays(DATE_OPTIONS[newIndex].value);
   };
 
-  const selectDateFilter = (value: number | null) => {
-    setDateFilterDays(value);
-    setDateFilterMounted(false);
-    setTimeout(() => setShowDateFilter(false), 300);
+  const cycleDateRight = () => {
+    const newIndex = dateFilterIndex === DATE_OPTIONS.length - 1 ? 0 : dateFilterIndex + 1;
+    setDateFilterIndex(newIndex);
+    setDateFilterDays(DATE_OPTIONS[newIndex].value);
   };
 
-  const activeDateLabel = DATE_OPTIONS.find((o) => o.value === dateFilterDays)?.label ?? "Any date";
+  const activeDateLabel = DATE_OPTIONS[dateFilterIndex].label;
 
   return (
     <>
@@ -166,45 +154,25 @@ export function SearchPill({ onSearch, onAbort, searching }: SearchPillProps) {
       )}
 
       <div className={`w-full max-w-2xl mx-auto flex items-center h-14 rounded-full bg-white/10 border border-white/20 backdrop-blur-xl overflow-visible transition-transform duration-200 ${bouncing ? "scale-[1.02]" : "scale-100"}`}>
-      {/* Date filter pill */}
-      <div className="relative ml-2">
+      {/* Date filter: left arrow / label / right arrow */}
+      <div className="flex items-center gap-0.5 ml-2">
         <button
-          ref={calendarBtnRef}
-          onClick={toggleDateFilter}
-          className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${dateFilterDays != null ? "bg-[var(--color-accent)] text-white" : "text-white/60 hover:text-white/90 hover:bg-white/10"}`}
-          title={dateFilterDays != null ? `Filtering: ${activeDateLabel}` : "Filter by date"}
+          onClick={cycleDateLeft}
+          className="w-7 h-7 rounded-full flex items-center justify-center text-white/50 hover:text-white/90 hover:bg-white/10 transition-colors"
+          title="Previous date filter"
         >
-          <Calendar size={16} />
+          <ChevronLeft size={14} />
         </button>
-
-        {showDateFilter && createPortal(
-          <div
-            className="fixed z-[9999] transition-all duration-300 ease-out"
-            style={{
-              top: dateFilterPos.top,
-              left: dateFilterPos.left,
-              transform: "translateX(-50%)",
-              opacity: dateFilterMounted ? 1 : 0,
-            }}
-          >
-            <div className="bg-gray-900/95 backdrop-blur-xl border border-white/20 rounded-xl py-1.5 shadow-2xl min-w-[140px]">
-              {DATE_OPTIONS.map((opt) => (
-                <button
-                  key={opt.label}
-                  onClick={() => selectDateFilter(opt.value)}
-                  className={`w-full text-left px-3.5 py-2 text-xs transition-colors ${
-                    dateFilterDays === opt.value
-                      ? "text-white bg-white/10"
-                      : "text-white/60 hover:text-white hover:bg-white/5"
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          </div>,
-          document.body
-        )}
+        <span className={`text-[11px] font-medium px-1.5 select-none whitespace-nowrap ${dateFilterDays != null ? "text-[var(--color-accent)]" : "text-white/60"}`}>
+          {activeDateLabel}
+        </span>
+        <button
+          onClick={cycleDateRight}
+          className="w-7 h-7 rounded-full flex items-center justify-center text-white/50 hover:text-white/90 hover:bg-white/10 transition-colors"
+          title="Next date filter"
+        >
+          <ChevronRight size={14} />
+        </button>
       </div>
 
       {/* PF toggle */}
@@ -219,7 +187,7 @@ export function SearchPill({ onSearch, onAbort, searching }: SearchPillProps) {
       </div>
 
       <span className="flex-1 text-white/60 text-sm px-3 truncate select-none">
-        {pfMode ? `Persistent Finder (${activeDateLabel})` : dateFilterDays != null ? `Filtered: ${activeDateLabel} · ${displayTitle}` : displayTitle}
+        {pfMode ? `Persistent Finder · ${activeDateLabel}` : dateFilterDays != null ? `${activeDateLabel} · ${displayTitle}` : displayTitle}
       </span>
 
       {searching && (
