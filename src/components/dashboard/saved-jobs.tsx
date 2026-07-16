@@ -33,6 +33,7 @@ export function SavedJobs() {
   const { activeProfileId } = useActiveProfile();
 
   useEffect(() => {
+    if (!activeProfileId) { setJobs([]); setLoading(false); return; }
     const supabase = createClient();
     supabase.auth.getSession().then(({ data }: { data: any }) => {
       const session = data?.session;
@@ -58,7 +59,7 @@ export function SavedJobs() {
       setError("Session error.");
       setLoading(false);
     });
-  }, []);
+  }, [activeProfileId]);
 
   if (loading) {
     return <p className="text-sm text-[var(--color-text-secondary)] text-center py-8">Loading...</p>;

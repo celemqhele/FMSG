@@ -201,6 +201,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (activeTab !== "history") return;
+    if (!activeProfileId) { setHistoryResults([]); setHistoryLoading(false); return; }
     startTransition(() => setHistoryLoading(true));
     const supabase = createClient();
     supabase.auth.getSession().then(({ data }: { data: { session: any } }) => {
@@ -218,7 +219,7 @@ export default function DashboardPage() {
           setHistoryLoading(false);
         });
     });
-  }, [activeTab]);
+  }, [activeTab, activeProfileId]);
 
   const [pfActive, setPfActive] = useState(false);
 

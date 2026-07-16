@@ -859,6 +859,7 @@ ${blacklistInfo}${bannedInfo}${dateConstraintInfo}`;
         if (allExisting.has(r.job_url)) {
           if (dedupSets.history.has(r.job_url)) filteredCounts.history++;
           else if (dedupSets.saved.has(r.job_url)) filteredCounts.saved++;
+          else if (dedupSets.rejected?.has(r.job_url)) filteredCounts.rejected++;
           else if (dedupSets.blocked.has(r.job_url)) filteredCounts.blocked++;
         } else {
           deduped.push(r);

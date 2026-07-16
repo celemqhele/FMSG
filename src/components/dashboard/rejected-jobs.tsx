@@ -62,6 +62,7 @@ export function RejectedJobs() {
   const { activeProfileId } = useActiveProfile();
 
   useEffect(() => {
+    if (!activeProfileId) { setJobs([]); setSystemRejected([]); setLoading(false); return; }
     const supabase = createClient();
     supabase.auth.getSession()
       .then(({ data }: { data: any }) => {
@@ -95,7 +96,7 @@ export function RejectedJobs() {
         console.error("Failed to get session:", err.message);
         setLoading(false);
       });
-  }, []);
+  }, [activeProfileId]);
 
   if (loading) {
     return <p className="text-sm text-[var(--color-text-secondary)] text-center py-8">Loading...</p>;
