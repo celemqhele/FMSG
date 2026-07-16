@@ -55,6 +55,7 @@ export function JobResultCard({
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [cvLoading, setCvLoading] = useState(false);
+  const [cvError, setCvError] = useState("");
   const [showVerdict, setShowVerdict] = useState(false);
   const [verdictMounted, setVerdictMounted] = useState(false);
   const { activeProfileId } = useActiveProfile();
@@ -159,7 +160,11 @@ export function JobResultCard({
   const handleGenerateCv = async () => {
     const supabase = createClient();
     const { data: { session } } = await supabase.auth.getSession();
-    if (!session) return;
+    if (!session) {
+      setCvError("You must be signed in.");
+      return;
+    }
+    setCvError("");
     setCvLoading(true);
     try {
       const res = await fetch("/api/generate-cv", {
@@ -168,15 +173,20 @@ export function JobResultCard({
         body: JSON.stringify({ job_result_id: id }),
       });
       if (!res.ok) {
-        setCvLoading(false);
         const data = await res.json().catch(() => ({}));
         if (data.code === "LIMIT_002") {
           window.dispatchEvent(new CustomEvent("show-limit-modal", { detail: "LIMIT_002" }));
+        } else if (data.code === "AI_OVERLOADED") {
+          setCvError(data.error || "AI is busy. Please try again shortly.");
+        } else {
+          setCvError(data.error || `Generation failed (${res.status}). Please try again.`);
         }
+        setCvLoading(false);
         return;
       }
       const blob = await res.blob();
       if (!blob.type.includes("openxmlformats") && !blob.type.includes("octet-stream")) {
+        setCvError("Unexpected response format. Please try again.");
         setCvLoading(false);
         return;
       }
@@ -188,7 +198,8 @@ export function JobResultCard({
       URL.revokeObjectURL(url);
       window.dispatchEvent(new Event("refresh-balances"));
       setCvLoading(false);
-    } catch {
+    } catch (err) {
+      setCvError("Network error. Please try again.");
       setCvLoading(false);
     }
   };
@@ -258,6 +269,9 @@ export function JobResultCard({
       )}
       {saveError && (
         <p className="text-xs text-red-400 mb-2">{saveError}</p>
+      )}
+      {cvError && (
+        <p className="text-xs text-red-400 mb-2">{cvError}</p>
       )}
 
       {/* Action row */}

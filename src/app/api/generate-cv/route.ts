@@ -8,13 +8,7 @@ import {
   Packer,
   Paragraph,
   TextRun,
-  HeadingLevel,
   AlignmentType,
-  BorderStyle,
-  Table,
-  TableRow,
-  TableCell,
-  WidthType,
   ShadingType,
 } from "docx";
 
@@ -26,158 +20,264 @@ function getSupabase() {
 }
 
 interface CvData {
-  summary: string;
-  skills: { category: string; items: string }[];
-  experience: { title: string; company: string; dates: string; bullets: string[] }[];
-  achievements: string[];
+  name: string;
+  professionalTitle: string;
+  phoneEmail: string;
+  locationAvailability: string;
+  professionalSummary: string;
+  skills: { category: string; description: string }[];
+  experience: {
+    jobTitle: string;
+    company: string;
+    location: string;
+    dates: string;
+    summary: string;
+    sections: { subHeading: string; bullets: string[] }[];
+  }[];
   education: { qualification: string; institution: string; year: string }[];
+  professionalDevelopment: string[];
+  references: { name: string; details: string }[];
+  personalInfo: Record<string, string>;
 }
 
-const ACCENT = "1F6B7F";
+// ========================
+// COLOUR PALETTE & SIZES
+// ========================
+const DARK_TEXT = "1A1A1A";
+const TEAL = "1F6B7F";
+const MEDIUM_GREY = "555555";
+const WHITE = "FFFFFF";
+
+const SIZE_NAME = 56;       // 28pt
+const SIZE_SECTION = 21;    // 10.5pt
+const SIZE_BODY = 20;       // 10pt
+const SIZE_SMALL = 18;      // 9pt
+
+// ========================
+// DOCX BUILDERS
+// ========================
+
+function headerBlock(name: string, title: string, phoneEmail: string, locationAvailability: string) {
+  return [
+    new Paragraph({
+      spacing: { after: 60, before: 0 },
+      alignment: AlignmentType.CENTER,
+      children: [new TextRun({ text: name, font: "Calibri", size: SIZE_NAME, bold: true, color: DARK_TEXT })],
+    }),
+    new Paragraph({
+      spacing: { after: 60, before: 0 },
+      alignment: AlignmentType.CENTER,
+      children: [new TextRun({ text: title, font: "Calibri", size: SIZE_BODY, bold: true, color: TEAL })],
+    }),
+    new Paragraph({
+      spacing: { after: 40, before: 0 },
+      alignment: AlignmentType.CENTER,
+      children: [new TextRun({ text: phoneEmail, font: "Calibri", size: SIZE_SMALL, color: MEDIUM_GREY })],
+    }),
+    new Paragraph({
+      spacing: { after: 80, before: 0 },
+      alignment: AlignmentType.CENTER,
+      children: [new TextRun({ text: locationAvailability, font: "Calibri", size: SIZE_SMALL, color: MEDIUM_GREY })],
+    }),
+  ];
+}
+
+function sectionHeader(title: string) {
+  return new Paragraph({
+    spacing: { after: 80, before: 160 },
+    shading: { type: ShadingType.CLEAR, fill: TEAL },
+    children: [new TextRun({ text: title, font: "Calibri", size: SIZE_SECTION, bold: true, color: WHITE })],
+  });
+}
+
+function bodyText(text: string, opts?: { spacing?: Record<string, number>; italic?: boolean }) {
+  return new Paragraph({
+    spacing: opts?.spacing ?? { before: 40, after: 40 },
+    alignment: AlignmentType.JUSTIFIED,
+    children: [new TextRun({ text, font: "Calibri", size: SIZE_BODY, color: DARK_TEXT, ...(opts?.italic ? { italics: true } : {}) })],
+  });
+}
+
+function skillLine(category: string, description: string) {
+  return new Paragraph({
+    spacing: { before: 40, after: 40 },
+    alignment: AlignmentType.JUSTIFIED,
+    children: [
+      new TextRun({ text: category + ": ", font: "Calibri", size: SIZE_BODY, bold: true, color: DARK_TEXT }),
+      new TextRun({ text: description, font: "Calibri", size: SIZE_BODY, color: DARK_TEXT }),
+    ],
+  });
+}
+
+function jobTitleLine(title: string, company: string, location: string) {
+  return new Paragraph({
+    spacing: { before: 120, after: 30 },
+    children: [
+      new TextRun({ text: title, font: "Calibri", size: SIZE_BODY, bold: true, color: DARK_TEXT }),
+      new TextRun({
+        text: `  |  ${company}${location ? `  |  ${location}` : ""}`,
+        font: "Calibri", size: SIZE_BODY, color: MEDIUM_GREY,
+      }),
+    ],
+  });
+}
+
+function dateLine(date: string) {
+  return new Paragraph({
+    spacing: { before: 30, after: 30 },
+    children: [new TextRun({ text: date, font: "Calibri", size: SIZE_SMALL, color: MEDIUM_GREY })],
+  });
+}
+
+function roleSummary(text: string) {
+  return new Paragraph({
+    spacing: { before: 60, after: 60 },
+    alignment: AlignmentType.JUSTIFIED,
+    children: [new TextRun({ text, font: "Calibri", size: SIZE_BODY, italics: true, color: DARK_TEXT })],
+  });
+}
+
+function roleSubHeading(text: string) {
+  return new Paragraph({
+    spacing: { before: 100, after: 40 },
+    children: [new TextRun({ text, font: "Calibri", size: SIZE_BODY, bold: true, italics: true, color: TEAL })],
+  });
+}
+
+function bulletPoint(text: string) {
+  return new Paragraph({
+    spacing: { before: 40, after: 40 },
+    alignment: AlignmentType.JUSTIFIED,
+    bullet: { level: 0 },
+    children: [new TextRun({ text, font: "Calibri", size: SIZE_BODY, color: DARK_TEXT })],
+  });
+}
+
+function educationItem(qualification: string, institution: string, year: string) {
+  return [
+    new Paragraph({
+      spacing: { before: 60, after: 20 },
+      children: [new TextRun({ text: qualification, font: "Calibri", size: SIZE_BODY, bold: true, color: DARK_TEXT })],
+    }),
+    new Paragraph({
+      spacing: { before: 0, after: 60 },
+      children: [new TextRun({ text: `${institution}  |  ${year}`, font: "Calibri", size: SIZE_SMALL, color: MEDIUM_GREY })],
+    }),
+  ];
+}
+
+function eduSubHeading(text: string) {
+  return new Paragraph({
+    spacing: { before: 40, after: 40 },
+    children: [new TextRun({ text, font: "Calibri", size: SIZE_BODY, bold: true, italics: true, color: TEAL })],
+  });
+}
+
+function referenceLine(name: string, details: string) {
+  return new Paragraph({
+    spacing: { before: 60, after: 40 },
+    children: [
+      new TextRun({ text: name, font: "Calibri", size: SIZE_BODY, bold: true, color: DARK_TEXT }),
+      new TextRun({ text: `  |  ${details}`, font: "Calibri", size: SIZE_SMALL, color: MEDIUM_GREY }),
+    ],
+  });
+}
+
+function personalInfoLine(label: string, value: string) {
+  return new Paragraph({
+    spacing: { before: 40, after: 40 },
+    alignment: AlignmentType.JUSTIFIED,
+    children: [
+      new TextRun({ text: label + ": ", font: "Calibri", size: SIZE_BODY, bold: true, color: DARK_TEXT }),
+      new TextRun({ text: value, font: "Calibri", size: SIZE_BODY, color: DARK_TEXT }),
+    ],
+  });
+}
+
+function blankLine(spacing: Record<string, number> = {}) {
+  return new Paragraph({ spacing, children: [] });
+}
 
 function buildDoc(data: CvData): Document {
-  const children: (Paragraph | Table)[] = [];
+  const children: Paragraph[] = [];
 
-  // Name placeholder — caller can edit
-  children.push(
-    new Paragraph({
-      children: [new TextRun({ text: "Generated CV", bold: true, size: 28 })],
-      alignment: AlignmentType.CENTER,
-      spacing: { after: 120 },
-    })
-  );
+  // --- HEADER ---
+  children.push(...headerBlock(data.name, data.professionalTitle, data.phoneEmail, data.locationAvailability));
 
-  // Contact bar
-  children.push(
-    new Paragraph({
-      children: [new TextRun({ text: "Phone • Email • LinkedIn • Location", size: 18, color: "555555" })],
-      alignment: AlignmentType.CENTER,
-      spacing: { after: 200 },
-    })
-  );
+  // --- PROFESSIONAL SUMMARY ---
+  children.push(sectionHeader("Professional Summary"));
+  children.push(bodyText(data.professionalSummary, { spacing: { before: 80, after: 80 } }));
 
-  // Summary
-  if (data.summary) {
-    children.push(
-      new Paragraph({
-        children: [new TextRun({ text: "Professional Summary", bold: true, size: 22, color: ACCENT })],
-        spacing: { before: 200, after: 80 },
-        border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: ACCENT } },
-      }),
-      new Paragraph({
-        children: [new TextRun({ text: data.summary, size: 20 })],
-        spacing: { after: 200 },
-      })
-    );
+  // --- SKILLS ---
+  children.push(sectionHeader("Skills"));
+  children.push(blankLine({ before: 60, after: 0 }));
+  for (const skill of data.skills) {
+    children.push(skillLine(skill.category, skill.description));
   }
+  children.push(blankLine({ before: 60, after: 0 }));
 
-  // Skills
-  if (data.skills?.length) {
-    children.push(
-      new Paragraph({
-        children: [new TextRun({ text: "Skills & Expertise", bold: true, size: 22, color: ACCENT })],
-        spacing: { before: 200, after: 80 },
-        border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: ACCENT } },
-      })
-    );
-    for (const s of data.skills) {
-      children.push(
-        new Paragraph({
-          children: [
-            new TextRun({ text: s.category, bold: true, size: 20 }),
-            new TextRun({ text: `  ${s.items}`, size: 20 }),
-          ],
-          spacing: { after: 60 },
-        })
-      );
-    }
-  }
-
-  // Experience
+  // --- WORK EXPERIENCE ---
   if (data.experience?.length) {
-    children.push(
-      new Paragraph({
-        children: [new TextRun({ text: "Experience", bold: true, size: 22, color: ACCENT })],
-        spacing: { before: 200, after: 80 },
-        border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: ACCENT } },
-      })
-    );
-    for (const e of data.experience) {
-      children.push(
-        new Paragraph({
-          children: [
-            new TextRun({ text: e.title, bold: true, size: 20 }),
-            new TextRun({ text: `  at  ${e.company}`, size: 20 }),
-          ],
-          spacing: { after: 0 },
-        }),
-        new Paragraph({
-          children: [new TextRun({ text: e.dates, size: 18, color: "555555" })],
-          spacing: { after: 60 },
-        })
-      );
-      for (const b of e.bullets) {
-        children.push(
-          new Paragraph({
-            children: [new TextRun({ text: `• ${b}`, size: 20 })],
-            spacing: { after: 40 },
-            indent: { left: 400 },
-          })
-        );
+    children.push(sectionHeader("Work Experience"));
+    for (const role of data.experience) {
+      children.push(jobTitleLine(role.jobTitle, role.company, role.location));
+      children.push(dateLine(role.dates));
+      if (role.summary) {
+        children.push(roleSummary(role.summary));
+      }
+      for (const section of role.sections || []) {
+        if (section.subHeading) {
+          children.push(roleSubHeading(section.subHeading));
+        }
+        for (const bullet of section.bullets || []) {
+          children.push(bulletPoint(bullet));
+        }
       }
     }
   }
 
-  // Achievements
-  if (data.achievements?.length) {
-    children.push(
-      new Paragraph({
-        children: [new TextRun({ text: "Key Achievements", bold: true, size: 22, color: ACCENT })],
-        spacing: { before: 200, after: 80 },
-        border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: ACCENT } },
-      })
-    );
-    for (const a of data.achievements) {
-      children.push(
-        new Paragraph({
-          children: [new TextRun({ text: `• ${a}`, size: 20 })],
-          spacing: { after: 40 },
-          indent: { left: 400 },
-        })
-      );
+  // --- EDUCATION & CERTIFICATIONS ---
+  children.push(sectionHeader("Education & Certifications"));
+  children.push(blankLine({ before: 60, after: 0 }));
+  for (const edu of data.education) {
+    children.push(...educationItem(edu.qualification, edu.institution, edu.year));
+  }
+  if (data.professionalDevelopment?.length) {
+    children.push(eduSubHeading("Professional Development"));
+    for (const item of data.professionalDevelopment) {
+      children.push(bulletPoint(item));
     }
   }
+  children.push(blankLine({ before: 60, after: 0 }));
 
-  // Education
-  if (data.education?.length) {
-    children.push(
-      new Paragraph({
-        children: [new TextRun({ text: "Education", bold: true, size: 22, color: ACCENT })],
-        spacing: { before: 200, after: 80 },
-        border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: ACCENT } },
-      })
-    );
-    for (const ed of data.education) {
-      children.push(
-        new Paragraph({
-          children: [
-            new TextRun({ text: ed.qualification, bold: true, size: 20 }),
-          ],
-          spacing: { after: 0 },
-        }),
-        new Paragraph({
-          children: [
-            new TextRun({ text: ed.institution, size: 20 }),
-            new TextRun({ text: `  •  ${ed.year}`, size: 20, color: "555555" }),
-          ],
-          spacing: { after: 80 },
-        })
-      );
+  // --- REFERENCES ---
+  children.push(sectionHeader("References"));
+  children.push(blankLine({ before: 60, after: 0 }));
+  for (const ref of data.references || []) {
+    children.push(referenceLine(ref.name, ref.details));
+  }
+  children.push(blankLine({ before: 60, after: 0 }));
+
+  // --- PERSONAL INFORMATION ---
+  if (data.personalInfo && Object.keys(data.personalInfo).length > 0) {
+    children.push(sectionHeader("Personal Information"));
+    children.push(blankLine({ before: 60, after: 0 }));
+    for (const [label, value] of Object.entries(data.personalInfo)) {
+      children.push(personalInfoLine(label, value));
     }
+    children.push(blankLine({ before: 60, after: 0 }));
   }
 
   return new Document({
-    sections: [{ children }],
+    sections: [{
+      properties: {
+        page: {
+          size: { width: 11906, height: 16838 },
+          margin: { top: 720, right: 1080, bottom: 720, left: 1080 },
+        },
+      },
+      children,
+    }],
   });
 }
 
@@ -215,7 +315,6 @@ export async function POST(request: NextRequest) {
 
     const isAdmin = (profile as any)?.is_admin ?? false;
 
-    // Balance check (skip if admin)
     if (!isAdmin) {
       const balance = (profile as any)?.cv_generation_balance ?? 0;
       if (balance <= 0) {
@@ -228,7 +327,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Missing job_result_id" }, { status: 400 });
     }
 
-    // Fetch job_result row
     const { data: jobRow, error: jobErr } = await supabase
       .from("job_results")
       .select("job_title, company, full_spec, search_query, profile_id, suggested_cv")
@@ -245,7 +343,7 @@ export async function POST(request: NextRequest) {
     const jobProfileId = (jobRow as any).profile_id;
     const suggestedCv = (jobRow as any).suggested_cv ?? "";
 
-    // Determine which CV variation to use from the search profile
+    // Determine which CV variation to use
     let cvFilePath = "";
     if (jobProfileId) {
       const { data: sp, error: spErr } = await supabase
@@ -266,17 +364,15 @@ export async function POST(request: NextRequest) {
       }
     }
     if (!cvFilePath) {
-      const { data: profileRow, error: prErr } = await supabase
+      const { data: profileRow } = await supabase
         .from("profiles")
         .select("cv_file_path")
         .eq("id", user.id)
         .maybeSingle();
-      if (!prErr) {
-        cvFilePath = (profileRow as any)?.cv_file_path ?? "";
-      }
+      cvFilePath = (profileRow as any)?.cv_file_path ?? "";
     }
 
-    // Fetch and extract CV text
+    // Extract CV text
     let cvText = "";
     if (cvFilePath) {
       try {
@@ -290,22 +386,129 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // AI call (Gemini → Groq fallback)
-    const systemPrompt = `You are a professional CV writer. Reconstruct the candidate's CV to be the strongest possible match for the job spec provided.
-Do not invent achievements or numbers. Mirror the job's tone and key terms.
-Use UK/SA English. Plain text only, no tables or symbols.
-Target ATS compatibility 85%+.
+    // AI prompt — CV Strategist (from prompt.md)
+    const systemPrompt = `You are a professional CV strategist. Transform the candidate's existing CV into a tailored, results-driven document that maximises ATS compatibility (target >=85% match), improves recruiter readability, and positions the candidate as a strong match for the target role. Do not fabricate achievements or numbers.
+
+## OBJECTIVE
+Reconstruct and enhance the CV to appear as the perfect fit for the provided job post. Think critically, reason independently, and position the profile to clearly show value and alignment. Do not fabricate achievements.
+
+## TASK
+Study the job post and CV carefully. Reframe, reposition, and restructure experience, achievements, and credentials so the CV directly reflects the employer's needs. Emphasise, condense, reword, or move content where appropriate.
+
+## STRATEGIC GUIDELINES
+
+### Positioning & Tone
+- Do not fabricate numbers or achievements.
+- Mirror the job description's tone, structure, and key terms.
+- You may update job titles to better match industry-standard naming conventions (no inflation).
+- Frame experience around measurable outcomes, leadership scope, and contributions to growth or improvement.
+- Use CAR framework (Challenge / Action / Result) for experience bullets.
+
+### Language & Localisation
+- Use UK/SA English if the CV references local regions.
+- Maintain a clean, professional tone — no clichés or filler.
+- No em dashes in any output. Use commas, colons, or restructured sentences instead.
+
+## FORMATTING & ATS
+- Use simple text structure only: no tables, columns, symbols, or graphics.
+- Keep clear headings and consistent formatting for ATS parsing.
+- Date format: Mon YYYY – Mon YYYY for roles; Mon YYYY for education.
+- Experience bullets: ~75–100 characters max, using CAR framework.
+- Quantify where natural — no made-up numbers.
+
+## STRUCTURE TO USE
+
+### Contact Information
+Extract from the CV or use placeholders:
+[Name Surname] | [Professional Title] | [Phone] | [Email] | [LinkedIn] | [Location] | Available: [Date/Immediate]
+
+### Professional Summary (150-200 words)
+Summarise the candidate as the ideal fit for the target role. Include:
+- Years of relevant experience
+- 2-3 specialisations that match the role
+- A short value proposition / differentiator
+- One notable, measurable achievement
+- Forward-looking statement of value
+
+### Core Competencies
+Contextual categories from the job description. Format:
+- [Primary Requirement Category]: [Skills], [Related], [Supporting]
+- [Secondary Requirement Category]: [Skills], [Related], [Supporting]
+- [Technical/Systems Category]: [Software], [Tools], [Platforms]
+
+### Professional Experience (Top 2-3 most relevant roles)
+Sort by relevance to the target role (not strictly chronological). Format each role:
+JOB TITLE — COMPANY NAME | [Company context if relevant] | Mon YYYY – Mon YYYY
+[Italic summary of role and relevance]
+Key Focus Area heading (teal, bold italic):
+- [Action] + [Achievement] + [Impact/Outcome] + [Relevance]
+- [Challenge] + [Approach] + [Result/Value delivered]
+
+### Education & Professional Development
+QUALIFICATION | INSTITUTION | YYYY
+Include all relevant training or certifications.
+
+### References
+Include if present in the original CV; otherwise: "References available on request."
+
+## ATS OPTIMISATION
+- Integrate job posting keywords naturally across the document.
+- Keep standard section headings for ATS parsing.
+- Avoid keyword stuffing — use relevant, natural phrasing.
+- Use accurate industry terminology that recruiters expect.
+
+## QUALITY GATE
+Before finalising, evaluate:
+- Requirements Match: Does the CV meet the role's stated criteria?
+- ATS Compatibility: Likelihood of passing ATS filters (target >=85%).
+- Positioning: Does the presentation justify the candidate's target level?
 
 Return ONLY valid JSON with this exact schema (no markdown, no code fences):
 {
-  "summary": "professional summary tailored to the job",
-  "skills": [{ "category": "skill category", "items": "comma-separated skills" }],
-  "experience": [{ "title": "job title", "company": "company name", "dates": "date range", "bullets": ["achievement bullet"] }],
-  "achievements": ["key achievement"],
-  "education": [{ "qualification": "degree/diploma", "institution": "school name", "year": "year" }]
+  "name": "First Last",
+  "professionalTitle": "Professional Title | Specialisation | Industry Keywords",
+  "phoneEmail": "000 000 0000  |  email@domain.co.za",
+  "locationAvailability": "City, Province  |  Available Immediately",
+  "professionalSummary": "150-200 word summary tailored to the role",
+  "skills": [
+    { "category": "Requirement Category", "description": "Skills, related competencies, supporting knowledge" }
+  ],
+  "experience": [
+    {
+      "jobTitle": "JOB TITLE",
+      "company": "Company Name",
+      "location": "City, Province",
+      "dates": "Mon YYYY – Mon YYYY",
+      "summary": "Italic overview of the role and relevance to target position",
+      "sections": [
+        {
+          "subHeading": "Key Focus Area",
+          "bullets": [
+            "Achievement using CAR framework with impact and relevance",
+            "Challenge, approach, result with scale or scope context"
+          ]
+        }
+      ]
+    }
+  ],
+  "education": [
+    { "qualification": "Degree / Qualification Name", "institution": "Institution Name", "year": "YYYY" }
+  ],
+  "professionalDevelopment": [
+    "Training / Certification Name — Institution — YYYY"
+  ],
+  "references": [
+    { "name": "Reference Name", "details": "Title, Organisation  |  Phone  |  Email" }
+  ],
+  "personalInfo": {
+    "Location": "City, Province, Country",
+    "Availability": "Immediately available",
+    "Work Arrangement": "On-site, hybrid, or remote"
+  }
 }
 
 Use the job spec to identify what skills and experience to emphasise. Use the CV for facts only — do not invent.`;
+
     const userText = `JOB SPEC:\n${fullSpec.slice(0, 10000)}\n\nCANDIDATE CV:\n${cvText.slice(0, 10000)}`;
 
     let content = "";
@@ -332,24 +535,22 @@ Use the job spec to identify what skills and experience to emphasise. Use the CV
       return NextResponse.json({ error: "AI returned invalid JSON." }, { status: 502 });
     }
 
-    // Build docx
+    // Build DOCX with teal-bar design
     const doc = buildDoc(parsed);
     const buffer = await Packer.toBuffer(doc);
 
-    // Decrement balance atomically (skip if admin)
+    // Decrement balance (skip if admin)
     if (!isAdmin) {
       const { error: decErr } = await supabase.rpc("decrement_cv_balance", {
         p_user_id: user.id,
         p_amount: 1,
       });
-
       if (decErr) {
         console.error("[GENERATE-CV] Failed to decrement balance:", decErr.message);
       }
     }
 
-    // Return file
-    const filename = `CV - ${jobTitle} - ${company} - FMSG.docx`.replace(/[/\\?%*:|"<>]/g, "_");
+    const filename = `CV - ${parsed.name || jobTitle} - ${company} - FMSG.docx`.replace(/[/\\?%*:|"<>]/g, "_");
     return new NextResponse(new Uint8Array(buffer), {
       headers: {
         "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",

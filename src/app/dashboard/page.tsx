@@ -646,20 +646,18 @@ export default function DashboardPage() {
               <BalanceChips balances={balances} plan={plan} />
             </div>
 
-            {hasSearched && (
-              <div className="sticky top-0 z-30 bg-[var(--color-bg)]/80 backdrop-blur-xl py-2 space-y-2">
-                <div className="flex items-center justify-center">
-                  <FilterSortBar
-                    sort={sortMode}
-                    onSortChange={setSortMode}
-                  />
-                </div>
-                <PlatformFilter
-                  selected={selectedPlatforms}
-                  onChange={setSelectedPlatforms}
+            <div className="sticky top-0 z-30 bg-[var(--color-bg)]/80 backdrop-blur-xl py-2 space-y-2">
+              <div className="flex items-center justify-center">
+                <FilterSortBar
+                  sort={sortMode}
+                  onSortChange={setSortMode}
                 />
               </div>
-            )}
+              <PlatformFilter
+                selected={selectedPlatforms}
+                onChange={setSelectedPlatforms}
+              />
+            </div>
 
             {filteredSummary && (
               <div className="flex flex-wrap justify-center gap-x-3 gap-y-1 px-3 py-2 rounded-xl bg-yellow-500/10 border border-yellow-500/30 text-yellow-300 text-xs">
