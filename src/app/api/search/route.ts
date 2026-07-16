@@ -835,28 +835,6 @@ ${blacklistInfo}${bannedInfo}${dateConstraintInfo}`;
       recruiter_verdict: verdict,
       dynamic_requirements: dr,
     });
-
-    const lastResult = outputs[outputs.length - 1];
-    if (lastResult) {
-      dataClient.from("job_results").insert({
-        id: crypto.randomUUID(), user_id: lastResult.user_id, search_id: lastResult.search_id, profile_id,
-        job_title: lastResult.job_title, company: lastResult.company, location: lastResult.location,
-        estimated_salary: lastResult.estimated_salary, match_score: lastResult.match_score,
-        match_summary: lastResult.match_summary, job_url: lastResult.job_url, full_spec: lastResult.full_spec,
-        search_query: lastResult.search_query, posted_at: lastResult.posted_at,
-        suggested_cv: lastResult.suggested_cv, verdict_bullets: lastResult.verdict_bullets,
-        knockout_fail: lastResult.knockout_fail, pillar_scores: lastResult.pillar_scores,
-        taxes_applied: lastResult.taxes_applied, total_questions_asked: lastResult.total_questions_asked,
-        yes_answers: lastResult.yes_answers, recruiter_verdict: lastResult.recruiter_verdict,
-        dynamic_requirements: lastResult.dynamic_requirements,
-      }).then(({ error }: any) => {
-        if (error) console.error("[SEARCH] Failed to insert incremental result:", error.message);
-      }).catch((e: any) => {
-        if (e?.message && !e.message.includes("fetch failed")) {
-          console.error("[SEARCH] Unexpected insert error:", e.message);
-        }
-      });
-    }
   }
 
   if (aiRejectedJobs.length > 0) {
@@ -1253,6 +1231,22 @@ Return ONLY valid JSON (no markdown, no code fences):
               if (result.results.length > 0) {
                 const withIds = result.results.map((r: JobRow) => ({ ...r, id: crypto.randomUUID() }));
                 sendComplete({ type: "complete", results: withIds.map(normalize), progress: 100, ...(totalFiltered > 0 ? { filtered_summary: result.filteredCounts } : {}) });
+                const rows = withIds.map((r) => ({
+                  id: r.id,
+                  user_id: r.user_id, search_id: r.search_id, profile_id: state.profile_id ?? null,
+                  job_title: r.job_title, company: r.company, location: r.location,
+                  estimated_salary: r.estimated_salary, match_score: r.match_score,
+                  match_summary: r.match_summary, job_url: r.job_url, full_spec: r.full_spec,
+                  search_query: r.search_query, posted_at: r.posted_at,
+                  suggested_cv: r.suggested_cv, verdict_bullets: r.verdict_bullets,
+                  knockout_fail: r.knockout_fail, pillar_scores: r.pillar_scores,
+                  taxes_applied: r.taxes_applied, total_questions_asked: r.total_questions_asked,
+                  yes_answers: r.yes_answers, recruiter_verdict: r.recruiter_verdict,
+                  dynamic_requirements: r.dynamic_requirements,
+                }));
+                dataClient.from("job_results").insert(rows).then(({ error }: any) => {
+                  if (error) console.error("[SEARCH] Failed to insert continuation results:", error.message);
+                });
               } else {
                 sendComplete({ type: "complete", results: [], progress: 100, message: "No strong matches found. Try broadening your criteria." });
               }
@@ -1545,6 +1539,7 @@ Return ONLY valid JSON (no markdown, no code fences):
               knockout_fail: r.knockout_fail, pillar_scores: r.pillar_scores,
               taxes_applied: r.taxes_applied, total_questions_asked: r.total_questions_asked,
               yes_answers: r.yes_answers, recruiter_verdict: r.recruiter_verdict,
+              dynamic_requirements: r.dynamic_requirements,
             }));
             dataClient.from("job_results").insert(rows).then(({ error }: any) => {
               if (error) console.error("[PF] Failed to insert job results:", error.message);
