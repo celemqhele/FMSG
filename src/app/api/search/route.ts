@@ -66,10 +66,17 @@ const BLACKLISTED_DOMAINS = [
   'talent.ca',
   'talent.au',
   'joub.co.za',
+  'jooble.org',
+  'jooble.com',
+  'jooble.co.za',
+  'executiveplacements.com',
+  'executiveplacements.co.za',
 ];
 
 const BLACKLISTED_COMPANIES = [
   'joub.co.za',
+  'jooble',
+  'executiveplacements',
 ];
 
 function extractDomain(url: string): string | null {
