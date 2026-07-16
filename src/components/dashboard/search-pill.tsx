@@ -1,6 +1,7 @@
 ﻿"use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
+import { createPortal } from "react-dom";
 import { Search, Crosshair, Square, X, Calendar } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useActiveProfile } from "@/components/dashboard/dashboard-layout";
@@ -21,6 +22,8 @@ export function SearchPill({ onSearch, onAbort, searching }: SearchPillProps) {
   const [dateFilterDays, setDateFilterDays] = useState<number | null>(null);
   const [showDateFilter, setShowDateFilter] = useState(false);
   const [dateFilterMounted, setDateFilterMounted] = useState(false);
+  const [dateFilterPos, setDateFilterPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
+  const calendarBtnRef = useRef<HTMLButtonElement>(null);
 
   const DATE_OPTIONS = [
     { label: "Any date", value: null },
@@ -106,6 +109,10 @@ export function SearchPill({ onSearch, onAbort, searching }: SearchPillProps) {
       setDateFilterMounted(false);
       setTimeout(() => setShowDateFilter(false), 200);
     } else {
+      if (calendarBtnRef.current) {
+        const rect = calendarBtnRef.current.getBoundingClientRect();
+        setDateFilterPos({ top: rect.bottom + 8, left: rect.left + rect.width / 2 });
+      }
       setShowDateFilter(true);
       setTimeout(() => setDateFilterMounted(true), 10);
     }
@@ -162,6 +169,7 @@ export function SearchPill({ onSearch, onAbort, searching }: SearchPillProps) {
       {/* Date filter pill */}
       <div className="relative ml-2">
         <button
+          ref={calendarBtnRef}
           onClick={toggleDateFilter}
           className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${dateFilterDays != null ? "bg-[var(--color-accent)] text-white" : "text-white/60 hover:text-white/90 hover:bg-white/10"}`}
           title={dateFilterDays != null ? `Filtering: ${activeDateLabel}` : "Filter by date"}
@@ -169,10 +177,15 @@ export function SearchPill({ onSearch, onAbort, searching }: SearchPillProps) {
           <Calendar size={16} />
         </button>
 
-        {showDateFilter && (
+        {showDateFilter && createPortal(
           <div
-            className="absolute left-1/2 -translate-x-1/2 top-full mt-2 z-[60] transition-all duration-300 ease-out"
-            style={{ opacity: dateFilterMounted ? 1 : 0, transform: dateFilterMounted ? "translateY(0) scale(1)" : "translateY(-4px) scale(0.95)" }}
+            className="fixed z-[9999] transition-all duration-300 ease-out"
+            style={{
+              top: dateFilterPos.top,
+              left: dateFilterPos.left,
+              transform: "translateX(-50%)",
+              opacity: dateFilterMounted ? 1 : 0,
+            }}
           >
             <div className="bg-gray-900/95 backdrop-blur-xl border border-white/20 rounded-xl py-1.5 shadow-2xl min-w-[140px]">
               {DATE_OPTIONS.map((opt) => (
@@ -189,7 +202,8 @@ export function SearchPill({ onSearch, onAbort, searching }: SearchPillProps) {
                 </button>
               ))}
             </div>
-          </div>
+          </div>,
+          document.body
         )}
       </div>
 
