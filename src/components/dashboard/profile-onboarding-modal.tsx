@@ -53,7 +53,7 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
     const supabase = createClient();
     supabase
       .from("search_profiles")
-      .select("name, job_titles, job_types, location, industry, cv_variations")
+      .select("name, job_titles, job_types, location, industry, industry_step_1, industry_step_2, industry_step_3, industry_step_4, industry_step_5, cv_variations")
       .eq("id", profileId)
       .maybeSingle()
       .then(({ data }: { data: any }) => {
@@ -63,24 +63,14 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
           setJobTypes(data.job_types ?? []);
           setLocation(data.location ?? "");
           setIndustry(data.industry ?? "");
+          setIndustryStep1(data.industry_step_1 ?? "");
+          setIndustryStep2(data.industry_step_2 ?? "");
+          setIndustryStep3(data.industry_step_3 ?? "");
+          setIndustryStep4(data.industry_step_4 ?? "");
+          setIndustryStep5(data.industry_step_5 ?? "");
           setCvVariations(data.cv_variations?.length ? data.cv_variations : []);
         }
         setLoadingProfile(false);
-      });
-    // Load industry ladder
-    supabase
-      .from("profile_industry_ladder")
-      .select("step_1, step_2, step_3, step_4, step_5")
-      .eq("search_profile_id", profileId)
-      .maybeSingle()
-      .then(({ data: ladderData }: { data: any }) => {
-        if (ladderData) {
-          setIndustryStep1(ladderData.step_1 ?? "");
-          setIndustryStep2(ladderData.step_2 ?? "");
-          setIndustryStep3(ladderData.step_3 ?? "");
-          setIndustryStep4(ladderData.step_4 ?? "");
-          setIndustryStep5(ladderData.step_5 ?? "");
-        }
       });
   }, [profileId]);
 
