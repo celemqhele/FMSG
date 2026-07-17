@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { X, Link, Search, Loader2, Check, Plus } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -47,8 +47,8 @@ export function AdminCreateJobModal({ isOpen, onClose }: AdminCreateJobModalProp
   const [pasteUrl, setPasteUrl] = useState("");
   const [scrapedJob, setScrapedJob] = useState<ScrapedJob | null>(null);
 
-  const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const searchRanRef = useRef(false);
 
   const [published, setPublished] = useState<PublishedJob[]>([]);
   const [publishing, setPublishing] = useState(false);
@@ -56,18 +56,63 @@ export function AdminCreateJobModal({ isOpen, onClose }: AdminCreateJobModalProp
   const reset = useCallback(() => {
     setPasteUrl("");
     setScrapedJob(null);
-    setSearchQuery("");
     setSearchResults([]);
     setPublished([]);
     setError("");
     setLoading(false);
     setPublishing(false);
+    searchRanRef.current = false;
   }, []);
 
   const handleClose = useCallback(() => {
     reset();
     onClose();
   }, [reset, onClose]);
+
+  const handleTabChange = useCallback((newTab: Tab) => {
+    setTab(newTab);
+  }, []);
+
+  // Auto-search when switching to search tab
+  useEffect(() => {
+    if (tab !== "search" || searchRanRef.current || isOpen === false) return;
+    searchRanRef.current = true;
+
+    const runSearch = async () => {
+      setLoading(true);
+      setError("");
+
+      try {
+        const supabase = createClient();
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) { setError("Not authenticated"); setLoading(false); return; }
+
+        const res = await fetch("/api/admin/search-jobs", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({}),
+        });
+
+        if (!res.ok) {
+          const data = await res.json();
+          setError(data.error || "Search failed");
+          setLoading(false);
+          return;
+        }
+
+        const data = await res.json();
+        setSearchResults((data.results || []).map((r: SearchResult) => ({ ...r, selected: true })));
+      } catch {
+        setError("Network error. Please try again.");
+      }
+      setLoading(false);
+    };
+
+    runSearch();
+  }, [tab, isOpen]);
 
   const handleScrape = async () => {
     if (!pasteUrl.trim()) return;
@@ -140,41 +185,6 @@ export function AdminCreateJobModal({ isOpen, onClose }: AdminCreateJobModalProp
     setPublishing(false);
   };
 
-  const handleSearch = async () => {
-    if (!searchQuery.trim()) return;
-    setLoading(true);
-    setError("");
-    setSearchResults([]);
-
-    try {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) { setError("Not authenticated"); setLoading(false); return; }
-
-      const res = await fetch("/api/admin/search-jobs", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ query: searchQuery }),
-      });
-
-      if (!res.ok) {
-        const data = await res.json();
-        setError(data.error || "Search failed");
-        setLoading(false);
-        return;
-      }
-
-      const data = await res.json();
-      setSearchResults((data.results || []).map((r: SearchResult) => ({ ...r, selected: false })));
-    } catch {
-      setError("Network error. Please try again.");
-    }
-    setLoading(false);
-  };
-
   const toggleResult = (index: number) => {
     setSearchResults((prev) => {
       const updated = [...prev];
@@ -215,7 +225,7 @@ export function AdminCreateJobModal({ isOpen, onClose }: AdminCreateJobModalProp
       const data = await res.json();
       setPublished(data.published || []);
       setSearchResults([]);
-      setSearchQuery("");
+      searchRanRef.current = false;
     } catch {
       setError("Network error. Please try again.");
     }
@@ -223,6 +233,8 @@ export function AdminCreateJobModal({ isOpen, onClose }: AdminCreateJobModalProp
   };
 
   if (!isOpen) return null;
+
+  const selectedCount = searchResults.filter((r) => r.selected).length;
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center">
@@ -270,7 +282,7 @@ export function AdminCreateJobModal({ isOpen, onClose }: AdminCreateJobModalProp
           <>
             <div className="flex border-b border-gray-200">
               <button
-                onClick={() => setTab("paste")}
+                onClick={() => handleTabChange("paste")}
                 className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium transition-colors ${
                   tab === "paste"
                     ? "text-indigo-600 border-b-2 border-indigo-600"
@@ -281,7 +293,7 @@ export function AdminCreateJobModal({ isOpen, onClose }: AdminCreateJobModalProp
                 Paste Link
               </button>
               <button
-                onClick={() => setTab("search")}
+                onClick={() => handleTabChange("search")}
                 className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium transition-colors ${
                   tab === "search"
                     ? "text-indigo-600 border-b-2 border-indigo-600"
@@ -309,7 +321,7 @@ export function AdminCreateJobModal({ isOpen, onClose }: AdminCreateJobModalProp
                       value={pasteUrl}
                       onChange={(e) => setPasteUrl(e.target.value)}
                       placeholder="https://linkedin.com/jobs/..."
-                      className="w-full px-4 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                      className="w-full px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
                     />
                   </div>
                   <button
@@ -331,7 +343,7 @@ export function AdminCreateJobModal({ isOpen, onClose }: AdminCreateJobModalProp
                       type="text"
                       value={scrapedJob.job_title}
                       onChange={(e) => setScrapedJob({ ...scrapedJob, job_title: e.target.value })}
-                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                      className="w-full px-3 py-2 text-sm text-gray-900 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
                     />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
@@ -341,7 +353,7 @@ export function AdminCreateJobModal({ isOpen, onClose }: AdminCreateJobModalProp
                         type="text"
                         value={scrapedJob.company}
                         onChange={(e) => setScrapedJob({ ...scrapedJob, company: e.target.value })}
-                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                        className="w-full px-3 py-2 text-sm text-gray-900 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
                       />
                     </div>
                     <div>
@@ -350,7 +362,7 @@ export function AdminCreateJobModal({ isOpen, onClose }: AdminCreateJobModalProp
                         type="text"
                         value={scrapedJob.location}
                         onChange={(e) => setScrapedJob({ ...scrapedJob, location: e.target.value })}
-                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                        className="w-full px-3 py-2 text-sm text-gray-900 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
                       />
                     </div>
                   </div>
@@ -360,7 +372,7 @@ export function AdminCreateJobModal({ isOpen, onClose }: AdminCreateJobModalProp
                       value={scrapedJob.paraphrased_description}
                       onChange={(e) => setScrapedJob({ ...scrapedJob, paraphrased_description: e.target.value })}
                       rows={12}
-                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none resize-none"
+                      className="w-full px-3 py-2 text-sm text-gray-900 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none resize-none"
                     />
                   </div>
                   <button
@@ -374,34 +386,21 @@ export function AdminCreateJobModal({ isOpen, onClose }: AdminCreateJobModalProp
                 </div>
               )}
 
-              {tab === "search" && searchResults.length === 0 && (
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Search Query</label>
-                    <p className="text-xs text-gray-500 mb-2">Searches Gauteng on PNet, LinkedIn, Indeed, and CareerJunction</p>
-                    <input
-                      type="text"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-                      placeholder="e.g. software engineer, data analyst, project manager"
-                      className="w-full px-4 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
-                    />
+              {tab === "search" && loading && (
+                <div className="flex flex-col items-center gap-4 py-12">
+                  <Loader2 size={32} className="animate-spin text-indigo-600" />
+                  <div className="text-center">
+                    <p className="text-sm font-medium text-gray-900">Searching high-demand jobs in Gauteng...</p>
+                    <p className="text-xs text-gray-500 mt-1">AI is selecting the top 5 most popular roles</p>
                   </div>
-                  <button
-                    onClick={handleSearch}
-                    disabled={loading || !searchQuery.trim()}
-                    className="w-full px-4 py-2.5 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
-                  >
-                    {loading ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
-                    {loading ? "Searching..." : "Search"}
-                  </button>
                 </div>
               )}
 
-              {tab === "search" && searchResults.length > 0 && (
+              {tab === "search" && !loading && searchResults.length > 0 && (
                 <div className="space-y-4">
-                  <p className="text-xs text-gray-500">Select up to 5 jobs to publish. Each will be individually paraphrased by AI.</p>
+                  <p className="text-xs text-gray-500">
+                    AI picked these {searchResults.length} high-application jobs. Uncheck any you don&apos;t want, then publish.
+                  </p>
                   <div className="space-y-2">
                     {searchResults.map((r, i) => (
                       <button
@@ -416,7 +415,7 @@ export function AdminCreateJobModal({ isOpen, onClose }: AdminCreateJobModalProp
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
                             <p className="text-sm font-medium text-gray-900 truncate">{r.title}</p>
-                            <p className="text-xs text-gray-500">{r.company_name} — {r.location || "Location TBD"}</p>
+                            <p className="text-xs text-gray-500">{r.company_name} — {r.location || "Gauteng"}</p>
                           </div>
                           <div className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 mt-0.5 ${
                             r.selected ? "border-indigo-500 bg-indigo-500" : "border-gray-300"
@@ -429,14 +428,20 @@ export function AdminCreateJobModal({ isOpen, onClose }: AdminCreateJobModalProp
                   </div>
                   <button
                     onClick={handlePublishBatch}
-                    disabled={publishing || searchResults.filter((r) => r.selected).length === 0}
+                    disabled={publishing || selectedCount === 0}
                     className="w-full px-4 py-2.5 text-sm font-medium text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
                   >
                     {publishing ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
                     {publishing
                       ? "Paraphrasing & Publishing..."
-                      : `Publish ${searchResults.filter((r) => r.selected).length} Selected`}
+                      : `Publish ${selectedCount} Selected`}
                   </button>
+                </div>
+              )}
+
+              {tab === "search" && !loading && searchResults.length === 0 && !error && (
+                <div className="text-center py-12">
+                  <p className="text-sm text-gray-500">No results found. Try again later.</p>
                 </div>
               )}
             </div>
