@@ -11,3 +11,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - **Deploy:** Vercel (beta → production, no main branch)
 - **Audit log:** See `PRODUCTION_AUDIT.md` for full list of issues found & fixed on June 24, 2026
 - **SQL to run:** 3 migrations must be applied on Supabase before production go-live (see PRODUCTION_AUDIT.md)
+
+# Branch Rules
+
+- **DO NOT** merge or cherry-pick the Google Analytics tag (`G-4QMEHZSCXF`) into the `beta` branch. It lives only in `src/app/layout.tsx` on `production`. When merging `beta` into `production`, always check that this tag wasn't accidentally removed.
