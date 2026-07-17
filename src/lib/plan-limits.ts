@@ -54,6 +54,36 @@ export function formatPFFromPrice(): string {
   return `R${lowest}/run`;
 }
 
+export const SEARCH_PRICE_BREAKS: { min: number; max?: number; price: number }[] = [
+  { min: 1, max: 2, price: 15 },
+  { min: 3, max: 5, price: 13 },
+  { min: 6, max: 10, price: 11 },
+  { min: 11, price: 9 },
+];
+
+export function calculateSearchPrice(count: number): number {
+  if (count <= 0) return 0;
+  for (const b of SEARCH_PRICE_BREAKS) {
+    if (count >= b.min && (!b.max || count <= b.max)) return b.price;
+  }
+  return 9;
+}
+
+export const CV_PRICE_BREAKS: { min: number; max?: number; price: number }[] = [
+  { min: 1, max: 2, price: 25 },
+  { min: 3, max: 5, price: 22 },
+  { min: 6, max: 10, price: 19 },
+  { min: 11, price: 16 },
+];
+
+export function calculateCVPrice(count: number): number {
+  if (count <= 0) return 0;
+  for (const b of CV_PRICE_BREAKS) {
+    if (count >= b.min && (!b.max || count <= b.max)) return b.price;
+  }
+  return 16;
+}
+
 export const PLAN_TIER_NAMES = ["Free", "Seeker", "Hunter", "Pro"] as const;
 
 export const TIER_FEATURES: Record<string, string[]> = {

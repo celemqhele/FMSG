@@ -8,8 +8,9 @@ import { Loader2, Check, ArrowLeft, Search, FileText, Crosshair } from "lucide-r
 import { PageTransitionWrapper } from "@/components/ui/page-transition-wrapper";
 import { useTransition } from "@/components/providers/transition-provider";
 import { createClient } from "@/lib/supabase/client";
-import { PLAN_PRICES, PLAN_LIMITS, calculatePFPrice, PF_DEFAULT_BY_TIER, formatPlanPrice, PLAN_TIER_NAMES } from "@/lib/plan-limits";
+import { PLAN_PRICES, PLAN_LIMITS, calculatePFPrice, calculateSearchPrice, calculateCVPrice, SEARCH_PRICE_BREAKS, CV_PRICE_BREAKS, PF_PRICE_BREAKS, PF_DEFAULT_BY_TIER, formatPlanPrice, PLAN_TIER_NAMES } from "@/lib/plan-limits";
 import { PFStepper } from "@/components/pricing/pf-stepper";
+import { AddonStepper } from "@/components/pricing/addon-stepper";
 
 interface Tier {
   name: string;
@@ -67,6 +68,9 @@ function TopUpContent() {
   const [discountValidated, setDiscountValidated] = useState(false);
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<any>(null);
+  const [addonSearches, setAddonSearches] = useState(0);
+  const [addonCVs, setAddonCVs] = useState(0);
+  const [addonPF, setAddonPF] = useState(0);
 
   useEffect(() => { endTransition(); }, [endTransition]);
 
@@ -268,6 +272,80 @@ function TopUpContent() {
     }
   };
 
+  const handleAddonPurchase = async (type: "searches" | "cv_gens" | "pf") => {
+    const counts = { searches: addonSearches, cv_gens: addonCVs, pf: addonPF };
+    const count = counts[type];
+    if (count <= 0) return;
+
+    if (!PAYSTACK_PUBLIC_KEY) {
+      alert("Payment system misconfigured. Please contact support.");
+      return;
+    }
+    if (!paystackReady || !(window as any).PaystackPop) {
+      alert("Payment system is still loading. Please try again.");
+      return;
+    }
+
+    const label = type === "searches" ? "Searches" : type === "cv_gens" ? "CVs" : "PF";
+    setProcessing(`addon-${type}`);
+
+    const priceFn = type === "searches" ? calculateSearchPrice : type === "cv_gens" ? calculateCVPrice : calculatePFPrice;
+    const pricePerUnit = priceFn(count);
+    const amount = count * pricePerUnit * 100;
+
+    try {
+      const sRes = await supabase.auth.getSession();
+      const session = sRes.data.session;
+      const email = session?.user?.email;
+      if (!email) { setProcessing(null); alert("Session expired. Please refresh and try again."); return; }
+
+      const fullName = (session?.user?.user_metadata?.full_name as string) || "";
+      const nameParts = fullName.split(" ");
+      const firstName = nameParts[0] || "";
+      const lastName = nameParts.slice(1).join(" ") || "";
+
+      const handler = (window as any).PaystackPop.setup({
+        key: PAYSTACK_PUBLIC_KEY,
+        email,
+        first_name: firstName,
+        last_name: lastName,
+        amount,
+        currency: "ZAR",
+        ref: `ADDON-${type.toUpperCase()}-${Date.now()}`,
+        metadata: { addon_type: type, addon_count: count },
+        callback: function (response: { reference: string }) {
+          fetch("/api/paystack/purchase-addon", {
+            method: "POST",
+            headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ reference: response.reference }),
+          }).then((verifyRes) => {
+            if (verifyRes.ok) {
+              setProcessing(null);
+              if (type === "searches") setAddonSearches(0);
+              else if (type === "cv_gens") setAddonCVs(0);
+              else setAddonPF(0);
+              setSuccessMsg(`${count} extra ${label} added!`);
+              setSuccessToast(true);
+              setTimeout(() => { setSuccessToast(false); loadData(); }, 2000);
+            } else {
+              setProcessing(null);
+              alert("Payment verification failed. Please contact support.");
+            }
+          }).catch(() => {
+            setProcessing(null);
+            alert("Payment verification failed. Please contact support.");
+          });
+        },
+        onClose: () => setProcessing(null),
+      });
+
+      handler.openIframe();
+    } catch (err) {
+      console.error("Paystack addon error:", err);
+      setProcessing(null);
+    }
+  };
+
   return (
     <DashboardLayout>
       <PageTransitionWrapper>
@@ -318,6 +396,94 @@ function TopUpContent() {
             <p className="text-xs text-green-400/80 mt-1">
               This discount will be applied at checkout. Only valid for this purchase.
             </p>
+          </div>
+        )}
+
+        {!loading && profile && (
+          <div className="mb-8">
+            <div className="mb-6">
+              <h2 className="text-xl font-bold text-white">Buy Extra Credits</h2>
+              <p className="text-sm text-white/70 mt-1">
+                Volume discounts — the more you buy, the cheaper per unit.
+              </p>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-3">
+              <LiquidGlassCard variant="surface" className="p-5">
+                <AddonStepper
+                  label="Extra Searches"
+                  icon={Search}
+                  currentBalance={profile.search_balance ?? 0}
+                  value={addonSearches}
+                  onChange={setAddonSearches}
+                  priceBreaks={SEARCH_PRICE_BREAKS}
+                  calculatePrice={calculateSearchPrice}
+                />
+                {addonSearches > 0 && (
+                  <button
+                    onClick={() => handleAddonPurchase("searches")}
+                    disabled={processing === "addon-searches"}
+                    className="mt-2 w-full px-4 py-2.5 text-sm font-medium rounded-full transition-colors flex items-center justify-center gap-2 text-white bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] disabled:opacity-50"
+                  >
+                    {processing === "addon-searches" ? (
+                      <><Loader2 size={14} className="animate-spin" /> Processing...</>
+                    ) : (
+                      "Buy Searches"
+                    )}
+                  </button>
+                )}
+              </LiquidGlassCard>
+
+              <LiquidGlassCard variant="surface" className="p-5">
+                <AddonStepper
+                  label="Extra CV Generations"
+                  icon={FileText}
+                  currentBalance={profile.cv_generation_balance ?? 0}
+                  value={addonCVs}
+                  onChange={setAddonCVs}
+                  priceBreaks={CV_PRICE_BREAKS}
+                  calculatePrice={calculateCVPrice}
+                />
+                {addonCVs > 0 && (
+                  <button
+                    onClick={() => handleAddonPurchase("cv_gens")}
+                    disabled={processing === "addon-cv_gens"}
+                    className="mt-2 w-full px-4 py-2.5 text-sm font-medium rounded-full transition-colors flex items-center justify-center gap-2 text-white bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] disabled:opacity-50"
+                  >
+                    {processing === "addon-cv_gens" ? (
+                      <><Loader2 size={14} className="animate-spin" /> Processing...</>
+                    ) : (
+                      "Buy CVs"
+                    )}
+                  </button>
+                )}
+              </LiquidGlassCard>
+
+              <LiquidGlassCard variant="surface" className="p-5">
+                <AddonStepper
+                  label="Extra PF Runs"
+                  icon={Crosshair}
+                  currentBalance={profile.persistent_finder_balance ?? 0}
+                  value={addonPF}
+                  onChange={setAddonPF}
+                  priceBreaks={PF_PRICE_BREAKS}
+                  calculatePrice={calculatePFPrice}
+                />
+                {addonPF > 0 && (
+                  <button
+                    onClick={() => handleAddonPurchase("pf")}
+                    disabled={processing === "addon-pf"}
+                    className="mt-2 w-full px-4 py-2.5 text-sm font-medium rounded-full transition-colors flex items-center justify-center gap-2 text-white bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] disabled:opacity-50"
+                  >
+                    {processing === "addon-pf" ? (
+                      <><Loader2 size={14} className="animate-spin" /> Processing...</>
+                    ) : (
+                      "Buy PF Credits"
+                    )}
+                  </button>
+                )}
+              </LiquidGlassCard>
+            </div>
           </div>
         )}
 
