@@ -50,8 +50,8 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
   const handleFile = async (files: FileList | File[]) => {
     setError("");
     const fileArr = Array.from(files).slice(0, 4);
-    const invalid = fileArr.find((f) => f.type !== "application/pdf");
-    if (invalid) { setError("Only PDF files are supported."); return; }
+    const invalid = fileArr.find((f) => f.type !== "application/pdf" && f.type !== "application/vnd.openxmlformats-officedocument.wordprocessingml.document" && !f.name.endsWith(".docx"));
+    if (invalid) { setError("Only PDF and DOCX files are supported."); return; }
     const oversized = fileArr.find((f) => f.size > 10 * 1024 * 1024);
     if (oversized) { setError("File too large. Max 10MB per file."); return; }
 
@@ -66,7 +66,7 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
         const filePath = `${session?.user?.id ?? "unknown"}/${crypto.randomUUID()}.${ext}`;
         const { error: uploadErr } = await supabase.storage
           .from("cv-files")
-          .upload(filePath, f, { contentType: "application/pdf" });
+          .upload(filePath, f, { contentType: f.type || "application/pdf" });
         if (uploadErr) throw new Error("Failed to upload CV.");
         return { file: f, filePath };
       });
@@ -232,11 +232,11 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
           <p className="mt-4 text-sm text-gray-700">
             Drag and drop your CVs here, or click to browse
           </p>
-          <p className="mt-1 text-xs text-gray-400">PDF only (max 10MB each, up to 4)</p>
+          <p className="mt-1 text-xs text-gray-400">PDF or DOCX (max 10MB each, up to 4)</p>
           <input
             ref={inputRef}
             type="file"
-            accept=".pdf,application/pdf"
+            accept=".pdf,application/pdf,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             multiple
             onChange={(e) => { if (e.target.files?.length) handleFile(e.target.files); }}
             className="hidden"

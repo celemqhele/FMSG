@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { callAIWithFallback } from "@/lib/gemini";
 import { extractTextFromPDF } from "@/lib/pdf";
+import { extractTextFromDOCX } from "@/lib/docx";
 import { checkRateLimit } from "@/lib/rate-limit";
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
@@ -79,8 +80,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
     }
 
-    if (file.type !== "application/pdf") {
-      return NextResponse.json({ error: "Only PDF files are supported." }, { status: 400 });
+    const isPDF = file.type === "application/pdf";
+    const isDOCX = file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" || file.name.endsWith(".docx");
+    if (!isPDF && !isDOCX) {
+      return NextResponse.json({ error: "Only PDF and DOCX files are supported." }, { status: 400 });
     }
 
     const maxSize = 10 * 1024 * 1024;
@@ -101,11 +104,11 @@ export async function POST(request: NextRequest) {
     // Extract text from PDF (server-side only, never stored)
     let text: string;
     try {
-      text = await extractTextFromPDF(buffer);
-    } catch (pdfErr) {
-      const pdfMsg = pdfErr instanceof Error ? pdfErr.message : String(pdfErr);
-      console.error("PDF extraction error:", pdfMsg);
-      return NextResponse.json({ error: `Failed to parse PDF: ${pdfMsg.slice(0, 200)}`, code: "PDF_PARSE_ERROR" }, { status: 400 });
+      text = isPDF ? await extractTextFromPDF(buffer) : await extractTextFromDOCX(buffer);
+    } catch (parseErr) {
+      const parseMsg = parseErr instanceof Error ? parseErr.message : String(parseErr);
+      console.error("File extraction error:", parseMsg);
+      return NextResponse.json({ error: `Failed to parse file: ${parseMsg.slice(0, 200)}`, code: "PARSE_ERROR" }, { status: 400 });
     }
 
     if (!text.trim()) {
@@ -117,7 +120,7 @@ export async function POST(request: NextRequest) {
     const storagePath = `${user.id}/${safeName}`;
     const { error: uploadErr } = await supabase.storage
       .from("cv-files")
-      .upload(storagePath, buffer, { contentType: "application/pdf", upsert: true });
+      .upload(storagePath, buffer, { contentType: file.type, upsert: true });
 
     if (uploadErr) {
       console.error("Storage upload error:", uploadErr.message);

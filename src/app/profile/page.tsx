@@ -112,7 +112,7 @@ export default function ProfilePage() {
   const handleCvUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.type !== "application/pdf") { alert("PDF only."); return; }
+    if (file.type !== "application/pdf" && file.type !== "application/vnd.openxmlformats-officedocument.wordprocessingml.document" && !file.name.endsWith(".docx")) { alert("PDF or DOCX only."); return; }
     if (file.size > 10 * 1024 * 1024) { alert("Max 10MB."); return; }
 
     setCvUploading(true);
@@ -329,7 +329,7 @@ export default function ProfilePage() {
             <label className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium text-white bg-[var(--color-accent)] rounded-full hover:bg-[var(--color-accent-hover)] transition-colors cursor-pointer disabled:opacity-50">
               {cvUploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
               {cvFilePath ? "Replace CV" : "Upload CV"}
-              <input type="file" accept=".pdf" onChange={handleCvUpload} disabled={cvUploading} className="hidden" />
+              <input type="file" accept=".pdf,application/pdf,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={handleCvUpload} disabled={cvUploading} className="hidden" />
             </label>
           </div>
         </div>

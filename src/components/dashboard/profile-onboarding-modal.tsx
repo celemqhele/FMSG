@@ -106,9 +106,9 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
     if (!fileList || fileList.length === 0) return;
 
     const files = Array.from(fileList).slice(0, 4);
-    const invalid = files.find((f) => f.type !== "application/pdf");
+    const invalid = files.find((f) => f.type !== "application/pdf" && f.type !== "application/vnd.openxmlformats-officedocument.wordprocessingml.document" && !f.name.endsWith(".docx"));
     if (invalid) {
-      setError("Only PDF files are supported.");
+      setError("Only PDF and DOCX files are supported.");
       return;
     }
     const oversized = files.find((f) => f.size > 10 * 1024 * 1024);
@@ -132,7 +132,7 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
           const filePath = `${session.user.id}/${crypto.randomUUID()}.${ext}`;
           const { error: uploadErr } = await supabase.storage
             .from("cv-files")
-            .upload(filePath, f, { contentType: "application/pdf" });
+            .upload(filePath, f, { contentType: f.type || "application/pdf" });
           if (uploadErr) throw new Error("Failed to upload CV.");
           return { file: f, filePath };
         });
@@ -232,9 +232,9 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
     if (e.target) e.target.value = "";
 
     const files = Array.from(fileList);
-    const invalid = files.find((f) => f.type !== "application/pdf");
+    const invalid = files.find((f) => f.type !== "application/pdf" && f.type !== "application/vnd.openxmlformats-officedocument.wordprocessingml.document" && !f.name.endsWith(".docx"));
     if (invalid) {
-      setError("Only PDF files are supported.");
+      setError("Only PDF and DOCX files are supported.");
       return;
     }
     const oversized = files.find((f) => f.size > 10 * 1024 * 1024);
@@ -271,7 +271,7 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
       const filePath = `${session.user.id}/${crypto.randomUUID()}.${fileExt}`;
       const { error: uploadErr } = await supabase.storage
         .from("cv-files")
-        .upload(filePath, f, { contentType: "application/pdf" });
+        .upload(filePath, f, { contentType: f.type || "application/pdf" });
 
       if (uploadErr) {
         setError("Failed to upload CV. Please try again.");
@@ -316,13 +316,13 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
   const handleReplaceCv = (index: number) => {
     const input = document.createElement("input");
     input.type = "file";
-    input.accept = ".pdf,application/pdf";
+    input.accept = ".pdf,application/pdf,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document";
     input.onchange = async (e) => {
       const target = e.target as HTMLInputElement;
       const f = target.files?.[0];
       if (!f) return;
-      if (f.type !== "application/pdf") {
-        setError("Only PDF files are supported.");
+      if (f.type !== "application/pdf" && f.type !== "application/vnd.openxmlformats-officedocument.wordprocessingml.document" && !f.name.endsWith(".docx")) {
+        setError("Only PDF and DOCX files are supported.");
         return;
       }
       if (f.size > 10 * 1024 * 1024) {
@@ -350,7 +350,7 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
       const filePath = `${session.user.id}/${crypto.randomUUID()}.${fileExt}`;
       const { error: uploadErr } = await supabase.storage
         .from("cv-files")
-        .upload(filePath, f, { contentType: "application/pdf" });
+        .upload(filePath, f, { contentType: f.type || "application/pdf" });
 
       if (uploadErr) {
         setError("Failed to upload CV. Please try again.");
@@ -506,7 +506,7 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
               <input
                 ref={inputRef}
                 type="file"
-                accept=".pdf,application/pdf"
+                accept=".pdf,application/pdf,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                 multiple
                 className="hidden"
                 onChange={handleFileChange}
@@ -673,7 +673,7 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
                     <input
                       ref={addInputRef}
                       type="file"
-                      accept=".pdf,application/pdf"
+                      accept=".pdf,application/pdf,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                       multiple
                       className="hidden"
                       onChange={handleAddCvUpload}
