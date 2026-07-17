@@ -12,6 +12,15 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const JINA_API = process.env.JINA_API;
 
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`[TIMEOUT] ${label} exceeded ${ms}ms`)), ms)
+    ),
+  ]);
+}
+
 async function fetchJinaPage(url: string, apiKey: string | null): Promise<string> {
   const headers: Record<string, string> = {
     "Accept": "application/json",
@@ -309,37 +318,46 @@ async function fetchAndFilterJobs(
     // ─── 5-source parallel search ──────────────────────────────────────────
     const [googleJobs, jsearchJobs, adzunaJobs, linkedInJobs, googlePages] = await Promise.all([
       // Source 1: Google Jobs (SerpAPI)
-      fetchPaginatedJobs(serpParams, pages).catch((err) => {
+      withTimeout(
+        fetchPaginatedJobs(serpParams, pages),
+        15_000, "Google Jobs"
+      ).catch((err) => {
         const msg = err instanceof Error ? err.message : String(err);
         debugLog(`[SEARCH] Google Jobs failed: ${msg.slice(0, 150)}`);
         return [] as SerpJob[];
       }),
       // Source 2: JSearch API (RapidAPI) — full inline descriptions
-      searchJSearch(serpParams).catch((err) => {
+      withTimeout(
+        searchJSearch(serpParams),
+        8_000, "JSearch"
+      ).catch((err) => {
         debugLog(`[SEARCH] JSearch failed: ${err}`);
         return [] as SerpJob[];
       }),
       // Source 3: Adzuna API — SA-exclusive listings
-      searchAdzuna(serpParams).catch((err) => {
+      withTimeout(
+        searchAdzuna(serpParams),
+        8_000, "Adzuna"
+      ).catch((err) => {
         debugLog(`[SEARCH] Adzuna failed: ${err}`);
         return [] as SerpJob[];
       }),
       // Source 4: LinkedIn public guest API
-      searchLinkedInJobs(serpParams).catch((err) => {
+      withTimeout(
+        searchLinkedInJobs(serpParams),
+        10_000, "LinkedIn"
+      ).catch((err) => {
         debugLog(`[SEARCH] LinkedIn failed: ${err}`);
         return [] as SerpJob[];
       }),
       // Source 5: Google Search + Jina (two-step crawl)
-      (async (): Promise<{ title: string; link: string; snippet: string; domain: string }[]> => {
-        try {
-          const pages2 = await searchGooglePages(serpParams);
-          debugLog(`[GOOGLE-SCRAPE] ${pages2.length} URLs from job boards (CJ/JobMail/Pnet/Indeed/LinkedIn)`);
-          return pages2;
-        } catch (err) {
-          debugLog(`[GOOGLE-SCRAPE] Failed: ${err}`);
-          return [];
-        }
-      })(),
+      withTimeout(
+        searchGooglePages(serpParams),
+        12_000, "Google Search/Jina"
+      ).catch((err) => {
+        debugLog(`[GOOGLE-SCRAPE] Failed: ${err}`);
+        return [] as { title: string; link: string; snippet: string; domain: string }[];
+      }),
     ]);
 
     // Scrape Google Search URLs with Jina (two-step crawl)
