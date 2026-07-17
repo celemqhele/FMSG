@@ -24,7 +24,7 @@ interface SavedJob {
   yes_answers?: number | null;
   recruiter_verdict?: string | null;
   dynamic_requirements?: { requirement: string; mandatory: boolean; pillar: string; met: boolean; evidence: string }[] | null;
-  spec_source?: "google_jobs" | "google_search" | null;
+  spec_source?: "google_jobs" | "jsearch" | "adzuna" | "linkedin" | "google_search" | null;
 }
 
 export function SavedJobs() {

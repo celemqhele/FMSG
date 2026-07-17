@@ -17,7 +17,7 @@ export interface SerpJob {
   apply_options?: ApplyOption[];
   job_highlights?: { link?: string };
   hasFullSpec?: boolean;
-  spec_source?: "google_jobs" | "google_search";
+  spec_source?: "google_jobs" | "jsearch" | "adzuna" | "linkedin" | "google_search";
 }
 
 interface SerpParams {
@@ -108,58 +108,200 @@ export async function searchJinaWeb(params: SerpParams): Promise<SerpJob[]> {
   }));
 }
 
-// ─── Source B: Google Search + Jina Reader for SA job boards ──────────────
+// ─── Source 2: JSearch API (RapidAPI) ──────────────────────────────────────
 
-const SCRAPEABLE_DOMAINS = [
-  "pnet.co.za",
-  "careerjunction.co.za",
-  "jobmail.co.za",
-  "careers24.com",
-  "indeed.co.za",
-  "indeed.com",
-  "jobvine.co.za",
-  "recruitmymom.co.za",
-  "executiveplacements.com",
-  "smartprocurement.co.za",
-];
+export async function searchJSearch(params: SerpParams): Promise<SerpJob[]> {
+  const apiKey = process.env.JSEARCH_API;
+  if (!apiKey) return [];
 
-const SKIP_DOMAINS = [
-  "linkedin.com",
-  "glassdoor.com",
-  "facebook.com",
-  "instagram.com",
-];
+  const query = [params.q, params.location, "South Africa"].filter(Boolean).join(" ");
+  const url = new URL("https://jsearch.p.rapidapi.com/search");
+  url.searchParams.set("query", query);
+  url.searchParams.set("page", "1");
+  url.searchParams.set("num_pages", "1");
+  url.searchParams.set("country", "za");
 
-export function isJobPageUrl(url: string): boolean {
+  console.log("[JSEARCH] GET https://jsearch.p.rapidapi.com/search");
+
   try {
-    const u = new URL(url);
-    const host = u.hostname.replace(/^www\./, "").toLowerCase();
+    const res = await fetch(url.toString(), {
+      headers: {
+        "X-RapidAPI-Key": apiKey,
+        "X-RapidAPI-Host": "jsearch.p.rapidapi.com",
+      },
+    });
 
-    if (SKIP_DOMAINS.some((d) => host.endsWith(d))) return false;
+    if (!res.ok) {
+      const err = await res.text();
+      console.warn(`[JSEARCH] Error ${res.status}: ${err.slice(0, 200)}`);
+      return [];
+    }
 
-    if (!SCRAPEABLE_DOMAINS.some((d) => host.endsWith(d))) return false;
+    const data = await res.json();
+    const jobs = data.data ?? [];
 
-    const path = u.pathname.toLowerCase();
-    if (path === "/" || path === "/jobs" || path === "/jobs/") return false;
-    if (path.includes("/search") || path.includes("/results")) return false;
-    if (u.searchParams.has("q") && !path.includes("/view")) return false;
-
-    return true;
-  } catch {
-    return false;
+    return jobs.map((j: any) => {
+      const fullDesc = j.job_description || "";
+      return {
+        title: j.job_title || "",
+        company_name: j.employer_name || "Unknown",
+        location: j.job_city || j.job_state || params.location || "",
+        description: fullDesc.slice(0, 3000),
+        link: j.job_apply_link || j.job_google_link || "",
+        via: j.employer_name || "",
+        posted_at: j.job_posted_at_datetime_utc || "",
+        hasFullSpec: fullDesc.length > 300,
+        spec_source: "jsearch" as const,
+      };
+    });
+  } catch (err) {
+    console.warn(`[JSEARCH] Failed: ${err}`);
+    return [];
   }
 }
 
-export async function searchGooglePages(params: SerpParams): Promise<{ title: string; link: string; snippet: string; domain: string }[]> {
-  const siteQueries = SCRAPEABLE_DOMAINS.map((d) => `site:${d}`);
+// ─── Source 3: Adzuna API ───────────────────────────────────────────────────
 
-  const batchSize = 3;
+export async function searchAdzuna(params: SerpParams): Promise<SerpJob[]> {
+  const appId = process.env.Adzuna_APP_ID;
+  const appKey = process.env.Adzuna_API;
+  if (!appId || !appKey) return [];
+
+  const what = params.q || "";
+  const where = params.location || "South Africa";
+
+  const url = new URL("https://api.adzuna.com/v1/api/jobs/za/search/1");
+  url.searchParams.set("app_id", appId);
+  url.searchParams.set("app_key", appKey);
+  url.searchParams.set("what", what);
+  url.searchParams.set("where", where);
+  url.searchParams.set("results_per_page", "20");
+  url.searchParams.set("content-type", "application/json");
+
+  console.log("[ADZUNA] GET https://api.adzuna.com/v1/api/jobs/za/search/1");
+
+  try {
+    const res = await fetch(url.toString());
+    if (!res.ok) {
+      const err = await res.text();
+      console.warn(`[ADZUNA] Error ${res.status}: ${err.slice(0, 200)}`);
+      return [];
+    }
+
+    const data = await res.json();
+    const jobs = data.results ?? [];
+
+    return jobs.map((j: any) => {
+      const snippet = j.description || "";
+      return {
+        title: j.title || "",
+        company_name: j.company?.display_name || "Unknown",
+        location: j.location?.display_name || "",
+        description: snippet.slice(0, 3000),
+        link: j.redirect_url || "",
+        via: j.company?.display_name || "",
+        posted_at: j.created || "",
+        hasFullSpec: false,
+        spec_source: "adzuna" as const,
+      };
+    });
+  } catch (err) {
+    console.warn(`[ADZUNA] Failed: ${err}`);
+    return [];
+  }
+}
+
+// ─── Source 4: LinkedIn Public Guest API ────────────────────────────────────
+// LinkedIn geoId for South Africa
+const LINKEDIN_SA_GEOID = "105365746";
+
+export async function searchLinkedInJobs(params: SerpParams): Promise<SerpJob[]> {
+  const query = params.q;
+  if (!query) return [];
+
+  const url = new URL("https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search");
+  url.searchParams.set("keywords", query);
+  url.searchParams.set("location", "South Africa");
+  url.searchParams.set("geoId", LINKEDIN_SA_GEOID);
+  url.searchParams.set("f_TPR", "r604800"); // past week
+  url.searchParams.set("start", "0");
+
+  console.log("[LINKEDIN] GET linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search");
+
+  try {
+    const res = await fetch(url.toString(), {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      },
+    });
+
+    if (!res.ok) {
+      console.warn(`[LINKEDIN] Error ${res.status}`);
+      return [];
+    }
+
+    const html = await res.text();
+
+    // Parse individual job cards from the HTML
+    const jobCards = html.match(/<li[\s\S]*?<\/li>/g) ?? [];
+    const jobs: SerpJob[] = [];
+
+    for (const card of jobCards) {
+      try {
+        // Extract title + link
+        const titleMatch = card.match(/<a[^>]*href="([^"]*)"[^>]*>[\s\S]*?<h3[^>]*>([\s\S]*?)<\/h3>/);
+        const link = titleMatch?.[1]?.trim() || "";
+        let title = titleMatch?.[2]?.replace(/<[^>]+>/g, "").trim() || "";
+
+        // Extract company
+        const companyMatch = card.match(/<h4[^>]*>([\s\S]*?)<\/h4>/);
+        const company = companyMatch?.[1]?.replace(/<[^>]+>/g, "").trim() || "Unknown";
+
+        // Extract location
+        const locationMatch = card.match(/<span[^>]*class="[^"]*job-search-card__location[^"]*"[^>]*>([\s\S]*?)<\/span>/);
+        const location = locationMatch?.[1]?.replace(/<[^>]+>/g, "").trim() || "";
+
+        if (!title || !link) continue;
+
+        // Make link absolute
+        const fullLink = link.startsWith("http") ? link : `https://www.linkedin.com${link}`;
+
+        jobs.push({
+          title,
+          company_name: company,
+          location,
+          description: "",
+          link: fullLink,
+          via: "linkedin.com",
+          hasFullSpec: false,
+          spec_source: "linkedin" as const,
+        });
+      } catch {
+        // Skip malformed cards
+      }
+    }
+
+    return jobs;
+  } catch (err) {
+    console.warn(`[LINKEDIN] Failed: ${err}`);
+    return [];
+  }
+}
+
+// ─── Source 5: Google Search + Jina (CareerJunction + Job Mail only) ────────
+// Only platforms where Jina can actually read individual job pages.
+
+const JINA_SCRAPEABLE_DOMAINS = [
+  { domain: "careerjunction.co.za", urlPattern: /job-\d+\.aspx$/ },
+  { domain: "jobmail.co.za", urlPattern: /-id-\d+$/ },
+];
+
+export async function searchGooglePages(params: SerpParams): Promise<{ title: string; link: string; snippet: string; domain: string }[]> {
   const allResults: { title: string; link: string; snippet: string; domain: string }[] = [];
 
-  for (let i = 0; i < siteQueries.length; i += batchSize) {
-    const batch = siteQueries.slice(i, i + batchSize);
-    const siteQuery = batch.join(" OR ");
-    const query = `${params.q} (${siteQuery})`;
+  for (const { domain } of JINA_SCRAPEABLE_DOMAINS) {
+    const query = `${params.q} site:${domain}`;
 
     const url = new URL("https://serpapi.com/search.json");
     url.searchParams.set("engine", "google");
@@ -177,7 +319,7 @@ export async function searchGooglePages(params: SerpParams): Promise<{ title: st
     try {
       const res = await fetch(fullUrl);
       if (!res.ok) {
-        console.warn(`[SERPAPI GOOGLE] Batch ${i / batchSize + 1} failed (${res.status})`);
+        console.warn(`[SERPAPI GOOGLE] site:${domain} failed (${res.status})`);
         continue;
       }
       const data = await res.json();
@@ -185,22 +327,24 @@ export async function searchGooglePages(params: SerpParams): Promise<{ title: st
       for (const r of organic) {
         if (!r.link) continue;
         try {
-          const domain = new URL(r.link).hostname.replace(/^www\./, "").toLowerCase();
-          allResults.push({
-            title: r.title || "",
-            link: r.link,
-            snippet: r.snippet || "",
-            domain,
-          });
+          const resultDomain = new URL(r.link).hostname.replace(/^www\./, "").toLowerCase();
+          // Only include results matching this specific domain
+          if (resultDomain === domain || resultDomain.endsWith(`.${domain}`)) {
+            allResults.push({
+              title: r.title || "",
+              link: r.link,
+              snippet: r.snippet || "",
+              domain: resultDomain,
+            });
+          }
         } catch {}
       }
     } catch (err) {
-      console.warn(`[SERPAPI GOOGLE] Batch ${i / batchSize + 1} error:`, err);
+      console.warn(`[SERPAPI GOOGLE] site:${domain} error:`, err);
     }
 
-    if (i + batchSize < siteQueries.length) {
-      await new Promise((r) => setTimeout(r, 200));
-    }
+    // Small delay between queries
+    await new Promise((r) => setTimeout(r, 200));
   }
 
   return allResults;
@@ -234,6 +378,18 @@ export async function scrapeJobPage(
 
     const content: string = json.data.content.trim();
     if (content.length < 300) return null;
+
+    // Validate this looks like an individual job page, not a search/listing page
+    const lowerContent = content.toLowerCase();
+    if (
+      lowerContent.includes("results for") && lowerContent.includes("jobs in") ||
+      lowerContent.includes("search results") ||
+      lowerContent.match(/\d+\s+jobs?\s+found/i) ||
+      lowerContent.match(/\d+\s+results?\s+for/i)
+    ) {
+      console.log(`[SCRAPE] Rejected listing/search page: ${url}`);
+      return null;
+    }
 
     const domain = new URL(url).hostname.replace(/^www\./, "").toLowerCase();
 

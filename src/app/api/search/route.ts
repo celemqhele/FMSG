@@ -1,7 +1,7 @@
 // BUILD_CACHE_BUST: jun30-1
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { searchGoogleJobs, searchGooglePages, isJobPageUrl, scrapeJobPage, type SerpJob } from "@/lib/serpapi";
+import { searchGoogleJobs, searchJSearch, searchAdzuna, searchLinkedInJobs, searchGooglePages, scrapeJobPage, type SerpJob } from "@/lib/serpapi";
 import { extractTextFromPDF } from "@/lib/pdf";
 import { callAIWithFallback, lastAITier } from "@/lib/gemini";
 import { StreamWriter, type SearchEvent } from "@/lib/search-stream";
@@ -181,7 +181,7 @@ interface JobRow {
   yes_answers: number | null;
   recruiter_verdict: string | null;
   dynamic_requirements: { requirement: string; mandatory: boolean; pillar: string; met: boolean; evidence: string }[] | null;
-  spec_source: "google_jobs" | "google_search" | null;
+  spec_source: "google_jobs" | "jsearch" | "adzuna" | "linkedin" | "google_search" | null;
 }
 
 function normalize(r: any) {
@@ -306,47 +306,89 @@ async function fetchAndFilterJobs(
 
   let rawJobs: SerpJob[];
   try {
-    const [googleJobs, sourceBJobs] = await Promise.all([
+    // ─── 5-source parallel search ──────────────────────────────────────────
+    const [googleJobs, jsearchJobs, adzunaJobs, linkedInJobs, googlePages] = await Promise.all([
+      // Source 1: Google Jobs (SerpAPI)
       fetchPaginatedJobs(serpParams, pages).catch((err) => {
         const msg = err instanceof Error ? err.message : String(err);
         debugLog(`[SEARCH] Google Jobs failed: ${msg.slice(0, 150)}`);
         return [] as SerpJob[];
       }),
-      (async (): Promise<SerpJob[]> => {
+      // Source 2: JSearch API (RapidAPI) — full inline descriptions
+      searchJSearch(serpParams).catch((err) => {
+        debugLog(`[SEARCH] JSearch failed: ${err}`);
+        return [] as SerpJob[];
+      }),
+      // Source 3: Adzuna API — SA-exclusive listings
+      searchAdzuna(serpParams).catch((err) => {
+        debugLog(`[SEARCH] Adzuna failed: ${err}`);
+        return [] as SerpJob[];
+      }),
+      // Source 4: LinkedIn public guest API
+      searchLinkedInJobs(serpParams).catch((err) => {
+        debugLog(`[SEARCH] LinkedIn failed: ${err}`);
+        return [] as SerpJob[];
+      }),
+      // Source 5: Google Search + Jina (CareerJunction + Job Mail)
+      (async (): Promise<{ title: string; link: string; snippet: string; domain: string }[]> => {
         try {
           const pages2 = await searchGooglePages(serpParams);
-          const validUrls = pages2.filter((p) => isJobPageUrl(p.link));
-          debugLog(`[SOURCE-B] ${validUrls.length} scrapeable URLs from ${pages2.length} Google results`);
-          const scraped: SerpJob[] = [];
-          for (const v of validUrls.slice(0, 10)) {
-            const job = await scrapeJobPage(v.link, JINA_API ?? null);
-            if (job) {
-              job.title = job.title || v.title;
-              scraped.push(job);
-            }
-            await new Promise((r) => setTimeout(r, 150));
-          }
-          return scraped;
+          debugLog(`[GOOGLE-SCRAPE] ${pages2.length} URLs from CareerJunction/JobMail`);
+          return pages2;
         } catch (err) {
-          debugLog(`[SOURCE-B] Failed: ${err}`);
+          debugLog(`[GOOGLE-SCRAPE] Failed: ${err}`);
           return [];
         }
       })(),
     ]);
 
-    rawJobs = [...googleJobs];
+    // Scrape Google Search URLs with Jina
+    const scrapedGoogleJobs: SerpJob[] = [];
+    for (const v of googlePages.slice(0, 10)) {
+      const job = await scrapeJobPage(v.link, JINA_API ?? null);
+      if (job) {
+        job.title = job.title || v.title;
+        scrapedGoogleJobs.push(job);
+      }
+      await new Promise((r) => setTimeout(r, 150));
+    }
 
-    const seenKeys = new Set(rawJobs.map((j) => `${j.title ?? ""}|${j.company_name ?? ""}`.toLowerCase()));
-    for (const sb of sourceBJobs) {
-      const key = `${sb.title ?? ""}|${sb.company_name ?? ""}`.toLowerCase();
-      if (!seenKeys.has(key)) {
-        seenKeys.add(key);
-        rawJobs.push(sb);
+    // Merge all sources with dedup (priority: JSearch > Google Jobs > LinkedIn > Google Search > Adzuna)
+    rawJobs = [];
+    const seenKeys = new Set<string>();
+
+    function addJobs(jobs: SerpJob[]) {
+      for (const j of jobs) {
+        const key = `${j.title ?? ""}|${j.company_name ?? ""}`.toLowerCase();
+        if (!seenKeys.has(key)) {
+          seenKeys.add(key);
+          rawJobs.push(j);
+        } else {
+          // If existing job has shorter description, replace with this one
+          const existing = rawJobs.find(
+            (r) => `${r.title ?? ""}|${r.company_name ?? ""}`.toLowerCase() === key
+          );
+          if (existing) {
+            const existingLen = existing.description?.length ?? 0;
+            const newLen = j.description?.length ?? 0;
+            if (newLen > existingLen) {
+              // Preserve spec_source of the better source
+              j.spec_source = j.spec_source ?? existing.spec_source;
+              Object.assign(existing, { description: j.description, hasFullSpec: j.hasFullSpec, spec_source: j.spec_source });
+            }
+          }
+        }
       }
     }
-    if (sourceBJobs.length > 0) {
-      debugLog(`[SOURCE-B] Added ${sourceBJobs.length} jobs from SA job boards (total now ${rawJobs.length})`);
-    }
+
+    // Priority order: JSearch (best inline) → Google Jobs → LinkedIn → Google Search (Jina) → Adzuna (snippet)
+    addJobs(jsearchJobs);
+    addJobs(googleJobs);
+    addJobs(linkedInJobs);
+    addJobs(scrapedGoogleJobs);
+    addJobs(adzunaJobs);
+
+    debugLog(`[SEARCH] Sources: Google=${googleJobs.length} JSearch=${jsearchJobs.length} Adzuna=${adzunaJobs.length} LinkedIn=${linkedInJobs.length} Scrape=${scrapedGoogleJobs.length} → Total=${rawJobs.length}`);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.includes("(400)")) {
