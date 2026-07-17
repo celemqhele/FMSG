@@ -473,7 +473,7 @@ export async function scrapeJobPage(
     const content: string = json.data.content.trim();
     if (content.length < 300) return null;
 
-    // Validate this looks like an individual job page, not a search/listing page
+    // Validate this looks like an individual job page, not a search/listing/cookie page
     const lowerContent = content.toLowerCase();
     if (
       lowerContent.includes("total jobs found") ||
@@ -484,9 +484,13 @@ export async function scrapeJobPage(
       lowerContent.match(/\d+\s+jobs?\s+found/i) ||
       lowerContent.match(/\d+\s+results?\s+for/i) ||
       lowerContent.match(/show\s+\d+\s+\d+\s+\d+/i) ||
-      (lowerContent.includes("save this job") && lowerContent.split("save this job").length > 3)
+      (lowerContent.includes("save this job") && lowerContent.split("save this job").length > 3) ||
+      (lowerContent.includes("cookie") && (lowerContent.includes("privacy") || lowerContent.includes("consent") || lowerContent.includes("policy"))) ||
+      (lowerContent.includes("we use cookies") && lowerContent.length < 2000) ||
+      lowerContent.includes("cookie policy") && !lowerContent.includes("job requirements") ||
+      lowerContent.match(/we\s+(use|use|and|store)\s+cookies/i)
     ) {
-      console.log(`[SCRAPE] Rejected listing/search page: ${url}`);
+      console.log(`[SCRAPE] Rejected listing/cookie page: ${url}`);
       return null;
     }
 

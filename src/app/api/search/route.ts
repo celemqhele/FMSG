@@ -214,7 +214,7 @@ function unwrapArray(val: unknown): unknown[] {
 }
 
 const sanitiseForJson = (s: string | undefined | null): string =>
-  (s ?? "").replace(/["\n\r\t]/g, " ").replace(/\s+/g, " ").trim();
+  (s ?? "").replace(/["\r\t]/g, " ").replace(/[^\S\n]+/g, " ").trim();
 
 function buildOrQuery(titles: string[]): string {
   const clean = titles.map(t => t.trim()).filter(Boolean);
@@ -841,7 +841,7 @@ ${blacklistInfo}${bannedInfo}${dateConstraintInfo}`;
 
     let result: any = null;
     try {
-      const jobInput = sanitiseForJson(fullSpec);
+      const jobInput = fullSpec.replace(/["\r\t]/g, " ").replace(/\s+/g, " ").trim();
       const raw = await callAIWithFallback(
         dynamicScoringPrompt,
         `Candidate Profile:\n${profileContext}\n\nJob:\n${JSON.stringify({ job_title: job.title, company: job.company_name, location: job.location, description: jobInput, url: jobUrl }, null, 2)}`,
