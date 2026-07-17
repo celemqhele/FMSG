@@ -319,51 +319,50 @@ async function fetchAndFilterJobs(
 
   let rawJobs: SerpJob[];
   try {
-    // ─── 5-source parallel search ──────────────────────────────────────────
-    console.log("[PIPELINE] Starting 5-source parallel search:", JSON.stringify({ query, location: sanitisedLocation, pages }));
-    const [googleJobs, jsearchJobs, adzunaJobs, linkedInJobs, googlePages] = await Promise.all([
-      // Source 1: Google Jobs (SerpAPI)
-      withTimeout(
-        fetchPaginatedJobs(serpParams, pages),
-        15_000, "Google Jobs"
-      ).catch((err) => {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.error(`[PIPELINE] Google Jobs TIMEOUT/FAIL: ${msg.slice(0, 200)}`);
-        return [] as SerpJob[];
-      }),
-      // Source 2: JSearch API (RapidAPI) — full inline descriptions
-      withTimeout(
-        searchJSearch(serpParams),
-        15_000, "JSearch"
-      ).catch((err) => {
-        console.error(`[PIPELINE] JSearch TIMEOUT/FAIL: ${err}`);
-        return [] as SerpJob[];
-      }),
-      // Source 3: Adzuna API — SA-exclusive listings
-      withTimeout(
-        searchAdzuna(serpParams),
-        8_000, "Adzuna"
-      ).catch((err) => {
-        console.error(`[PIPELINE] Adzuna TIMEOUT/FAIL: ${err}`);
-        return [] as SerpJob[];
-      }),
-      // Source 4: LinkedIn public guest API
-      withTimeout(
-        searchLinkedInJobs(serpParams),
-        10_000, "LinkedIn"
-      ).catch((err) => {
-        console.error(`[PIPELINE] LinkedIn TIMEOUT/FAIL: ${err}`);
-        return [] as SerpJob[];
-      }),
-      // Source 5: Google Search + Jina (two-step crawl) — 5 sequential SerpAPI calls, needs 25s
-      withTimeout(
-        searchGooglePages(serpParams),
-        25_000, "Google Search/Jina"
-      ).catch((err) => {
-        console.error(`[PIPELINE] Google Search/Jina TIMEOUT/FAIL: ${err}`);
-        return [] as { title: string; link: string; snippet: string; domain: string }[];
-      }),
-    ]);
+    // ─── Platform-aware source selection ──────────────────────────────────
+    const isAll = !allowedPlatforms || allowedPlatforms.length === 0;
+    const hasLinkedIn = isAll || allowedPlatforms?.includes("linkedin");
+    const hasOnlyLinkedIn = !isAll && allowedPlatforms?.length === 1 && allowedPlatforms[0] === "linkedin";
+    const hasNonLinkedIn = !isAll && !hasOnlyLinkedIn;
+
+    const sources = {
+      googleJobs: true,            // always run
+      jSearch: isAll || hasNonLinkedIn,  // skip when only LinkedIn
+      adzuna: isAll,               // only when All
+      linkedIn: isAll || hasLinkedIn,     // when LinkedIn selected or All
+      googlePages: isAll,          // only when All
+    };
+
+    const enabledCount = Object.values(sources).filter(Boolean).length;
+    console.log(`[PIPELINE] Starting ${enabledCount}-source parallel search:`, JSON.stringify({ query, location: sanitisedLocation, pages, platforms: allowedPlatforms, sources }));
+
+    // Build promises for enabled sources only
+    const promiseEntries = Object.entries(sources).filter(([, enabled]) => enabled).map(([key]) => {
+      switch (key) {
+        case "googleJobs":
+          return ["googleJobs", withTimeout(fetchPaginatedJobs(serpParams, pages), 15_000, "Google Jobs").catch((err) => { console.error(`[PIPELINE] Google Jobs TIMEOUT/FAIL: ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}`); return [] as SerpJob[]; })] as const;
+        case "jSearch":
+          return ["jSearch", withTimeout(searchJSearch(serpParams), 15_000, "JSearch").catch((err) => { console.error(`[PIPELINE] JSearch TIMEOUT/FAIL: ${err}`); return [] as SerpJob[]; })] as const;
+        case "adzuna":
+          return ["adzuna", withTimeout(searchAdzuna(serpParams), 8_000, "Adzuna").catch((err) => { console.error(`[PIPELINE] Adzuna TIMEOUT/FAIL: ${err}`); return [] as SerpJob[]; })] as const;
+        case "linkedIn":
+          return ["linkedIn", withTimeout(searchLinkedInJobs(serpParams), 10_000, "LinkedIn").catch((err) => { console.error(`[PIPELINE] LinkedIn TIMEOUT/FAIL: ${err}`); return [] as SerpJob[]; })] as const;
+        case "googlePages":
+          return ["googlePages", withTimeout(searchGooglePages(serpParams), 25_000, "Google Search/Jina").catch((err) => { console.error(`[PIPELINE] Google Search/Jina TIMEOUT/FAIL: ${err}`); return [] as { title: string; link: string; snippet: string; domain: string }[]; })] as const;
+        default:
+          return [key, Promise.resolve([])] as const;
+      }
+    });
+
+    const results = await Promise.all(promiseEntries.map(([, p]) => p));
+    const resultObj: Record<string, any[]> = {};
+    promiseEntries.forEach(([key], i) => { resultObj[key] = results[i]; });
+
+    const googleJobs = (resultObj["googleJobs"] ?? []) as SerpJob[];
+    const jsearchJobs = (resultObj["jSearch"] ?? []) as SerpJob[];
+    const adzunaJobs = (resultObj["adzuna"] ?? []) as SerpJob[];
+    const linkedInJobs = (resultObj["linkedIn"] ?? []) as SerpJob[];
+    const googlePages = (resultObj["googlePages"] ?? []) as { title: string; link: string; snippet: string; domain: string }[];
 
     console.log(`[PIPELINE] Sources returned: GoogleJobs=${googleJobs.length} JSearch=${jsearchJobs.length} Adzuna=${adzunaJobs.length} LinkedIn=${linkedInJobs.length} GooglePages=${googlePages.length}`);
 
