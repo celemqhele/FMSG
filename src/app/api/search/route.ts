@@ -330,7 +330,7 @@ async function fetchAndFilterJobs(
       // Source 2: JSearch API (RapidAPI) — full inline descriptions
       withTimeout(
         searchJSearch(serpParams),
-        8_000, "JSearch"
+        15_000, "JSearch"
       ).catch((err) => {
         console.error(`[PIPELINE] JSearch TIMEOUT/FAIL: ${err}`);
         return [] as SerpJob[];

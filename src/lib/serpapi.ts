@@ -1,3 +1,5 @@
+import { checkApiLimit, recordApiCall } from "./api-rate-limit";
+
 const SERPAPI_KEY = process.env.SERPAPI_API_KEY;
 
 export interface ApplyOption {
@@ -29,6 +31,12 @@ interface SerpParams {
 }
 
 export async function searchGoogleJobs(params: SerpParams): Promise<SerpJob[]> {
+  const rl = checkApiLimit("serpapi");
+  if (!rl.allowed) {
+    console.warn(`[SRC1-GOOGLE-JOBS] RATE LIMITED — ${rl.label}, ${rl.remaining}/${rl.total} remaining, retry in ${Math.ceil(rl.retryAfterMs / 1000)}s`);
+    return [];
+  }
+
   const url = new URL("https://serpapi.com/search.json");
   url.searchParams.set("engine", "google_jobs");
   url.searchParams.set("q", params.q);
@@ -53,7 +61,9 @@ export async function searchGoogleJobs(params: SerpParams): Promise<SerpJob[]> {
 
   const data = await res.json();
   const jobs = data.jobs_results ?? [];
-  console.log(`[SRC1-GOOGLE-JOBS] OK ${jobs.length} jobs returned`);
+  recordApiCall("serpapi");
+  const remaining = rl.remaining - 1;
+  console.log(`[SRC1-GOOGLE-JOBS] OK ${jobs.length} jobs returned (serpapi quota: ${remaining}/${rl.total})`);
   if (jobs.length > 0) {
     console.log(`[SRC1-GOOGLE-JOBS] First: "${jobs[0].title}" at "${jobs[0].company_name}"`);
   }
@@ -125,6 +135,12 @@ export async function searchJSearch(params: SerpParams): Promise<SerpJob[]> {
     return [];
   }
 
+  const rl = checkApiLimit("jsearch");
+  if (!rl.allowed) {
+    console.warn(`[SRC2-JSEARCH] RATE LIMITED — ${rl.label}, ${rl.remaining}/${rl.total} remaining, retry in ${Math.ceil(rl.retryAfterMs / 1000)}s`);
+    return [];
+  }
+
   const query = [params.q, params.location, "South Africa"].filter(Boolean).join(" ");
   const url = new URL("https://jsearch.p.rapidapi.com/search-v2");
   url.searchParams.set("query", query);
@@ -151,10 +167,19 @@ export async function searchJSearch(params: SerpParams): Promise<SerpJob[]> {
       return [];
     }
 
+    // Parse rate limit headers from JSearch/RapidAPI
+    const quotaRemaining = res.headers.get("x-ratelimit-requests-remaining");
+    const quotaLimit = res.headers.get("x-ratelimit-requests-limit");
+    if (quotaRemaining !== null) {
+      console.log(`[SRC2-JSEARCH] Quota from API: ${quotaRemaining}/${quotaLimit || "?"} remaining`);
+    }
+
     const data = await res.json();
     console.log(`[SRC2-JSEARCH] API status=${data.status} request_id=${data.request_id}`);
     const jobs = data.data?.jobs ?? data.data ?? [];
-    console.log(`[SRC2-JSEARCH] OK ${jobs.length} jobs returned`);
+    recordApiCall("jsearch");
+    const ourRemaining = rl.remaining - 1;
+    console.log(`[SRC2-JSEARCH] OK ${jobs.length} jobs returned (jsearch quota: ${ourRemaining}/${rl.total})`);
     if (jobs.length > 0) {
       const first = jobs[0];
       console.log(`[SRC2-JSEARCH] First: "${first.job_title}" at "${first.employer_name}" desc_len=${(first.job_description || "").length}`);
@@ -189,6 +214,12 @@ export async function searchAdzuna(params: SerpParams): Promise<SerpJob[]> {
     return [];
   }
 
+  const rl = checkApiLimit("adzuna");
+  if (!rl.allowed) {
+    console.warn(`[SRC3-ADZUNA] RATE LIMITED — ${rl.label}, ${rl.remaining}/${rl.total} remaining, retry in ${Math.ceil(rl.retryAfterMs / 1000)}s`);
+    return [];
+  }
+
   const what = params.q || "";
   const where = params.location || "South Africa";
 
@@ -215,7 +246,9 @@ export async function searchAdzuna(params: SerpParams): Promise<SerpJob[]> {
 
     const data = await res.json();
     const jobs = data.results ?? [];
-    console.log(`[SRC3-ADZUNA] OK ${jobs.length} jobs returned`);
+    recordApiCall("adzuna");
+    const remaining = rl.remaining - 1;
+    console.log(`[SRC3-ADZUNA] OK ${jobs.length} jobs returned (adzuna quota: ${remaining}/${rl.total})`);
     if (jobs.length > 0) {
       const first = jobs[0];
       console.log(`[SRC3-ADZUNA] First: "${first.title}" at "${first.company?.display_name}" desc_len=${(first.description || "").length}`);
@@ -248,6 +281,12 @@ export async function searchLinkedInJobs(params: SerpParams): Promise<SerpJob[]>
   const query = params.q;
   if (!query) {
     console.warn("[SRC4-LINKEDIN] SKIP — no query");
+    return [];
+  }
+
+  const rl = checkApiLimit("linkedin");
+  if (!rl.allowed) {
+    console.warn(`[SRC4-LINKEDIN] RATE LIMITED — ${rl.label}, ${rl.remaining}/${rl.total} remaining, retry in ${Math.ceil(rl.retryAfterMs / 1000)}s`);
     return [];
   }
 
@@ -319,7 +358,8 @@ export async function searchLinkedInJobs(params: SerpParams): Promise<SerpJob[]>
       }
     }
 
-    console.log(`[SRC4-LINKEDIN] OK ${jobs.length} jobs parsed from HTML`);
+    console.log(`[SRC4-LINKEDIN] OK ${jobs.length} jobs parsed from HTML (linkedin quota: ${rl.remaining - 1}/${rl.total})`);
+    recordApiCall("linkedin");
     if (jobs.length > 0) {
       console.log(`[SRC4-LINKEDIN] First: "${jobs[0].title}" at "${jobs[0].company_name}"`);
     }
@@ -370,7 +410,14 @@ export function isIndividualJobPage(url: string): boolean {
 export async function searchGooglePages(params: SerpParams): Promise<{ title: string; link: string; snippet: string; domain: string }[]> {
   const allResults: { title: string; link: string; snippet: string; domain: string }[] = [];
 
-  console.log(`[SRC5-GOOGLE-SCRAPE] Starting search for ${JINA_SCRAPEABLE_DOMAINS.length} domains`);
+  // Check shared SerpAPI rate limit before starting
+  const rl = checkApiLimit("serpapi");
+  if (!rl.allowed) {
+    console.warn(`[SRC5-GOOGLE-SCRAPE] RATE LIMITED — serpapi quota exhausted (${rl.remaining}/${rl.total}), skipping`);
+    return [];
+  }
+
+  console.log(`[SRC5-GOOGLE-SCRAPE] Starting search for ${JINA_SCRAPEABLE_DOMAINS.length} domains (serpapi quota: ${rl.remaining}/${rl.total})`);
 
   for (const { domain } of JINA_SCRAPEABLE_DOMAINS) {
     const query = `${params.q} site:${domain}`;
@@ -396,6 +443,7 @@ export async function searchGooglePages(params: SerpParams): Promise<{ title: st
         continue;
       }
       const data = await res.json();
+      recordApiCall("serpapi");
       const organic = data.organic_results ?? [];
       console.log(`[SRC5-GOOGLE-SCRAPE] site:${domain} OK ${organic.length} organic results`);
       let matched = 0;
@@ -430,6 +478,12 @@ export async function extractJobUrlsFromListingPage(
   listingUrl: string,
   jinaApiKey: string | null
 ): Promise<string[]> {
+  const rl = checkApiLimit("jina");
+  if (!rl.allowed) {
+    console.warn(`[SRC5-EXTRACT] RATE LIMITED — ${rl.label}, ${rl.remaining}/${rl.total} remaining, skipping ${listingUrl}`);
+    return [];
+  }
+
   try {
     const headers: Record<string, string> = {
       "Accept": "application/json",
@@ -438,13 +492,25 @@ export async function extractJobUrlsFromListingPage(
     };
     if (jinaApiKey) headers["Authorization"] = `Bearer ${jinaApiKey}`;
 
-    console.log(`[SRC5-EXTRACT] Jina REQ: ${listingUrl}`);
-    const res = await fetch(`https://r.jina.ai/${encodeURIComponent(listingUrl)}`, { headers });
+    console.log(`[SRC5-EXTRACT] Jina REQ: ${listingUrl} (jina quota: ${rl.remaining}/${rl.total})`);
+    let res = await fetch(`https://r.jina.ai/${encodeURIComponent(listingUrl)}`, { headers });
     console.log(`[SRC5-EXTRACT] Jina HTTP ${res.status} ${res.statusText} for ${listingUrl}`);
+
+    // Retry once on 429 with backoff
+    if (res.status === 429) {
+      const retryAfter = parseInt(res.headers.get("retry-after") || "5", 10);
+      console.warn(`[SRC5-EXTRACT] Jina 429, retrying in ${retryAfter}s...`);
+      await new Promise(r => setTimeout(r, retryAfter * 1000));
+      res = await fetch(`https://r.jina.ai/${encodeURIComponent(listingUrl)}`, { headers });
+      console.log(`[SRC5-EXTRACT] Jina retry HTTP ${res.status} ${res.statusText} for ${listingUrl}`);
+    }
+
     if (!res.ok) {
       console.error(`[SRC5-EXTRACT] Jina FAIL status=${res.status} for ${listingUrl}`);
       return [];
     }
+
+    recordApiCall("jina");
 
     const json = await res.json();
     if (json.code !== 200 || !json.data?.content) {
@@ -507,6 +573,12 @@ export async function scrapeJobPage(
   url: string,
   jinaApiKey: string | null
 ): Promise<SerpJob | null> {
+  const rl = checkApiLimit("jina");
+  if (!rl.allowed) {
+    console.warn(`[SRC5-SCRAPE] RATE LIMITED — ${rl.label}, ${rl.remaining}/${rl.total} remaining, skipping ${url}`);
+    return null;
+  }
+
   try {
     const headers: Record<string, string> = {
       "Accept": "application/json",
@@ -515,20 +587,31 @@ export async function scrapeJobPage(
     };
     if (jinaApiKey) headers["Authorization"] = `Bearer ${jinaApiKey}`;
 
-    console.log(`[SRC5-SCRAPE] Jina REQ: ${url}`);
-    const res = await fetch(`https://r.jina.ai/${encodeURIComponent(url)}`, { headers });
+    console.log(`[SRC5-SCRAPE] Jina REQ: ${url} (jina quota: ${rl.remaining}/${rl.total})`);
+    let res = await fetch(`https://r.jina.ai/${encodeURIComponent(url)}`, { headers });
     console.log(`[SRC5-SCRAPE] Jina HTTP ${res.status} ${res.statusText} for ${url}`);
+
+    // Retry once on 429 with backoff
+    if (res.status === 429) {
+      const retryAfter = parseInt(res.headers.get("retry-after") || "5", 10);
+      console.warn(`[SRC5-SCRAPE] Jina 429, retrying in ${retryAfter}s...`);
+      await new Promise(r => setTimeout(r, retryAfter * 1000));
+      res = await fetch(`https://r.jina.ai/${encodeURIComponent(url)}`, { headers });
+      console.log(`[SRC5-SCRAPE] Jina retry HTTP ${res.status} ${res.statusText} for ${url}`);
+    }
+
     if (!res.ok) {
-      if (jinaApiKey && (res.status === 429 || res.status === 403)) {
+      if (res.status === 429 || res.status === 403) {
         try {
           const err = await res.json();
           console.warn(`[SRC5-SCRAPE] Jina rate/auth error code=${err.code} for ${url}`);
-          if (err.code?.startsWith("RATE_") || err.code?.startsWith("AUTHZ_")) return null;
         } catch {}
       }
       console.error(`[SRC5-SCRAPE] Jina FAIL status=${res.status} for ${url}`);
       return null;
     }
+
+    recordApiCall("jina");
 
     const json = await res.json();
     if (json.code !== 200 || !json.data?.content) {
