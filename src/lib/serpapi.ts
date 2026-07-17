@@ -207,8 +207,8 @@ export async function searchJSearch(params: SerpParams): Promise<SerpJob[]> {
 // ─── Source 3: Adzuna API ───────────────────────────────────────────────────
 
 export async function searchAdzuna(params: SerpParams): Promise<SerpJob[]> {
-  const appId = process.env.Adzuna_APP_ID;
-  const appKey = process.env.Adzuna_API;
+  const appId = process.env.ADZUNA_APP_ID ?? process.env.Adzuna_APP_ID;
+  const appKey = process.env.ADZUNA_API ?? process.env.Adzuna_API;
   if (!appId || !appKey) {
     console.warn("[SRC3-ADZUNA] SKIP — missing Adzuna_APP_ID or Adzuna_API");
     return [];

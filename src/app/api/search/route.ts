@@ -355,10 +355,10 @@ async function fetchAndFilterJobs(
         console.error(`[PIPELINE] LinkedIn TIMEOUT/FAIL: ${err}`);
         return [] as SerpJob[];
       }),
-      // Source 5: Google Search + Jina (two-step crawl)
+      // Source 5: Google Search + Jina (two-step crawl) — 5 sequential SerpAPI calls, needs 25s
       withTimeout(
         searchGooglePages(serpParams),
-        12_000, "Google Search/Jina"
+        25_000, "Google Search/Jina"
       ).catch((err) => {
         console.error(`[PIPELINE] Google Search/Jina TIMEOUT/FAIL: ${err}`);
         return [] as { title: string; link: string; snippet: string; domain: string }[];
