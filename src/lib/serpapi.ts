@@ -289,13 +289,42 @@ export async function searchLinkedInJobs(params: SerpParams): Promise<SerpJob[]>
   }
 }
 
-// ─── Source 5: Google Search + Jina (CareerJunction + Job Mail only) ────────
-// Only platforms where Jina can actually read individual job pages.
+// ─── Source 5: Google Search + Jina (two-step crawl) ───────────────────────
+// Step 1: Google Search returns listing page URLs
+// Step 2: Jina reads listing page → extract individual job URLs
+// Step 3: Jina reads each individual URL → full spec
 
 const JINA_SCRAPEABLE_DOMAINS = [
-  { domain: "careerjunction.co.za", urlPattern: /job-\d+\.aspx$/ },
-  { domain: "jobmail.co.za", urlPattern: /-id-\d+$/ },
+  { domain: "careerjunction.co.za", jobPattern: /job-\d+\.aspx/i, listingPatterns: [/\/jobs\/[a-z0-9-]+$/i, /\/jobs\/[a-z0-9-]+\/[a-z0-9-]+$/i] },
+  { domain: "jobmail.co.za", jobPattern: /-id-\d+$/i, listingPatterns: [/\/jobs\/?$/i, /\/jobs\/[a-z0-9-]+\/?$/i] },
+  { domain: "pnet.co.za", jobPattern: /--[\w-]+--\d+-inline\.html/i, listingPatterns: [/\/jobs\/[a-z0-9-]+$/i, /\/jobs\/[a-z0-9-]+\?/i] },
+  { domain: "za.indeed.com", jobPattern: /\/viewjob\?jk=/i, listingPatterns: [/\/jobs\?/i] },
+  { domain: "linkedin.com", jobPattern: /\/jobs\/view\/\d+/i, listingPatterns: [/\/jobs\/search\//i] },
 ];
+
+export function isListingPage(url: string): boolean {
+  try {
+    const u = new URL(url);
+    const host = u.hostname.replace(/^www\./, "").toLowerCase();
+    const domain = JINA_SCRAPEABLE_DOMAINS.find(d => host === d.domain || host.endsWith(`.${d.domain}`));
+    if (!domain) return false;
+    return domain.listingPatterns.some(p => p.test(u.pathname + u.search));
+  } catch {
+    return false;
+  }
+}
+
+export function isIndividualJobPage(url: string): boolean {
+  try {
+    const u = new URL(url);
+    const host = u.hostname.replace(/^www\./, "").toLowerCase();
+    const domain = JINA_SCRAPEABLE_DOMAINS.find(d => host === d.domain || host.endsWith(`.${d.domain}`));
+    if (!domain) return false;
+    return domain.jobPattern.test(u.pathname + u.search);
+  } catch {
+    return false;
+  }
+}
 
 export async function searchGooglePages(params: SerpParams): Promise<{ title: string; link: string; snippet: string; domain: string }[]> {
   const allResults: { title: string; link: string; snippet: string; domain: string }[] = [];
@@ -328,7 +357,6 @@ export async function searchGooglePages(params: SerpParams): Promise<{ title: st
         if (!r.link) continue;
         try {
           const resultDomain = new URL(r.link).hostname.replace(/^www\./, "").toLowerCase();
-          // Only include results matching this specific domain
           if (resultDomain === domain || resultDomain.endsWith(`.${domain}`)) {
             allResults.push({
               title: r.title || "",
@@ -343,11 +371,77 @@ export async function searchGooglePages(params: SerpParams): Promise<{ title: st
       console.warn(`[SERPAPI GOOGLE] site:${domain} error:`, err);
     }
 
-    // Small delay between queries
     await new Promise((r) => setTimeout(r, 200));
   }
 
   return allResults;
+}
+
+export async function extractJobUrlsFromListingPage(
+  listingUrl: string,
+  jinaApiKey: string | null
+): Promise<string[]> {
+  try {
+    const headers: Record<string, string> = {
+      "Accept": "application/json",
+      "X-Return-Format": "markdown",
+      "X-Remove-Images": "true",
+    };
+    if (jinaApiKey) headers["Authorization"] = `Bearer ${jinaApiKey}`;
+
+    const res = await fetch(`https://r.jina.ai/${encodeURIComponent(listingUrl)}`, { headers });
+    if (!res.ok) {
+      console.warn(`[EXTRACT] Jina failed for listing page: ${res.status}`);
+      return [];
+    }
+
+    const json = await res.json();
+    if (json.code !== 200 || !json.data?.content) return [];
+
+    const content: string = json.data.content;
+    const baseHost = new URL(listingUrl).hostname.replace(/^www\./, "").toLowerCase();
+    const domain = JINA_SCRAPEABLE_DOMAINS.find(d => baseHost === d.domain || baseHost.endsWith(`.${d.domain}`));
+    if (!domain) return [];
+
+    // Extract all URLs from the markdown content
+    const urlRegex = /https?:\/\/[^\s\)>\]"]+/g;
+    const allUrls: string[] = [...(content.match(urlRegex) ?? [])];
+
+    // Also extract relative URLs and convert to absolute
+    const relativeUrlRegex = /\]\((\/[^\)]+)\)/g;
+    let match;
+    while ((match = relativeUrlRegex.exec(content)) !== null) {
+      allUrls.push(`https://${baseHost}${match[1]}`);
+    }
+
+    const jobUrls: string[] = [];
+    const seen = new Set<string>();
+
+    for (const rawUrl of allUrls) {
+      try {
+        const u = new URL(rawUrl);
+        const host = u.hostname.replace(/^www\./, "").toLowerCase();
+
+        // Must be same domain
+        if (host !== domain.domain && !host.endsWith(`.${domain.domain}`)) continue;
+
+        // Must match individual job page pattern
+        if (!domain.jobPattern.test(u.pathname + u.search)) continue;
+
+        const clean = u.origin + u.pathname;
+        if (!seen.has(clean)) {
+          seen.add(clean);
+          jobUrls.push(clean);
+        }
+      } catch {}
+    }
+
+    console.log(`[EXTRACT] Found ${jobUrls.length} individual job URLs from ${listingUrl}`);
+    return jobUrls.slice(0, 8);
+  } catch (err) {
+    console.warn(`[EXTRACT] Failed: ${err}`);
+    return [];
+  }
 }
 
 export async function scrapeJobPage(
@@ -382,10 +476,15 @@ export async function scrapeJobPage(
     // Validate this looks like an individual job page, not a search/listing page
     const lowerContent = content.toLowerCase();
     if (
+      lowerContent.includes("total jobs found") ||
       lowerContent.includes("results for") && lowerContent.includes("jobs in") ||
       lowerContent.includes("search results") ||
+      lowerContent.includes("refine your search") ||
+      lowerContent.includes("sort by") && lowerContent.includes("per page") ||
       lowerContent.match(/\d+\s+jobs?\s+found/i) ||
-      lowerContent.match(/\d+\s+results?\s+for/i)
+      lowerContent.match(/\d+\s+results?\s+for/i) ||
+      lowerContent.match(/show\s+\d+\s+\d+\s+\d+/i) ||
+      (lowerContent.includes("save this job") && lowerContent.split("save this job").length > 3)
     ) {
       console.log(`[SCRAPE] Rejected listing/search page: ${url}`);
       return null;

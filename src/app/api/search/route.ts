@@ -1,7 +1,7 @@
 // BUILD_CACHE_BUST: jun30-1
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { searchGoogleJobs, searchJSearch, searchAdzuna, searchLinkedInJobs, searchGooglePages, scrapeJobPage, type SerpJob } from "@/lib/serpapi";
+import { searchGoogleJobs, searchJSearch, searchAdzuna, searchLinkedInJobs, searchGooglePages, scrapeJobPage, extractJobUrlsFromListingPage, isListingPage, isIndividualJobPage, type SerpJob } from "@/lib/serpapi";
 import { extractTextFromPDF } from "@/lib/pdf";
 import { callAIWithFallback, lastAITier } from "@/lib/gemini";
 import { StreamWriter, type SearchEvent } from "@/lib/search-stream";
@@ -329,11 +329,11 @@ async function fetchAndFilterJobs(
         debugLog(`[SEARCH] LinkedIn failed: ${err}`);
         return [] as SerpJob[];
       }),
-      // Source 5: Google Search + Jina (CareerJunction + Job Mail)
+      // Source 5: Google Search + Jina (two-step crawl)
       (async (): Promise<{ title: string; link: string; snippet: string; domain: string }[]> => {
         try {
           const pages2 = await searchGooglePages(serpParams);
-          debugLog(`[GOOGLE-SCRAPE] ${pages2.length} URLs from CareerJunction/JobMail`);
+          debugLog(`[GOOGLE-SCRAPE] ${pages2.length} URLs from job boards (CJ/JobMail/Pnet/Indeed/LinkedIn)`);
           return pages2;
         } catch (err) {
           debugLog(`[GOOGLE-SCRAPE] Failed: ${err}`);
@@ -342,13 +342,33 @@ async function fetchAndFilterJobs(
       })(),
     ]);
 
-    // Scrape Google Search URLs with Jina
+    // Scrape Google Search URLs with Jina (two-step crawl)
     const scrapedGoogleJobs: SerpJob[] = [];
-    for (const v of googlePages.slice(0, 10)) {
-      const job = await scrapeJobPage(v.link, JINA_API ?? null);
-      if (job) {
-        job.title = job.title || v.title;
-        scrapedGoogleJobs.push(job);
+    for (const v of googlePages.slice(0, 5)) {
+      if (isIndividualJobPage(v.link)) {
+        // Already an individual job page — scrape directly
+        const job = await scrapeJobPage(v.link, JINA_API ?? null);
+        if (job) {
+          job.title = job.title || v.title;
+          scrapedGoogleJobs.push(job);
+        }
+      } else if (isListingPage(v.link)) {
+        // Listing page — extract individual URLs first
+        debugLog(`[GOOGLE-SCRAPE] Listing page detected, extracting URLs: ${v.link}`);
+        const individualUrls = await extractJobUrlsFromListingPage(v.link, JINA_API ?? null);
+        debugLog(`[GOOGLE-SCRAPE] Extracted ${individualUrls.length} individual URLs from ${v.domain}`);
+        for (const jobUrl of individualUrls.slice(0, 5)) {
+          const job = await scrapeJobPage(jobUrl, JINA_API ?? null);
+          if (job) scrapedGoogleJobs.push(job);
+          await new Promise((r) => setTimeout(r, 150));
+        }
+      } else {
+        // Unknown pattern — try scraping directly
+        const job = await scrapeJobPage(v.link, JINA_API ?? null);
+        if (job) {
+          job.title = job.title || v.title;
+          scrapedGoogleJobs.push(job);
+        }
       }
       await new Promise((r) => setTimeout(r, 150));
     }
