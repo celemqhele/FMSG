@@ -60,7 +60,18 @@ export function JobPostContent({ job }: { job: PublicJob }) {
     endTransition();
   }, [endTransition]);
 
-  const sourceLabel = job.source || "external listing";
+  const sourceLabel = (() => {
+    const s = (job.source || "").toLowerCase();
+    if (s.includes("linkedin")) return "LinkedIn";
+    if (s.includes("indeed")) return "Indeed";
+    if (s.includes("pnet") || s.includes("careerjunction")) return "PNet";
+    if (s === "google_jobs" || s.includes("google")) return "Google Jobs";
+    if (s === "jsearch") return "LinkedIn";
+    if (s.includes("glassdoor")) return "Glassdoor";
+    return job.source || "the original listing";
+  })();
+
+  const hasExternalUrl = job.apply_url && (job.apply_url.startsWith("http://") || job.apply_url.startsWith("https://"));
 
   return (
     <div className="max-w-3xl mx-auto px-4 pt-32 pb-24">
@@ -95,15 +106,18 @@ export function JobPostContent({ job }: { job: PublicJob }) {
             <Search size={16} />
             Find more jobs like this
           </button>
-          <a
-            href={job.apply_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex-1 flex items-center justify-center gap-2 px-6 py-3.5 text-sm font-medium text-white/80 border border-white/20 hover:bg-white/10 rounded-full transition-colors"
-          >
-            Apply on {sourceLabel}
-            <ExternalLink size={14} />
-          </a>
+          {hasExternalUrl && (
+            <a
+              href={job.apply_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => { e.stopPropagation(); window.open(job.apply_url, "_blank", "noopener,noreferrer"); e.preventDefault(); }}
+              className="flex-1 flex items-center justify-center gap-2 px-6 py-3.5 text-sm font-medium text-white/80 border border-white/20 hover:bg-white/10 rounded-full transition-colors"
+            >
+              Apply on {sourceLabel}
+              <ExternalLink size={14} />
+            </a>
+          )}
         </div>
       </div>
 
