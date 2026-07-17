@@ -19,7 +19,7 @@ test.describe("Smoke tests", () => {
 
   test("pricing page loads", async ({ page }) => {
     await page.goto("/pricing");
-    await expect(page.getByRole("heading", { name: /right plan/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /package/i })).toBeVisible();
   });
 
   test("about page loads", async ({ page }) => {

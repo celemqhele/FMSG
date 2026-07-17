@@ -1158,7 +1158,7 @@ export async function POST(request: NextRequest) {
         if (pf_mode) {
           const pfBalance = profile.persistent_finder_balance ?? 0;
           if (pfBalance <= 0) {
-            return NextResponse.json({ code: "LIMIT_003", message: "No Persistent Finder rounds remaining. Upgrade your plan." }, { status: 403 });
+            return NextResponse.json({ code: "LIMIT_003", message: "No Persistent Finder rounds remaining. Top up to continue." }, { status: 403 });
           }
         }
 

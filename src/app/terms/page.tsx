@@ -44,12 +44,12 @@ const sections = [
   {
     title: "7. Payments and Refunds",
     content:
-      "Paid plans and Persistent Finder credits are billed in advance via Paystack. All payments are final and non-refundable, except as required by applicable consumer protection law. By subscribing, you authorize recurring charges at the then-current rate until you cancel. Cancellation takes effect at the end of the current billing period. Paystack processes all payments; we do not store card details.",
+      "Paid packages and Persistent Finder credits are billed in advance via Paystack. All payments are final and non-refundable, except as required by applicable consumer protection law. By purchasing, you authorize a one-time charge at the listed rate. Paystack processes all payments; we do not store card details.",
   },
   {
     title: "8. Cancellation and Termination",
     content:
-      "You may cancel your subscription at any time from your account settings. Upon cancellation, you retain access until the end of the paid billing period. We may suspend or terminate your account, without refund, if we reasonably believe you have violated these Terms or engaged in prohibited conduct. You may delete your account at any time, which permanently removes all associated data.",
+      "You may cancel your package at any time. Upon cancellation, you retain access to your remaining credits until they are used up. We may suspend or terminate your account, without refund, if we reasonably believe you have violated these Terms or engaged in prohibited conduct. You may delete your account at any time, which permanently removes all associated data.",
   },
   {
     title: "9. Limitation of Liability",

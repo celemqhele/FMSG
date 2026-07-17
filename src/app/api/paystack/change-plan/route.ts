@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
   }
 
   if (newPlan === "Free") {
-    return NextResponse.json({ error: "Cannot switch to Free plan. Cancel your subscription instead." }, { status: 400 });
+    return NextResponse.json({ error: "Cannot switch to Free package." }, { status: 400 });
   }
 
   if (!PAYSTACK_SECRET_KEY) {
@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (!sub) {
-      return NextResponse.json({ error: "No active subscription found. Use the pricing page instead." }, { status: 400 });
+      return NextResponse.json({ error: "No active package found. Use the pricing page instead." }, { status: 400 });
     }
 
     const currentPlan = sub.plan;

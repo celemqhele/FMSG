@@ -382,7 +382,7 @@ export function PricingSection() {
         <div className="max-w-6xl mx-auto">
           <div className="text-center">
             <h2 className="text-3xl md:text-4xl font-semibold text-white tracking-tight">
-              Find the right plan
+              Choose your package
             </h2>
             <p className="mt-4 text-white/80">
               Pay once, no auto-renewal. Come back and top up whenever you&apos;re job hunting again.

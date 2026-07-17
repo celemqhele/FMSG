@@ -196,7 +196,7 @@ export default function PricingPage() {
         <main className="flex-1 pt-24 pb-24 px-6">
           <div className="max-w-6xl mx-auto">
             <div className="text-center mb-10">
-              <h1 className="text-3xl font-bold text-white">Find the right plan</h1>
+              <h1 className="text-3xl font-bold text-white">Choose your package</h1>
               <p className="mt-2 text-sm text-white/70">Pay once, no auto-renewal. Come back and top up whenever you&apos;re job hunting again.</p>
             </div>
 

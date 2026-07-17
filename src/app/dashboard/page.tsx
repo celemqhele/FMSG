@@ -805,19 +805,19 @@ export default function DashboardPage() {
               </p>
               <p className="text-sm text-white/90">
                 {showLimitModal === "LIMIT_001"
-                  ? "You've used all your free searches. Paid users receive priority AI processing. Upgrade your plan to continue searching."
+                  ? "You've used all your searches. Top up to continue searching."
                   : showLimitModal === "LIMIT_002"
-                  ? "You've used all your CV generations. Upgrade your plan to generate more."
+                  ? "You've used all your CV generations. Top up to generate more."
                   : showLimitModal === "LIMIT_003"
-                  ? "You've used all your Persistent Finder rounds. Upgrade your plan or buy more PF credits."
-                  : "You've run out of credits. Upgrade your plan."}
+                  ? "You've used all your Persistent Finder rounds. Top up to continue."
+                  : "You've run out of credits. Top up to continue."}
               </p>
               <div className="flex flex-wrap justify-center gap-3">
                 <button
                   onClick={() => { setShowLimitModal(null); router.push("/upgrade"); }}
                   className="px-5 py-2.5 text-sm font-semibold text-[var(--color-error)] bg-white rounded-full hover:bg-white/90 transition-colors"
                 >
-                  Upgrade Plan
+                  Top Up
                 </button>
                 {showLimitModal === "LIMIT_003" && (
                   <button

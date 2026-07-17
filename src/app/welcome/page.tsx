@@ -65,12 +65,12 @@ function WelcomeContent() {
               Welcome to {displayName}!
             </h1>
             <p className="mt-2 text-sm text-white/70">
-              Your plan is active and you&apos;re ready to find your next opportunity.
+              Your package is active and you&apos;re ready to find your next opportunity.
             </p>
 
             <div className="mt-8 liquid-glass rounded-xl p-6 text-left">
               <h2 className="text-lg font-semibold text-white mb-4">
-                {displayName} Plan - What you get
+                {displayName} Package - What you get
               </h2>
 
               <div className="grid grid-cols-3 gap-4 mb-6">

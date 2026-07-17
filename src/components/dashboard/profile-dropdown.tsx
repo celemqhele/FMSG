@@ -133,7 +133,7 @@ export function ProfileDropdown() {
             className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-white hover:bg-white/5 transition-all duration-300"
           >
             <Sparkles size={15} className="opacity-60" />
-            Manage Subscription
+            Top Up
           </button>
         </div>
         <div className="h-px bg-white/10 mx-3" />
