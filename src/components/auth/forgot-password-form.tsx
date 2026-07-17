@@ -31,12 +31,12 @@ export function ForgotPasswordForm({ onBack, onSent }: ForgotPasswordFormProps) 
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-      <p className="text-sm text-[var(--color-text-secondary)] text-center">
+      <p className="text-sm text-gray-500 text-center">
         Enter your email and we&apos;ll send you a reset link.
       </p>
-      {error && <p className="text-sm text-red-400 text-center">{error}</p>}
+      {error && <p className="text-sm text-red-500 text-center">{error}</p>}
       <div>
-        <label htmlFor="forgot-email" className="block text-sm font-medium text-[var(--color-text-primary)] mb-1.5">
+        <label htmlFor="forgot-email" className="block text-sm font-medium text-gray-900 mb-1.5">
           Email
         </label>
         <input
@@ -45,21 +45,21 @@ export function ForgotPasswordForm({ onBack, onSent }: ForgotPasswordFormProps) 
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
-          className="w-full px-3.5 py-2.5 text-sm rounded-lg border border-[var(--color-border)] bg-transparent text-[var(--color-text-primary)] placeholder:text-[var(--color-text-secondary)] focus:outline-none focus:border-[var(--color-accent)] transition-colors"
+          className="w-full px-3.5 py-2.5 text-sm rounded-lg border border-gray-300 bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-[var(--color-accent)] transition-colors"
           placeholder="you@example.com"
         />
       </div>
       <button
         type="submit"
         disabled={loading}
-        className="mt-2 w-full px-5 py-2.5 text-sm font-medium text-white bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] rounded-full transition-colors disabled:opacity-50"
+        className="mt-2 w-full px-5 py-2.5 text-sm font-semibold text-white bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] rounded-full transition-colors disabled:opacity-50"
       >
         {loading ? "Sending..." : "Send Reset Link"}
       </button>
       <button
         type="button"
         onClick={onBack}
-        className="text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-accent)] transition-colors"
+        className="text-sm text-gray-500 hover:text-[var(--color-accent)] transition-colors"
       >
         Back to Log In
       </button>

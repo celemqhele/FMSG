@@ -43,9 +43,9 @@ export function LogInForm({ onForgotPassword, onLoggedIn }: LogInFormProps) {
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-      {error && <p className="text-sm text-red-400 text-center">{error}</p>}
+      {error && <p className="text-sm text-red-500 text-center">{error}</p>}
       <div>
-        <label htmlFor="login-email" className="block text-sm font-medium text-[var(--color-text-primary)] mb-1.5">
+        <label htmlFor="login-email" className="block text-sm font-medium text-gray-900 mb-1.5">
           Email
         </label>
         <input
@@ -54,12 +54,12 @@ export function LogInForm({ onForgotPassword, onLoggedIn }: LogInFormProps) {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
-          className="w-full px-3.5 py-2.5 text-sm rounded-lg border border-[var(--color-border)] bg-transparent text-[var(--color-text-primary)] placeholder:text-[var(--color-text-secondary)] focus:outline-none focus:border-[var(--color-accent)] transition-colors"
+          className="w-full px-3.5 py-2.5 text-sm rounded-lg border border-gray-300 bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-[var(--color-accent)] transition-colors"
           placeholder="you@example.com"
         />
       </div>
       <div>
-        <label htmlFor="login-password" className="block text-sm font-medium text-[var(--color-text-primary)] mb-1.5">
+        <label htmlFor="login-password" className="block text-sm font-medium text-gray-900 mb-1.5">
           Password
         </label>
         <input
@@ -68,16 +68,16 @@ export function LogInForm({ onForgotPassword, onLoggedIn }: LogInFormProps) {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required
-          className="w-full px-3.5 py-2.5 text-sm rounded-lg border border-[var(--color-border)] bg-transparent text-[var(--color-text-primary)] placeholder:text-[var(--color-text-secondary)] focus:outline-none focus:border-[var(--color-accent)] transition-colors"
+          className="w-full px-3.5 py-2.5 text-sm rounded-lg border border-gray-300 bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-[var(--color-accent)] transition-colors"
           placeholder="Enter your password"
         />
       </div>
-      <label className="flex items-center gap-2 text-sm text-[var(--color-text-secondary)]">
+      <label className="flex items-center gap-2 text-sm text-gray-600">
         <input
           type="checkbox"
           checked={keepSignedIn}
           onChange={(e) => setKeepSignedIn(e.target.checked)}
-          className="rounded border-[var(--color-border)] text-[var(--color-accent)] focus:ring-[var(--color-accent)]"
+          className="rounded border-gray-300 text-[var(--color-accent)] focus:ring-[var(--color-accent)]"
         />
         Keep me signed in
       </label>
@@ -85,7 +85,7 @@ export function LogInForm({ onForgotPassword, onLoggedIn }: LogInFormProps) {
         <button
           type="button"
           onClick={onForgotPassword}
-          className="text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-accent)] transition-colors"
+          className="text-sm text-gray-500 hover:text-[var(--color-accent)] transition-colors"
         >
           Forgot password?
         </button>
@@ -93,7 +93,7 @@ export function LogInForm({ onForgotPassword, onLoggedIn }: LogInFormProps) {
       <button
         type="submit"
         disabled={loading}
-        className="mt-2 w-full px-5 py-2.5 text-sm font-semibold text-gray-900 bg-white hover:bg-white/90 rounded-full transition-colors disabled:opacity-50"
+        className="mt-2 w-full px-5 py-2.5 text-sm font-semibold text-white bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] rounded-full transition-colors disabled:opacity-50"
       >
         {loading ? "Logging in..." : "Log In"}
       </button>

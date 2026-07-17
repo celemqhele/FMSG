@@ -74,7 +74,7 @@ export function AuthModal({ isOpen, onClose, defaultTab = "signup" }: AuthModalP
         />
 
         <div
-          className={`relative w-full max-w-md mx-4 p-6 rounded-2xl liquid-glass transition-all duration-200 ${
+          className={`relative w-full max-w-md mx-4 p-6 rounded-2xl bg-white transition-all duration-200 ${
             isOpen ? "opacity-100 scale-100" : "opacity-0 scale-95"
           }`}
           style={{
@@ -87,13 +87,13 @@ export function AuthModal({ isOpen, onClose, defaultTab = "signup" }: AuthModalP
           onClick={(e) => e.stopPropagation()}
         >
           {screen !== "forgot-sent" && (
-            <div className="flex gap-1 mb-6 p-1 rounded-lg bg-[var(--color-surface)]">
+            <div className="flex gap-1 mb-6 p-1 rounded-lg bg-gray-100">
               <button
                 onClick={() => switchScreen("login")}
                 className={`flex-1 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
                   screen === "login"
-                    ? "bg-white dark:bg-[#2C2C2E] text-[#1C1C1E] dark:text-white shadow-[var(--shadow-sm)]"
-                    : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
+                    ? "bg-white text-gray-900 shadow-sm"
+                    : "text-gray-400 hover:text-gray-900"
                 }`}
               >
                 Log In
@@ -102,8 +102,8 @@ export function AuthModal({ isOpen, onClose, defaultTab = "signup" }: AuthModalP
                 onClick={() => switchScreen("signup")}
                 className={`flex-1 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
                   screen === "signup"
-                    ? "bg-white dark:bg-[#2C2C2E] text-[#1C1C1E] dark:text-white shadow-[var(--shadow-sm)]"
-                    : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
+                    ? "bg-white text-gray-900 shadow-sm"
+                    : "text-gray-400 hover:text-gray-900"
                 }`}
               >
                 Sign Up
@@ -127,10 +127,10 @@ export function AuthModal({ isOpen, onClose, defaultTab = "signup" }: AuthModalP
             )}
             {screen === "forgot-sent" && (
               <div className="flex flex-col items-center gap-4 text-center">
-                <p className="text-sm text-[var(--color-text-secondary)]">
+                <p className="text-sm text-gray-500">
                   Check your email. We sent a password reset link to
                 </p>
-                <p className="text-sm font-medium text-[var(--color-text-primary)]">{pendingEmail}</p>
+                <p className="text-sm font-medium text-gray-900">{pendingEmail}</p>
                 <button
                   onClick={() => switchScreen("login")}
                   className="text-sm text-[var(--color-accent)] hover:underline transition-colors"
