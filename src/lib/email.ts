@@ -159,6 +159,32 @@ export async function sendPFReceipt(to: string, runs: number, amount: string) {
   await sendEmail(to, subject, html, "pf-receipt");
 }
 
+export async function sendSearchReceipt(to: string, count: number, amount: string) {
+  const subject = `Receipt: ${count} extra search${count > 1 ? "es" : ""}`;
+  const html = wrap(`
+    <p style="font-size:15px;line-height:1.6;color:#F5F5F7;margin:0 0 16px">Here's your receipt for your search credit purchase.</p>
+    <table style="width:100%;border-collapse:collapse;margin:20px 0">
+      <tr><td style="padding:10px 0;font-size:14px;color:#8E8E93">Item</td><td style="padding:10px 0;text-align:right;font-size:14px;color:#E4E4E4">${count} search${count > 1 ? "es" : ""}</td></tr>
+      <tr style="border-top:1px solid rgba(255,255,255,0.06)"><td style="padding:12px 0;font-size:14px;font-weight:600;color:#F5F5F7">Total</td><td style="padding:12px 0;text-align:right;font-size:14px;font-weight:600;color:#F5F5F7">${amount}</td></tr>
+    </table>
+    <p style="font-size:12px;color:#8E8E93;margin:16px 0 0">Charge will appear on your statement as "FMSG".</p>
+  `);
+  await sendEmail(to, subject, html, "search-receipt");
+}
+
+export async function sendCVReceipt(to: string, count: number, amount: string) {
+  const subject = `Receipt: ${count} CV generation${count > 1 ? "s" : ""}`;
+  const html = wrap(`
+    <p style="font-size:15px;line-height:1.6;color:#F5F5F7;margin:0 0 16px">Here's your receipt for your CV generation credit purchase.</p>
+    <table style="width:100%;border-collapse:collapse;margin:20px 0">
+      <tr><td style="padding:10px 0;font-size:14px;color:#8E8E93">Item</td><td style="padding:10px 0;text-align:right;font-size:14px;color:#E4E4E4">${count} CV generation${count > 1 ? "s" : ""}</td></tr>
+      <tr style="border-top:1px solid rgba(255,255,255,0.06)"><td style="padding:12px 0;font-size:14px;font-weight:600;color:#F5F5F7">Total</td><td style="padding:12px 0;text-align:right;font-size:14px;font-weight:600;color:#F5F5F7">${amount}</td></tr>
+    </table>
+    <p style="font-size:12px;color:#8E8E93;margin:16px 0 0">Charge will appear on your statement as "FMSG".</p>
+  `);
+  await sendEmail(to, subject, html, "cv-receipt");
+}
+
 export async function sendPlanUpgraded(to: string, fromPlan: string, toPlan: string, amount: string) {
   const subject = `Package purchased: ${toPlan}`;
   const html = wrap(`

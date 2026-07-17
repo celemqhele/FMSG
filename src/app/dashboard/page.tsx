@@ -916,11 +916,16 @@ export default function DashboardPage() {
                   First purchase? Get 85% off Seeker / 60% off Hunter & Pro
                 </p>
               )}
+              {showLimitModal === "LIMIT_002" && plan === "free" && (
+                <p className="text-xs text-white/70 font-medium">
+                  First purchase? Get 85% off Seeker / 60% off Hunter & Pro
+                </p>
+              )}
               <div className="flex flex-wrap justify-center gap-3">
                 <button
                   onClick={() => {
                     setShowLimitModal(null);
-                    if (showLimitModal === "LIMIT_003" || (showLimitModal === "LIMIT_001" && plan === "free")) {
+                    if (showLimitModal === "LIMIT_003" || (showLimitModal === "LIMIT_001" && plan === "free") || (showLimitModal === "LIMIT_002" && plan === "free")) {
                       router.push("/upgrade?discount=first_order_85");
                     } else {
                       router.push("/upgrade");
