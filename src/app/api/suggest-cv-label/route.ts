@@ -42,57 +42,7 @@ export async function POST(request: NextRequest) {
       .replace(/\b\w/g, (c: string) => c.toUpperCase())
       .trim();
 
-    if (!text || text.length < 50) {
-      debugLog(`[CV-LABEL] Text extraction returned ${text.length} chars, using filename fallback`);
-      return NextResponse.json({ label: filenameLabel || "CV" });
-    }
-
-    let label = "CV";
-
-    try {
-      const raw = await callAIWithFallback(
-        `You are reading a candidate's CV. Based on their most recent job title
-and primary experience, generate a short, descriptive label for this CV.
-
-Rules:
-- Format: "[Role] CV"
-- Use the candidate's most recent or strongest role — not their first job.
-- Pick ONE clear role. Do not combine multiple roles.
-- Do NOT return just "CV" — always include the role.
-
-Examples:
-"Key Account Manager CV"
-"Regional Sales Manager CV"
-"Software Engineer CV"
-"Senior IT Auditor CV"
-"DevOps Engineer CV"
-"Financial Analyst CV"
-"Marketing Manager CV"
-
-Return ONLY valid JSON with no markdown:
-{ "label": "Key Account Manager CV" }`,
-        text.slice(0, 10000),
-        "suggest CV label",
-        { responseMimeType: "application/json", temperature: 0.3 },
-      );
-
-      try {
-        const cleaned = raw.slice(raw.indexOf("{"), raw.lastIndexOf("}") + 1);
-        const data = JSON.parse(cleaned);
-        const parsed = (data.label ?? "").trim();
-        if (parsed && parsed.toLowerCase() !== "cv") {
-          label = parsed;
-        }
-      } catch (parseErr) {
-        debugLog(`[CV-LABEL] JSON parse failed, using filename fallback`);
-      }
-    } catch (aiErr) {
-      debugLog(`[CV-LABEL] AI call failed: ${aiErr instanceof Error ? aiErr.message : String(aiErr)}`);
-    }
-
-    const final = label !== "CV" ? label : filenameLabel;
-    debugLog(`[CV-LABEL] Final label: "${final}"`);
-    return NextResponse.json({ label: final || "CV" });
+    return NextResponse.json({ label: filenameLabel || "CV" });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     debugLog(`[CV-LABEL] Fatal error: ${msg}`);
