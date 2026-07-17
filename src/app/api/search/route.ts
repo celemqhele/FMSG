@@ -316,6 +316,7 @@ async function fetchAndFilterJobs(
   let rawJobs: SerpJob[];
   try {
     // ─── 5-source parallel search ──────────────────────────────────────────
+    console.log("[PIPELINE] Starting 5-source parallel search:", JSON.stringify({ query, location: sanitisedLocation, pages }));
     const [googleJobs, jsearchJobs, adzunaJobs, linkedInJobs, googlePages] = await Promise.all([
       // Source 1: Google Jobs (SerpAPI)
       withTimeout(
@@ -323,7 +324,7 @@ async function fetchAndFilterJobs(
         15_000, "Google Jobs"
       ).catch((err) => {
         const msg = err instanceof Error ? err.message : String(err);
-        debugLog(`[SEARCH] Google Jobs failed: ${msg.slice(0, 150)}`);
+        console.error(`[PIPELINE] Google Jobs TIMEOUT/FAIL: ${msg.slice(0, 200)}`);
         return [] as SerpJob[];
       }),
       // Source 2: JSearch API (RapidAPI) — full inline descriptions
@@ -331,7 +332,7 @@ async function fetchAndFilterJobs(
         searchJSearch(serpParams),
         8_000, "JSearch"
       ).catch((err) => {
-        debugLog(`[SEARCH] JSearch failed: ${err}`);
+        console.error(`[PIPELINE] JSearch TIMEOUT/FAIL: ${err}`);
         return [] as SerpJob[];
       }),
       // Source 3: Adzuna API — SA-exclusive listings
@@ -339,7 +340,7 @@ async function fetchAndFilterJobs(
         searchAdzuna(serpParams),
         8_000, "Adzuna"
       ).catch((err) => {
-        debugLog(`[SEARCH] Adzuna failed: ${err}`);
+        console.error(`[PIPELINE] Adzuna TIMEOUT/FAIL: ${err}`);
         return [] as SerpJob[];
       }),
       // Source 4: LinkedIn public guest API
@@ -347,7 +348,7 @@ async function fetchAndFilterJobs(
         searchLinkedInJobs(serpParams),
         10_000, "LinkedIn"
       ).catch((err) => {
-        debugLog(`[SEARCH] LinkedIn failed: ${err}`);
+        console.error(`[PIPELINE] LinkedIn TIMEOUT/FAIL: ${err}`);
         return [] as SerpJob[];
       }),
       // Source 5: Google Search + Jina (two-step crawl)
@@ -355,41 +356,58 @@ async function fetchAndFilterJobs(
         searchGooglePages(serpParams),
         12_000, "Google Search/Jina"
       ).catch((err) => {
-        debugLog(`[GOOGLE-SCRAPE] Failed: ${err}`);
+        console.error(`[PIPELINE] Google Search/Jina TIMEOUT/FAIL: ${err}`);
         return [] as { title: string; link: string; snippet: string; domain: string }[];
       }),
     ]);
 
+    console.log(`[PIPELINE] Sources returned: GoogleJobs=${googleJobs.length} JSearch=${jsearchJobs.length} Adzuna=${adzunaJobs.length} LinkedIn=${linkedInJobs.length} GooglePages=${googlePages.length}`);
+
     // Scrape Google Search URLs with Jina (two-step crawl)
+    console.log(`[PIPELINE] Starting two-step crawl for ${googlePages.length} Google Search URLs`);
     const scrapedGoogleJobs: SerpJob[] = [];
     for (const v of googlePages.slice(0, 5)) {
       if (isIndividualJobPage(v.link)) {
         // Already an individual job page — scrape directly
+        console.log(`[PIPELINE] Individual job page, scraping directly: ${v.link}`);
         const job = await scrapeJobPage(v.link, JINA_API ?? null);
         if (job) {
           job.title = job.title || v.title;
           scrapedGoogleJobs.push(job);
+          console.log(`[PIPELINE] Scraped OK: "${job.title}" at "${job.company_name}"`);
+        } else {
+          console.warn(`[PIPELINE] Scrape returned null: ${v.link}`);
         }
       } else if (isListingPage(v.link)) {
         // Listing page — extract individual URLs first
-        debugLog(`[GOOGLE-SCRAPE] Listing page detected, extracting URLs: ${v.link}`);
+        console.log(`[PIPELINE] Listing page detected, extracting URLs: ${v.link}`);
         const individualUrls = await extractJobUrlsFromListingPage(v.link, JINA_API ?? null);
-        debugLog(`[GOOGLE-SCRAPE] Extracted ${individualUrls.length} individual URLs from ${v.domain}`);
+        console.log(`[PIPELINE] Extracted ${individualUrls.length} individual URLs from ${v.domain}`);
         for (const jobUrl of individualUrls.slice(0, 5)) {
           const job = await scrapeJobPage(jobUrl, JINA_API ?? null);
-          if (job) scrapedGoogleJobs.push(job);
+          if (job) {
+            scrapedGoogleJobs.push(job);
+            console.log(`[PIPELINE] Scraped OK: "${job.title}" at "${job.company_name}"`);
+          } else {
+            console.warn(`[PIPELINE] Scrape returned null: ${jobUrl}`);
+          }
           await new Promise((r) => setTimeout(r, 150));
         }
       } else {
         // Unknown pattern — try scraping directly
+        console.log(`[PIPELINE] Unknown pattern, scraping directly: ${v.link}`);
         const job = await scrapeJobPage(v.link, JINA_API ?? null);
         if (job) {
           job.title = job.title || v.title;
           scrapedGoogleJobs.push(job);
+          console.log(`[PIPELINE] Scraped OK: "${job.title}" at "${job.company_name}"`);
+        } else {
+          console.warn(`[PIPELINE] Scrape returned null: ${v.link}`);
         }
       }
       await new Promise((r) => setTimeout(r, 150));
     }
+    console.log(`[PIPELINE] Two-step crawl complete: ${scrapedGoogleJobs.length} jobs scraped`);
 
     // Merge all sources with dedup (priority: JSearch > Google Jobs > LinkedIn > Google Search > Adzuna)
     rawJobs = [];
@@ -420,13 +438,14 @@ async function fetchAndFilterJobs(
     }
 
     // Priority order: JSearch (best inline) → Google Jobs → LinkedIn → Google Search (Jina) → Adzuna (snippet)
+    console.log("[PIPELINE] Merging sources (priority: JSearch > Google > LinkedIn > Scrape > Adzuna)");
     addJobs(jsearchJobs);
     addJobs(googleJobs);
     addJobs(linkedInJobs);
     addJobs(scrapedGoogleJobs);
     addJobs(adzunaJobs);
 
-    debugLog(`[SEARCH] Sources: Google=${googleJobs.length} JSearch=${jsearchJobs.length} Adzuna=${adzunaJobs.length} LinkedIn=${linkedInJobs.length} Scrape=${scrapedGoogleJobs.length} → Total=${rawJobs.length}`);
+    console.log(`[PIPELINE] Dedup complete: ${rawJobs.length} unique jobs from ${googleJobs.length + jsearchJobs.length + adzunaJobs.length + linkedInJobs.length + scrapedGoogleJobs.length} total`);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.includes("(400)")) {
