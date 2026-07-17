@@ -500,7 +500,7 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
                 <Upload size={22} className="text-white/60" />
               </div>
               <p className="text-sm text-white/80 text-center">
-                Upload your CVs (PDF) to auto-fill job titles and location
+                Upload your CVs (PDF or DOCX) to auto-fill job titles and location
               </p>
               <p className="text-xs text-white/50">Max 10MB per file, up to 4 CVs</p>
               <input

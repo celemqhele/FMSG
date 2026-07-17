@@ -213,7 +213,7 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
             Upload your CVs
           </h1>
           <p className="mt-3 text-gray-500">
-            PDF only, max 10MB per file, up to 4 CVs. Your files are stored securely.
+            PDF or DOCX, max 10MB per file, up to 4 CVs. Your files are stored securely.
           </p>
         </div>
         {error && <p className="text-sm text-red-500 text-center">{error}</p>}
