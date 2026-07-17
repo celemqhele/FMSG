@@ -9,13 +9,15 @@ interface SearchPillProps {
   onSearch: (query: string, profileId?: string | null, pfMode?: boolean, dateFilterDays?: number | null) => void;
   onAbort: () => void;
   searching: boolean;
+  pfMode: boolean;
+  onPfModeChange: (v: boolean) => void;
+  referralQuery?: string | null;
 }
 
-export function SearchPill({ onSearch, onAbort, searching }: SearchPillProps) {
+export function SearchPill({ onSearch, onAbort, searching, pfMode, onPfModeChange, referralQuery }: SearchPillProps) {
   const { activeProfileId } = useActiveProfile();
   const [displayTitle, setDisplayTitle] = useState("Search for jobs");
   const [bouncing, setBouncing] = useState(false);
-  const [pfMode, setPfMode] = useState(false);
   const [showAbortConfirm, setShowAbortConfirm] = useState(false);
   const [abortMounted, setAbortMounted] = useState(false);
   const [dateFilterDays, setDateFilterDays] = useState<number | null>(null);
@@ -28,7 +30,7 @@ export function SearchPill({ onSearch, onAbort, searching }: SearchPillProps) {
     { label: "3 weeks", value: 21 },
   ] as const;
 
-  const handleSearch = async () => {
+  const handleSearch = async (overrideQuery?: string, overrideProfileId?: string | null) => {
     if (searching) return;
     setBouncing(true);
     setTimeout(() => setBouncing(false), 400);
@@ -41,7 +43,7 @@ export function SearchPill({ onSearch, onAbort, searching }: SearchPillProps) {
     let loc = "";
     let ind = "";
 
-    let usedProfileId = activeProfileId;
+    let usedProfileId = overrideProfileId ?? activeProfileId;
 
     if (!usedProfileId) {
       const { data: firstSp } = await supabase
@@ -71,12 +73,17 @@ export function SearchPill({ onSearch, onAbort, searching }: SearchPillProps) {
       }
     }
 
-    const pick = titles[Math.floor(Math.random() * titles.length)] ?? "";
-    if (!pick) {
-      console.log("[SEARCH-PILL] No job titles found — cannot search");
+    const query = overrideQuery || (() => {
+      const pick = titles[Math.floor(Math.random() * titles.length)] ?? "";
+      if (!pick) return "";
+      return [pick, ind, loc].filter(Boolean).join(" ");
+    })();
+
+    if (!query) {
+      console.log("[SEARCH-PILL] No query available — cannot search");
       return;
     }
-    const query = [pick, ind, loc].filter(Boolean).join(" ");
+
     setDisplayTitle(query);
     onSearch(query, usedProfileId, pfMode, dateFilterDays);
   };
@@ -97,7 +104,7 @@ export function SearchPill({ onSearch, onAbort, searching }: SearchPillProps) {
   };
 
   const togglePfMode = () => {
-    setPfMode(!pfMode);
+    onPfModeChange(!pfMode);
   };
 
   const cycleDateLeft = () => {
@@ -206,7 +213,7 @@ export function SearchPill({ onSearch, onAbort, searching }: SearchPillProps) {
         </button>
       )}
       <button
-        onClick={handleSearch}
+        onClick={() => handleSearch()}
         disabled={searching}
         className="flex items-center gap-2 px-6 h-10 mr-2 rounded-full bg-[var(--color-accent)] text-white text-sm font-medium hover:bg-[var(--color-accent-hover)] transition-colors disabled:opacity-50"
       >

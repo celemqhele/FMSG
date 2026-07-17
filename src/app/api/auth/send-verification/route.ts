@@ -36,8 +36,7 @@ export async function POST(request: NextRequest) {
 
     const { error: updateErr } = await supabase
       .from("profiles")
-      .update({ email_verification_hash: hash })
-      .eq("id", user.id);
+      .upsert({ id: user.id, email_verification_hash: hash }, { onConflict: "id" });
 
     if (updateErr) {
       console.error("[SEND-VERIFY] DB update failed:", updateErr);

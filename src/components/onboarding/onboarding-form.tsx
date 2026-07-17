@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useState, useRef, type ReactNode } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Upload, Loader2, Plus, X, FileText } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -18,10 +18,6 @@ interface ExtractedData {
 }
 
 type Step = "upload" | "extracting" | "review";
-
-const JOB_TYPE_OPTIONS = [
-  "Full-time", "Part-time", "Contract", "Freelance", "Remote", "Hybrid", "Internship",
-];
 
 interface OnboardingFormProps {
   onOnboarded?: () => void;
@@ -47,6 +43,17 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
   const [cvVariations, setCvVariations] = useState<{ name: string; file_path: string }[]>([]);
   const [labellingPaths, setLabellingPaths] = useState<Set<string>>(new Set());
 
+  const [industry, setIndustry] = useState("");
+  const [industryStep1, setIndustryStep1] = useState("");
+  const [industryStep2, setIndustryStep2] = useState("");
+  const [industryStep3, setIndustryStep3] = useState("");
+  const [industryStep4, setIndustryStep4] = useState("");
+  const [industryStep5, setIndustryStep5] = useState("");
+  const [suggestingIndustry, setSuggestingIndustry] = useState(false);
+  const [suggestingLadder, setSuggestingLadder] = useState(false);
+  const suggestedIndustryRef = useRef(false);
+  const suggestedLadderRef = useRef(false);
+
   const handleFile = async (files: FileList | File[]) => {
     setError("");
     const fileArr = Array.from(files).slice(0, 4);
@@ -60,7 +67,6 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
     const { data: { session } } = await supabase.auth.getSession();
 
     try {
-      // Upload all files to storage in parallel
       const uploads = fileArr.map(async (f) => {
         const ext = f.name.split('.').pop();
         const filePath = `${session?.user?.id ?? "unknown"}/${crypto.randomUUID()}.${ext}`;
@@ -74,7 +80,6 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
       const uploaded = await Promise.all(uploads);
       const allPaths = uploaded.map((u) => u.filePath);
 
-      // Extract profile data from the first file only
       const formData = new FormData();
       formData.append("file", uploaded[0].file);
       const res = await fetch("/api/extract-cv", {
@@ -97,8 +102,9 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
       setLocation(data.preferred_location ?? "");
       setCurrentSalary(data.current_salary ?? null);
       setDesiredSalary(data.desired_salary ?? null);
+      setIndustry(data.industry ?? "");
+      suggestedIndustryRef.current = true;
 
-      // Build variations with empty names
       const variations = allPaths.map((p) => ({ name: "", file_path: p }));
       setCvVariations(variations);
 
@@ -130,12 +136,60 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
         });
       });
 
+      // Auto-suggest industry from job titles (if not already set from CV extraction)
+      const titles = data.job_titles ?? [];
+      if (!data.industry && titles.length > 0 && session) {
+        setSuggestingIndustry(true);
+        fetch("/api/suggest-industry", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ job_titles: titles }),
+        }).then(async (r) => {
+          if (r.ok) {
+            const d = await r.json();
+            if (d.industry) setIndustry(d.industry);
+          }
+        }).catch(() => {}).finally(() => setSuggestingIndustry(false));
+      }
+
       setStep("review");
     } catch {
       setError("Could not analyze CV. Please try again.");
       setStep("upload");
     }
   };
+
+  // Auto-suggest industry ladder after industry is set
+  useEffect(() => {
+    if (step !== "review" || !industry || suggestedLadderRef.current || suggestingLadder) return;
+    if (industryStep1) return; // already populated
+    suggestedLadderRef.current = true;
+    setSuggestingLadder(true);
+
+    const supabase = createClient();
+    supabase.auth.getSession().then(async ({ data }: { data: { session: { access_token: string } | null } }) => {
+      const session = data?.session;
+      if (!session) { setSuggestingLadder(false); return; }
+      try {
+        const res = await fetch("/api/suggest-industry-ladder", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ industry, job_titles: jobTitles }),
+        });
+        if (res.ok) {
+          const ladder = await res.json();
+          if (ladder.steps) {
+            setIndustryStep1(ladder.steps[0]?.value ?? "");
+            setIndustryStep2(ladder.steps[1]?.value ?? "");
+            setIndustryStep3(ladder.steps[2]?.value ?? "");
+            setIndustryStep4(ladder.steps[3]?.value ?? "");
+            setIndustryStep5(ladder.steps[4]?.value ?? "");
+          }
+        }
+      } catch {}
+      setSuggestingLadder(false);
+    });
+  }, [step, industry, jobTitles]);
 
   const addJobTitle = () => {
     const t = jobTitleInput.trim();
@@ -179,24 +233,32 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
 
     const { data: existingSP } = await supabase.from("search_profiles").select("id").eq("user_id", user.id).limit(1);
     const profileName = (jobTitles[0] ?? "General").slice(0, 50);
+    const cleanedLocation = location
+      .replace(/\b(Remote|Hybrid|On-site|Online|Work from home|WFH|Flexible|Anywhere)\b/gi, "")
+      .replace(/[\s,;/-]+/g, " ")
+      .trim();
+
+    const spData = {
+      name: profileName,
+      job_titles: jobTitles,
+      job_types: jobTypes,
+      location: cleanedLocation,
+      industry: industry.trim(),
+      industry_step_1: industryStep1,
+      industry_step_2: industryStep2,
+      industry_step_3: industryStep3,
+      industry_step_4: industryStep4,
+      industry_step_5: industryStep5,
+      industry_ladder_generated_at: new Date().toISOString(),
+      cv_variations: cvVariations.map((cv) => ({ name: cv.name || "CV", file_path: cv.file_path })),
+    };
 
     if (existingSP?.length) {
-      await supabase.from("search_profiles").update({
-        name: profileName,
-        job_titles: jobTitles,
-        job_types: jobTypes,
-        location,
-        cv_variations: cvVariations.map((cv) => ({ name: cv.name || "CV", file_path: cv.file_path })),
-      }).eq("user_id", user.id);
+      await supabase.from("search_profiles").update(spData).eq("user_id", user.id);
     } else {
-      const variations = cvVariations.map((cv) => ({ name: cv.name || "CV", file_path: cv.file_path }));
       await supabase.from("search_profiles").insert({
         user_id: user.id,
-        name: profileName,
-        job_titles: jobTitles,
-        job_types: jobTypes,
-        location,
-        cv_variations: variations,
+        ...spData,
         is_default: true,
       });
     }
@@ -325,16 +387,23 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Job Types</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">Preferred Location</label>
+          <input value={location} onChange={(e) => setLocation(e.target.value)} className={inputClass(!!location)} placeholder="City or province" />
+          {!location && <p className="mt-1 text-xs text-yellow-600">Missing — fill in manually</p>}
+          <p className="mt-1 text-xs text-gray-400">City or country only. Select work type below.</p>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Work Type</label>
           <div className="flex flex-wrap gap-2">
-            {JOB_TYPE_OPTIONS.map((t) => (
+            {["On-site", "Hybrid", "Remote"].map((t) => (
               <button
                 key={t}
                 onClick={() => toggleJobType(t)}
-                className={`px-3 py-1.5 text-xs font-medium rounded-full border transition-colors ${
+                className={`px-4 py-2 text-sm font-medium rounded-lg border transition-colors ${
                   jobTypes.includes(t)
-                    ? "bg-[var(--color-accent)] border-[var(--color-accent)] text-white"
-                    : "bg-gray-100 border-gray-200 text-gray-600 hover:text-gray-900 hover:border-gray-300"
+                    ? "bg-[var(--color-accent)]/10 border-[var(--color-accent)] text-[var(--color-accent)]"
+                    : "bg-gray-50 border-gray-200 text-gray-600 hover:text-gray-900 hover:border-gray-300"
                 }`}
               >
                 {t}
@@ -342,11 +411,51 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
             ))}
           </div>
         </div>
+      </section>
+
+      <section className="space-y-4">
+        <h2 className="text-lg font-semibold text-gray-900">Industry</h2>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">
+            Industry
+            {suggestingIndustry && <span className="ml-2 text-[10px] text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded">AI suggested</span>}
+          </label>
+          <input value={industry} onChange={(e) => setIndustry(e.target.value)} className={inputClass(!!industry)} placeholder="e.g. Fintech, Healthcare, E-commerce" />
+          {!industry && !suggestingIndustry && <p className="mt-1 text-xs text-yellow-600">Missing — fill in manually</p>}
+        </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1.5">Preferred Location</label>
-          <input value={location} onChange={(e) => setLocation(e.target.value)} className={inputClass(!!location)} placeholder="City or province" />
-          {!location && <p className="mt-1 text-xs text-yellow-600">Missing — fill in manually</p>}
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="text-sm font-medium text-gray-700">
+              Industry Ladder
+              <span className="ml-2 text-[10px] font-normal text-gray-400">(AI-populated — edit any step)</span>
+            </label>
+            {suggestingLadder && <Loader2 size={12} className="text-blue-500 animate-spin" />}
+          </div>
+          <p className="text-xs text-gray-400 mb-2">
+            Controls how Persistent Finder broadens your industry across 5 search rounds.
+          </p>
+          <div className="space-y-2">
+            {[
+              { label: "Step 1 — Hyper-Niche", value: industryStep1, setter: setIndustryStep1, placeholder: "e.g. Private Wealth Banking" },
+              { label: "Step 2 — Niche", value: industryStep2, setter: setIndustryStep2, placeholder: "e.g. Wealth Management" },
+              { label: "Step 3 — Sub-Sector", value: industryStep3, setter: setIndustryStep3, placeholder: "e.g. Banking" },
+              { label: "Step 4 — Industry", value: industryStep4, setter: setIndustryStep4, placeholder: "e.g. Financial Services" },
+              { label: "Step 5 — Broad Sector", value: industryStep5, setter: setIndustryStep5, placeholder: "e.g. Financial Services" },
+            ].map((s) => (
+              <div key={s.label} className="space-y-0.5">
+                <label className="text-[11px] text-gray-500">{s.label}</label>
+                <input
+                  value={s.value}
+                  onChange={(e) => s.setter(e.target.value)}
+                  placeholder={s.placeholder}
+                  className={`w-full px-3 py-1.5 rounded-lg border text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:border-[var(--color-accent)] transition-colors ${
+                    s.value ? "bg-gray-50 border-gray-300" : "bg-yellow-50 border-yellow-300"
+                  }`}
+                />
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 

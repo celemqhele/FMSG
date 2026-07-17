@@ -133,6 +133,8 @@ export default function DashboardPage() {
   const [showPfPromo, setShowPfPromo] = useState(false);
   const [pfPromoChecked, setPfPromoChecked] = useState(false);
   const [referralJob, setReferralJob] = useState<{ slug: string; company: string; job_title: string; apply_url: string } | null>(null);
+  const [pfMode, setPfMode] = useState(false);
+  const referralAutoSearchDone = useRef(false);
 
   useEffect(() => { endTransition(); }, [endTransition]);
 
@@ -218,6 +220,21 @@ export default function DashboardPage() {
     }
   }, []);
 
+  // Auto-trigger referral search after profile is loaded and user is onboarded
+  useEffect(() => {
+    if (!profileChecked || needsOnboarding || referralAutoSearchDone.current || searching) return;
+    const stored = localStorage.getItem("fmsg_referral");
+    if (!stored) return;
+    let parsed: { slug?: string; company?: string; job_title?: string; apply_url?: string } | null = null;
+    try { parsed = JSON.parse(stored); } catch {}
+    if (parsed?.job_title) {
+      referralAutoSearchDone.current = true;
+      localStorage.removeItem("fmsg_referral");
+      setReferralJob(parsed as any);
+      handleSearch(parsed.job_title, activeProfileId, undefined, undefined, parsed.apply_url);
+    }
+  }, [profileChecked, needsOnboarding, searching, activeProfileId]);
+
   // Show search guidance popup for first-time users after onboarding
   useEffect(() => {
     if (!profileChecked) return;
@@ -295,8 +312,8 @@ export default function DashboardPage() {
     return sorted;
   }, [results, sortMode]);
 
-  const handleSearch = useCallback(async (query: string, profileId?: string | null, pfMode?: boolean, dateFilterDays?: number | null) => {
-    console.log("[DASHBOARD] Search clicked:", { query, profileId, pfMode, dateFilterDays, time: new Date().toISOString() });
+  const handleSearch = useCallback(async (query: string, profileId?: string | null, pfMode?: boolean, dateFilterDays?: number | null, referralUrl?: string) => {
+    console.log("[DASHBOARD] Search clicked:", { query, profileId, pfMode, dateFilterDays, referralUrl, time: new Date().toISOString() });
     setSearching(true);
     setProgress(0);
     setHasSearched(true);
@@ -325,7 +342,7 @@ export default function DashboardPage() {
           Authorization: `Bearer ${session.access_token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ query, profile_id: profileId, pf_mode: pfMode, date_filter_days: dateFilterDays ?? null, platforms: selectedPlatforms.includes("all") ? null : selectedPlatforms }),
+        body: JSON.stringify({ query, profile_id: profileId, pf_mode: pfMode, date_filter_days: dateFilterDays ?? null, platforms: selectedPlatforms.includes("all") ? null : selectedPlatforms, referral_url: referralUrl ?? null }),
         signal: abortRef.current.signal,
       });
 
@@ -691,7 +708,7 @@ export default function DashboardPage() {
 
         {activeTab === "search" && (
           <>
-            <SearchPill onSearch={handleSearch} onAbort={handleAbort} searching={searching} />
+            <SearchPill onSearch={handleSearch} onAbort={handleAbort} searching={searching} pfMode={pfMode} onPfModeChange={setPfMode} referralQuery={referralJob?.job_title} />
             <div className="flex flex-wrap justify-center gap-1.5">
               <BalanceChips balances={balances} plan={plan} />
             </div>
@@ -772,7 +789,7 @@ export default function DashboardPage() {
                 onEnable={() => {
                   sessionStorage.setItem("fmsg_pf_promo_shown", "true");
                   setShowPfPromo(true);
-                  setPfActive(true);
+                  setPfMode(true);
                 }}
                 onDismiss={() => {
                   sessionStorage.setItem("fmsg_pf_promo_shown", "true");
@@ -784,6 +801,21 @@ export default function DashboardPage() {
             {!searching && hasSearched && results.length === 0 && !continuationToken && (
               <div className="text-center py-20">
                 <p className="text-[var(--color-text-secondary)] text-sm">{resultMessage || "No matching jobs found. Try updating your profile or search again."}</p>
+              </div>
+            )}
+
+            {!searching && hasSearched && results.length > 0 && plan === "free" && balances.search === 0 && (
+              <div className="liquid-glass rounded-xl p-5 text-center space-y-3">
+                <p className="text-sm text-white/90 font-medium">
+                  First purchase? Get <span className="text-[var(--color-accent)] font-bold">85% off Seeker</span> / <span className="text-[var(--color-accent)] font-bold">60% off Hunter & Pro</span>
+                </p>
+                <p className="text-xs text-white/60">One-time discount — never repeated</p>
+                <button
+                  onClick={() => router.push("/upgrade?discount=first_order_85")}
+                  className="px-5 py-2 text-sm font-semibold text-white bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] rounded-full transition-colors"
+                >
+                  Claim Discount
+                </button>
               </div>
             )}
 
@@ -879,11 +911,16 @@ export default function DashboardPage() {
                   85% off Seeker / 60% off Hunter & Pro — first purchase only
                 </p>
               )}
+              {showLimitModal === "LIMIT_001" && plan === "free" && (
+                <p className="text-xs text-white/70 font-medium">
+                  First purchase? Get 85% off Seeker / 60% off Hunter & Pro
+                </p>
+              )}
               <div className="flex flex-wrap justify-center gap-3">
                 <button
                   onClick={() => {
                     setShowLimitModal(null);
-                    if (showLimitModal === "LIMIT_003") {
+                    if (showLimitModal === "LIMIT_003" || (showLimitModal === "LIMIT_001" && plan === "free")) {
                       router.push("/upgrade?discount=first_order_85");
                     } else {
                       router.push("/upgrade");
@@ -981,7 +1018,7 @@ export default function DashboardPage() {
           localStorage.setItem("fmsg_guided_search_shown", "true");
           setShowGuidance(false);
           if (referralJob) {
-            handleSearch(referralJob.job_title, activeProfileId);
+            handleSearch(referralJob.job_title, activeProfileId, undefined, undefined, referralJob.apply_url);
           } else if (activeProfileId) {
             const supabase = createClient();
             supabase.from("search_profiles").select("job_titles").eq("id", activeProfileId).maybeSingle()

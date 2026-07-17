@@ -1037,6 +1037,16 @@ function insertJobRows(dataClient: any, rows: any[]) {
   });
 }
 
+function pinReferralJob(results: any[], referralUrl: string | null): any[] {
+  if (!referralUrl || results.length === 0) return results;
+  const idx = results.findIndex((r) => r.job_url === referralUrl);
+  if (idx > 0) {
+    const [pinned] = results.splice(idx, 1);
+    results.unshift(pinned);
+  }
+  return results;
+}
+
 
 export async function POST(request: NextRequest) {
   const supabase = getSupabase();
@@ -1061,7 +1071,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { query, profile_id, pf_mode, continuation, date_filter_days, platforms } = body;
+    const { query, profile_id, pf_mode, continuation, date_filter_days, platforms, referral_url } = body;
     const maxAgeDays = date_filter_days ? parseInt(String(date_filter_days), 10) : undefined;
     const isContinuation = !!continuation;
 
@@ -1339,6 +1349,7 @@ Return ONLY valid JSON (no markdown, no code fences):
         balances: liveBalances,
         plan: livePlan,
         maxAgeDays,
+        referralUrl: referral_url ?? null,
       };
     }
 
@@ -1387,7 +1398,9 @@ Return ONLY valid JSON (no markdown, no code fences):
 
               if (result.results.length > 0) {
                 const withIds = result.results.map((r: JobRow) => ({ ...r, id: crypto.randomUUID() }));
-                sendComplete({ type: "complete", results: withIds.map(normalize), progress: 100, ...(totalFiltered > 0 ? { filtered_summary: result.filteredCounts } : {}) });
+                const normalized = withIds.map(normalize);
+                pinReferralJob(normalized, state.referralUrl);
+                sendComplete({ type: "complete", results: normalized, progress: 100, ...(totalFiltered > 0 ? { filtered_summary: result.filteredCounts } : {}) });
                 const rows = withIds.map((r) => ({
                   id: r.id,
                   user_id: r.user_id, search_id: r.search_id, profile_id: state.profile_id ?? null,
@@ -1449,6 +1462,7 @@ Return ONLY valid JSON (no markdown, no code fences):
                 dedupSets: { history: [...state.dedupSets.history], saved: [...state.dedupSets.saved], blocked: [...state.dedupSets.blocked], rejected: [...state.dedupSets.rejected] },
                 maxAgeDays: state.maxAgeDays,
                 profile_id: state.profile_id,
+                referralUrl: state.referralUrl,
               })).toString("base64"),
             });
             writer.close();
@@ -1669,6 +1683,8 @@ Return ONLY valid JSON (no markdown, no code fences):
 
           if (allResults.length > 0) {
             const withIds = allResults.map((r) => ({ ...r, id: crypto.randomUUID() }));
+            const normalized = withIds.map(normalize);
+            pinReferralJob(normalized, state.referralUrl);
 
             const pfMessage = pfAborted
               ? `Search stopped early, showing ${allResults.length} results found so far`
@@ -1676,7 +1692,7 @@ Return ONLY valid JSON (no markdown, no code fences):
 
             sendComplete({
               type: "complete",
-              results: withIds.map(normalize),
+              results: normalized,
               progress: 100,
               pf_mode: true,
               pf_rounds: pfRoundsExecuted,
