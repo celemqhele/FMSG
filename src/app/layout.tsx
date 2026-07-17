@@ -54,6 +54,13 @@ export default function RootLayout({
       <head>
         <script src="/theme-init.js" />
         <link rel="sitemap" type="application/xml" href="/sitemap.xml" />
+        <script async src="https://www.googletagmanager.com/gtag/js?id=G-4QMEHZSCXF"></script>
+        <script dangerouslySetInnerHTML={{ __html: `
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+          gtag('config', 'G-4QMEHZSCXF');
+        `}} />
       </head>
       <body className="min-h-dvh flex flex-col" data-build-id="jun27-v2">
         <ThemeProvider>
