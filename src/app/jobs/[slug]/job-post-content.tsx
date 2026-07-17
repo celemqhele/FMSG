@@ -1,9 +1,11 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { ExternalLink, Search } from "lucide-react";
 import { AuthModal } from "@/components/auth/auth-modal";
 import { useTransition } from "@/components/providers/transition-provider";
+import { createClient } from "@/lib/supabase/client";
+import { useRouter } from "next/navigation";
 
 interface PublicJob {
   id: string;
@@ -21,9 +23,18 @@ interface PublicJob {
 export function JobPostContent({ job }: { job: PublicJob }) {
   const [authOpen, setAuthOpen] = useState(false);
   const [authTab, setAuthTab] = useState<"login" | "signup">("signup");
+  const [isSignedIn, setIsSignedIn] = useState<boolean | null>(null);
   const { startTransition, endTransition } = useTransition();
+  const router = useRouter();
 
-  const handleFindMore = useCallback(() => {
+  useEffect(() => {
+    const supabase = createClient();
+    supabase.auth.getSession().then(({ data: { session } }: { data: { session: any } }) => {
+      setIsSignedIn(!!session);
+    });
+  }, []);
+
+  const storeReferral = useCallback(() => {
     localStorage.setItem(
       "fmsg_referral",
       JSON.stringify({
@@ -33,11 +44,22 @@ export function JobPostContent({ job }: { job: PublicJob }) {
         apply_url: job.apply_url,
       })
     );
+  }, [job]);
+
+  const handleFindMore = useCallback(() => {
+    storeReferral();
     startTransition();
-    setAuthTab("signup");
-    setAuthOpen(true);
-    setTimeout(endTransition, 800);
-  }, [job, startTransition, endTransition]);
+    if (isSignedIn === true) {
+      setTimeout(() => {
+        endTransition();
+        router.push("/dashboard");
+      }, 800);
+    } else {
+      setAuthTab("signup");
+      setAuthOpen(true);
+      setTimeout(endTransition, 800);
+    }
+  }, [isSignedIn, storeReferral, startTransition, endTransition, router]);
 
   const handleClose = useCallback(() => {
     setAuthOpen(false);
@@ -61,7 +83,7 @@ export function JobPostContent({ job }: { job: PublicJob }) {
 
         <button
           onClick={handleFindMore}
-          className="w-full flex items-center justify-center gap-2 px-6 py-3.5 text-sm font-semibold text-white bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] rounded-full transition-colors"
+          className="w-full flex items-center justify-center gap-2 px-6 py-3.5 text-sm font-semibold text-gray-900 bg-white hover:bg-white/90 rounded-full transition-colors"
         >
           <Search size={16} />
           Find more jobs like this
@@ -74,7 +96,7 @@ export function JobPostContent({ job }: { job: PublicJob }) {
         <div className="flex flex-col sm:flex-row gap-3">
           <button
             onClick={handleFindMore}
-            className="flex-1 flex items-center justify-center gap-2 px-6 py-3.5 text-sm font-semibold text-white bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] rounded-full transition-colors"
+            className="flex-1 flex items-center justify-center gap-2 px-6 py-3.5 text-sm font-semibold text-gray-900 bg-white hover:bg-white/90 rounded-full transition-colors"
           >
             <Search size={16} />
             Find more jobs like this

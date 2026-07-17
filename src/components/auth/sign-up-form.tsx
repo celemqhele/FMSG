@@ -198,7 +198,7 @@ export function SignUpForm({ onSuccess }: { onSuccess: (data: SignUpData) => voi
       <button
         type="submit"
         disabled={loading}
-        className="mt-2 w-full px-5 py-2.5 text-sm font-medium text-white bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] rounded-full transition-colors disabled:opacity-50"
+        className="mt-2 w-full px-5 py-2.5 text-sm font-semibold text-gray-900 bg-white hover:bg-white/90 rounded-full transition-colors disabled:opacity-50"
       >
         {loading ? "Creating account..." : "Create Account"}
       </button>
