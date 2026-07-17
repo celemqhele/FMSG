@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { callAIWithFallback } from "@/lib/gemini";
 import { extractTextFromPDF } from "@/lib/pdf";
 import { extractTextFromDOCX } from "@/lib/docx";
+import { ocrPdfBuffer } from "@/lib/ocr";
 import { checkRateLimit } from "@/lib/rate-limit";
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
@@ -101,7 +102,7 @@ export async function POST(request: NextRequest) {
 
     const buffer = Buffer.from(await file.arrayBuffer());
 
-    // Extract text from PDF (server-side only, never stored)
+    // Extract text from file
     let text: string;
     try {
       text = isPDF ? await extractTextFromPDF(buffer) : await extractTextFromDOCX(buffer);
@@ -109,6 +110,26 @@ export async function POST(request: NextRequest) {
       const parseMsg = parseErr instanceof Error ? parseErr.message : String(parseErr);
       console.error("File extraction error:", parseMsg);
       return NextResponse.json({ error: `Failed to parse file: ${parseMsg.slice(0, 200)}`, code: "PARSE_ERROR" }, { status: 400 });
+    }
+
+    // Always run OCR on PDFs as safety net for scanned CVs
+    let ocrText = "";
+    if (isPDF) {
+      try {
+        console.log("[CV-EXTRACT] Running OCR on PDF...");
+        ocrText = await ocrPdfBuffer(buffer);
+        console.log(`[CV-EXTRACT] OCR extracted ${ocrText.length} chars`);
+      } catch (ocrErr) {
+        console.error("[CV-EXTRACT] OCR failed, continuing with text layer:", ocrErr instanceof Error ? ocrErr.message : String(ocrErr));
+      }
+    }
+
+    // Use the longer result (text layer vs OCR)
+    if (ocrText.length > text.length) {
+      console.log("[CV-EXTRACT] OCR result longer, using OCR text");
+      text = ocrText;
+    } else {
+      console.log(`[CV-EXTRACT] Using text layer (${text.length} chars) vs OCR (${ocrText.length} chars)`);
     }
 
     if (!text.trim()) {

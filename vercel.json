@@ -1,6 +1,12 @@
 {
   "framework": "nextjs",
   "buildCommand": "rm -rf .next && next build",
+  "functions": {
+    "app/api/extract-cv/route.ts": {
+      "memory": 1024,
+      "maxDuration": 30
+    }
+  },
   "git": {
     "deploymentEnabled": {
       "beta": true,
