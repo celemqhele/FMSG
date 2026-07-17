@@ -11,7 +11,7 @@ export function SearchGuidancePopup({ isOpen, onDismiss }: SearchGuidancePopupPr
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center">
+    <div className="fixed inset-0 z-[60] flex items-start justify-center pt-[120px]">
       <div className="absolute inset-0 bg-black/40" onClick={onDismiss} />
       <div className="relative w-full max-w-sm mx-4 animate-[auth-screen-in_300ms_ease-out]">
         <div className="bg-white rounded-2xl p-6 text-center space-y-4 shadow-2xl">

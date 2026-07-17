@@ -2,7 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { searchGoogleJobs, searchJSearch, searchAdzuna, searchLinkedInJobs, searchGooglePages, scrapeJobPage, extractJobUrlsFromListingPage, isListingPage, isIndividualJobPage, type SerpJob } from "@/lib/serpapi";
-import { extractTextFromPDF } from "@/lib/pdf";
+import { extractText } from "@/lib/pdf";
 import { callAIWithFallback, lastAITier } from "@/lib/gemini";
 import { StreamWriter, type SearchEvent } from "@/lib/search-stream";
 import { debugLog } from "@/lib/debug";
@@ -1256,7 +1256,7 @@ export async function POST(request: NextRequest) {
             .download(cv.file_path);
           if (fileData) {
             const buffer = Buffer.from(await fileData.arrayBuffer());
-            const text = await extractTextFromPDF(buffer);
+            const text = await extractText(buffer, cv.file_path);
             return { name: cv.name || "CV", text: text.slice(0, 5000) };
           }
         } catch {}

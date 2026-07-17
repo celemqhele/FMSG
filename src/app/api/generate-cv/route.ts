@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { callAIWithFallback } from "@/lib/gemini";
-import { extractTextFromPDF } from "@/lib/pdf";
+import { extractText } from "@/lib/pdf";
 import { checkRateLimit } from "@/lib/rate-limit";
 import {
   Document,
@@ -379,7 +379,7 @@ export async function POST(request: NextRequest) {
         const { data: fileData, error: dlErr } = await supabase.storage.from("cv-files").download(cvFilePath);
         if (!dlErr && fileData) {
           const buffer = Buffer.from(await fileData.arrayBuffer());
-          cvText = await extractTextFromPDF(buffer);
+          cvText = await extractText(buffer, cvFilePath);
         }
       } catch {
         // CV unavailable — proceed with empty

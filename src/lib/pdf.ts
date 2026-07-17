@@ -1,4 +1,5 @@
 import pdfParse from "pdf-parse/lib/pdf-parse.js";
+import { extractTextFromDOCX } from "./docx";
 
 export async function extractTextFromPDF(buffer: Buffer): Promise<string> {
   const origWarn = console.warn;
@@ -13,4 +14,16 @@ export async function extractTextFromPDF(buffer: Buffer): Promise<string> {
   } finally {
     console.warn = origWarn;
   }
+}
+
+export async function extractText(buffer: Buffer, filename?: string): Promise<string> {
+  const isDocx = filename?.toLowerCase().endsWith(".docx");
+  if (isDocx) {
+    try {
+      return await extractTextFromDOCX(buffer);
+    } catch {
+      return "";
+    }
+  }
+  return extractTextFromPDF(buffer);
 }

@@ -36,7 +36,7 @@ export function ContinuePopup({ isOpen, message, onContinue, onCancel }: Continu
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center transition-opacity duration-300 ease-out"
+      className="fixed inset-0 z-[60] flex items-start justify-center pt-[120px] transition-opacity duration-300 ease-out"
       style={{ opacity: (phase === "open" && mounted) ? 1 : 0 }}
     >
       <div

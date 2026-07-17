@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { callAIWithFallback } from "@/lib/gemini";
-import { extractTextFromPDF } from "@/lib/pdf";
-import { extractTextFromDOCX } from "@/lib/docx";
+import { extractText } from "@/lib/pdf";
 import { debugLog } from "@/lib/debug";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -33,10 +32,7 @@ export async function POST(request: NextRequest) {
     }
 
     const buffer = Buffer.from(await fileData.arrayBuffer());
-    const isDocx = filePath.toLowerCase().endsWith(".docx");
-    const cvText = isDocx
-      ? await extractTextFromDOCX(buffer).catch(() => "")
-      : await extractTextFromPDF(buffer).catch(() => "");
+    const cvText = await extractText(buffer, filePath).catch(() => "");
     const text = cvText.trim();
 
     // Derive filename fallback from path (e.g. "Key_Account_Manager_CV.pdf" → "Key Account Manager")

@@ -117,6 +117,7 @@ export default function DashboardPage() {
   const [filteredSummary, setFilteredSummary] = useState<FilteredSummary | null>(null);
   const [continuationToken, setContinuationToken] = useState<string | null>(null);
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
+  const [profileChecked, setProfileChecked] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState<"prompt" | "form" | "done">("prompt");
   const [onboardingMounted, setOnboardingMounted] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
@@ -167,6 +168,11 @@ export default function DashboardPage() {
     return () => window.removeEventListener("refresh-balances", handler);
   }, [refreshBalances]);
 
+  // Load balances on mount so chips are visible before first search
+  useEffect(() => {
+    if (authChecked) refreshBalances();
+  }, [authChecked, refreshBalances]);
+
   useEffect(() => {
     const supabase = createClient();
     supabase.auth.getSession().then(({ data }: { data: { session: any } | null }) => {
@@ -188,6 +194,7 @@ export default function DashboardPage() {
             if (profile.account_status) setAccountStatus(profile.account_status);
             setEmailVerified(profile.email_verified ?? false);
           }
+          setProfileChecked(true);
         });
     });
 
@@ -213,21 +220,21 @@ export default function DashboardPage() {
 
   // Show search guidance popup for first-time users after onboarding
   useEffect(() => {
-    if (!authChecked) return;
+    if (!profileChecked) return;
     const guided = localStorage.getItem("fmsg_guided_search_shown");
     if (!guided && !needsOnboarding) {
       const timer = setTimeout(() => setShowGuidance(true), 500);
       return () => clearTimeout(timer);
     }
-  }, [authChecked, needsOnboarding]);
+  }, [profileChecked, needsOnboarding]);
 
   // Check if PF promo should be shown (session-based, after first search completes)
   useEffect(() => {
     if (pfPromoChecked) return;
     if (!searching && hasSearched && results.length > 0) {
       const pfShown = sessionStorage.getItem("fmsg_pf_promo_shown");
-      if (!pfShown) {
-        setShowPfPromo(false);
+      if (pfShown) {
+        setShowPfPromo(true);
       }
       setPfPromoChecked(true);
     }
@@ -975,6 +982,15 @@ export default function DashboardPage() {
           setShowGuidance(false);
           if (referralJob) {
             handleSearch(referralJob.job_title, activeProfileId);
+          } else if (activeProfileId) {
+            const supabase = createClient();
+            supabase.from("search_profiles").select("job_titles").eq("id", activeProfileId).maybeSingle()
+              .then(({ data }: { data: any }) => {
+                const titles: string[] = data?.job_titles ?? [];
+                if (titles.length > 0) {
+                  handleSearch(titles[0], activeProfileId);
+                }
+              });
           }
         }}
       />

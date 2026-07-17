@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { callAIWithFallback } from "@/lib/gemini";
-import { extractTextFromPDF } from "@/lib/pdf";
+import { extractText } from "@/lib/pdf";
 import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } from "docx";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -90,7 +90,7 @@ export async function POST(request: NextRequest) {
     const buffer = Buffer.from(await pdfData.arrayBuffer());
     let cvText: string;
     try {
-      cvText = await extractTextFromPDF(buffer);
+      cvText = await extractText(buffer, profile.cv_file_path);
     } catch {
       return NextResponse.json({ error: "Failed to read CV content." }, { status: 500 });
     }
