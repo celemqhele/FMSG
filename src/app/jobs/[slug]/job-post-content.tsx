@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { ExternalLink, Search } from "lucide-react";
+import { Search } from "lucide-react";
 import { AuthModal } from "@/components/auth/auth-modal";
 import { useTransition } from "@/components/providers/transition-provider";
 import { createClient } from "@/lib/supabase/client";
@@ -87,24 +87,13 @@ export function JobPostContent({ job }: { job: PublicJob }) {
           {job.paraphrased_description}
         </div>
 
-        <div className="flex flex-col sm:flex-row gap-3">
-          <button
-            onClick={handleFindMore}
-            className="flex-1 flex items-center justify-center gap-2 px-6 py-3.5 text-sm font-semibold text-gray-900 bg-white hover:bg-white/90 rounded-full transition-colors"
-          >
-            <Search size={16} />
-            Find more jobs like this
-          </button>
-          <a
-            href={job.apply_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex-1 flex items-center justify-center gap-2 px-6 py-3.5 text-sm font-medium text-white/80 border border-white/20 hover:bg-white/10 rounded-full transition-colors"
-          >
-            Apply on {sourceLabel}
-            <ExternalLink size={14} />
-          </a>
-        </div>
+        <button
+          onClick={handleFindMore}
+          className="w-full flex items-center justify-center gap-2 px-6 py-3.5 text-sm font-semibold text-gray-900 bg-white hover:bg-white/90 rounded-full transition-colors"
+        >
+          <Search size={16} />
+          Find more jobs like this
+        </button>
       </div>
 
       <AuthModal isOpen={authOpen} onClose={handleClose} defaultTab={authTab} />
