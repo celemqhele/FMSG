@@ -115,13 +115,13 @@ export async function searchJSearch(params: SerpParams): Promise<SerpJob[]> {
   if (!apiKey) return [];
 
   const query = [params.q, params.location, "South Africa"].filter(Boolean).join(" ");
-  const url = new URL("https://jsearch.p.rapidapi.com/search");
+  const url = new URL("https://jsearch.p.rapidapi.com/search-v2");
   url.searchParams.set("query", query);
   url.searchParams.set("page", "1");
   url.searchParams.set("num_pages", "1");
   url.searchParams.set("country", "za");
 
-  console.log("[JSEARCH] GET https://jsearch.p.rapidapi.com/search");
+  console.log("[JSEARCH] GET https://jsearch.p.rapidapi.com/search-v2");
 
   try {
     const res = await fetch(url.toString(), {
@@ -138,7 +138,7 @@ export async function searchJSearch(params: SerpParams): Promise<SerpJob[]> {
     }
 
     const data = await res.json();
-    const jobs = data.data ?? [];
+    const jobs = data.data?.jobs ?? data.data ?? [];
 
     return jobs.map((j: any) => {
       const fullDesc = j.job_description || "";
