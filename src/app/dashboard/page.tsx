@@ -6,6 +6,8 @@ import { X, ArrowRight, Mail, Upload } from "lucide-react";
 import { DashboardLayout, useActiveProfile } from "@/components/dashboard/dashboard-layout";
 import { SearchPill } from "@/components/dashboard/search-pill";
 import { JobResultCard } from "@/components/dashboard/job-result-card";
+import { SearchGuidancePopup } from "@/components/dashboard/search-guidance-popup";
+import { PFPromoPopup } from "@/components/dashboard/pf-promo-popup";
 import dynamic from "next/dynamic";
 const PFPurchaseModal = dynamic(() => import("@/components/dashboard/pf-purchase-modal").then((mod) => mod.PFPurchaseModal), { ssr: false });
 const OnboardingForm = dynamic(() => import("@/components/onboarding/onboarding-form").then((mod) => mod.OnboardingForm), { ssr: false });
@@ -126,6 +128,10 @@ export default function DashboardPage() {
   const [plan, setPlan] = useState("free");
   const [pauseMessage, setPauseMessage] = useState("");
   const { activeProfileId } = useActiveProfile();
+  const [showGuidance, setShowGuidance] = useState(false);
+  const [showPfPromo, setShowPfPromo] = useState(false);
+  const [pfPromoChecked, setPfPromoChecked] = useState(false);
+  const [referralJob, setReferralJob] = useState<{ slug: string; company: string; job_title: string; apply_url: string } | null>(null);
 
   useEffect(() => { endTransition(); }, [endTransition]);
 
@@ -192,6 +198,40 @@ export default function DashboardPage() {
     window.addEventListener("show-limit-modal", handler);
     return () => window.removeEventListener("show-limit-modal", handler);
   }, [router]);
+
+  // Check for referral job from localStorage (set by /jobs/[slug] page)
+  useEffect(() => {
+    const stored = localStorage.getItem("fmsg_referral");
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored);
+        setReferralJob(parsed);
+        localStorage.removeItem("fmsg_referral");
+      } catch {}
+    }
+  }, []);
+
+  // Show search guidance popup for first-time users after onboarding
+  useEffect(() => {
+    if (!authChecked) return;
+    const guided = localStorage.getItem("fmsg_guided_search_shown");
+    if (!guided && !needsOnboarding) {
+      const timer = setTimeout(() => setShowGuidance(true), 500);
+      return () => clearTimeout(timer);
+    }
+  }, [authChecked, needsOnboarding]);
+
+  // Check if PF promo should be shown (session-based, after first search completes)
+  useEffect(() => {
+    if (pfPromoChecked) return;
+    if (!searching && hasSearched && results.length > 0) {
+      const pfShown = sessionStorage.getItem("fmsg_pf_promo_shown");
+      if (!pfShown) {
+        setShowPfPromo(false);
+      }
+      setPfPromoChecked(true);
+    }
+  }, [searching, hasSearched, results.length, pfPromoChecked]);
 
   useEffect(() => {
     if (showLimitModal) {
@@ -719,6 +759,21 @@ export default function DashboardPage() {
               </div>
             )}
 
+            {!searching && hasSearched && results.length > 0 && !showPfPromo && !pfActive && balances.pf === 0 && plan === "free" && (
+              <PFPromoPopup
+                isOpen={true}
+                onEnable={() => {
+                  sessionStorage.setItem("fmsg_pf_promo_shown", "true");
+                  setShowPfPromo(true);
+                  setPfActive(true);
+                }}
+                onDismiss={() => {
+                  sessionStorage.setItem("fmsg_pf_promo_shown", "true");
+                  setShowPfPromo(true);
+                }}
+              />
+            )}
+
             {!searching && hasSearched && results.length === 0 && !continuationToken && (
               <div className="text-center py-20">
                 <p className="text-[var(--color-text-secondary)] text-sm">{resultMessage || "No matching jobs found. Try updating your profile or search again."}</p>
@@ -809,12 +864,24 @@ export default function DashboardPage() {
                   : showLimitModal === "LIMIT_002"
                   ? "You've used all your CV generations. Top up to generate more."
                   : showLimitModal === "LIMIT_003"
-                  ? "You've used all your Persistent Finder rounds. Top up to continue."
+                  ? "You've seen what FMSG can do — now unlock the full experience with Persistent Finder."
                   : "You've run out of credits. Top up to continue."}
               </p>
+              {showLimitModal === "LIMIT_003" && (
+                <p className="text-xs text-white/70 font-medium">
+                  85% off Seeker / 60% off Hunter & Pro — first purchase only
+                </p>
+              )}
               <div className="flex flex-wrap justify-center gap-3">
                 <button
-                  onClick={() => { setShowLimitModal(null); router.push("/upgrade"); }}
+                  onClick={() => {
+                    setShowLimitModal(null);
+                    if (showLimitModal === "LIMIT_003") {
+                      router.push("/upgrade?discount=first_order_85");
+                    } else {
+                      router.push("/upgrade");
+                    }
+                  }}
                   className="px-5 py-2.5 text-sm font-semibold text-[var(--color-error)] bg-white rounded-full hover:bg-white/90 transition-colors"
                 >
                   Top Up
@@ -900,6 +967,18 @@ export default function DashboardPage() {
       )}
 
       </PageTransitionWrapper>
+
+      <SearchGuidancePopup
+        isOpen={showGuidance}
+        onDismiss={() => {
+          localStorage.setItem("fmsg_guided_search_shown", "true");
+          setShowGuidance(false);
+          if (referralJob) {
+            handleSearch(referralJob.job_title, activeProfileId);
+          }
+        }}
+      />
+
     </DashboardLayout>
   );
 }

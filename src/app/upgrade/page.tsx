@@ -74,7 +74,7 @@ function TopUpContent() {
     const discountParam = searchParams.get("discount");
     if (!discountParam) return;
 
-    const type = discountParam === "first_order" ? "first_order" : discountParam === "reengagement_40" ? "reengagement_40" : null;
+    const type = discountParam === "first_order_85" ? "first_order_85" : discountParam === "first_order" ? "first_order_85" : discountParam === "reengagement_40" ? "reengagement_40" : null;
     if (!type) return;
 
     supabase.auth.getSession().then(async ({ data: { session } }: { data: { session: any } }) => {
@@ -87,7 +87,7 @@ function TopUpContent() {
           const data = await res.json();
           if (data.eligible) {
             setDiscountPercent(data.discount_percent);
-            setDiscountType(type === "first_order" ? "FIRST_ORDER_50" : "REENGAGEMENT_40");
+            setDiscountType(type === "first_order_85" ? "FIRST_ORDER_85" : "REENGAGEMENT_40");
           }
         }
       } catch {}
@@ -210,7 +210,11 @@ function TopUpContent() {
       let amount = baseKobo + pfKobo;
 
       if (discountPercent && discountType) {
-        amount = Math.round(amount * (1 - discountPercent / 100));
+        let effectiveDiscount = discountPercent;
+        if (discountType === "FIRST_ORDER_85" && tier.name !== "Seeker") {
+          effectiveDiscount = 60;
+        }
+        amount = Math.round(amount * (1 - effectiveDiscount / 100));
       }
 
       try {
@@ -307,7 +311,9 @@ function TopUpContent() {
         {discountPercent && (
           <div className="mb-6 p-4 rounded-xl bg-green-500/10 border border-green-500/30 text-center">
             <p className="text-sm font-semibold text-green-400">
-              {discountPercent}% off applied — one-time offer
+              {discountType === "FIRST_ORDER_85"
+                ? "85% off Seeker / 60% off Hunter & Pro — first purchase only"
+                : `${discountPercent}% off applied — welcome back offer`}
             </p>
             <p className="text-xs text-green-400/80 mt-1">
               This discount will be applied at checkout. Only valid for this purchase.

@@ -1,7 +1,7 @@
 ﻿"use client";
 
-import { useState, useCallback, createContext, useContext, type ReactNode } from "react";
-import { Pencil } from "lucide-react";
+import { useState, useCallback, useEffect, createContext, useContext, type ReactNode } from "react";
+import { Pencil, Plus } from "lucide-react";
 import Image from "next/image";
 import { SpaceVideoBackground } from "@/components/landing/space-video-background";
 import { ProfileSwitcher } from "./profile-switcher";
@@ -12,7 +12,12 @@ const ProfileOnboardingModal = dynamic(
   () => import("./profile-onboarding-modal").then((mod) => mod.ProfileOnboardingModal),
   { ssr: false }
 );
+const AdminCreateJobModal = dynamic(
+  () => import("./admin-create-job-modal").then((mod) => mod.AdminCreateJobModal),
+  { ssr: false }
+);
 import { useTransition } from "@/components/providers/transition-provider";
+import { createClient } from "@/lib/supabase/client";
 import "../landing/liquid-glass.css";
 
 const ProfileContext = createContext<{
@@ -31,6 +36,19 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
   const [editProfileId, setEditProfileId] = useState<string | null>(null);
   const [isNewProfile, setIsNewProfile] = useState(false);
   const [profileRefreshKey, setProfileRefreshKey] = useState(0);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [adminModalOpen, setAdminModalOpen] = useState(false);
+
+  useEffect(() => {
+    const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL;
+    if (!adminEmail) return;
+    const supabase = createClient();
+    supabase.auth.getSession().then(({ data: { session } }: { data: { session: any } }) => {
+      if (session?.user?.email === adminEmail) {
+        setIsAdmin(true);
+      }
+    });
+  }, []);
 
   const handleProfileCreated = useCallback((id: string) => {
     setEditProfileId(id);
@@ -90,6 +108,15 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
                 <Pencil size={12} />
               </button>
             )}
+            {isAdmin && (
+              <button
+                onClick={() => setAdminModalOpen(true)}
+                className="w-7 h-7 rounded-full bg-white/10 border border-white/20 flex items-center justify-center text-white/80 hover:text-white hover:bg-white/20 transition-colors"
+                title="Create job post"
+              >
+                <Plus size={12} />
+              </button>
+            )}
           </div>
         </div>
         <div className="absolute right-0 top-0 bottom-0 flex items-center z-[60] pr-1">
@@ -111,6 +138,9 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
           onDelete={handleDeleteProfile}
           onClose={handleCloseModal}
         />
+      )}
+      {isAdmin && (
+        <AdminCreateJobModal isOpen={adminModalOpen} onClose={() => setAdminModalOpen(false)} />
       )}
     </ProfileContext.Provider>
   );

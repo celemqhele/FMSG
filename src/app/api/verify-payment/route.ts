@@ -146,11 +146,24 @@ export async function POST(request: NextRequest) {
 
     const discountCode = txData.metadata?.discount_code;
     if (discountCode) {
-      const percent = discountCode === "FIRST_ORDER_50" ? 50 : discountCode === "REENGAGEMENT_40" ? 40 : null;
-      if (percent) {
+      let percent: number | null = null;
+      let discountType: string | null = null;
+
+      if (discountCode === "FIRST_ORDER_85") {
+        percent = plan === "Seeker" ? 85 : 60;
+        discountType = "first_order_85";
+      } else if (discountCode === "REENGAGEMENT_40") {
+        percent = 40;
+        discountType = "reengagement_40";
+      } else if (discountCode === "FIRST_ORDER_50") {
+        percent = 50;
+        discountType = "first_order_85";
+      }
+
+      if (percent && discountType) {
         await supabase.from("discount_redemptions").insert({
           user_id: user.id,
-          discount_type: percent === 50 ? "50_percent_first_order" : "40_percent_reengagement",
+          discount_type: discountType,
           discount_percent: percent,
           paystack_reference: reference,
           plan_purchased: plan,
