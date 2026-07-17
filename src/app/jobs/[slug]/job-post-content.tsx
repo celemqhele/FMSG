@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback } from "react";
 import { ExternalLink, Search } from "lucide-react";
 import { AuthModal } from "@/components/auth/auth-modal";
 import { useTransition } from "@/components/providers/transition-provider";
@@ -23,16 +23,8 @@ interface PublicJob {
 export function JobPostContent({ job }: { job: PublicJob }) {
   const [authOpen, setAuthOpen] = useState(false);
   const [authTab, setAuthTab] = useState<"login" | "signup">("signup");
-  const [isSignedIn, setIsSignedIn] = useState<boolean | null>(null);
   const { startTransition, endTransition } = useTransition();
   const router = useRouter();
-
-  useEffect(() => {
-    const supabase = createClient();
-    supabase.auth.getSession().then(({ data: { session } }: { data: { session: any } }) => {
-      setIsSignedIn(!!session);
-    });
-  }, []);
 
   const storeReferral = useCallback(() => {
     localStorage.setItem(
@@ -46,10 +38,12 @@ export function JobPostContent({ job }: { job: PublicJob }) {
     );
   }, [job]);
 
-  const handleFindMore = useCallback(() => {
+  const handleFindMore = useCallback(async () => {
     storeReferral();
     startTransition();
-    if (isSignedIn === true) {
+    const supabase = createClient();
+    const { data } = await supabase.auth.getSession();
+    if (data.session) {
       setTimeout(() => {
         endTransition();
         router.push("/dashboard");
@@ -59,7 +53,7 @@ export function JobPostContent({ job }: { job: PublicJob }) {
       setAuthOpen(true);
       setTimeout(endTransition, 800);
     }
-  }, [isSignedIn, storeReferral, startTransition, endTransition, router]);
+  }, [storeReferral, startTransition, endTransition, router]);
 
   const handleClose = useCallback(() => {
     setAuthOpen(false);
