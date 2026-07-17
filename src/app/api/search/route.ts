@@ -82,12 +82,16 @@ const BLACKLISTED_DOMAINS = [
   'executiveplacements.co.za',
   'whatjobs.com',
   'en-za.whatjobs.com',
+  'cosmoquick.com',
+  'cosmoquick.club',
+  'naukri.my',
 ];
 
 const BLACKLISTED_COMPANIES = [
   'joub.co.za',
   'jooble',
   'executiveplacements',
+  'cosmoquick',
 ];
 
 function extractDomain(url: string): string | null {
@@ -863,12 +867,31 @@ ${blacklistInfo}${bannedInfo}${dateConstraintInfo}`;
 
   let outputs: JobRow[] = [];
 
+  // Pre-scoring dedup: filter out jobs already in user's history/saved/blocked
+  let allExisting: Set<string> | null = null;
+  let preDedupCount = 0;
+  if (dedupSets) {
+    const s = new Set([...dedupSets.history, ...dedupSets.saved, ...dedupSets.blocked, ...(dedupSets.rejected ?? [])]);
+    if (s.size > 0) allExisting = s;
+  }
+
   debugLog(`[SEARCH] Starting one-by-one scoring (${rawJobs.length} jobs)`);
   onStatus?.({ type: "screening_job", current: 0, total: rawJobs.length, progress: 25 });
 
   for (let i = 0; i < rawJobs.length; i++) {
     const job = rawJobs[i];
     const jobUrl = jobUrls.get(i) || buildJobUrl(job);
+
+    // Pre-scoring dedup: skip jobs already seen — save AI calls
+    if (allExisting?.has(jobUrl)) {
+      if (dedupSets!.history.has(jobUrl)) filteredCounts.history++;
+      else if (dedupSets!.saved.has(jobUrl)) filteredCounts.saved++;
+      else if (dedupSets!.rejected?.has(jobUrl)) filteredCounts.rejected++;
+      else if (dedupSets!.blocked.has(jobUrl)) filteredCounts.blocked++;
+      preDedupCount++;
+      continue;
+    }
+
     const fullSpec = jobSpecs.get(i) || "";
 
     const progress = Math.min(25 + ((i + 1) / rawJobs.length) * 55, 80);
@@ -911,7 +934,8 @@ ${blacklistInfo}${bannedInfo}${dateConstraintInfo}`;
     const score = Math.round(result.score ?? 30);
     const ps = result.pillar_scores;
     const taxes = (result.taxes_applied as string[])?.filter((t: string) => t.length > 0) ?? [];
-    const verdict = result.recruiter_verdict ?? (score >= 75 ? "HIRE" : score >= 60 ? "INTERVIEW" : "REJECT");
+    const rawVerdict = result.recruiter_verdict ?? (score >= 75 ? "HIRE" : score >= 60 ? "INTERVIEW" : "REJECT");
+    const verdict = (rawVerdict === "HIRE" && taxes.includes("Overqualified")) ? "INTERVIEW" : rawVerdict;
     const dr = result.dynamic_requirements ?? null;
 
     const deductionLabels: Record<string, string> = {
@@ -1000,23 +1024,7 @@ ${blacklistInfo}${bannedInfo}${dateConstraintInfo}`;
     dataClient.from("rejected_jobs").insert(rows).then((r: any) => r.error && debugLog('[SEARCH] Failed to log AI rejected:', r.error));
   }
 
-  if (dedupSets) {
-    const allExisting = new Set([...dedupSets.history, ...dedupSets.saved, ...dedupSets.blocked, ...(dedupSets.rejected ?? [])]);
-    if (allExisting.size > 0) {
-      const deduped: JobRow[] = [];
-      for (const r of outputs) {
-        if (allExisting.has(r.job_url)) {
-          if (dedupSets.history.has(r.job_url)) filteredCounts.history++;
-          else if (dedupSets.saved.has(r.job_url)) filteredCounts.saved++;
-          else if (dedupSets.rejected?.has(r.job_url)) filteredCounts.rejected++;
-          else if (dedupSets.blocked.has(r.job_url)) filteredCounts.blocked++;
-        } else {
-          deduped.push(r);
-        }
-      }
-      outputs = deduped;
-    }
-  }
+  if (preDedupCount > 0) debugLog(`[SEARCH] Pre-scoring dedup skipped ${preDedupCount} already-seen jobs`);
 
   onStatus?.({ type: "almost_done", progress: 90 });
 
