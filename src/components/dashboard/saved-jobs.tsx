@@ -24,6 +24,7 @@ interface SavedJob {
   yes_answers?: number | null;
   recruiter_verdict?: string | null;
   dynamic_requirements?: { requirement: string; mandatory: boolean; pillar: string; met: boolean; evidence: string }[] | null;
+  spec_source?: "google_jobs" | "google_search" | null;
 }
 
 export function SavedJobs() {
@@ -105,6 +106,7 @@ export function SavedJobs() {
           yesAnswers={j.yes_answers}
           recruiterVerdict={j.recruiter_verdict}
           dynamicRequirements={j.dynamic_requirements}
+          specSource={j.spec_source}
           onDelete={(id) => setJobs((prev) => prev.filter((x) => x.id !== id))}
         />
       ))}

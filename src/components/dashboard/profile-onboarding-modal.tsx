@@ -203,7 +203,7 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
           fetch("/api/suggest-industry-ladder", {
             method: "POST",
             headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" },
-            body: JSON.stringify({ industry: data.industry }),
+            body: JSON.stringify({ industry: data.industry, job_titles: titles }),
           }).then(async (r) => {
             if (r.ok) {
               const ladder = await r.json();

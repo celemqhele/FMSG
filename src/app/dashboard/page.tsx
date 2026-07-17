@@ -46,6 +46,7 @@ interface JobResult {
   yes_answers?: number | null;
   recruiter_verdict?: string | null;
   dynamic_requirements?: { requirement: string; mandatory: boolean; pillar: string; met: boolean; evidence: string }[] | null;
+  spec_source?: "google_jobs" | "google_search" | null;
 }
 
 interface HistoryResult {
@@ -67,6 +68,7 @@ interface HistoryResult {
   yes_answers?: number | null;
   recruiter_verdict?: string | null;
   dynamic_requirements?: { requirement: string; mandatory: boolean; pillar: string; met: boolean; evidence: string }[] | null;
+  spec_source?: "google_jobs" | "google_search" | null;
 }
 
 interface Balances {
@@ -710,6 +712,7 @@ export default function DashboardPage() {
                       yesAnswers={r.yes_answers}
                       recruiterVerdict={r.recruiter_verdict}
                       dynamicRequirements={r.dynamic_requirements}
+                      specSource={r.spec_source}
                       onDelete={handleDelete}
                     />
                 ))}
@@ -760,6 +763,7 @@ export default function DashboardPage() {
                   yesAnswers={r.yes_answers}
                   recruiterVerdict={r.recruiter_verdict}
                   dynamicRequirements={r.dynamic_requirements}
+                  specSource={r.spec_source}
                   onDelete={(id) => setHistoryResults((prev) => prev.filter((x) => x.id !== id))}
                 />
               ))}

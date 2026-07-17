@@ -21,7 +21,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "industry is required." }, { status: 400 });
     }
 
-    const steps = await generateIndustryLadder(industry);
+    const jobTitles: string[] | undefined = Array.isArray(body?.job_titles)
+      ? body.job_titles.filter((t: unknown): t is string => typeof t === "string" && t.trim().length > 0)
+      : undefined;
+
+    const steps = await generateIndustryLadder(industry, jobTitles);
 
     return NextResponse.json({
       steps: [

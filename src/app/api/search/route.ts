@@ -1,7 +1,7 @@
 // BUILD_CACHE_BUST: jun30-1
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { searchGoogleJobs, type SerpJob } from "@/lib/serpapi";
+import { searchGoogleJobs, searchGooglePages, isJobPageUrl, scrapeJobPage, type SerpJob } from "@/lib/serpapi";
 import { extractTextFromPDF } from "@/lib/pdf";
 import { callAIWithFallback, lastAITier } from "@/lib/gemini";
 import { StreamWriter, type SearchEvent } from "@/lib/search-stream";
@@ -181,6 +181,7 @@ interface JobRow {
   yes_answers: number | null;
   recruiter_verdict: string | null;
   dynamic_requirements: { requirement: string; mandatory: boolean; pillar: string; met: boolean; evidence: string }[] | null;
+  spec_source: "google_jobs" | "google_search" | null;
 }
 
 function normalize(r: any) {
@@ -256,7 +257,7 @@ async function fetchPaginatedJobs(params: { q: string; location?: string; hl?: s
       if (!jobs || jobs.length === 0) break;
       for (const j of jobs) {
         const key = `${j.title ?? ""}|${j.company_name ?? ""}`.toLowerCase();
-        if (!seen.has(key)) { seen.add(key); all.push(j); }
+        if (!seen.has(key)) { seen.add(key); j.spec_source = "google_jobs"; all.push(j); }
       }
       if (jobs.length < SERP_PAGE_SIZE) break;
     }
@@ -305,7 +306,47 @@ async function fetchAndFilterJobs(
 
   let rawJobs: SerpJob[];
   try {
-    rawJobs = await fetchPaginatedJobs(serpParams, pages);
+    const [googleJobs, sourceBJobs] = await Promise.all([
+      fetchPaginatedJobs(serpParams, pages).catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        debugLog(`[SEARCH] Google Jobs failed: ${msg.slice(0, 150)}`);
+        return [] as SerpJob[];
+      }),
+      (async (): Promise<SerpJob[]> => {
+        try {
+          const pages2 = await searchGooglePages(serpParams);
+          const validUrls = pages2.filter((p) => isJobPageUrl(p.link));
+          debugLog(`[SOURCE-B] ${validUrls.length} scrapeable URLs from ${pages2.length} Google results`);
+          const scraped: SerpJob[] = [];
+          for (const v of validUrls.slice(0, 10)) {
+            const job = await scrapeJobPage(v.link, JINA_API ?? null);
+            if (job) {
+              job.title = job.title || v.title;
+              scraped.push(job);
+            }
+            await new Promise((r) => setTimeout(r, 150));
+          }
+          return scraped;
+        } catch (err) {
+          debugLog(`[SOURCE-B] Failed: ${err}`);
+          return [];
+        }
+      })(),
+    ]);
+
+    rawJobs = [...googleJobs];
+
+    const seenKeys = new Set(rawJobs.map((j) => `${j.title ?? ""}|${j.company_name ?? ""}`.toLowerCase()));
+    for (const sb of sourceBJobs) {
+      const key = `${sb.title ?? ""}|${sb.company_name ?? ""}`.toLowerCase();
+      if (!seenKeys.has(key)) {
+        seenKeys.add(key);
+        rawJobs.push(sb);
+      }
+    }
+    if (sourceBJobs.length > 0) {
+      debugLog(`[SOURCE-B] Added ${sourceBJobs.length} jobs from SA job boards (total now ${rawJobs.length})`);
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.includes("(400)")) {
@@ -434,6 +475,13 @@ async function fetchAndFilterJobs(
     const job = rawJobs[i];
     const jobUrl = buildJobUrl(job);
     tempJobUrls.set(i, jobUrl);
+
+    if (job.hasFullSpec && job.description && job.description.length >= SHORT_SPEC_THRESHOLD) {
+      tempJobSpecs.set(i, job.description);
+      if (isExpired(job.description)) (job as any)._expired = true;
+      continue;
+    }
+
     let specText = "";
     if (jobUrl) {
       try {
@@ -567,6 +615,7 @@ async function screenAndAnalyze(
       yes_answers: null,
       recruiter_verdict: null,
       dynamic_requirements: null,
+      spec_source: job.spec_source ?? null,
     }));
     onStatus?.({ type: "almost_done", progress: 90 });
     return { results, queryUsed: query, filteredCounts };
@@ -834,6 +883,7 @@ ${blacklistInfo}${bannedInfo}${dateConstraintInfo}`;
       yes_answers: result.yes_answers ?? null,
       recruiter_verdict: verdict,
       dynamic_requirements: dr,
+      spec_source: job.spec_source ?? null,
     });
   }
 
@@ -1244,6 +1294,7 @@ Return ONLY valid JSON (no markdown, no code fences):
                   taxes_applied: r.taxes_applied, total_questions_asked: r.total_questions_asked,
                   yes_answers: r.yes_answers, recruiter_verdict: r.recruiter_verdict,
                   dynamic_requirements: r.dynamic_requirements,
+                  spec_source: r.spec_source,
                 }));
                 dataClient.from("job_results").insert(rows).then(({ error }: any) => {
                   if (error) console.error("[SEARCH] Failed to insert continuation results:", error.message);
@@ -1541,6 +1592,7 @@ Return ONLY valid JSON (no markdown, no code fences):
               taxes_applied: r.taxes_applied, total_questions_asked: r.total_questions_asked,
               yes_answers: r.yes_answers, recruiter_verdict: r.recruiter_verdict,
               dynamic_requirements: r.dynamic_requirements,
+              spec_source: r.spec_source,
             }));
             dataClient.from("job_results").insert(rows).then(({ error }: any) => {
               if (error) console.error("[PF] Failed to insert job results:", error.message);

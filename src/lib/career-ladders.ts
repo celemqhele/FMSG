@@ -139,7 +139,7 @@ async function getTaxonomyBranch(industry: string): Promise<{ id: string; name: 
 
 // ─── Prompt B: Generate profile industry ladder ──────────────────────────
 
-export async function generateIndustryLadder(industry: string): Promise<IndustryLadderSteps> {
+export async function generateIndustryLadder(industry: string, jobTitles?: string[]): Promise<IndustryLadderSteps> {
   if (!industry?.trim()) {
     return {
       step_1: "", step_1_taxonomy_id: null, step_2: "", step_2_taxonomy_id: null,
@@ -155,27 +155,46 @@ export async function generateIndustryLadder(industry: string): Promise<Industry
     ? branch.map((n) => `  ${n.id} | depth=${n.depth} | ${n.name}`).join("\n")
     : "";
 
+  const titlesContext = jobTitles?.filter(Boolean).length
+    ? `\n\nCANDIDATE'S JOB TITLES (from most specific to broadest): ${jobTitles.filter(Boolean).join(" → ")}`
+    : "";
+
   const systemPrompt = hasTaxonomy
-    ? `You are a career matching specialist. Given a candidate's specific industry
-and a constrained industry taxonomy, build a 5-step industry ladder.
+    ? `You are a career matching specialist. Given a candidate's job function and
+a constrained industry taxonomy, build a 5-step industry broadening ladder.
+
+CRITICAL RULE: The ladder must anchor on the CANDIDATE'S SKILL SET AND JOB FUNCTION,
+NOT the employer's operating industry. A React/Node developer's ladder is
+Web Development → Software Development → IT → Technology → Digital Economy —
+even if they work at a logistics company. A developer at a bank builds software,
+so their ladder is Software Development → IT → Technology, NOT Banking → Financial Services.
+An accountant at a tech company builds their ladder from Accounting → Finance → Business,
+NOT Technology.
+
+RULES:
+- Step 1 = the candidate's actual functional niche (e.g., "Web Development", "Financial Accounting", "Digital Marketing")
+- Step 2 = one level broader in the FUNCTION domain (e.g., "Software Development", "Accounting & Finance", "Marketing")
+- Step 3 = next level broader
+- Step 4 = next level broader
+- Step 5 = the broadest economic sector the FUNCTION belongs to
+- Use the employer's industry ONLY as a tiebreaker when the function is genuinely ambiguous.
+- For industry-agnostic roles (developers, accountants, marketers, analysts), the function ALWAYS dominates.
 
 TAXONOMY (only the branch containing the candidate's industry):
 ID | depth | name
 ${branchJson}
 
 TASK:
-1. Find the closest matching taxonomy node to the candidate's industry.
-2. Walk upward through each parent to depth 0.
-3. Build a 5-step ladder:
-   - step 1 = the hyper-niche (deepest taxonomy match, depth 3 if available)
-   - step 2 = one level broader (parent)
-   - step 3 = next level broader
-   - step 4 = next level broader
-   - step 5 = the depth-0 broad economic sector
-4. If the taxonomy path has fewer than 5 nodes, pad by repeating step 5.
-5. For each step, include the taxonomy_id (UUID) if one exists, otherwise null.
+1. Identify the candidate's CORE FUNCTION from their job titles (e.g., "Software Development", "Financial Accounting", "Digital Marketing").
+2. Find the closest taxonomy node to that FUNCTION (not the employer's industry).
+3. Walk upward through each parent to depth 0.
+4. Build a 5-step ladder.
+5. If the taxonomy path has fewer than 5 nodes, pad by repeating step 5.
+6. For each step, include the taxonomy_id (UUID) if one exists, otherwise null.
 
 The ladder MUST stay within the taxonomy branch — never cross sectors.
+If the candidate's function doesn't map cleanly to the taxonomy, use the closest
+functional category and broaden from there.
 
 Return ONLY valid JSON:
 {
@@ -187,23 +206,41 @@ Return ONLY valid JSON:
     { "step": 5, "value": "...", "taxonomy_id": "uuid-or-null" }
   ]
 }`
-    : `You are a career matching specialist. Given a candidate's specific industry,
-build a 5-step industry broadening ladder using your knowledge of real-world
-industry hierarchies.
+    : `You are a career matching specialist. Given a candidate's job function and
+employer industry, build a 5-step industry broadening ladder using your
+knowledge of real-world industry hierarchies.
+
+CRITICAL RULE: Anchor the ladder on the CANDIDATE'S SKILL SET AND JOB FUNCTION,
+NOT the employer's operating industry. A React/Node developer at a logistics
+company broadens through: Web Development → Software Development → IT → Technology
+→ Digital Economy. NOT Logistics Technology → Supply Chain → Transportation.
+An accountant at a tech company broadens through: Financial Accounting → Accounting
+→ Finance → Business → Professional Services. NOT Technology → Software → IT.
 
 RULES:
-- step 1 = the most specific niche within the candidate's industry
-- step 2 = one level broader (adjacent parent category)
+- step 1 = the candidate's most specific functional niche
+- step 2 = one level broader in the function domain
 - step 3 = next level broader
 - step 4 = next level broader
-- step 5 = the broadest economic sector this industry belongs to
+- step 5 = the broadest economic sector this function belongs to
 - Each step must be a genuine, real-world industry category.
-- Ladder must stay in the same sector — Pharmaceuticals must not broaden into Technology.
+- Use the employer's industry ONLY as a tiebreaker when the function is ambiguous.
+- For industry-agnostic roles (developers, accountants, marketers, analysts), function ALWAYS dominates.
+
+Example: Developer at a logistics company with titles "Software Developer → Backend Developer"
+→ ["Software Development", "Information Technology", "Technology", "Technology & Digital", "Technology & Digital"]
+NOT ["Logistics Technology", "Supply Chain Software", "Logistics", "Transportation", "Industrial Goods"]
+
+Example: Accountant at a retail company
+→ ["Financial Accounting", "Accounting & Finance", "Financial Services", "Business Services", "Business Services"]
+NOT ["Retail Finance", "Retail", "Consumer Goods", "Retail & Consumer Goods", "Consumer Goods"]
+
+Example: Digital marketer at an e-commerce company
+→ ["Digital Marketing", "Marketing & Advertising", "Media & Marketing", "Media & Entertainment", "Media & Entertainment"]
+NOT ["E-commerce Marketing", "E-commerce", "Online Retail", "Retail", "Consumer Goods"]
 
 Example: "Private Wealth Banking"
 → ["Private Wealth Banking", "Wealth Management", "Banking", "Financial Services", "Financial Services"]
-Example: "E-commerce"
-→ ["E-commerce", "Online Retail", "Retail", "Retail & Consumer Goods", "Consumer Goods"]
 Example: "Pharmaceuticals"
 → ["Pharmaceutical R&D", "Pharmaceuticals", "Healthcare Products", "Healthcare", "Healthcare"]
 
@@ -218,8 +255,10 @@ Return ONLY valid JSON:
   ]
 }`;
 
+  const userContent = `Candidate's employer industry: "${industry.trim()}"${titlesContext}`;
+
   try {
-    const raw = await callAIWithFallback(systemPrompt, `Candidate's industry: "${industry.trim()}"`, "generate industry ladder", {
+    const raw = await callAIWithFallback(systemPrompt, userContent, "generate industry ladder", {
       responseMimeType: "application/json",
       temperature: 0.3,
     });

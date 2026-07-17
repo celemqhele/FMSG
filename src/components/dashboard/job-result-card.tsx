@@ -25,6 +25,7 @@ interface JobResultCardProps {
   yesAnswers?: number | null;
   recruiterVerdict?: string | null;
   dynamicRequirements?: { requirement: string; mandatory: boolean; pillar: string; met: boolean; evidence: string }[] | null;
+  specSource?: "google_jobs" | "google_search" | null;
   onDelete: (id: string) => void;
 }
 
@@ -47,6 +48,7 @@ export function JobResultCard({
   yesAnswers,
   recruiterVerdict,
   dynamicRequirements,
+  specSource,
   onDelete,
 }: JobResultCardProps) {
   const [showDeleteMenu, setShowDeleteMenu] = useState(false);
@@ -224,6 +226,16 @@ export function JobResultCard({
           {suggestedCvName && (
             <span className="text-xs font-medium px-3 py-1 rounded-full bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400 border border-purple-500/30">
               CV: {suggestedCvName}
+            </span>
+          )}
+          {specSource === "google_jobs" && (
+            <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30">
+              Verified Spec
+            </span>
+          )}
+          {specSource === "google_search" && (
+            <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-500/20 text-slate-500 dark:text-slate-400 border border-slate-500/30">
+              Unverified Spec
             </span>
           )}
         </div>
