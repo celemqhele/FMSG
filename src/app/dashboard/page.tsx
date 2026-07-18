@@ -8,6 +8,13 @@ import { SearchPill } from "@/components/dashboard/search-pill";
 import { JobResultCard } from "@/components/dashboard/job-result-card";
 import { SearchGuidancePopup } from "@/components/dashboard/search-guidance-popup";
 import { PFPromoPopup } from "@/components/dashboard/pf-promo-popup";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { MobileSearchPill } from "@/components/dashboard/mobile/mobile-search-pill";
+import { MobileJobCard } from "@/components/dashboard/mobile/mobile-job-card";
+import { MobileBottomNav } from "@/components/dashboard/mobile/mobile-bottom-nav";
+import { MobileSkeletonCard } from "@/components/dashboard/mobile/mobile-skeleton-card";
+import { MobileLimitModal } from "@/components/dashboard/mobile/mobile-limit-modal";
+import { MobileContinuePopup } from "@/components/dashboard/mobile/mobile-continue-popup";
 import dynamic from "next/dynamic";
 const PFPurchaseModal = dynamic(() => import("@/components/dashboard/pf-purchase-modal").then((mod) => mod.PFPurchaseModal), { ssr: false });
 const OnboardingForm = dynamic(() => import("@/components/onboarding/onboarding-form").then((mod) => mod.OnboardingForm), { ssr: false });
@@ -100,6 +107,7 @@ function SkeletonCard({ style }: { style?: React.CSSProperties }) {
 export default function DashboardPage() {
   const router = useRouter();
   const { endTransition, setVideoFast } = useTransition();
+  const isMobile = useIsMobile();
   const [activeTab, setActiveTab] = useState<TabId>("search");
   const [searching, setSearching] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -696,7 +704,7 @@ export default function DashboardPage() {
   return (
     <DashboardLayout>
       <PageTransitionWrapper>
-      <div className="max-w-4xl mx-auto pt-8 space-y-6">
+      <div className={`max-w-4xl mx-auto space-y-6 ${isMobile ? "pt-2" : "pt-8"}`}>
         {accountStatus === "blocked" ? (
           <BlockedAccountPage />
         ) : (
@@ -704,27 +712,40 @@ export default function DashboardPage() {
             {emailVerified === false && authChecked && (
               <VerifyEmailBanner onOpenModal={() => setShowVerifyModal(true)} />
             )}
-            <DashboardTabs active={activeTab} onChange={setActiveTab} />
+            {isMobile ? (
+              <MobileBottomNav active={activeTab} onChange={setActiveTab} />
+            ) : (
+              <DashboardTabs active={activeTab} onChange={setActiveTab} />
+            )}
 
         {activeTab === "search" && (
           <>
-            <SearchPill onSearch={handleSearch} onAbort={handleAbort} searching={searching} pfMode={pfMode} onPfModeChange={setPfMode} referralQuery={referralJob?.job_title} />
-            <div className="flex flex-wrap justify-center gap-1.5">
-              <BalanceChips balances={balances} plan={plan} />
-            </div>
+            {isMobile ? (
+              <MobileSearchPill onSearch={handleSearch} onAbort={handleAbort} searching={searching} pfMode={pfMode} onPfModeChange={setPfMode} referralQuery={referralJob?.job_title} />
+            ) : (
+              <SearchPill onSearch={handleSearch} onAbort={handleAbort} searching={searching} pfMode={pfMode} onPfModeChange={setPfMode} referralQuery={referralJob?.job_title} />
+            )}
 
-            <div className="sticky top-0 z-10 -mt-4 backdrop-blur-xl py-2 space-y-2">
-              <div className="flex items-center justify-center">
-                <FilterSortBar
-                  sort={sortMode}
-                  onSortChange={setSortMode}
-                />
-              </div>
-              <PlatformFilter
-                selected={selectedPlatforms}
-                onChange={setSelectedPlatforms}
-              />
-            </div>
+            {!isMobile && (
+              <>
+                <div className="flex flex-wrap justify-center gap-1.5">
+                  <BalanceChips balances={balances} plan={plan} />
+                </div>
+
+                <div className="sticky top-0 z-10 -mt-4 backdrop-blur-xl py-2 space-y-2">
+                  <div className="flex items-center justify-center">
+                    <FilterSortBar
+                      sort={sortMode}
+                      onSortChange={setSortMode}
+                    />
+                  </div>
+                  <PlatformFilter
+                    selected={selectedPlatforms}
+                    onChange={setSelectedPlatforms}
+                  />
+                </div>
+              </>
+            )}
 
             {filteredSummary && (
               <div className="flex flex-wrap justify-center gap-x-3 gap-y-1 px-3 py-2 rounded-xl bg-yellow-500/10 border border-yellow-500/30 text-yellow-300 text-xs">
@@ -744,18 +765,54 @@ export default function DashboardPage() {
               />
             )}
 
-            <ContinuePopup
-              isOpen={!!continuationToken && !searching}
-              message={pauseMessage || (results.length > 0
-                ? `${results.length} results found so far. Continue AI screening for remaining jobs?`
-                : "Ready to screen jobs with AI analysis? This may take a minute.")}
-              onContinue={handleContinue}
-              onCancel={() => setContinuationToken(null)}
-            />
+            {isMobile ? (
+              <MobileContinuePopup
+                isOpen={!!continuationToken && !searching}
+                message={pauseMessage || (results.length > 0
+                  ? `${results.length} results found so far. Continue AI screening for remaining jobs?`
+                  : "Ready to screen jobs with AI analysis? This may take a minute.")}
+                onContinue={handleContinue}
+                onCancel={() => setContinuationToken(null)}
+              />
+            ) : (
+              <ContinuePopup
+                isOpen={!!continuationToken && !searching}
+                message={pauseMessage || (results.length > 0
+                  ? `${results.length} results found so far. Continue AI screening for remaining jobs?`
+                  : "Ready to screen jobs with AI analysis? This may take a minute.")}
+                onContinue={handleContinue}
+                onCancel={() => setContinuationToken(null)}
+              />
+            )}
 
             {!searching && results.length > 0 && (
-              <div className="space-y-4">
+              <div className={isMobile ? "space-y-3" : "space-y-4"}>
                 {sortedResults.map((r) => (
+                  isMobile ? (
+                    <MobileJobCard
+                      key={r.id}
+                      id={r.id}
+                      jobTitle={r.job_title}
+                      company={r.company}
+                      location={r.location}
+                      salary={r.estimated_salary}
+                      matchScore={r.match_score}
+                      matchSummary={r.match_summary}
+                      verdictBullets={r.verdict_bullets}
+                      jobUrl={r.job_url}
+                      fullDescription={r.full_description}
+                      suggestedCvName={r.suggested_cv ?? ""}
+                      knockoutFail={r.knockout_fail}
+                      pillarScores={r.pillar_scores}
+                      taxesApplied={r.taxes_applied}
+                      totalQuestionsAsked={r.total_questions_asked}
+                      yesAnswers={r.yes_answers}
+                      recruiterVerdict={r.recruiter_verdict}
+                      dynamicRequirements={r.dynamic_requirements}
+                      specSource={r.spec_source}
+                      onDelete={handleDelete}
+                    />
+                  ) : (
                     <JobResultCard
                       key={r.id}
                       id={r.id}
@@ -779,6 +836,7 @@ export default function DashboardPage() {
                       specSource={r.spec_source}
                       onDelete={handleDelete}
                     />
+                  )
                 ))}
               </div>
             )}
@@ -799,13 +857,13 @@ export default function DashboardPage() {
             )}
 
             {!searching && hasSearched && results.length === 0 && !continuationToken && (
-              <div className="text-center py-20">
+              <div className={`text-center ${isMobile ? "py-14" : "py-20"}`}>
                 <p className="text-[var(--color-text-secondary)] text-sm">{resultMessage || "No matching jobs found. Try updating your profile or search again."}</p>
               </div>
             )}
 
             {!searching && hasSearched && results.length > 0 && plan === "free" && balances.search === 0 && (
-              <div className="liquid-glass rounded-xl p-5 text-center space-y-3">
+              <div className={`liquid-glass rounded-xl ${isMobile ? "p-4" : "p-5"} text-center space-y-3`}>
                 <p className="text-sm text-white/90 font-medium">
                   First purchase? Get <span className="text-[var(--color-accent)] font-bold">85% off Seeker</span> / <span className="text-[var(--color-accent)] font-bold">60% off Hunter & Pro</span>
                 </p>
@@ -820,7 +878,7 @@ export default function DashboardPage() {
             )}
 
             {!searching && !hasSearched && results.length === 0 && (
-              <div className="text-center py-20">
+              <div className={`text-center ${isMobile ? "py-14" : "py-20"}`}>
                 <p className="text-[var(--color-text-secondary)] text-sm">Search for jobs to get started</p>
               </div>
             )}
@@ -831,35 +889,61 @@ export default function DashboardPage() {
           historyLoading ? (
             <p className="text-sm text-[var(--color-text-secondary)] text-center py-8">Loading...</p>
           ) : historyResults.length === 0 ? (
-            <div className="text-center py-20">
+            <div className={`text-center ${isMobile ? "py-14" : "py-20"}`}>
               <p className="text-[var(--color-text-secondary)] text-sm">No search history yet.</p>
             </div>
           ) : (
-            <div className="space-y-4">
+            <div className={isMobile ? "space-y-3" : "space-y-4"}>
               {historyResults.map((r) => (
-                <JobResultCard
-                  key={r.id}
-                  id={r.id}
-                  jobTitle={r.job_title}
-                  company={r.company}
-                  location={r.location}
-                  salary={r.estimated_salary}
-                  matchScore={r.match_score}
-                  matchSummary={r.match_summary}
-                  verdictBullets={r.verdict_bullets}
-                  jobUrl={r.job_url}
-                  fullDescription={r.full_spec}
-                  suggestedCvName={r.suggested_cv ?? ""}
-                  knockoutFail={r.knockout_fail}
-                  pillarScores={r.pillar_scores}
-                  taxesApplied={r.taxes_applied}
-                  totalQuestionsAsked={r.total_questions_asked}
-                  yesAnswers={r.yes_answers}
-                  recruiterVerdict={r.recruiter_verdict}
-                  dynamicRequirements={r.dynamic_requirements}
-                  specSource={r.spec_source}
-                  onDelete={(id) => setHistoryResults((prev) => prev.filter((x) => x.id !== id))}
-                />
+                isMobile ? (
+                  <MobileJobCard
+                    key={r.id}
+                    id={r.id}
+                    jobTitle={r.job_title}
+                    company={r.company}
+                    location={r.location}
+                    salary={r.estimated_salary}
+                    matchScore={r.match_score}
+                    matchSummary={r.match_summary}
+                    verdictBullets={r.verdict_bullets}
+                    jobUrl={r.job_url}
+                    fullDescription={r.full_spec}
+                    suggestedCvName={r.suggested_cv ?? ""}
+                    knockoutFail={r.knockout_fail}
+                    pillarScores={r.pillar_scores}
+                    taxesApplied={r.taxes_applied}
+                    totalQuestionsAsked={r.total_questions_asked}
+                    yesAnswers={r.yes_answers}
+                    recruiterVerdict={r.recruiter_verdict}
+                    dynamicRequirements={r.dynamic_requirements}
+                    specSource={r.spec_source}
+                    onDelete={(id) => setHistoryResults((prev) => prev.filter((x) => x.id !== id))}
+                  />
+                ) : (
+                  <JobResultCard
+                    key={r.id}
+                    id={r.id}
+                    jobTitle={r.job_title}
+                    company={r.company}
+                    location={r.location}
+                    salary={r.estimated_salary}
+                    matchScore={r.match_score}
+                    matchSummary={r.match_summary}
+                    verdictBullets={r.verdict_bullets}
+                    jobUrl={r.job_url}
+                    fullDescription={r.full_spec}
+                    suggestedCvName={r.suggested_cv ?? ""}
+                    knockoutFail={r.knockout_fail}
+                    pillarScores={r.pillar_scores}
+                    taxesApplied={r.taxes_applied}
+                    totalQuestionsAsked={r.total_questions_asked}
+                    yesAnswers={r.yes_answers}
+                    recruiterVerdict={r.recruiter_verdict}
+                    dynamicRequirements={r.dynamic_requirements}
+                    specSource={r.spec_source}
+                    onDelete={(id) => setHistoryResults((prev) => prev.filter((x) => x.id !== id))}
+                  />
+                )
               ))}
             </div>
           )
@@ -874,7 +958,14 @@ export default function DashboardPage() {
             )}
       </div>
 
-      {showLimitModal && (
+      {isMobile ? (
+        <MobileLimitModal
+          code={showLimitModal}
+          plan={plan}
+          onClose={() => setShowLimitModal(null)}
+          onOpenPfModal={() => { setShowLimitModal(null); setPfModalOpen(true); }}
+        />
+      ) : showLimitModal && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center transition-opacity duration-300" style={{ opacity: limitModalMounted ? 1 : 0 }}>
           <div className="absolute inset-0 bg-black/60" onClick={() => setShowLimitModal(null)} />
           <div className="relative">
