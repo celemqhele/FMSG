@@ -9,16 +9,20 @@ interface MobileLayoutProps {
   profileSheetOpen: boolean;
   onProfileSheetOpen: () => void;
   onProfileSheetClose: () => void;
+  activeProfileId: string | null;
+  onSelectProfile: (id: string) => void;
+  onProfileCreated?: (id: string) => void;
+  profileRefreshKey?: number;
 }
 
-export function MobileLayout({ children, profileSheetOpen, onProfileSheetOpen, onProfileSheetClose }: MobileLayoutProps) {
+export function MobileLayout({ children, profileSheetOpen, onProfileSheetOpen, onProfileSheetClose, activeProfileId, onSelectProfile, onProfileCreated, profileRefreshKey }: MobileLayoutProps) {
   return (
     <>
       <MobileHeader onAvatarTap={onProfileSheetOpen} />
       <main className="relative z-10 pt-14 pb-20 px-4 min-h-dvh">
         {children}
       </main>
-      <MobileProfileSheet isOpen={profileSheetOpen} onClose={onProfileSheetClose} />
+      <MobileProfileSheet isOpen={profileSheetOpen} onClose={onProfileSheetClose} activeProfileId={activeProfileId} onSelectProfile={onSelectProfile} onProfileCreated={onProfileCreated} refreshKey={profileRefreshKey} />
     </>
   );
 }

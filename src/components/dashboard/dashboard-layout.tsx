@@ -96,6 +96,10 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
           profileSheetOpen={mobileProfileSheetOpen}
           onProfileSheetOpen={() => setMobileProfileSheetOpen(true)}
           onProfileSheetClose={() => setMobileProfileSheetOpen(false)}
+          activeProfileId={activeProfileId}
+          onSelectProfile={setActiveProfileId}
+          onProfileCreated={handleProfileCreated}
+          profileRefreshKey={profileRefreshKey}
         >
           <div className="max-w-4xl mx-auto mb-4">
             <EmailConfirmationBanner />
