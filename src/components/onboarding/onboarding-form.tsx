@@ -340,23 +340,23 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
           <div className="flex-1">
             <label className="block text-sm font-medium text-gray-700 mb-1.5">Name</label>
             <input value={name} onChange={(e) => setName(e.target.value)} className={inputClass(!!name)} placeholder="First name" />
-            {!name && <p className="mt-1 text-xs text-yellow-600">Missing — fill in manually</p>}
+            {!name && <p className="mt-1 text-xs text-yellow-600">Missing, fill in manually</p>}
           </div>
           <div className="flex-1">
             <label className="block text-sm font-medium text-gray-700 mb-1.5">Surname</label>
             <input value={surname} onChange={(e) => setSurname(e.target.value)} className={inputClass(!!surname)} placeholder="Surname" />
-            {!surname && <p className="mt-1 text-xs text-yellow-600">Missing — fill in manually</p>}
+            {!surname && <p className="mt-1 text-xs text-yellow-600">Missing, fill in manually</p>}
           </div>
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1.5">Phone</label>
           <input value={phone} onChange={(e) => setPhone(e.target.value)} className={inputClass(!!phone)} placeholder="Phone number" />
-          {!phone && <p className="mt-1 text-xs text-yellow-600">Missing — fill in manually</p>}
+          {!phone && <p className="mt-1 text-xs text-yellow-600">Missing, fill in manually</p>}
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1.5">Address</label>
           <input value={address} onChange={(e) => setAddress(e.target.value)} className={inputClass(!!address)} placeholder="Your address" />
-          {!address && <p className="mt-1 text-xs text-yellow-600">Missing — fill in manually</p>}
+          {!address && <p className="mt-1 text-xs text-yellow-600">Missing, fill in manually</p>}
         </div>
       </section>
 
@@ -389,7 +389,7 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1.5">Preferred Location</label>
           <input value={location} onChange={(e) => setLocation(e.target.value)} className={inputClass(!!location)} placeholder="City or province" />
-          {!location && <p className="mt-1 text-xs text-yellow-600">Missing — fill in manually</p>}
+          {!location && <p className="mt-1 text-xs text-yellow-600">Missing, fill in manually</p>}
           <p className="mt-1 text-xs text-gray-400">City or country only. Select work type below.</p>
         </div>
 
@@ -421,14 +421,14 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
             {suggestingIndustry && <span className="ml-2 text-[10px] text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded">AI suggested</span>}
           </label>
           <input value={industry} onChange={(e) => setIndustry(e.target.value)} className={inputClass(!!industry)} placeholder="e.g. Fintech, Healthcare, E-commerce" />
-          {!industry && !suggestingIndustry && <p className="mt-1 text-xs text-yellow-600">Missing — fill in manually</p>}
+          {!industry && !suggestingIndustry && <p className="mt-1 text-xs text-yellow-600">Missing, fill in manually</p>}
         </div>
 
         <div>
           <div className="flex items-center justify-between mb-1.5">
             <label className="text-sm font-medium text-gray-700">
               Industry Ladder
-              <span className="ml-2 text-[10px] font-normal text-gray-400">(AI-populated — edit any step)</span>
+              <span className="ml-2 text-[10px] font-normal text-gray-400">(AI-populated, edit any step)</span>
             </label>
             {suggestingLadder && <Loader2 size={12} className="text-blue-500 animate-spin" />}
           </div>
@@ -437,11 +437,11 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
           </p>
           <div className="space-y-2">
             {[
-              { label: "Step 1 — Hyper-Niche", value: industryStep1, setter: setIndustryStep1, placeholder: "e.g. Private Wealth Banking" },
-              { label: "Step 2 — Niche", value: industryStep2, setter: setIndustryStep2, placeholder: "e.g. Wealth Management" },
-              { label: "Step 3 — Sub-Sector", value: industryStep3, setter: setIndustryStep3, placeholder: "e.g. Banking" },
-              { label: "Step 4 — Industry", value: industryStep4, setter: setIndustryStep4, placeholder: "e.g. Financial Services" },
-              { label: "Step 5 — Broad Sector", value: industryStep5, setter: setIndustryStep5, placeholder: "e.g. Financial Services" },
+              { label: "Step 1: Hyper-Niche", value: industryStep1, setter: setIndustryStep1, placeholder: "e.g. Private Wealth Banking" },
+              { label: "Step 2: Niche", value: industryStep2, setter: setIndustryStep2, placeholder: "e.g. Wealth Management" },
+              { label: "Step 3: Sub-Sector", value: industryStep3, setter: setIndustryStep3, placeholder: "e.g. Banking" },
+              { label: "Step 4: Industry", value: industryStep4, setter: setIndustryStep4, placeholder: "e.g. Financial Services" },
+              { label: "Step 5: Broad Sector", value: industryStep5, setter: setIndustryStep5, placeholder: "e.g. Financial Services" },
             ].map((s) => (
               <div key={s.label} className="space-y-0.5">
                 <label className="text-[11px] text-gray-500">{s.label}</label>
@@ -488,7 +488,7 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
 
       <section className="space-y-4">
         <h2 className="text-lg font-semibold text-gray-900">Salary Expectations</h2>
-        <p className="text-xs text-gray-500">AI estimated from your experience &amp; region — adjust if needed.</p>
+        <p className="text-xs text-gray-500">AI estimated from your experience &amp; region, adjust if needed.</p>
         <div className="flex gap-4">
           <div className="flex-1">
             <label className="block text-sm font-medium text-gray-700 mb-1.5">
@@ -505,7 +505,7 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
               }
               placeholder="Monthly ZAR"
             />
-            {currentSalary == null && <p className="mt-1 text-xs text-yellow-600">Missing — fill in manually</p>}
+            {currentSalary == null && <p className="mt-1 text-xs text-yellow-600">Missing, fill in manually</p>}
           </div>
           <div className="flex-1">
             <label className="block text-sm font-medium text-gray-700 mb-1.5">
@@ -522,7 +522,7 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
               }
               placeholder="Monthly ZAR"
             />
-            {desiredSalary == null && <p className="mt-1 text-xs text-yellow-600">Missing — fill in manually</p>}
+            {desiredSalary == null && <p className="mt-1 text-xs text-yellow-600">Missing, fill in manually</p>}
           </div>
         </div>
       </section>

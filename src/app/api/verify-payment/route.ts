@@ -161,13 +161,16 @@ export async function POST(request: NextRequest) {
       }
 
       if (percent && discountType) {
-        await supabase.from("discount_redemptions").insert({
+        const { error: insertErr } = await supabase.from("discount_redemptions").insert({
           user_id: user.id,
           discount_type: discountType,
           discount_percent: percent,
           paystack_reference: reference,
           plan_purchased: plan,
         });
+        if (insertErr) {
+          console.error("[VERIFY] Failed to record discount redemption:", insertErr.message);
+        }
       }
     }
 

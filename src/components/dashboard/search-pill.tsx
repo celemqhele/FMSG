@@ -223,7 +223,7 @@ export function SearchPill({ onSearch, onAbort, searching, pfMode, onPfModeChang
     </div>
     {searching && (
       <p className="text-xs text-green-400 text-center mt-2">
-        Search can take up to 2 minutes — hang tight
+        Search can take up to 2 minutes, hang tight
       </p>
     )}
     </>

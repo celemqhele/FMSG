@@ -29,22 +29,32 @@ export async function GET(request: NextRequest) {
   const config = DISCOUNT_CONFIG[type];
 
   if (config.type === "first_order_85") {
-    const { data: existing } = await supabase
+    const { data: existing, error: redeemErr } = await supabase
       .from("discount_redemptions")
       .select("id")
       .eq("user_id", user.id)
       .eq("discount_type", "first_order_85")
       .limit(1);
 
+    if (redeemErr) {
+      console.error("[DISCOUNT] discount_redemptions query failed:", redeemErr.message);
+      return NextResponse.json({ eligible: false, reason: "validation_error" });
+    }
+
     if (existing && existing.length > 0) {
       return NextResponse.json({ eligible: false, reason: "already_redeemed" });
     }
 
-    const { data: subs } = await supabase
+    const { data: subs, error: subErr } = await supabase
       .from("subscriptions")
       .select("id")
       .eq("user_id", user.id)
       .limit(1);
+
+    if (subErr) {
+      console.error("[DISCOUNT] subscriptions query failed:", subErr.message);
+      return NextResponse.json({ eligible: false, reason: "validation_error" });
+    }
 
     if (subs && subs.length > 0) {
       return NextResponse.json({ eligible: false, reason: "existing_subscription" });
@@ -54,12 +64,17 @@ export async function GET(request: NextRequest) {
   }
 
   if (config.type === "reengagement_40") {
-    const { data: existing } = await supabase
+    const { data: existing, error: redeemErr } = await supabase
       .from("discount_redemptions")
       .select("id")
       .eq("user_id", user.id)
       .eq("discount_type", "reengagement_40")
       .limit(1);
+
+    if (redeemErr) {
+      console.error("[DISCOUNT] discount_redemptions query failed:", redeemErr.message);
+      return NextResponse.json({ eligible: false, reason: "validation_error" });
+    }
 
     if (existing && existing.length > 0) {
       return NextResponse.json({ eligible: false, reason: "already_redeemed" });
