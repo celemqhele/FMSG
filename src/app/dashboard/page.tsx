@@ -15,6 +15,7 @@ import { MobileBottomNav } from "@/components/dashboard/mobile/mobile-bottom-nav
 import { MobileSkeletonCard } from "@/components/dashboard/mobile/mobile-skeleton-card";
 import { MobileLimitModal } from "@/components/dashboard/mobile/mobile-limit-modal";
 import { MobileContinuePopup } from "@/components/dashboard/mobile/mobile-continue-popup";
+import { MobileSearchProgress } from "@/components/dashboard/mobile/mobile-search-progress";
 import dynamic from "next/dynamic";
 const PFPurchaseModal = dynamic(() => import("@/components/dashboard/pf-purchase-modal").then((mod) => mod.PFPurchaseModal), { ssr: false });
 const OnboardingForm = dynamic(() => import("@/components/onboarding/onboarding-form").then((mod) => mod.OnboardingForm), { ssr: false });
@@ -756,11 +757,19 @@ export default function DashboardPage() {
             )}
 
             {searching && (
-              <SearchProgress
-                completedLines={statusCompleted}
-                activeLine={statusActive}
-                progress={progress}
-              />
+              isMobile ? (
+                <MobileSearchProgress
+                  completedLines={statusCompleted}
+                  activeLine={statusActive}
+                  progress={progress}
+                />
+              ) : (
+                <SearchProgress
+                  completedLines={statusCompleted}
+                  activeLine={statusActive}
+                  progress={progress}
+                />
+              )
             )}
 
             {isMobile ? (
