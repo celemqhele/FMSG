@@ -50,7 +50,7 @@ export function EmailConfirmationBanner() {
       <div className="flex items-center gap-2.5">
         <Mail size={16} className="text-amber-400 shrink-0" />
         <p className="text-sm text-amber-300">
-          Confirm your email address — check your inbox
+          Confirm your email address, check your inbox
         </p>
       </div>
       <button

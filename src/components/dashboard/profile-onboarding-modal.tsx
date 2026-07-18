@@ -574,18 +574,18 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
               {/* Industry Ladder */}
               <div>
                 <label className="text-sm font-medium text-white mb-1.5 block">
-                  Industry Ladder <span className="text-white/50 font-normal">(AI-populated — edit any step)</span>
+                  Industry Ladder <span className="text-white/50 font-normal">(AI-populated, edit any step)</span>
                 </label>
                 <p className="text-xs text-white/50 mb-2">
                   Controls how Persistent Finder broadens your industry across 5 search rounds. Step 1 is your hyper-niche, Step 5 is the broadest sector.
                 </p>
                 <div className="space-y-2">
                   {[
-                    { label: "Step 1 — Hyper-Niche", value: industryStep1, setter: setIndustryStep1, placeholder: "e.g. Private Wealth Banking" },
-                    { label: "Step 2 — Niche", value: industryStep2, setter: setIndustryStep2, placeholder: "e.g. Wealth Management" },
-                    { label: "Step 3 — Sub-Sector", value: industryStep3, setter: setIndustryStep3, placeholder: "e.g. Banking" },
-                    { label: "Step 4 — Industry", value: industryStep4, setter: setIndustryStep4, placeholder: "e.g. Financial Services" },
-                    { label: "Step 5 — Broad Sector", value: industryStep5, setter: setIndustryStep5, placeholder: "e.g. Financial Services" },
+                    { label: "Step 1: Hyper-Niche", value: industryStep1, setter: setIndustryStep1, placeholder: "e.g. Private Wealth Banking" },
+                    { label: "Step 2: Niche", value: industryStep2, setter: setIndustryStep2, placeholder: "e.g. Wealth Management" },
+                    { label: "Step 3: Sub-Sector", value: industryStep3, setter: setIndustryStep3, placeholder: "e.g. Banking" },
+                    { label: "Step 4: Industry", value: industryStep4, setter: setIndustryStep4, placeholder: "e.g. Financial Services" },
+                    { label: "Step 5: Broad Sector", value: industryStep5, setter: setIndustryStep5, placeholder: "e.g. Financial Services" },
                   ].map((s) => (
                     <div key={s.label} className="space-y-0.5">
                       <label className="text-[11px] text-white/40">{s.label}</label>

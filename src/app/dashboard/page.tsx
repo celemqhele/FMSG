@@ -809,7 +809,7 @@ export default function DashboardPage() {
                 <p className="text-sm text-white/90 font-medium">
                   First purchase? Get <span className="text-[var(--color-accent)] font-bold">85% off Seeker</span> / <span className="text-[var(--color-accent)] font-bold">60% off Hunter & Pro</span>
                 </p>
-                <p className="text-xs text-white/60">One-time discount — never repeated</p>
+                <p className="text-xs text-white/60">One-time discount, never repeated</p>
                 <button
                   onClick={() => router.push("/upgrade?discount=first_order_85")}
                   className="px-5 py-2 text-sm font-semibold text-white bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] rounded-full transition-colors"
@@ -903,12 +903,12 @@ export default function DashboardPage() {
                   : showLimitModal === "LIMIT_002"
                   ? "You've used all your CV generations. Top up to generate more."
                   : showLimitModal === "LIMIT_003"
-                  ? "You've seen what FMSG can do — now unlock the full experience with Persistent Finder."
+                  ? "You've seen what FMSG can do, now unlock the full experience with Persistent Finder."
                   : "You've run out of credits. Top up to continue."}
               </p>
               {showLimitModal === "LIMIT_003" && (
                 <p className="text-xs text-white/70 font-medium">
-                  85% off Seeker / 60% off Hunter & Pro — first purchase only
+                  85% off Seeker / 60% off Hunter & Pro, first purchase only
                 </p>
               )}
               {showLimitModal === "LIMIT_001" && plan === "free" && (

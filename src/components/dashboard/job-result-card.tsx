@@ -372,7 +372,7 @@ export function JobResultCard({
             {/* Knockout warning */}
             {knockoutFail && (
               <div className="px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20 mb-4">
-                <p className="text-xs text-red-400 font-medium">Knockout triggered — mandatory requirement not met.</p>
+                <p className="text-xs text-red-400 font-medium">Knockout triggered, mandatory requirement not met.</p>
               </div>
             )}
 

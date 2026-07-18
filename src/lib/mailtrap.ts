@@ -79,7 +79,7 @@ export async function sendVerificationEmail(to: string, code: string) {
   const res = await mailtrapSend({
     from: DEFAULT_FROM,
     to: [{ email: to }],
-    subject: "Verify your email — FMSG",
+    subject: "Verify your email - FMSG",
     html: verificationHTML(code),
     category: "Verification",
   });
@@ -92,7 +92,7 @@ export async function sendDeletionCodeEmail(to: string, code: string) {
   const res = await mailtrapSend({
     from: DEFAULT_FROM,
     to: [{ email: to }],
-    subject: "Account Deletion Request — FMSG",
+    subject: "Account Deletion Request - FMSG",
     html: deletionHTML(code),
     category: "Account Deletion",
   });
@@ -111,7 +111,7 @@ export async function sendAppealEmail(userEmail: string, userId: string, ip: str
   return mailtrapSend({
     from: { email: "appeals@fmsg.co.za", name: "FMSG Appeals" },
     to: [{ email: ADMIN_EMAIL }],
-    subject: `Account Appeal — ${userEmail}`,
+    subject: `Account Appeal - ${userEmail}`,
     html: [
       "<div style='font-family:sans-serif;padding:16px'>",
       "<h2 style='color:#FF3B30'>Account Disabled Appeal</h2>",

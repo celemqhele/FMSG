@@ -104,7 +104,7 @@ export async function sendSubscriptionConfirmation(to: string, plan: string, bil
   const subject = `Your ${plan} package is ready`;
   const html = wrap(`
     <p style="font-size:15px;line-height:1.6;color:#F5F5F7;margin:0 0 16px">Thanks for choosing the <strong style="color:#fff">${plan}</strong> package.</p>
-    ${p(`You paid <strong style="color:#F5F5F7">${amount}</strong> once-off — no auto-renewal, no surprises. Your package is active until <strong style="color:#F5F5F7">${expiryDate}</strong>.`)}
+    ${p(`You paid <strong style="color:#F5F5F7">${amount}</strong> once-off, no auto-renewal, no surprises. Your package is active until <strong style="color:#F5F5F7">${expiryDate}</strong>.`)}
     ${p("Come back and top up whenever you need more credits. You only pay when you're actually job hunting.")}
     ${btn("Start Searching", "https://findmesomejobs.co.za/dashboard")}
     <p style="font-size:12px;color:#8E8E93;margin:12px 0 0">Reference will appear on your statement as "FMSG" or "Find Me Some Jobs".</p>
@@ -116,7 +116,7 @@ export async function sendPaymentFailed(to: string, plan: string) {
   const subject = "Your payment did not go through";
   const html = wrap(`
     <p style="font-size:15px;line-height:1.6;color:#F5F5F7;margin:0 0 16px">We were unable to process your payment for the <strong style="color:#fff">${plan}</strong> package.</p>
-    ${p("This could be due to insufficient funds, an expired card, or your bank declining the transaction. Don't worry — we'll retry automatically.")}
+    ${p("This could be due to insufficient funds, an expired card, or your bank declining the transaction. Don't worry, we'll retry automatically.")}
     ${btn("Update Payment Method", "https://findmesomejobs.co.za/upgrade")}
     <p style="font-size:12px;color:#8E8E93;margin:12px 0 0">Your access continues until the end of your current billing period.</p>
   `);
@@ -140,7 +140,7 @@ export async function sendSubscriptionCancelled(to: string, plan: string) {
   const html = wrap(`
     <p style="font-size:15px;line-height:1.6;color:#F5F5F7;margin:0 0 16px">Your <strong style="color:#fff">${plan}</strong> package has been cancelled.</p>
     ${p("You'll retain access to your remaining credits until they're used up. No auto-renewal, no surprises.")}
-    ${p("You can purchase again anytime — only pay when you're actually job hunting.")}
+    ${p("You can purchase again anytime, only pay when you're actually job hunting.")}
     ${subtleBtn("View Packages", "https://findmesomejobs.co.za/upgrade")}
   `);
   await sendEmail(to, subject, html, "cancellation");
@@ -189,7 +189,7 @@ export async function sendPlanUpgraded(to: string, fromPlan: string, toPlan: str
   const subject = `Package purchased: ${toPlan}`;
   const html = wrap(`
     <p style="font-size:15px;line-height:1.6;color:#F5F5F7;margin:0 0 16px">You've purchased the <strong style="color:#fff">${toPlan}</strong> package.</p>
-    ${p(`You were charged <strong style="color:#F5F5F7">${amount}</strong>. Your new credits have been added to your existing balances — nothing is lost.`)}
+    ${p(`You were charged <strong style="color:#F5F5F7">${amount}</strong>. Your new credits have been added to your existing balances, nothing is lost.`)}
     ${btn("Go to Dashboard", "https://findmesomejobs.co.za/dashboard")}
   `);
   await sendEmail(to, subject, html, "plan-upgraded");
@@ -210,7 +210,7 @@ export async function sendPlanExpired(to: string, plan: string) {
   const html = wrap(`
     <p style="font-size:15px;line-height:1.6;color:#F5F5F7;margin:0 0 16px">Your <strong style="color:#fff">${plan}</strong> package has expired.</p>
     ${p("You're now on the Free tier. Your paid credits have been used up.")}
-    ${p("Purchase again whenever you need — only pay when you're actually job hunting. No subscriptions, no surprises.")}
+    ${p("Purchase again whenever you need, only pay when you're actually job hunting. No subscriptions, no surprises.")}
     ${btn("Top Up Now", "https://findmesomejobs.co.za/upgrade")}
   `);
   await sendEmail(to, subject, html, "plan-expired");
