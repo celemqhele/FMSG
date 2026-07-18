@@ -30,19 +30,19 @@ export function MobileContinuePopup({ isOpen, message, onContinue, onCancel }: M
     >
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onCancel} />
       <div
-        className="relative bg-white border border-gray-200 rounded-2xl p-5 w-[min(90vw,380px)] mx-4 text-center shadow-2xl transition-all duration-300 ease-out"
+        className="relative bg-white border border-gray-200 rounded-xl p-4 w-[min(80vw,320px)] mx-3 text-center shadow-2xl transition-all duration-300 ease-out"
         style={{
           opacity: mounted ? 1 : 0,
           transform: mounted ? "translateY(0) scale(1)" : "translateY(8px) scale(0.97)",
         }}
       >
-        <p className="text-sm text-gray-800 font-medium mb-5 leading-relaxed">{message}</p>
+        <p className="text-[11px] text-gray-800 font-medium mb-4 leading-relaxed">{message}</p>
         <button
           onClick={onContinue}
-          className="inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-black text-white text-sm font-medium active:scale-95 transition-all"
+          className="inline-flex items-center justify-center gap-1.5 px-5 py-2 rounded-[10px] bg-black text-white text-[11px] font-medium active:scale-95 transition-all"
         >
           Continue
-          <ArrowRight size={14} />
+          <ArrowRight size={11} />
         </button>
       </div>
     </div>

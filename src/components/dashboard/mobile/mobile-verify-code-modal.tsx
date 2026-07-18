@@ -122,25 +122,25 @@ export function MobileVerifyCodeModal({ isOpen, email, onClose, onVerified }: Mo
       <div className="relative">
         <button
           onClick={onClose}
-          className="absolute -top-3 -right-3 z-10 w-11 h-11 flex items-center justify-center bg-white border border-gray-300 rounded-full text-gray-600 hover:text-gray-900 transition-colors shadow-lg"
+          className="absolute -top-2.5 -right-2.5 z-10 w-9 h-9 flex items-center justify-center bg-white border border-gray-300 rounded-full text-gray-600 hover:text-gray-900 transition-colors shadow-lg"
         >
-          <X size={20} />
+          <X size={16} />
         </button>
         <div
-          className="bg-white rounded-[20px] p-6 w-[min(90vw,380px)] mx-4 text-center transition-all duration-300 ease-out shadow-xl"
+          className="bg-white rounded-[16px] p-5 w-[min(80vw,320px)] mx-3 text-center transition-all duration-300 ease-out shadow-xl"
           style={{ opacity: mounted ? 1 : 0, transform: mounted ? "translateY(0) scale(1)" : "translateY(8px) scale(0.97)" }}
         >
-          <div className="flex items-center justify-center gap-2 mb-2">
-            <Mail size={20} className="text-[var(--color-accent)]" />
-            <h3 className="text-lg font-semibold text-gray-900">Verify Your Email</h3>
+          <div className="flex items-center justify-center gap-1.5 mb-2">
+            <Mail size={16} className="text-[var(--color-accent)]" />
+            <h3 className="text-[14px] font-semibold text-gray-900">Verify Your Email</h3>
           </div>
-          <p className="text-sm text-gray-500 mb-5">Code sent to {maskedEmail}</p>
+          <p className="text-[11px] text-gray-500 mb-4">Code sent to {maskedEmail}</p>
 
           {success ? (
-            <p className="text-sm text-[var(--color-success)] font-medium">Verified!</p>
+            <p className="text-[11px] text-[var(--color-success)] font-medium">Verified!</p>
           ) : (
             <>
-              <div className="flex justify-center gap-1.5 mb-4" onPaste={handlePaste}>
+              <div className="flex justify-center gap-1 mb-3" onPaste={handlePaste}>
                 {code.map((digit, i) => (
                   <input
                     key={i}
@@ -151,22 +151,22 @@ export function MobileVerifyCodeModal({ isOpen, email, onClose, onVerified }: Mo
                     value={digit}
                     onChange={(e) => handleInput(i, e.target.value)}
                     onKeyDown={(e) => handleKeyDown(i, e)}
-                    className={`w-10 h-12 text-center text-xl font-bold rounded-xl border-2 transition-colors outline-none text-gray-900 ${
+                    className={`w-8 h-10 text-center text-[16px] font-bold rounded-[10px] border-2 transition-colors outline-none text-gray-900 ${
                       error ? "border-red-400 bg-red-50" : digit ? "border-[var(--color-accent)] bg-blue-50" : "border-gray-300 bg-gray-50"
                     }`}
                   />
                 ))}
               </div>
-              {error && <p className="text-sm text-red-500 mb-3">{error}</p>}
+              {error && <p className="text-[11px] text-red-500 mb-2.5">{error}</p>}
               {loading && (
-                <div className="flex items-center justify-center gap-2 text-sm text-gray-500 mb-3">
-                  <Loader2 size={14} className="animate-spin" /> Verifying...
+                <div className="flex items-center justify-center gap-2 text-[11px] text-gray-500 mb-2.5">
+                  <Loader2 size={11} className="animate-spin" /> Verifying...
                 </div>
               )}
               <button
                 onClick={handleResend}
                 disabled={resending || resendSent}
-                className="text-xs text-gray-400 hover:text-[var(--color-accent)] transition-colors disabled:opacity-50"
+                className="text-[10px] text-gray-400 hover:text-[var(--color-accent)] transition-colors disabled:opacity-50"
               >
                 {resending ? "Sending..." : resendSent ? "Code resent!" : "Didn't get it? Resend"}
               </button>

@@ -112,7 +112,7 @@ export function MobileProfileSheet({ isOpen, onClose, activeProfileId, onSelectP
         onClick={onClose}
       />
       <div
-        className="relative bg-[#1C1C1E] rounded-t-[24px] transition-transform duration-300 ease-out"
+        className="relative bg-[#1C1C1E] rounded-t-[19px] transition-transform duration-300 ease-out"
         style={{
           transform: `translateY(${dragY > 0 ? dragY : 0}px)`,
           paddingBottom: "env(safe-area-inset-bottom, 0px)",
@@ -120,90 +120,90 @@ export function MobileProfileSheet({ isOpen, onClose, activeProfileId, onSelectP
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
       >
-        <div className="flex justify-center pt-3 pb-2">
+        <div className="flex justify-center pt-2.5 pb-1.5">
           <div className="w-9 h-[5px] rounded-full bg-white/20" />
         </div>
 
-        <div className="px-5 pb-6">
-          <div className="flex items-center gap-3 mb-5">
-            <div className="w-11 h-11 rounded-full bg-white/10 border border-white/15 flex items-center justify-center text-sm font-semibold text-white">
+        <div className="px-4 pb-5">
+          <div className="flex items-center gap-2.5 mb-4">
+            <div className="w-9 h-9 rounded-full bg-white/10 border border-white/15 flex items-center justify-center text-[11px] font-semibold text-white">
               {name[0]?.toUpperCase() || "?"}
             </div>
             <div className="min-w-0">
-              <p className="text-sm font-medium text-white truncate">{name}</p>
-              <p className="text-xs text-white/50 truncate">{email}</p>
+              <p className="text-[11px] font-medium text-white truncate">{name}</p>
+              <p className="text-[10px] text-white/50 truncate">{email}</p>
             </div>
           </div>
 
           {profiles.length > 0 && (
-            <div className="mb-4">
-              <p className="text-[10px] font-medium text-white/40 uppercase tracking-wider mb-2 px-1">Search Profile</p>
+            <div className="mb-3">
+              <p className="text-[10px] font-medium text-white/40 uppercase tracking-wider mb-1.5 px-1">Search Profile</p>
               <div className="space-y-0.5">
                 {profiles.map((p) => (
                   <button
                     key={p.id}
                     onClick={() => { onSelectProfile(p.id); onClose(); }}
-                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-colors ${
+                    className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-[10px] text-[11px] transition-colors ${
                       p.id === activeProfileId
                         ? "bg-[var(--color-accent)]/10 text-[var(--color-accent)]"
                         : "text-white hover:bg-white/5"
                     }`}
                   >
                     <span className="flex-1 text-left truncate">{p.name}</span>
-                    {p.id === activeProfileId && <Check size={14} className="shrink-0" />}
+                    {p.id === activeProfileId && <Check size={11} className="shrink-0" />}
                   </button>
                 ))}
                 <button
                   onClick={handleCreateProfile}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-white/60 hover:text-white hover:bg-white/5 transition-colors"
+                  className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-[10px] text-[11px] text-white/60 hover:text-white hover:bg-white/5 transition-colors"
                 >
-                  <Plus size={14} />
+                  <Plus size={11} />
                   New Profile
                 </button>
               </div>
             </div>
           )}
 
-          <div className="space-y-1">
+          <div className="space-y-0.5">
             {isAdmin && onOpenAdminModal && (
               <button
                 onClick={() => { onClose(); onOpenAdminModal(); }}
-                className="w-full flex items-center gap-3 px-4 py-3 text-sm text-amber-400 rounded-xl hover:bg-amber-400/10 active:bg-amber-400/15 transition-colors"
+                className="w-full flex items-center gap-2.5 px-3 py-2.5 text-[11px] text-amber-400 rounded-[10px] hover:bg-amber-400/10 active:bg-amber-400/15 transition-colors"
               >
-                <CirclePlus size={18} className="opacity-80" />
+                <CirclePlus size={14} className="opacity-80" />
                 Create Job Post
               </button>
             )}
             <button
               onClick={() => handleNav("/profile")}
-              className="w-full flex items-center gap-3 px-4 py-3 text-sm text-white rounded-xl hover:bg-white/5 active:bg-white/10 transition-colors"
+              className="w-full flex items-center gap-2.5 px-3 py-2.5 text-[11px] text-white rounded-[10px] hover:bg-white/5 active:bg-white/10 transition-colors"
             >
-              <User size={18} className="opacity-60" />
+              <User size={14} className="opacity-60" />
               My Profile
             </button>
             <button
               onClick={() => handleNav("/settings")}
-              className="w-full flex items-center gap-3 px-4 py-3 text-sm text-white rounded-xl hover:bg-white/5 active:bg-white/10 transition-colors"
+              className="w-full flex items-center gap-2.5 px-3 py-2.5 text-[11px] text-white rounded-[10px] hover:bg-white/5 active:bg-white/10 transition-colors"
             >
-              <Settings size={18} className="opacity-60" />
+              <Settings size={14} className="opacity-60" />
               Settings
             </button>
             <button
               onClick={() => handleNav("/upgrade")}
-              className="w-full flex items-center gap-3 px-4 py-3 text-sm text-white rounded-xl hover:bg-white/5 active:bg-white/10 transition-colors"
+              className="w-full flex items-center gap-2.5 px-3 py-2.5 text-[11px] text-white rounded-[10px] hover:bg-white/5 active:bg-white/10 transition-colors"
             >
-              <Sparkles size={18} className="opacity-60" />
+              <Sparkles size={14} className="opacity-60" />
               Top Up
             </button>
           </div>
 
-          <div className="h-px bg-white/10 my-3" />
+          <div className="h-px bg-white/10 my-2.5" />
 
           <button
             onClick={handleLogout}
-            className="w-full flex items-center gap-3 px-4 py-3 text-sm text-red-400 rounded-xl hover:bg-white/5 active:bg-white/10 transition-colors"
+            className="w-full flex items-center gap-2.5 px-3 py-2.5 text-[11px] text-red-400 rounded-[10px] hover:bg-white/5 active:bg-white/10 transition-colors"
           >
-            <LogOut size={18} className="opacity-70" />
+            <LogOut size={14} className="opacity-70" />
             Logout
           </button>
         </div>

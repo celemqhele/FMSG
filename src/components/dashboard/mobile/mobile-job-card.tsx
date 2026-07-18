@@ -179,16 +179,16 @@ export function MobileJobCard({
   return (
     <>
       <div
-        className={`liquid-glass rounded-xl p-3.5 transition-all duration-300 ${
+        className={`liquid-glass rounded-[10px] p-2.5 transition-all duration-300 ${
           deleting ? "opacity-0 scale-95" : "opacity-100 scale-100"
         }`}
       >
         {/* Badges row */}
-        <div className="flex items-center gap-1.5 flex-wrap mb-2">
+        <div className="flex items-center gap-1 flex-wrap mb-1.5">
           {matchScore > 0 && (
             <button
               onClick={() => setShowVerdict(true)}
-              className={`text-xs font-semibold px-3 py-1.5 rounded-full border min-h-[44px] ${scoreBg}`}
+              className={`text-[10px] font-semibold px-2.5 py-1 rounded-full border min-h-[36px] ${scoreBg}`}
             >
               {scoreLabel} {matchScore}%
             </button>
@@ -206,14 +206,14 @@ export function MobileJobCard({
         </div>
 
         {/* Job info */}
-        <p className="text-sm font-medium text-[var(--color-text-primary)] mb-0.5 leading-snug line-clamp-2">{jobTitle}</p>
-        <p className="text-xs text-[var(--color-text-secondary)] mb-0.5 truncate">
+        <p className="text-[11px] font-medium text-[var(--color-text-primary)] mb-0.5 leading-snug line-clamp-2">{jobTitle}</p>
+        <p className="text-[10px] text-[var(--color-text-secondary)] mb-0.5 truncate">
           {company}{location ? <> &bull; {location}</> : ""}
         </p>
         {salary && (
-          <p className="text-[11px] text-[var(--color-text-secondary)]/60 mb-3">{salary}</p>
+          <p className="text-[11px] text-[var(--color-text-secondary)]/60 mb-2.5">{salary}</p>
         )}
-        {!salary && <div className="mb-3" />}
+        {!salary && <div className="mb-2.5" />}
 
         {cvError && (
           <p className="text-[11px] text-red-400 mb-2">{cvError}</p>
@@ -224,9 +224,9 @@ export function MobileJobCard({
           <button
             onClick={handleGenerateCv}
             disabled={cvLoading}
-            className="flex items-center justify-center gap-1.5 h-11 px-3 text-[11px] font-medium text-white bg-[var(--color-accent)] rounded-lg active:scale-95 disabled:opacity-50 transition-all"
+            className="flex items-center justify-center gap-1.5 h-9 px-2.5 text-[11px] font-medium text-white bg-[var(--color-accent)] rounded-[7px] active:scale-95 disabled:opacity-50 transition-all"
           >
-            {cvLoading ? <Loader2 size={13} className="animate-spin" /> : <FileText size={13} />}
+            {cvLoading ? <Loader2 size={10} className="animate-spin" /> : <FileText size={10} />}
             {cvLoading ? "..." : "CV"}
           </button>
           {jobUrl && (
@@ -234,24 +234,24 @@ export function MobileJobCard({
               href={jobUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center justify-center gap-1.5 h-11 px-3 text-[11px] font-medium text-[var(--color-text-primary)] border border-[var(--color-border)] rounded-lg active:scale-95 transition-all"
+              className="flex items-center justify-center gap-1.5 h-9 px-2.5 text-[11px] font-medium text-[var(--color-text-primary)] border border-[var(--color-border)] rounded-[7px] active:scale-95 transition-all"
             >
               Apply
-              <ExternalLink size={11} />
+              <ExternalLink size={9} />
             </a>
           )}
           <button
             onClick={handleSave}
             disabled={saved}
-            className="flex items-center justify-center h-11 w-11 border border-[var(--color-border)] rounded-lg text-[var(--color-text-secondary)] active:scale-95 disabled:opacity-40 transition-all"
+            className="flex items-center justify-center h-9 w-9 border border-[var(--color-border)] rounded-[7px] text-[var(--color-text-secondary)] active:scale-95 disabled:opacity-40 transition-all"
           >
-            <Bookmark size={14} fill={saved ? "currentColor" : "none"} className={saved ? "text-[var(--color-accent)]" : ""} />
+            <Bookmark size={11} fill={saved ? "currentColor" : "none"} className={saved ? "text-[var(--color-accent)]" : ""} />
           </button>
           <button
             onClick={openDeleteConfirm}
-            className="flex items-center justify-center h-11 w-11 border border-[var(--color-border)] rounded-lg text-[var(--color-text-secondary)] hover:text-red-400 active:scale-95 transition-all"
+            className="flex items-center justify-center h-9 w-9 border border-[var(--color-border)] rounded-[7px] text-[var(--color-text-secondary)] hover:text-red-400 active:scale-95 transition-all"
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M3 6h18" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
             </svg>
           </button>
@@ -263,12 +263,12 @@ export function MobileJobCard({
         <div className="fixed inset-0 z-[80] flex items-center justify-center transition-opacity duration-300" style={{ opacity: deleteConfirmMounted ? 1 : 0 }}>
           <div className="absolute inset-0 bg-black/60" onClick={closeDeleteConfirm} />
           <div
-            className="relative bg-white border border-gray-200 rounded-2xl p-5 w-[min(90vw,380px)] mx-4 text-center transition-all duration-300 ease-out shadow-xl"
+            className="relative bg-white border border-gray-200 rounded-xl p-4 w-[min(80vw,320px)] mx-3 text-center transition-all duration-300 ease-out shadow-xl"
             style={{ opacity: deleteConfirmMounted ? 1 : 0, transform: deleteConfirmMounted ? "translateY(0) scale(1)" : "translateY(8px) scale(0.97)" }}
           >
             <p className="text-gray-900 font-semibold mb-1">Hide this job?</p>
-            <p className="text-xs text-gray-500 mb-4">It won't appear in your results again.</p>
-            <div className="flex justify-center gap-3">
+            <p className="text-[10px] text-gray-500 mb-3">It won't appear in your results again.</p>
+            <div className="flex justify-center gap-2.5">
               <button onClick={closeDeleteConfirm} className="px-4 py-2 text-sm text-gray-600 bg-gray-100 rounded-full">Cancel</button>
               <button onClick={handleDelete} className="px-4 py-2 text-sm font-semibold text-white bg-red-500 rounded-full">Hide</button>
             </div>

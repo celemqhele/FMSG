@@ -33,23 +33,23 @@ export function MobileHeader({ onAvatarTap, onEditProfile, hasActiveProfile }: M
   }, []);
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 h-11 liquid-glass-surface flex items-center justify-between px-4 safe-area-top">
-      <div className="flex items-center gap-2">
+    <header className="fixed top-0 left-0 right-0 z-50 h-9 liquid-glass-surface flex items-center justify-between px-3 safe-area-top">
+      <div className="flex items-center gap-1.5">
         <Image src="/icon.png" alt="FMSG" width={22} height={22} className="shrink-0" priority />
-        <span className="text-sm font-semibold text-white select-none">FMSG</span>
+        <span className="text-[11px] font-semibold text-white select-none">FMSG</span>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1.5">
         {hasActiveProfile && onEditProfile && (
           <button
             onClick={onEditProfile}
-            className="w-9 h-9 rounded-full bg-white/10 border border-white/20 flex items-center justify-center text-white/70 hover:text-white transition-colors"
+            className="w-7 h-7 rounded-full bg-white/10 border border-white/20 flex items-center justify-center text-white/70 hover:text-white transition-colors"
           >
-            <Pencil size={14} />
+            <Pencil size={11} />
           </button>
         )}
         <button
           onClick={onAvatarTap}
-          className="w-11 h-11 rounded-full bg-white/15 border border-white/20 flex items-center justify-center text-xs font-semibold text-white"
+          className="w-9 h-9 rounded-full bg-white/15 border border-white/20 flex items-center justify-center text-[10px] font-semibold text-white"
         >
           {initials || "?"}
         </button>

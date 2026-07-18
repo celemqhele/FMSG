@@ -95,54 +95,54 @@ export function MobilePFPurchaseModal({ isOpen, onClose }: MobilePFPurchaseModal
       <div className="relative">
         <button
           onClick={onClose}
-          className="absolute -top-3 -right-3 z-10 w-11 h-11 flex items-center justify-center bg-white border border-gray-300 rounded-full text-gray-600 hover:text-gray-900 transition-colors shadow-lg"
+          className="absolute -top-2.5 -right-2.5 z-10 w-9 h-9 flex items-center justify-center bg-white border border-gray-300 rounded-full text-gray-600 hover:text-gray-900 transition-colors shadow-lg"
         >
-          <X size={20} />
+          <X size={16} />
         </button>
         <div
-          className="bg-white rounded-[20px] p-6 w-[min(90vw,380px)] mx-4 text-center transition-all duration-300 ease-out shadow-xl"
+          className="bg-white rounded-[16px] p-5 w-[min(80vw,320px)] mx-3 text-center transition-all duration-300 ease-out shadow-xl"
           style={{ opacity: mounted ? 1 : 0, transform: mounted ? "translateY(0) scale(1)" : "translateY(8px) scale(0.97)" }}
         >
-          <div className="flex items-center justify-center gap-2 mb-1">
-            <Crosshair size={20} className="text-[var(--color-accent)]" />
-            <h3 className="text-lg font-semibold text-gray-900">Buy PF Credits</h3>
+          <div className="flex items-center justify-center gap-1.5 mb-1">
+            <Crosshair size={16} className="text-[var(--color-accent)]" />
+            <h3 className="text-[14px] font-semibold text-gray-900">Buy PF Credits</h3>
           </div>
-          <p className="text-sm text-gray-500 mb-5">Persistent Finder runs: volume discounts apply</p>
+          <p className="text-[11px] text-gray-500 mb-4">Persistent Finder runs: volume discounts apply</p>
 
-          <div className="flex items-center gap-3 mb-5">
+          <div className="flex items-center gap-2.5 mb-4">
             <button
               onClick={() => setQuantity(Math.max(1, quantity - 1))}
               disabled={quantity <= 1 || processing}
-              className="w-12 h-12 flex items-center justify-center rounded-xl border border-gray-300 text-gray-700 hover:border-gray-400 transition-colors disabled:opacity-30"
+              className="w-10 h-10 flex items-center justify-center rounded-[10px] border border-gray-300 text-gray-700 hover:border-gray-400 transition-colors disabled:opacity-30"
             >
-              <Minus size={16} />
+              <Minus size={13} />
             </button>
             <div className="flex-1 text-center">
-              <span className="text-2xl font-bold text-gray-900 tabular-nums">{quantity}</span>
-              <span className="ml-1 text-sm text-gray-500">runs</span>
+              <span className="text-[19px] font-bold text-gray-900 tabular-nums">{quantity}</span>
+              <span className="ml-1 text-[11px] text-gray-500">runs</span>
             </div>
             <button
               onClick={() => setQuantity(Math.min(25, quantity + 1))}
               disabled={quantity >= 25 || processing}
-              className="w-12 h-12 flex items-center justify-center rounded-xl border border-gray-300 text-gray-700 hover:border-gray-400 transition-colors disabled:opacity-30"
+              className="w-10 h-10 flex items-center justify-center rounded-[10px] border border-gray-300 text-gray-700 hover:border-gray-400 transition-colors disabled:opacity-30"
             >
-              <Plus size={16} />
+              <Plus size={13} />
             </button>
           </div>
 
-          <div className="text-xs text-gray-400 mb-4">
+          <div className="text-[10px] text-gray-400 mb-3">
             R{calculatePFPrice(quantity)}/run &middot; R{(quantity * calculatePFPrice(quantity)).toLocaleString("en-ZA", { minimumFractionDigits: 0 })} total
           </div>
 
           <button
             onClick={handlePurchase}
             disabled={processing || quantity <= 0}
-            className="w-full h-12 flex items-center justify-center gap-2 text-sm font-medium text-white bg-[var(--color-accent)] rounded-xl hover:bg-[var(--color-accent-hover)] transition-colors disabled:opacity-50"
+            className="w-full h-10 flex items-center justify-center gap-1.5 text-[11px] font-medium text-white bg-[var(--color-accent)] rounded-[10px] hover:bg-[var(--color-accent-hover)] transition-colors disabled:opacity-50"
           >
-            {processing ? <><Loader2 size={16} className="animate-spin" /> Processing...</> : <><ShoppingCart size={16} /> Buy Now</>}
+            {processing ? <><Loader2 size={13} className="animate-spin" /> Processing...</> : <><ShoppingCart size={13} /> Buy Now</>}
           </button>
 
-          {successMessage && <p className="mt-4 text-sm text-[var(--color-success)]">{successMessage}</p>}
+          {successMessage && <p className="mt-3 text-[11px] text-[var(--color-success)]">{successMessage}</p>}
         </div>
       </div>
     </div>

@@ -63,7 +63,7 @@ export function MobileAuthSheet({ isOpen, onClose, defaultTab = "signup" }: Mobi
           onClick={onClose}
         />
         <div
-          className="relative bg-[#1C1C1E] rounded-t-[24px] overflow-hidden transition-transform duration-300 ease-out"
+          className="relative bg-[#1C1C1E] rounded-t-[19px] overflow-hidden transition-transform duration-300 ease-out"
           style={{
             transform: `translateY(${dragY > 0 ? dragY : 0}px)`,
             paddingBottom: "env(safe-area-inset-bottom, 0px)",
@@ -72,28 +72,28 @@ export function MobileAuthSheet({ isOpen, onClose, defaultTab = "signup" }: Mobi
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
         >
-          <div className="flex justify-center pt-3 pb-2 shrink-0">
-            <div className="w-9 h-[5px] rounded-full bg-white/20" />
+          <div className="flex justify-center pt-2.5 pb-1.5 shrink-0">
+            <div className="w-7 h-[5px] rounded-full bg-white/20" />
           </div>
 
           {screen !== "forgot-sent" && (
-            <div className="flex gap-1 mx-5 mb-4 p-1 rounded-lg bg-white/10 shrink-0">
+            <div className="flex gap-1 mx-4 mb-3 p-1 rounded-[7px] bg-white/10 shrink-0">
               <button
                 onClick={() => switchScreen("login")}
-                className={`flex-1 h-11 flex items-center justify-center text-sm font-medium rounded-md transition-colors ${screen === "login" ? "bg-white/15 text-white" : "text-white/50"}`}
+                className={`flex-1 h-9 flex items-center justify-center text-[11px] font-medium rounded transition-colors ${screen === "login" ? "bg-white/15 text-white" : "text-white/50"}`}
               >
                 Log In
               </button>
               <button
                 onClick={() => switchScreen("signup")}
-                className={`flex-1 h-11 flex items-center justify-center text-sm font-medium rounded-md transition-colors ${screen === "signup" ? "bg-white/15 text-white" : "text-white/50"}`}
+                className={`flex-1 h-9 flex items-center justify-center text-[11px] font-medium rounded transition-colors ${screen === "signup" ? "bg-white/15 text-white" : "text-white/50"}`}
               >
                 Sign Up
               </button>
             </div>
           )}
 
-          <div className="overflow-y-auto px-5 pb-6 max-h-[calc(90dvh-80px)]">
+          <div className="overflow-y-auto px-4 pb-5 max-h-[calc(90dvh-64px)]">
             <ContentWrapper key={screen}>
               {screen === "login" && (
                 <LogInForm onForgotPassword={() => switchScreen("forgot")} onLoggedIn={handleLoggedIn} />
@@ -106,10 +106,10 @@ export function MobileAuthSheet({ isOpen, onClose, defaultTab = "signup" }: Mobi
                 />
               )}
               {screen === "forgot-sent" && (
-                <div className="flex flex-col items-center gap-4 text-center py-8">
-                  <p className="text-sm text-white/60">Check your email. We sent a password reset link to</p>
-                  <p className="text-sm font-medium text-white">{pendingEmail}</p>
-                  <button onClick={() => switchScreen("login")} className="text-sm text-[var(--color-accent)] hover:underline">
+                <div className="flex flex-col items-center gap-3 text-center py-6">
+                  <p className="text-[11px] text-white/60">Check your email. We sent a password reset link to</p>
+                  <p className="text-[11px] font-medium text-white">{pendingEmail}</p>
+                  <button onClick={() => switchScreen("login")} className="text-[11px] text-[var(--color-accent)] hover:underline">
                     Back to Log In
                   </button>
                 </div>
@@ -119,10 +119,10 @@ export function MobileAuthSheet({ isOpen, onClose, defaultTab = "signup" }: Mobi
 
           <button
             onClick={onClose}
-            className="absolute top-3 right-3 w-11 h-11 flex items-center justify-center text-white/60 hover:text-white z-10"
+            className="absolute top-3 right-3 w-9 h-9 flex items-center justify-center text-white/60 hover:text-white z-10"
             aria-label="Close"
           >
-            <X size={22} />
+            <X size={18} />
           </button>
         </div>
       </div>

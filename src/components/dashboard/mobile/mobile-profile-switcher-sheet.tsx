@@ -77,37 +77,37 @@ export function MobileProfileSwitcherSheet({
   return (
     <div className="fixed inset-0 z-[100] flex flex-col justify-end">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-[#1C1C1E] rounded-t-[24px]" style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
-        <div className="flex justify-center pt-3 pb-2">
+      <div className="relative bg-[#1C1C1E] rounded-t-[19px]" style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
+        <div className="flex justify-center pt-2.5 pb-1.5">
           <div className="w-9 h-[5px] rounded-full bg-white/20" />
         </div>
 
-        <div className="px-5 pb-6">
-          <p className="text-xs font-medium text-white/50 uppercase tracking-wider mb-3">Switch Profile</p>
-          <div className="space-y-1">
+        <div className="px-4 pb-5">
+          <p className="text-[10px] font-medium text-white/50 uppercase tracking-wider mb-2.5">Switch Profile</p>
+          <div className="space-y-0.5">
             {profiles.map((p) => (
               <button
                 key={p.id}
                 onClick={() => handleSelect(p.id)}
-                className={`w-full flex items-center gap-3 px-4 py-3 text-sm rounded-xl transition-colors ${
+                className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-[11px] rounded-[10px] transition-colors ${
                   p.id === activeProfileId
                     ? "text-white bg-white/10"
                     : "text-white/80 hover:bg-white/5 active:bg-white/10"
                 }`}
               >
                 <span className="flex-1 text-left truncate">{p.name}</span>
-                {p.id === activeProfileId && <Check size={16} className="text-[var(--color-accent)] shrink-0" />}
+                {p.id === activeProfileId && <Check size={13} className="text-[var(--color-accent)] shrink-0" />}
               </button>
             ))}
           </div>
 
-          <div className="h-px bg-white/10 my-3" />
+          <div className="h-px bg-white/10 my-2.5" />
 
           <button
             onClick={handleCreate}
-            className="w-full flex items-center justify-center gap-2 px-4 py-3 text-sm text-[var(--color-accent)] rounded-xl border border-[var(--color-accent)]/30 hover:bg-[var(--color-accent)]/10 transition-colors"
+            className="w-full flex items-center justify-center gap-1.5 px-3 py-2.5 text-[11px] text-[var(--color-accent)] rounded-[10px] border border-[var(--color-accent)]/30 hover:bg-[var(--color-accent)]/10 transition-colors"
           >
-            <Plus size={16} />
+            <Plus size={13} />
             New Profile
           </button>
         </div>

@@ -49,27 +49,27 @@ export function MobileErrorPopup({ message, onClose }: MobileErrorPopupProps) {
         onClick={handleClose}
       />
       <div
-        className={`relative w-[min(90vw,380px)] mx-4 transition-all duration-200 ${mounted ? "opacity-100 scale-100" : "opacity-0 scale-95"}`}
+        className={`relative w-[min(80vw,320px)] mx-3 transition-all duration-200 ${mounted ? "opacity-100 scale-100" : "opacity-0 scale-95"}`}
         style={{ transition: "transform 300ms cubic-bezier(0.34, 1.56, 0.64, 1), opacity 250ms ease-out" }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="bg-white rounded-[20px] p-8 shadow-[var(--shadow-lg)]">
-          <div className="flex flex-col items-center gap-4">
+        <div className="bg-white rounded-[16px] p-6 shadow-[var(--shadow-lg)]">
+          <div className="flex flex-col items-center gap-3">
             <div
-              className="w-14 h-14 rounded-full bg-red-50 flex items-center justify-center"
+              className="w-11 h-11 rounded-full bg-red-50 flex items-center justify-center"
               style={{ animation: "error-popup-icon-in 400ms cubic-bezier(0.34, 1.56, 0.64, 1) both" }}
             >
-              <AlertTriangle size={28} className="text-red-500" strokeWidth={1.5} />
+              <AlertTriangle size={22} className="text-red-500" strokeWidth={1.5} />
             </div>
             <p
-              className="text-sm text-center leading-relaxed text-gray-700 max-w-xs"
+              className="text-[11px] text-center leading-relaxed text-gray-700 max-w-[250px]"
               style={{ animation: "error-popup-text-in 350ms ease-out 100ms both" }}
             >
               {message}
             </p>
             <button
               onClick={handleClose}
-              className="mt-2 h-12 px-8 flex items-center justify-center bg-black text-white text-sm font-medium rounded-xl hover:bg-gray-800 active:scale-[0.97] transition-all duration-150"
+              className="mt-1.5 h-10 px-6 flex items-center justify-center bg-black text-white text-[11px] font-medium rounded-[10px] hover:bg-gray-800 active:scale-[0.97] transition-all duration-150"
               style={{ animation: "error-popup-btn-in 350ms ease-out 200ms both" }}
             >
               OKAY
