@@ -377,9 +377,9 @@ export async function searchLinkedInJobs(params: SerpParams): Promise<SerpJob[]>
 
 const JINA_SCRAPEABLE_DOMAINS = [
   { domain: "careerjunction.co.za", jobPattern: /job-\d+\.aspx/i, listingPatterns: [/\/jobs\/[a-z0-9-]+$/i, /\/jobs\/[a-z0-9-]+\/[a-z0-9-]+$/i] },
-  { domain: "jobmail.co.za", jobPattern: /-id-\d+$/i, listingPatterns: [/\/jobs\/?$/i, /\/jobs\/[a-z0-9-]+\/?$/i] },
-  { domain: "pnet.co.za", jobPattern: /--[\w-]+--\d+-inline\.html/i, listingPatterns: [/\/jobs\/[a-z0-9-]+$/i, /\/jobs\/[a-z0-9-]+\?/i] },
-  { domain: "za.indeed.com", jobPattern: /\/viewjob\?jk=/i, listingPatterns: [/\/jobs\?/i] },
+  { domain: "jobmail.co.za", jobPattern: /-id-\d+$/i, listingPatterns: [/\/jobs\/?$/i, /\/jobs\/[a-z0-9-]+\/?$/i, /\/jobs\/[a-z0-9-]+\/[a-z0-9-]+\/?$/i] },
+  { domain: "pnet.co.za", jobPattern: /--[\w-]+--\d+-inline\.html/i, listingPatterns: [/\/jobs\/[a-z0-9-]+$/i] },
+  { domain: "za.indeed.com", jobPattern: /\/viewjob\?jk=/i, listingPatterns: [/\/jobs\/?$/i] },
   { domain: "linkedin.com", jobPattern: /\/jobs\/view\/\d+/i, listingPatterns: [/\/jobs\/search\//i] },
 ];
 
@@ -389,7 +389,7 @@ export function isListingPage(url: string): boolean {
     const host = u.hostname.replace(/^www\./, "").toLowerCase();
     const domain = JINA_SCRAPEABLE_DOMAINS.find(d => host === d.domain || host.endsWith(`.${d.domain}`));
     if (!domain) return false;
-    return domain.listingPatterns.some(p => p.test(u.pathname + u.search));
+    return domain.listingPatterns.some(p => p.test(u.pathname));
   } catch {
     return false;
   }
@@ -419,55 +419,61 @@ export async function searchGooglePages(params: SerpParams): Promise<{ title: st
 
   console.log(`[SRC5-GOOGLE-SCRAPE] Starting search for ${JINA_SCRAPEABLE_DOMAINS.length} domains (serpapi quota: ${rl.remaining}/${rl.total})`);
 
-  for (const { domain } of JINA_SCRAPEABLE_DOMAINS) {
-    const query = `${params.q} site:${domain}`;
+  const domainResults = await Promise.all(
+    JINA_SCRAPEABLE_DOMAINS.map(async ({ domain }) => {
+      const query = `${params.q} site:${domain}`;
 
-    const url = new URL("https://serpapi.com/search.json");
-    url.searchParams.set("engine", "google");
-    url.searchParams.set("q", query);
-    url.searchParams.set("api_key", SERPAPI_KEY!);
-    if (params.location) url.searchParams.set("location", params.location);
-    if (params.hl) url.searchParams.set("hl", params.hl || "en");
-    if (params.gl) url.searchParams.set("gl", params.gl || "za");
-    url.searchParams.set("num", "10");
+      const url = new URL("https://serpapi.com/search.json");
+      url.searchParams.set("engine", "google");
+      url.searchParams.set("q", query);
+      url.searchParams.set("api_key", SERPAPI_KEY!);
+      if (params.location) url.searchParams.set("location", params.location);
+      if (params.hl) url.searchParams.set("hl", params.hl || "en");
+      if (params.gl) url.searchParams.set("gl", params.gl || "za");
+      url.searchParams.set("num", "10");
 
-    const fullUrl = url.toString();
-    const safeUrl = fullUrl.replace(/api_key=[^&]+/, "api_key=***");
-    console.log(`[SRC5-GOOGLE-SCRAPE] REQ site:${domain} url=${safeUrl}`);
+      const fullUrl = url.toString();
+      const safeUrl = fullUrl.replace(/api_key=[^&]+/, "api_key=***");
+      console.log(`[SRC5-GOOGLE-SCRAPE] REQ site:${domain} url=${safeUrl}`);
 
-    try {
-      const res = await fetch(fullUrl);
-      console.log(`[SRC5-GOOGLE-SCRAPE] site:${domain} HTTP ${res.status} ${res.statusText}`);
-      if (!res.ok) {
-        console.error(`[SRC5-GOOGLE-SCRAPE] site:${domain} FAIL status=${res.status}`);
-        continue;
+      const matched: { title: string; link: string; snippet: string; domain: string }[] = [];
+
+      try {
+        const res = await fetch(fullUrl);
+        console.log(`[SRC5-GOOGLE-SCRAPE] site:${domain} HTTP ${res.status} ${res.statusText}`);
+        if (!res.ok) {
+          console.error(`[SRC5-GOOGLE-SCRAPE] site:${domain} FAIL status=${res.status}`);
+          return matched;
+        }
+        const data = await res.json();
+        recordApiCall("serpapi");
+        const organic = data.organic_results ?? [];
+        console.log(`[SRC5-GOOGLE-SCRAPE] site:${domain} OK ${organic.length} organic results`);
+        for (const r of organic) {
+          if (!r.link) continue;
+          try {
+            const resultDomain = new URL(r.link).hostname.replace(/^www\./, "").toLowerCase();
+            if (resultDomain === domain || resultDomain.endsWith(`.${domain}`)) {
+              matched.push({
+                title: r.title || "",
+                link: r.link,
+                snippet: r.snippet || "",
+                domain: resultDomain,
+              });
+            }
+          } catch {}
+        }
+        console.log(`[SRC5-GOOGLE-SCRAPE] site:${domain} matched ${matched.length} URLs for scraping`);
+      } catch (err) {
+        console.error(`[SRC5-GOOGLE-SCRAPE] site:${domain} EXCEPTION:`, err);
       }
-      const data = await res.json();
-      recordApiCall("serpapi");
-      const organic = data.organic_results ?? [];
-      console.log(`[SRC5-GOOGLE-SCRAPE] site:${domain} OK ${organic.length} organic results`);
-      let matched = 0;
-      for (const r of organic) {
-        if (!r.link) continue;
-        try {
-          const resultDomain = new URL(r.link).hostname.replace(/^www\./, "").toLowerCase();
-          if (resultDomain === domain || resultDomain.endsWith(`.${domain}`)) {
-            allResults.push({
-              title: r.title || "",
-              link: r.link,
-              snippet: r.snippet || "",
-              domain: resultDomain,
-            });
-            matched++;
-          }
-        } catch {}
-      }
-      console.log(`[SRC5-GOOGLE-SCRAPE] site:${domain} matched ${matched} URLs for scraping`);
-    } catch (err) {
-      console.error(`[SRC5-GOOGLE-SCRAPE] site:${domain} EXCEPTION:`, err);
-    }
 
-    await new Promise((r) => setTimeout(r, 200));
+      return matched;
+    })
+  );
+
+  for (const results of domainResults) {
+    allResults.push(...results);
   }
 
   console.log(`[SRC5-GOOGLE-SCRAPE] TOTAL ${allResults.length} URLs collected across all domains`);
@@ -628,33 +634,51 @@ export async function scrapeJobPage(
 
     // Validate this looks like an individual job page, not a search/listing/cookie page
     const lowerContent = content.toLowerCase();
-    if (
+    const isListingPage =
       lowerContent.includes("total jobs found") ||
-      lowerContent.includes("results for") && lowerContent.includes("jobs in") ||
+      (lowerContent.includes("results for") && lowerContent.includes("jobs in")) ||
       lowerContent.includes("search results") ||
       lowerContent.includes("refine your search") ||
-      lowerContent.includes("sort by") && lowerContent.includes("per page") ||
+      (lowerContent.includes("sort by") && lowerContent.includes("per page")) ||
       lowerContent.match(/\d+\s+jobs?\s+found/i) ||
       lowerContent.match(/\d+\s+results?\s+for/i) ||
       lowerContent.match(/show\s+\d+\s+\d+\s+\d+/i) ||
-      (lowerContent.includes("save this job") && lowerContent.split("save this job").length > 3) ||
-      (lowerContent.includes("cookie") && (lowerContent.includes("privacy") || lowerContent.includes("consent") || lowerContent.includes("policy"))) ||
-      (lowerContent.includes("we use cookies") && lowerContent.length < 2000) ||
-      lowerContent.includes("cookie policy") && !lowerContent.includes("job requirements") ||
-      lowerContent.match(/we\s+(use|use|and|store)\s+cookies/i)
-    ) {
+      (lowerContent.includes("save this job") && lowerContent.split("save this job").length > 3);
+
+    const isCookieOnly =
+      lowerContent.length < 5000 && (
+        (lowerContent.includes("cookie") && (lowerContent.includes("privacy") || lowerContent.includes("consent") || lowerContent.includes("policy"))) ||
+        lowerContent.includes("we use cookies") ||
+        lowerContent.includes("cookie policy") ||
+        lowerContent.match(/we\s+(use|and|store)\s+cookies/i)
+      );
+
+    if (isListingPage || isCookieOnly) {
       console.warn(`[SRC5-SCRAPE] REJECTED listing/cookie page: ${url} (first 100 chars: ${content.slice(0, 100)})`);
       return null;
     }
 
     const domain = new URL(url).hostname.replace(/^www\./, "").toLowerCase();
 
-    const titleMatch = content.match(/^#\s+(.+)/m) || content.match(/^##\s+(.+)/m);
-    let title = titleMatch?.[1]?.trim() || "";
+    // Find first heading that isn't a sidebar pattern (e.g. "N jobs in Location")
+    const sidebarHeadingPattern = /^[\d,*]+\s+\*{0,2}[\w\s/]+\*{0,2}\s+jobs?\s+in\s+/i;
+    let title = "";
+    for (const match of content.matchAll(/^(#{1,2})\s+(.+)/gm)) {
+      const headingText = match[2].trim();
+      if (!sidebarHeadingPattern.test(headingText)) {
+        title = headingText;
+        break;
+      }
+    }
 
     if (!title) {
       const ogTitle = json.data?.metadata?.title;
       if (ogTitle) title = ogTitle.split(" | ")[0].split(" - ")[0].trim();
+    }
+    if (!title) {
+      // Fall back to URL slug
+      const slug = url.split("/").pop()?.replace(/[-_]/g, " ").replace(/\b\w/g, c => c.toUpperCase()) || "";
+      if (slug.length > 5 && slug.length < 120) title = slug;
     }
     if (!title) {
       const titleLines = content.split("\n").filter((l: string) => l.trim().length > 5 && l.trim().length < 120);
@@ -663,8 +687,8 @@ export async function scrapeJobPage(
 
     let company = "";
     const companyPatterns = [
-      /(?:at|@|company:\s*)(.+)/i,
-      /(?:employer|organisation):\s*(.+)/i,
+      /\*\*(?:Company|Employer)\*\*:\s*(.+)/i,
+      /(?:company|employer|organisation|hiring\s+(?:company|organisation)):\s*(.+)/i,
     ];
     for (const pat of companyPatterns) {
       const m = content.match(pat);
@@ -682,11 +706,13 @@ export async function scrapeJobPage(
     }
 
     console.log(`[SRC5-SCRAPE] OK title="${title.slice(0, 60)}" company="${company || "Unknown"}" desc_len=${content.slice(0, 3000).length}`);
+    const titleIdx = content.indexOf(title);
+    const descriptionStart = titleIdx >= 0 ? titleIdx : 0;
     return {
       title: title.slice(0, 200),
       company_name: company || "Unknown",
       location: location || "",
-      description: content.slice(0, 3000),
+      description: content.slice(descriptionStart, descriptionStart + 3000),
       link: url,
       via: domain,
       hasFullSpec: true,

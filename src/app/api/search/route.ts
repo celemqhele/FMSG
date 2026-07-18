@@ -366,51 +366,57 @@ async function fetchAndFilterJobs(
 
     console.log(`[PIPELINE] Sources returned: GoogleJobs=${googleJobs.length} JSearch=${jsearchJobs.length} Adzuna=${adzunaJobs.length} LinkedIn=${linkedInJobs.length} GooglePages=${googlePages.length}`);
 
-    // Scrape Google Search URLs with Jina (two-step crawl)
+    // Scrape Google Search URLs with Jina (two-step crawl, parallel)
     console.log(`[PIPELINE] Starting two-step crawl for ${googlePages.length} Google Search URLs`);
     const scrapedGoogleJobs: SerpJob[] = [];
-    for (const v of googlePages.slice(0, 5)) {
+
+    // Phase 1: Classify all URLs and extract individual URLs from listing pages (parallel)
+    const classifications = await Promise.all(googlePages.map(async (v) => {
       if (isIndividualJobPage(v.link)) {
-        // Already an individual job page — scrape directly
-        console.log(`[PIPELINE] Individual job page, scraping directly: ${v.link}`);
-        const job = await scrapeJobPage(v.link, JINA_API ?? null);
-        if (job) {
-          job.title = job.title || v.title;
-          scrapedGoogleJobs.push(job);
-          console.log(`[PIPELINE] Scraped OK: "${job.title}" at "${job.company_name}"`);
-        } else {
-          console.warn(`[PIPELINE] Scrape returned null: ${v.link}`);
-        }
+        return { type: "direct" as const, url: v.link, domain: v.domain, title: v.title };
       } else if (isListingPage(v.link)) {
-        // Listing page — extract individual URLs first
         console.log(`[PIPELINE] Listing page detected, extracting URLs: ${v.link}`);
-        const individualUrls = await extractJobUrlsFromListingPage(v.link, JINA_API ?? null);
+        const individualUrls = await withTimeout(extractJobUrlsFromListingPage(v.link, JINA_API ?? null), 15_000, `Jina extract ${v.domain}`).catch(() => [] as string[]);
         console.log(`[PIPELINE] Extracted ${individualUrls.length} individual URLs from ${v.domain}`);
-        for (const jobUrl of individualUrls.slice(0, 5)) {
-          const job = await scrapeJobPage(jobUrl, JINA_API ?? null);
-          if (job) {
-            scrapedGoogleJobs.push(job);
-            console.log(`[PIPELINE] Scraped OK: "${job.title}" at "${job.company_name}"`);
-          } else {
-            console.warn(`[PIPELINE] Scrape returned null: ${jobUrl}`);
-          }
-          await new Promise((r) => setTimeout(r, 150));
-        }
+        return { type: "listing" as const, urls: individualUrls, domain: v.domain };
       } else {
-        // Unknown pattern — try scraping directly
-        console.log(`[PIPELINE] Unknown pattern, scraping directly: ${v.link}`);
-        const job = await scrapeJobPage(v.link, JINA_API ?? null);
-        if (job) {
-          job.title = job.title || v.title;
-          scrapedGoogleJobs.push(job);
-          console.log(`[PIPELINE] Scraped OK: "${job.title}" at "${job.company_name}"`);
-        } else {
-          console.warn(`[PIPELINE] Scrape returned null: ${v.link}`);
+        return { type: "direct" as const, url: v.link, domain: v.domain, title: v.title };
+      }
+    }));
+
+    // Collect all URLs to scrape
+    const urlsToScrape: { url: string; domain: string; title?: string }[] = [];
+    for (const c of classifications) {
+      if (c.type === "direct") {
+        urlsToScrape.push({ url: c.url, domain: c.domain, title: c.title });
+      } else {
+        for (const url of c.urls) {
+          urlsToScrape.push({ url, domain: c.domain });
         }
       }
-      await new Promise((r) => setTimeout(r, 150));
     }
-    console.log(`[PIPELINE] Two-step crawl complete: ${scrapedGoogleJobs.length} jobs scraped`);
+    console.log(`[PIPELINE] Phase 1 complete: ${urlsToScrape.length} URLs to scrape`);
+
+    // Phase 2: Scrape all URLs in parallel batches of 5
+    const CONCURRENCY = 5;
+    for (let i = 0; i < urlsToScrape.length; i += CONCURRENCY) {
+      const batch = urlsToScrape.slice(i, i + CONCURRENCY);
+      const batchResults = await Promise.all(
+        batch.map(({ url, domain, title }) =>
+          withTimeout(scrapeJobPage(url, JINA_API ?? null), 15_000, `Jina scrape ${domain}`)
+            .then((job) => {
+              if (job) {
+                if (title) job.title = job.title || title;
+                console.log(`[PIPELINE] Scraped OK: "${job.title}" at "${job.company_name}"`);
+              }
+              return job;
+            })
+            .catch(() => null)
+        )
+      );
+      scrapedGoogleJobs.push(...batchResults.filter((j): j is SerpJob => j !== null));
+    }
+    console.log(`[PIPELINE] Two-step crawl complete: ${scrapedGoogleJobs.length} jobs scraped from ${urlsToScrape.length} URLs`);
 
     // Merge all sources with dedup (priority: JSearch > Google Jobs > LinkedIn > Google Search > Adzuna)
     rawJobs = [];

@@ -147,7 +147,7 @@ export function VerifyCodeModal({ isOpen, email, onClose, onVerified }: VerifyCo
       <div className="relative">
         <button
           onClick={onClose}
-          className="absolute -top-4 -right-4 z-10 p-1.5 bg-white border border-gray-300 rounded-full text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors shadow-lg"
+          className="absolute top-2 right-2 z-10 p-2 bg-white border border-gray-300 rounded-full text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors shadow-lg"
         >
           <X size={20} />
         </button>
@@ -167,7 +167,7 @@ export function VerifyCodeModal({ isOpen, email, onClose, onVerified }: VerifyCo
             <p className="text-sm text-[var(--color-success)] font-medium">Verified!</p>
           ) : (
             <>
-              <div className="flex justify-center gap-2 mb-4" onPaste={handlePaste}>
+              <div className="flex justify-center gap-1.5 mb-4" onPaste={handlePaste}>
                 {code.map((digit, i) => (
                   <input
                     key={i}
@@ -178,7 +178,7 @@ export function VerifyCodeModal({ isOpen, email, onClose, onVerified }: VerifyCo
                     value={digit}
                     onChange={(e) => handleInput(i, e.target.value)}
                     onKeyDown={(e) => handleKeyDown(i, e)}
-                    className={`w-12 h-14 text-center text-xl font-bold rounded-xl border-2 transition-colors outline-none text-gray-900 ${
+                    className={`w-10 h-12 text-center text-xl font-bold rounded-xl border-2 transition-colors outline-none text-gray-900 ${
                       error
                         ? "border-red-400 bg-red-50"
                         : digit

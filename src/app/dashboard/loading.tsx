@@ -3,6 +3,8 @@
 import { SearchPill } from "@/components/dashboard/search-pill";
 import { BalanceChips } from "@/components/dashboard/balance-chips";
 import { PageTransitionWrapper } from "@/components/ui/page-transition-wrapper";
+import { MobileSkeletonCard } from "@/components/dashboard/mobile/mobile-skeleton-card";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 function SkeletonCard() {
   return (
@@ -23,27 +25,42 @@ function SkeletonCard() {
 }
 
 export default function DashboardLoading() {
+  const isMobile = useIsMobile();
+
   return (
     <PageTransitionWrapper>
-      <div className="max-w-4xl mx-auto pt-8 space-y-6">
-        <div className="flex items-center justify-center gap-2 mb-6">
-          <div className="h-8 w-20 rounded-lg bg-white/10 animate-pulse" />
-          <div className="h-8 w-20 rounded-lg bg-white/10 animate-pulse" />
-          <div className="h-8 w-20 rounded-lg bg-white/10 animate-pulse" />
-          <div className="h-8 w-20 rounded-lg bg-white/10 animate-pulse" />
-          <div className="h-8 w-20 rounded-lg bg-white/10 animate-pulse" />
-        </div>
-        <div className="w-full max-w-2xl mx-auto">
-          <div className="h-14 rounded-full bg-white/10 animate-pulse" />
-        </div>
-        <div className="flex flex-wrap justify-center gap-1.5">
-          <BalanceChips />
-        </div>
-        <div className="space-y-4">
-          <SkeletonCard />
-          <SkeletonCard />
-          <SkeletonCard />
-        </div>
+      <div className={`max-w-4xl mx-auto space-y-6 ${isMobile ? "pt-16 px-4 pb-20" : "pt-8"}`}>
+        {!isMobile && (
+          <>
+            <div className="flex items-center justify-center gap-2 mb-6">
+              <div className="h-8 w-20 rounded-lg bg-white/10 animate-pulse" />
+              <div className="h-8 w-20 rounded-lg bg-white/10 animate-pulse" />
+              <div className="h-8 w-20 rounded-lg bg-white/10 animate-pulse" />
+              <div className="h-8 w-20 rounded-lg bg-white/10 animate-pulse" />
+              <div className="h-8 w-20 rounded-lg bg-white/10 animate-pulse" />
+            </div>
+            <div className="w-full max-w-2xl mx-auto">
+              <div className="h-14 rounded-full bg-white/10 animate-pulse" />
+            </div>
+            <div className="flex flex-wrap justify-center gap-1.5">
+              <BalanceChips />
+            </div>
+          </>
+        )}
+        {isMobile && (
+          <div className="space-y-3 pt-4">
+            <MobileSkeletonCard />
+            <MobileSkeletonCard />
+            <MobileSkeletonCard />
+          </div>
+        )}
+        {!isMobile && (
+          <div className="space-y-4">
+            <SkeletonCard />
+            <SkeletonCard />
+            <SkeletonCard />
+          </div>
+        )}
       </div>
     </PageTransitionWrapper>
   );
