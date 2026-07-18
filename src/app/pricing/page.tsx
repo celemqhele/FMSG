@@ -8,6 +8,8 @@ import { Footer } from "@/components/layout/footer";
 import { FloatingNavbar } from "@/components/layout/floating-navbar";
 import dynamic from "next/dynamic";
 const AuthModal = dynamic(() => import("@/components/auth/auth-modal").then((mod) => mod.AuthModal), { ssr: false });
+const MobileAuthSheet = dynamic(() => import("@/components/auth/mobile-auth-sheet").then((mod) => mod.MobileAuthSheet), { ssr: false });
+import { useIsMobile } from "@/hooks/use-mobile";
 import { LiquidGlassCard } from "@/components/landing/liquid-glass-card";
 import { PageTransitionWrapper } from "@/components/ui/page-transition-wrapper";
 import { useTransition } from "@/components/providers/transition-provider";
@@ -41,6 +43,7 @@ const PAYSTACK_PUBLIC_KEY = process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY;
 export default function PricingPage() {
   const router = useRouter();
   const { endTransition } = useTransition();
+  const isMobile = useIsMobile();
   const supabase = createClient();
 
   const [authOpen, setAuthOpen] = useState(false);
@@ -283,11 +286,19 @@ export default function PricingPage() {
       </PageTransitionWrapper>
       <Footer />
 
-      <AuthModal
-        isOpen={authOpen}
-        onClose={handleClose}
-        defaultTab={authTab}
-      />
+      {isMobile ? (
+        <MobileAuthSheet
+          isOpen={authOpen}
+          onClose={handleClose}
+          defaultTab={authTab}
+        />
+      ) : (
+        <AuthModal
+          isOpen={authOpen}
+          onClose={handleClose}
+          defaultTab={authTab}
+        />
+      )}
 
       {successToast && (
         <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[60] px-6 py-3 rounded-full bg-green-600 text-white text-sm font-medium shadow-lg animate-[auth-screen-in_300ms_ease-out]">

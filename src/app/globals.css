@@ -14,6 +14,61 @@
   --shadow-sm: 0 1px 3px rgba(0,0,0,0.08);
   --shadow-md: 0 4px 16px rgba(0,0,0,0.10);
   --shadow-lg: 0 8px 32px rgba(0,0,0,0.12);
+
+  --spacing-xxs: 0.2rem;
+  --spacing-xs: 0.4rem;
+  --spacing-sm: 0.6rem;
+  --spacing-md: 0.8rem;
+  --spacing-lg: 1.2rem;
+  --spacing-xl: 1.6rem;
+  --spacing-xxl: 2.4rem;
+
+  --tap-min: 2.25rem;
+  --tap-min-m3: 2.5rem;
+  --tap-gap: 0.4rem;
+
+  --font-size-base: 0.8rem;
+  --font-size-sm: 0.7rem;
+  --font-size-xs: 0.6rem;
+
+  --icon-nav: 1.2rem;
+  --icon-inline: 1rem;
+  --icon-status: 0.8rem;
+
+  --avatar-list: 2rem;
+  --avatar-card: 2.4rem;
+  --avatar-header: 4rem;
+
+  --radius-sm: 0.6rem;
+  --radius-md: 1rem;
+  --radius-lg: 1.2rem;
+  --radius-pill: 9999px;
+
+  --top-nav-h: 2.25rem;
+  --bottom-nav-h: 2.75rem;
+
+  --modal-w: min(80vw, 320px);
+  --modal-max-h: 85dvh;
+  --modal-hdr: 2.75rem;
+  --modal-close: 2.25rem;
+  --modal-row: 2.25rem;
+
+  --sheet-handle-w: 1.75rem;
+  --sheet-handle-h: 0.25rem;
+  --sheet-rest-h: 50dvh;
+  --sheet-max-h: 85dvh;
+  --chip-h: 1.6rem;
+
+  --btn-h: 2.4rem;
+  --btn-inline-h: 1.6rem;
+
+  --input-h: 2.4rem;
+
+  --list-row: 2.25rem;
+  --list-row-lg: 2.75rem;
+
+  --screen-max-w: 430px;
+  --screen-edge: 0.8rem;
 }
 
 .dark {

@@ -102,21 +102,21 @@ export function MobileSearchPill({ onSearch, onAbort, searching, pfMode, onPfMod
         <div className="fixed inset-0 z-[80] flex items-center justify-center transition-opacity duration-300" style={{ opacity: abortMounted ? 1 : 0 }}>
           <div className="absolute inset-0 bg-black/60" onClick={closeAbortConfirm} />
           <div
-            className="relative bg-white border border-gray-200 rounded-2xl p-6 max-w-[280px] mx-8 text-center transition-all duration-300 ease-out shadow-xl"
+            className="relative bg-white border border-gray-200 rounded-xl p-5 w-[min(80vw,320px)] mx-3 text-center transition-all duration-300 ease-out shadow-xl"
             style={{ opacity: abortMounted ? 1 : 0, transform: abortMounted ? "translateY(0) scale(1)" : "translateY(8px) scale(0.97)" }}
           >
-            <p className="text-gray-900 font-semibold mb-2">Abort search?</p>
-            <p className="text-xs text-gray-500 mb-5">Credits already used will not be refunded.</p>
-            <div className="flex justify-center gap-3">
+            <p className="text-gray-900 font-semibold mb-1.5">Abort search?</p>
+            <p className="text-[10px] text-gray-500 mb-5">Credits already used will not be refunded.</p>
+            <div className="flex justify-center gap-2.5">
               <button
                 onClick={closeAbortConfirm}
-                className="px-4 py-2 text-sm font-medium text-gray-600 bg-gray-100 border border-gray-200 rounded-full"
+                className="px-3 py-2 text-[11px] font-medium text-gray-600 bg-gray-100 border border-gray-200 rounded-full"
               >
                 Cancel
               </button>
               <button
                 onClick={confirmAbort}
-                className="px-4 py-2 text-sm font-semibold text-white bg-[var(--color-error)] rounded-full"
+                className="px-3 py-2 text-[11px] font-semibold text-white bg-[var(--color-error)] rounded-full"
               >
                 Stop
               </button>
@@ -139,16 +139,16 @@ export function MobileSearchPill({ onSearch, onAbort, searching, pfMode, onPfMod
         onPlatformsChange={onPlatformsChange}
       />
 
-      <div className="space-y-2">
-        <div className="flex items-center h-12 rounded-full bg-white/10 border border-white/20 backdrop-blur-xl overflow-hidden">
+      <div className="space-y-1.5">
+        <div className="flex items-center h-10 rounded-full bg-white/10 border border-white/20 backdrop-blur-xl overflow-hidden">
           <button
             onClick={() => setFilterSheetOpen(true)}
-            className="flex items-center justify-center w-11 h-full shrink-0 text-white/60 hover:text-white/90 active:text-white transition-colors"
+            className="flex items-center justify-center w-9 h-full shrink-0 text-white/60 hover:text-white/90 active:text-white transition-colors"
           >
-            <SlidersHorizontal size={18} />
+            <SlidersHorizontal size={14} />
           </button>
 
-          <span className="flex-1 text-white/60 text-sm truncate select-none pr-2">
+          <span className="flex-1 text-white/60 text-[11px] truncate select-none pr-2">
             {pfMode
               ? `Persistent Finder · ${activeDateLabel}`
               : dateFilterDays != null
@@ -159,22 +159,22 @@ export function MobileSearchPill({ onSearch, onAbort, searching, pfMode, onPfMod
           {searching ? (
             <button
               onClick={openAbortConfirm}
-              className="flex items-center justify-center w-11 h-full shrink-0 text-[var(--color-error)]"
+              className="flex items-center justify-center w-9 h-full shrink-0 text-[var(--color-error)]"
             >
-              <Square size={18} />
+              <Square size={14} />
             </button>
           ) : (
             <button
               onClick={handleSearch}
-              className="flex items-center justify-center w-11 h-full shrink-0 text-[var(--color-accent)]"
+              className="flex items-center justify-center w-9 h-full shrink-0 text-[var(--color-accent)]"
             >
-              <Search size={18} />
+              <Search size={14} />
             </button>
           )}
         </div>
 
         {(dateFilterDays != null || pfMode) && !searching && (
-          <div className="flex items-center justify-center gap-2">
+          <div className="flex items-center justify-center gap-1.5">
             {dateFilterDays != null && (
               <span className="text-[10px] text-[var(--color-accent)] font-medium bg-[var(--color-accent)]/10 px-2 py-0.5 rounded-full">
                 {activeDateLabel}

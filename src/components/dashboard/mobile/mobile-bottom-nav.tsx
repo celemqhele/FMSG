@@ -14,7 +14,7 @@ const tabs: { id: TabId; label: string; icon: typeof Search }[] = [
 export function MobileBottomNav({ active, onChange }: { active: TabId; onChange: (tab: TabId) => void }) {
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 liquid-glass-surface border-t border-white/10 safe-area-bottom">
-      <div className="flex items-stretch h-14">
+      <div className="flex items-stretch h-11">
         {tabs.map((tab) => {
           const Icon = tab.icon;
           const isActive = active === tab.id;
@@ -22,11 +22,11 @@ export function MobileBottomNav({ active, onChange }: { active: TabId; onChange:
             <button
               key={tab.id}
               onClick={() => onChange(tab.id)}
-              className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors ${
+              className={`flex-1 flex flex-col items-center justify-center gap-px transition-colors ${
                 isActive ? "text-[var(--color-accent)]" : "text-white/50"
               }`}
             >
-              <Icon size={20} strokeWidth={isActive ? 2.2 : 1.6} />
+              <Icon size={16} strokeWidth={isActive ? 2.2 : 1.6} />
               <span className={`text-[10px] font-medium ${isActive ? "text-[var(--color-accent)]" : ""}`}>
                 {tab.label}
               </span>

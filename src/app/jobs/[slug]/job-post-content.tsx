@@ -3,6 +3,8 @@
 import { useState, useCallback } from "react";
 import { Search, ExternalLink } from "lucide-react";
 import { AuthModal } from "@/components/auth/auth-modal";
+import { MobileAuthSheet } from "@/components/auth/mobile-auth-sheet";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { useTransition } from "@/components/providers/transition-provider";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
@@ -24,6 +26,7 @@ export function JobPostContent({ job }: { job: PublicJob }) {
   const [authOpen, setAuthOpen] = useState(false);
   const [authTab, setAuthTab] = useState<"login" | "signup">("signup");
   const { startTransition, endTransition } = useTransition();
+  const isMobile = useIsMobile();
   const router = useRouter();
 
   const storeReferral = useCallback(() => {
@@ -121,7 +124,11 @@ export function JobPostContent({ job }: { job: PublicJob }) {
         </div>
       </div>
 
-      <AuthModal isOpen={authOpen} onClose={handleClose} defaultTab={authTab} />
+      {isMobile ? (
+        <MobileAuthSheet isOpen={authOpen} onClose={handleClose} defaultTab={authTab} />
+      ) : (
+        <AuthModal isOpen={authOpen} onClose={handleClose} defaultTab={authTab} />
+      )}
     </div>
   );
 }

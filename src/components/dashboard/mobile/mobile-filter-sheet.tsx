@@ -81,22 +81,22 @@ export function MobileFilterSheet({
     <div className="fixed inset-0 z-[90] flex flex-col">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
       <div className="relative bg-[#1C1C1E] flex-1 flex flex-col" style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
-        <div className="flex justify-center pt-3 pb-1 shrink-0">
-          <div className="w-10 h-1 rounded-full bg-white/20" />
+        <div className="flex justify-center pt-2.5 pb-1 shrink-0">
+          <div className="w-7 h-[5px] rounded-full bg-white/20" />
         </div>
 
-        <div className="flex-1 overflow-y-auto px-5 space-y-6">
+        <div className="flex-1 overflow-y-auto px-4 space-y-5">
           {/* Date filter */}
           <div>
-            <p className="text-xs font-medium text-white/50 uppercase tracking-wider mb-3">Date Posted</p>
-            <div className="flex flex-wrap gap-2">
+            <p className="text-[10px] font-medium text-white/50 uppercase tracking-wider mb-2.5">Date Posted</p>
+            <div className="flex flex-wrap gap-1.5">
               {DATE_OPTIONS.map((opt) => {
                 const active = selectedDays === opt.value;
                 return (
                   <button
                     key={opt.label}
                     onClick={() => { setSelectedDays(opt.value); setSelectedLabel(opt.label); }}
-                    className={`px-3.5 py-2 rounded-full text-xs font-medium border transition-all ${
+                    className={`px-3.5 py-1.5 rounded-full text-[10px] font-medium border transition-all ${
                       active
                         ? "bg-[var(--color-accent)]/15 border-[var(--color-accent)]/50 text-[var(--color-accent)]"
                         : "border-white/15 text-white/60 hover:text-white/80"
@@ -112,17 +112,17 @@ export function MobileFilterSheet({
           {/* PF toggle */}
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-white font-medium">Persistent Finder</p>
-              <p className="text-xs text-white/50 mt-0.5">Search multiple rounds</p>
+              <p className="text-[11px] text-white font-medium">Persistent Finder</p>
+              <p className="text-[10px] text-white/50 mt-0.5">Search multiple rounds</p>
             </div>
             <button
               onClick={() => onPfModeChange(!pfMode)}
-              className={`relative inline-flex h-9 w-14 items-center rounded-full transition-colors ${
+              className={`relative inline-flex h-8 w-11 items-center rounded-full transition-colors ${
                 pfMode ? "bg-[var(--color-accent)]" : "bg-white/15"
               }`}
             >
               <span
-                className={`inline-block h-6 w-6 rounded-full bg-white shadow transition-transform duration-200 ${
+                className={`inline-block h-5 w-6 rounded-full bg-white shadow transition-transform duration-200 ${
                   pfMode ? "translate-x-7" : "translate-x-1"
                 }`}
               />
@@ -131,7 +131,7 @@ export function MobileFilterSheet({
 
           {/* Sort */}
           <div>
-            <p className="text-xs font-medium text-white/50 uppercase tracking-wider mb-3">Sort By</p>
+            <p className="text-[10px] font-medium text-white/50 uppercase tracking-wider mb-2.5">Sort By</p>
             <div className="space-y-1">
               {SORT_OPTIONS.map((opt) => {
                 const active = currentSort === opt.value;
@@ -139,16 +139,16 @@ export function MobileFilterSheet({
                   <button
                     key={opt.value}
                     onClick={() => onSortChange(opt.value)}
-                    className={`w-full flex items-center gap-3 px-4 py-3 text-sm rounded-xl transition-colors ${
+                    className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-[11px] rounded-[10px] transition-colors ${
                       active
                         ? "text-[var(--color-accent)] bg-[var(--color-accent)]/10"
                         : "text-white hover:bg-white/5"
                     }`}
                   >
-                    <span className={`w-4 h-4 rounded-full border flex items-center justify-center ${
+                    <span className={`w-3.5 h-4 rounded-full border flex items-center justify-center ${
                       active ? "border-[var(--color-accent)]" : "border-white/30"
                     }`}>
-                      {active && <span className="w-2 h-2 rounded-full bg-[var(--color-accent)]" />}
+                      {active && <span className="w-1.5 h-2 rounded-full bg-[var(--color-accent)]" />}
                     </span>
                     {opt.label}
                   </button>
@@ -159,8 +159,8 @@ export function MobileFilterSheet({
 
           {/* Platforms */}
           <div>
-            <p className="text-xs font-medium text-white/50 uppercase tracking-wider mb-3">Platforms</p>
-            <div className="flex flex-wrap gap-2">
+            <p className="text-[10px] font-medium text-white/50 uppercase tracking-wider mb-2.5">Platforms</p>
+            <div className="flex flex-wrap gap-1.5">
               {PLATFORMS.map((p) => {
                 const active = currentPlatforms.includes("all")
                   ? p.id === "all"
@@ -169,7 +169,7 @@ export function MobileFilterSheet({
                   <button
                     key={p.id}
                     onClick={() => togglePlatform(p.id)}
-                    className={`px-3 py-2 rounded-full text-xs font-medium border transition-all ${
+                    className={`px-2.5 py-1.5 rounded-full text-[10px] font-medium border transition-all ${
                       active
                         ? "bg-[var(--color-accent)]/15 border-[var(--color-accent)]/40 text-[var(--color-accent)]"
                         : "border-white/15 text-white/60 hover:text-white/80"
@@ -184,10 +184,10 @@ export function MobileFilterSheet({
 
         </div>
 
-        <div className="shrink-0 px-5 py-4 border-t border-white/10">
+        <div className="shrink-0 px-4 py-3 border-t border-white/10">
           <button
             onClick={handleApply}
-            className="w-full py-3 rounded-xl bg-[var(--color-accent)] text-white text-sm font-semibold hover:bg-[var(--color-accent-hover)] active:scale-[0.98] transition-all"
+            className="w-full py-2.5 rounded-[10px] bg-[var(--color-accent)] text-white text-[11px] font-semibold hover:bg-[var(--color-accent-hover)] active:scale-[0.98] transition-all"
           >
             Apply Filters
           </button>

@@ -56,20 +56,20 @@ export function MobileVerdictSheet({
   return (
     <div className="fixed inset-0 z-[200] flex flex-col justify-end">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-[#1C1C1E] rounded-t-2xl overflow-y-auto" style={{ height: "calc(100dvh - 3rem)", paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
+      <div className="relative bg-[#1C1C1E] rounded-t-[19px] overflow-y-auto" style={{ height: "calc(100dvh - 2.5rem)", paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
         {/* Handle */}
-        <div className="flex justify-center pt-3 pb-1 sticky top-0 bg-[#1C1C1E] z-10">
-          <div className="w-10 h-1 rounded-full bg-white/20" />
+        <div className="flex justify-center pt-2.5 pb-1 sticky top-0 bg-[#1C1C1E] z-10">
+          <div className="w-7 h-[5px] rounded-full bg-white/20" />
         </div>
 
-        <div className="px-5 pb-8">
+        <div className="px-4 pb-6">
           {/* Header badges */}
-          <div className="flex items-center gap-2 flex-wrap mb-4">
-            <span className={`text-xs font-semibold px-3 py-1 rounded-full border ${scoreBg}`}>
+          <div className="flex items-center gap-1.5 flex-wrap mb-3">
+            <span className={`text-[10px] font-semibold px-2.5 py-1 rounded-full border ${scoreBg}`}>
               {scoreLabel} {matchScore}%
             </span>
             {recruiterVerdict && (
-              <span className={`text-xs font-semibold px-3 py-1 rounded-full ${
+              <span className={`text-[10px] font-semibold px-2.5 py-1 rounded-full ${
                 recruiterVerdict === "HIRE" ? "bg-green-500/20 text-green-400" :
                 recruiterVerdict === "INTERVIEW" ? "bg-amber-500/20 text-amber-400" :
                 "bg-red-500/20 text-red-400"
@@ -81,34 +81,34 @@ export function MobileVerdictSheet({
 
           {/* Summary */}
           {matchSummary && (
-            <p className="text-sm text-white/70 leading-relaxed mb-4 whitespace-pre-line">{matchSummary}</p>
+            <p className="text-[11px] text-white/70 leading-relaxed mb-3 whitespace-pre-line">{matchSummary}</p>
           )}
 
           {/* Knockout */}
           {knockoutFail && (
-            <div className="px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20 mb-4">
-              <p className="text-xs text-red-400 font-medium">Knockout triggered, mandatory requirement not met.</p>
+            <div className="px-2.5 py-1.5 rounded-[7px] bg-red-500/10 border border-red-500/20 mb-3">
+              <p className="text-[10px] text-red-400 font-medium">Knockout triggered, mandatory requirement not met.</p>
             </div>
           )}
 
           {/* Requirements */}
           {dynamicRequirements && dynamicRequirements.length > 0 && (
-            <div className="mb-4">
-              <p className="text-[10px] font-medium text-white/50 uppercase tracking-wider mb-2">Requirements Checklist</p>
-              <div className="space-y-3">
+            <div className="mb-3">
+              <p className="text-[10px] font-medium text-white/50 uppercase tracking-wider mb-1.5">Requirements Checklist</p>
+              <div className="space-y-2">
                 {[...orderedPillars, ...extraPillars].map((pillar) => {
                   const reqs = grouped[pillar]!;
                   const met = reqs.filter((r) => r.met).length;
                   const total = reqs.length;
                   const score = pillarScores?.[pillar as keyof typeof pillarScores];
                   return (
-                    <div key={pillar} className="rounded-lg bg-white/[0.03] border border-white/[0.06] p-3">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs font-semibold text-white">{PILLAR_LABELS[pillar] || pillar}</span>
-                        <div className="flex items-center gap-2">
+                    <div key={pillar} className="rounded-[7px] bg-white/[0.03] border border-white/[0.06] p-2.5">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-[10px] font-semibold text-white">{PILLAR_LABELS[pillar] || pillar}</span>
+                        <div className="flex items-center gap-1.5">
                           <span className="text-[10px] text-white/50">{met}/{total} met</span>
                           {score != null && (
-                            <div className="w-14 h-1.5 rounded-full bg-white/10 overflow-hidden">
+                            <div className="w-11 h-1 rounded-full bg-white/10 overflow-hidden">
                               <div
                                 className={`h-full rounded-full ${score >= 70 ? "bg-green-400" : score >= 40 ? "bg-amber-400" : "bg-red-400"}`}
                                 style={{ width: `${Math.min(score, 100)}%` }}
@@ -117,9 +117,9 @@ export function MobileVerdictSheet({
                           )}
                         </div>
                       </div>
-                      <div className="space-y-1.5">
+                      <div className="space-y-1">
                         {reqs.map((r, i) => (
-                          <div key={i} className="flex items-start gap-2">
+                          <div key={i} className="flex items-start gap-1.5">
                             <span className={`mt-0.5 shrink-0 text-[10px] ${r.met ? "text-green-400" : "text-red-400"}`}>
                               {r.met ? "\u2713" : "\u2717"}
                             </span>
@@ -146,9 +146,9 @@ export function MobileVerdictSheet({
 
           {/* Taxes */}
           {taxesApplied && taxesApplied.length > 0 && (
-            <div className="mb-4">
-              <p className="text-[10px] font-medium text-white/50 uppercase tracking-wider mb-1.5">Deductions</p>
-              <div className="flex flex-wrap gap-1.5">
+            <div className="mb-3">
+              <p className="text-[10px] font-medium text-white/50 uppercase tracking-wider mb-1">Deductions</p>
+              <div className="flex flex-wrap gap-1">
                 {taxesApplied.map((t, i) => (
                   <span key={i} className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">
                     {t}
@@ -160,8 +160,8 @@ export function MobileVerdictSheet({
 
           {/* Suggested CV */}
           {suggestedCvName && (
-            <div className="pt-3 border-t border-white/[0.06] mb-4">
-              <p className="text-xs text-white/50">
+            <div className="pt-2.5 border-t border-white/[0.06] mb-3">
+              <p className="text-[10px] text-white/50">
                 Suggested CV: <span className="text-white font-medium">{suggestedCvName}</span>
               </p>
             </div>
@@ -169,7 +169,7 @@ export function MobileVerdictSheet({
 
           <button
             onClick={onClose}
-            className="w-full py-3 rounded-xl bg-[var(--color-accent)] text-white text-sm font-medium active:scale-[0.98] transition-all"
+            className="w-full py-2.5 rounded-[10px] bg-[var(--color-accent)] text-white text-[11px] font-medium active:scale-[0.98] transition-all"
           >
             Close
           </button>

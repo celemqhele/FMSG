@@ -12,8 +12,16 @@ const ProfileOnboardingModal = dynamic(
   () => import("./profile-onboarding-modal").then((mod) => mod.ProfileOnboardingModal),
   { ssr: false }
 );
+const MobileProfileOnboardingSheet = dynamic(
+  () => import("./mobile/mobile-profile-onboarding-sheet").then((mod) => mod.MobileProfileOnboardingSheet),
+  { ssr: false }
+);
 const AdminCreateJobModal = dynamic(
   () => import("./admin-create-job-modal").then((mod) => mod.AdminCreateJobModal),
+  { ssr: false }
+);
+const MobileAdminCreateJobSheet = dynamic(
+  () => import("./mobile/mobile-admin-create-job-sheet").then((mod) => mod.MobileAdminCreateJobSheet),
   { ssr: false }
 );
 import { useTransition } from "@/components/providers/transition-provider";
@@ -110,7 +118,7 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
     <ProfileContext.Provider value={{ activeProfileId, setActiveProfileId }}>
       <SpaceVideoBackground src="/videos/space.mp4" fastPlaybackRate={4} />
 
-      {isMobile ? (
+      {isMobile === null ? null : isMobile ? (
         <MobileLayout
           profileSheetOpen={mobileProfileSheetOpen}
           onProfileSheetOpen={() => setMobileProfileSheetOpen(true)}
@@ -177,17 +185,32 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
       )}
 
       {editProfileId && (
-        <ProfileOnboardingModal
-          profileId={editProfileId}
-          editMode={!isNewProfile}
-          showUploadStep={isNewProfile}
-          onSaved={handleProfileSaved}
-          onDelete={handleDeleteProfile}
-          onClose={handleCloseModal}
-        />
+        isMobile ? (
+          <MobileProfileOnboardingSheet
+            profileId={editProfileId}
+            editMode={!isNewProfile}
+            showUploadStep={isNewProfile}
+            onSaved={handleProfileSaved}
+            onDelete={handleDeleteProfile}
+            onClose={handleCloseModal}
+          />
+        ) : (
+          <ProfileOnboardingModal
+            profileId={editProfileId}
+            editMode={!isNewProfile}
+            showUploadStep={isNewProfile}
+            onSaved={handleProfileSaved}
+            onDelete={handleDeleteProfile}
+            onClose={handleCloseModal}
+          />
+        )
       )}
       {isAdmin && (
-        <AdminCreateJobModal isOpen={adminModalOpen} onClose={() => setAdminModalOpen(false)} />
+        isMobile ? (
+          <MobileAdminCreateJobSheet isOpen={adminModalOpen} onClose={() => setAdminModalOpen(false)} />
+        ) : (
+          <AdminCreateJobModal isOpen={adminModalOpen} onClose={() => setAdminModalOpen(false)} />
+        )
       )}
     </ProfileContext.Provider>
   );
