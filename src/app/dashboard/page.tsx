@@ -772,26 +772,6 @@ export default function DashboardPage() {
               )
             )}
 
-            {isMobile ? (
-              <MobileContinuePopup
-                isOpen={!!continuationToken && !searching}
-                message={pauseMessage || (results.length > 0
-                  ? `${results.length} results found so far. Continue AI screening for remaining jobs?`
-                  : "Ready to screen jobs with AI analysis? This may take a minute.")}
-                onContinue={handleContinue}
-                onCancel={() => setContinuationToken(null)}
-              />
-            ) : (
-              <ContinuePopup
-                isOpen={!!continuationToken && !searching}
-                message={pauseMessage || (results.length > 0
-                  ? `${results.length} results found so far. Continue AI screening for remaining jobs?`
-                  : "Ready to screen jobs with AI analysis? This may take a minute.")}
-                onContinue={handleContinue}
-                onCancel={() => setContinuationToken(null)}
-              />
-            )}
-
             {!searching && results.length > 0 && (
               <div className={isMobile ? "space-y-3" : "space-y-4"}>
                 {sortedResults.map((r) => (
@@ -846,21 +826,6 @@ export default function DashboardPage() {
                   )
                 ))}
               </div>
-            )}
-
-            {!searching && hasSearched && results.length > 0 && !showPfPromo && !pfActive && balances.pf === 0 && plan === "free" && (
-              <PFPromoPopup
-                isOpen={true}
-                onEnable={() => {
-                  sessionStorage.setItem("fmsg_pf_promo_shown", "true");
-                  setShowPfPromo(true);
-                  setPfMode(true);
-                }}
-                onDismiss={() => {
-                  sessionStorage.setItem("fmsg_pf_promo_shown", "true");
-                  setShowPfPromo(true);
-                }}
-              />
             )}
 
             {!searching && hasSearched && results.length === 0 && !continuationToken && (
@@ -1117,6 +1082,41 @@ export default function DashboardPage() {
 
       {isMobile && (
         <MobileBottomNav active={activeTab} onChange={setActiveTab} />
+      )}
+
+      {isMobile ? (
+        <MobileContinuePopup
+          isOpen={!!continuationToken && !searching}
+          message={pauseMessage || (results.length > 0
+            ? `${results.length} results found so far. Continue AI screening for remaining jobs?`
+            : "Ready to screen jobs with AI analysis? This may take a minute.")}
+          onContinue={handleContinue}
+          onCancel={() => setContinuationToken(null)}
+        />
+      ) : (
+        <ContinuePopup
+          isOpen={!!continuationToken && !searching}
+          message={pauseMessage || (results.length > 0
+            ? `${results.length} results found so far. Continue AI screening for remaining jobs?`
+            : "Ready to screen jobs with AI analysis? This may take a minute.")}
+          onContinue={handleContinue}
+          onCancel={() => setContinuationToken(null)}
+        />
+      )}
+
+      {!searching && hasSearched && results.length > 0 && !showPfPromo && !pfActive && balances.pf === 0 && plan === "free" && (
+        <PFPromoPopup
+          isOpen={true}
+          onEnable={() => {
+            sessionStorage.setItem("fmsg_pf_promo_shown", "true");
+            setShowPfPromo(true);
+            setPfMode(true);
+          }}
+          onDismiss={() => {
+            sessionStorage.setItem("fmsg_pf_promo_shown", "true");
+            setShowPfPromo(true);
+          }}
+        />
       )}
 
       <SearchGuidancePopup

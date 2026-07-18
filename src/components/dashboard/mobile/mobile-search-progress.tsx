@@ -8,9 +8,8 @@ interface MobileSearchProgressProps {
 
 export function MobileSearchProgress({ completedLines, activeLine, progress }: MobileSearchProgressProps) {
   return (
-    <div className="fixed inset-0 z-[55] flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
-      <div className="relative w-[280px] mx-8 space-y-4">
+    <div className="py-6 px-4 space-y-4">
+      <div className="w-full max-w-[280px] mx-auto space-y-4">
         {/* Progress bar */}
         <div className="h-2 rounded-full bg-white/10 overflow-hidden">
           <div
