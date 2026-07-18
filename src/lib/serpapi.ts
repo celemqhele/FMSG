@@ -634,21 +634,26 @@ export async function scrapeJobPage(
 
     // Validate this looks like an individual job page, not a search/listing/cookie page
     const lowerContent = content.toLowerCase();
-    if (
+    const isListingPage =
       lowerContent.includes("total jobs found") ||
-      lowerContent.includes("results for") && lowerContent.includes("jobs in") ||
+      (lowerContent.includes("results for") && lowerContent.includes("jobs in")) ||
       lowerContent.includes("search results") ||
       lowerContent.includes("refine your search") ||
-      lowerContent.includes("sort by") && lowerContent.includes("per page") ||
+      (lowerContent.includes("sort by") && lowerContent.includes("per page")) ||
       lowerContent.match(/\d+\s+jobs?\s+found/i) ||
       lowerContent.match(/\d+\s+results?\s+for/i) ||
       lowerContent.match(/show\s+\d+\s+\d+\s+\d+/i) ||
-      (lowerContent.includes("save this job") && lowerContent.split("save this job").length > 3) ||
-      (lowerContent.includes("cookie") && (lowerContent.includes("privacy") || lowerContent.includes("consent") || lowerContent.includes("policy"))) ||
-      (lowerContent.includes("we use cookies") && lowerContent.length < 2000) ||
-      lowerContent.includes("cookie policy") && !lowerContent.includes("job requirements") ||
-      lowerContent.match(/we\s+(use|use|and|store)\s+cookies/i)
-    ) {
+      (lowerContent.includes("save this job") && lowerContent.split("save this job").length > 3);
+
+    const isCookieOnly =
+      lowerContent.length < 5000 && (
+        (lowerContent.includes("cookie") && (lowerContent.includes("privacy") || lowerContent.includes("consent") || lowerContent.includes("policy"))) ||
+        lowerContent.includes("we use cookies") ||
+        lowerContent.includes("cookie policy") ||
+        lowerContent.match(/we\s+(use|and|store)\s+cookies/i)
+      );
+
+    if (isListingPage || isCookieOnly) {
       console.warn(`[SRC5-SCRAPE] REJECTED listing/cookie page: ${url} (first 100 chars: ${content.slice(0, 100)})`);
       return null;
     }
