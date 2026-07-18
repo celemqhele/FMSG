@@ -712,9 +712,7 @@ export default function DashboardPage() {
             {emailVerified === false && authChecked && (
               <VerifyEmailBanner onOpenModal={() => setShowVerifyModal(true)} />
             )}
-            {isMobile ? (
-              <MobileBottomNav active={activeTab} onChange={setActiveTab} />
-            ) : (
+            {isMobile ? null : (
               <DashboardTabs active={activeTab} onChange={setActiveTab} />
             )}
 
@@ -1107,6 +1105,10 @@ export default function DashboardPage() {
       )}
 
       </PageTransitionWrapper>
+
+      {isMobile && (
+        <MobileBottomNav active={activeTab} onChange={setActiveTab} />
+      )}
 
       <SearchGuidancePopup
         isOpen={showGuidance}
