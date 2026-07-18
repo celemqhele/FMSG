@@ -69,14 +69,14 @@ export function MobileProfileSheet({ isOpen, onClose }: MobileProfileSheetProps)
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[100]">
+    <div className="fixed inset-0 z-[100] flex flex-col justify-end">
       <div
         className="absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity duration-300"
         style={{ opacity: isOpen ? 1 : 0 }}
         onClick={onClose}
       />
       <div
-        className="absolute bottom-0 left-0 right-0 bg-[#1C1C1E] rounded-t-2xl transition-transform duration-300 ease-out safe-area-bottom"
+        className="relative bg-[#1C1C1E] rounded-t-2xl transition-transform duration-300 ease-out"
         style={{
           transform: `translateY(${dragY > 0 ? dragY : 0}px)`,
           paddingBottom: "env(safe-area-inset-bottom, 0px)",

@@ -54,9 +54,9 @@ export function MobileVerdictSheet({
   const extraPillars = Object.keys(grouped).filter((p) => !PILLAR_ORDER.includes(p));
 
   return (
-    <div className="fixed inset-0 z-[200]">
+    <div className="fixed inset-0 z-[200] flex flex-col justify-end">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="absolute inset-x-0 bottom-0 top-12 bg-[#1C1C1E] rounded-t-2xl overflow-y-auto safe-area-bottom">
+      <div className="relative bg-[#1C1C1E] rounded-t-2xl overflow-y-auto" style={{ height: "calc(100dvh - 3rem)", paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
         {/* Handle */}
         <div className="flex justify-center pt-3 pb-1 sticky top-0 bg-[#1C1C1E] z-10">
           <div className="w-10 h-1 rounded-full bg-white/20" />
