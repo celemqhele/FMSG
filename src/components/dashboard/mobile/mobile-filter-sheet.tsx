@@ -71,14 +71,14 @@ export function MobileFilterSheet({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[90] flex flex-col justify-end">
+    <div className="fixed inset-0 z-[90] flex flex-col">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-[#1C1C1E] rounded-t-2xl max-h-[80dvh] overflow-y-auto" style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
-        <div className="flex justify-center pt-3 pb-1 sticky top-0 bg-[#1C1C1E] z-10">
+      <div className="relative bg-[#1C1C1E] flex-1 flex flex-col" style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
+        <div className="flex justify-center pt-3 pb-1 shrink-0">
           <div className="w-10 h-1 rounded-full bg-white/20" />
         </div>
 
-        <div className="px-5 pb-8 space-y-6">
+        <div className="flex-1 overflow-y-auto px-5 space-y-6">
           {/* Date filter */}
           <div>
             <p className="text-xs font-medium text-white/50 uppercase tracking-wider mb-3">Date Posted</p>
@@ -110,13 +110,13 @@ export function MobileFilterSheet({
             </div>
             <button
               onClick={() => onPfModeChange(!pfMode)}
-              className={`w-12 h-7 rounded-full transition-colors relative ${
+              className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors ${
                 pfMode ? "bg-[var(--color-accent)]" : "bg-white/15"
               }`}
             >
               <span
-                className={`absolute top-0.5 w-6 h-6 rounded-full bg-white shadow transition-transform ${
-                  pfMode ? "translate-x-5" : "translate-x-0.5"
+                className={`inline-block h-5 w-5 rounded-full bg-white shadow transition-transform duration-200 ${
+                  pfMode ? "translate-x-6" : "translate-x-1"
                 }`}
               />
             </button>
@@ -175,6 +175,9 @@ export function MobileFilterSheet({
             </div>
           </div>
 
+        </div>
+
+        <div className="shrink-0 px-5 py-4 border-t border-white/10">
           <button
             onClick={handleApply}
             className="w-full py-3 rounded-xl bg-[var(--color-accent)] text-white text-sm font-semibold hover:bg-[var(--color-accent-hover)] active:scale-[0.98] transition-all"
