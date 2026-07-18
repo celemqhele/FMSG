@@ -61,9 +61,9 @@ export function PFPromoBanner({ variant, resultsCount, avgScore, onDismiss }: PF
       </div>
       <button
         onClick={handleDismiss}
-        className="p-1 text-white/60 hover:text-white transition-colors shrink-0"
+        className="p-2.5 text-white/60 hover:text-white transition-colors shrink-0"
       >
-        <X size={14} />
+        <X size={16} />
       </button>
     </div>
   );

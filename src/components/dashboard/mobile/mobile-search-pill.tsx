@@ -5,6 +5,8 @@ import { Search, Square, X, SlidersHorizontal } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useActiveProfile } from "@/components/dashboard/dashboard-layout";
 import { MobileFilterSheet } from "./mobile-filter-sheet";
+import type { SortMode } from "@/components/dashboard/filter-sort-bar";
+import type { PlatformId } from "@/components/dashboard/platform-filter";
 
 interface MobileSearchPillProps {
   onSearch: (query: string, profileId?: string | null, pfMode?: boolean, dateFilterDays?: number | null) => void;
@@ -13,9 +15,13 @@ interface MobileSearchPillProps {
   pfMode: boolean;
   onPfModeChange: (v: boolean) => void;
   referralQuery?: string | null;
+  sortMode: SortMode;
+  onSortChange: (sort: SortMode) => void;
+  platforms: PlatformId[];
+  onPlatformsChange: (platforms: PlatformId[]) => void;
 }
 
-export function MobileSearchPill({ onSearch, onAbort, searching, pfMode, onPfModeChange, referralQuery }: MobileSearchPillProps) {
+export function MobileSearchPill({ onSearch, onAbort, searching, pfMode, onPfModeChange, referralQuery, sortMode, onSortChange, platforms, onPlatformsChange }: MobileSearchPillProps) {
   const { activeProfileId } = useActiveProfile();
   const [displayTitle, setDisplayTitle] = useState("Search for jobs");
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
@@ -127,6 +133,10 @@ export function MobileSearchPill({ onSearch, onAbort, searching, pfMode, onPfMod
         currentLabel={activeDateLabel}
         pfMode={pfMode}
         onPfModeChange={onPfModeChange}
+        currentSort={sortMode}
+        onSortChange={onSortChange}
+        currentPlatforms={platforms}
+        onPlatformsChange={onPlatformsChange}
       />
 
       <div className="space-y-2">

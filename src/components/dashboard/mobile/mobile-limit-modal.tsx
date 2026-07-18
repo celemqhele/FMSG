@@ -35,7 +35,7 @@ export function MobileLimitModal({ code, plan, onClose, onOpenPfModal }: MobileL
           transform: mounted ? "translateY(0)" : "translateY(20px)",
         }}
       >
-        <button onClick={onClose} className="absolute top-3 right-3 p-1 text-white/60 hover:text-white">
+        <button onClick={onClose} className="absolute top-3 right-3 p-2.5 text-white/60 hover:text-white">
           <X size={18} />
         </button>
 

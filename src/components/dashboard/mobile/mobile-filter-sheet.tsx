@@ -14,6 +14,10 @@ interface MobileFilterSheetProps {
   currentLabel: string;
   pfMode: boolean;
   onPfModeChange: (v: boolean) => void;
+  currentSort: SortMode;
+  onSortChange: (sort: SortMode) => void;
+  currentPlatforms: PlatformId[];
+  onPlatformsChange: (platforms: PlatformId[]) => void;
 }
 
 const DATE_OPTIONS = [
@@ -38,11 +42,13 @@ export function MobileFilterSheet({
   currentLabel,
   pfMode,
   onPfModeChange,
+  currentSort,
+  onSortChange,
+  currentPlatforms,
+  onPlatformsChange,
 }: MobileFilterSheetProps) {
   const [selectedDays, setSelectedDays] = useState<number | null>(currentDays);
   const [selectedLabel, setSelectedLabel] = useState(currentLabel);
-  const [sortMode, setSortMode] = useState<SortMode>("date_newest");
-  const [selectedPlatforms, setSelectedPlatforms] = useState<PlatformId[]>(["all"]);
 
   useEffect(() => {
     if (isOpen) {
@@ -58,14 +64,15 @@ export function MobileFilterSheet({
 
   const togglePlatform = (id: PlatformId) => {
     if (id === "all") {
-      setSelectedPlatforms((prev) => (prev.includes("all") ? [] : ["all"]));
+      const next: PlatformId[] = currentPlatforms.includes("all") ? [] : ["all"];
+      onPlatformsChange(next.length === 0 ? (["all"] as PlatformId[]) : next);
       return;
     }
-    const withoutAll = selectedPlatforms.filter((s) => s !== "all");
+    const withoutAll = currentPlatforms.filter((s) => s !== "all");
     const next = withoutAll.includes(id)
       ? withoutAll.filter((s) => s !== id)
       : [...withoutAll, id];
-    setSelectedPlatforms(next.length === 0 ? ["all"] : next);
+    onPlatformsChange(next.length === 0 ? (["all"] as PlatformId[]) : next);
   };
 
   if (!isOpen) return null;
@@ -110,13 +117,13 @@ export function MobileFilterSheet({
             </div>
             <button
               onClick={() => onPfModeChange(!pfMode)}
-              className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors ${
+              className={`relative inline-flex h-9 w-14 items-center rounded-full transition-colors ${
                 pfMode ? "bg-[var(--color-accent)]" : "bg-white/15"
               }`}
             >
               <span
-                className={`inline-block h-5 w-5 rounded-full bg-white shadow transition-transform duration-200 ${
-                  pfMode ? "translate-x-6" : "translate-x-1"
+                className={`inline-block h-6 w-6 rounded-full bg-white shadow transition-transform duration-200 ${
+                  pfMode ? "translate-x-7" : "translate-x-1"
                 }`}
               />
             </button>
@@ -127,11 +134,11 @@ export function MobileFilterSheet({
             <p className="text-xs font-medium text-white/50 uppercase tracking-wider mb-3">Sort By</p>
             <div className="space-y-1">
               {SORT_OPTIONS.map((opt) => {
-                const active = sortMode === opt.value;
+                const active = currentSort === opt.value;
                 return (
                   <button
                     key={opt.value}
-                    onClick={() => setSortMode(opt.value)}
+                    onClick={() => onSortChange(opt.value)}
                     className={`w-full flex items-center gap-3 px-4 py-3 text-sm rounded-xl transition-colors ${
                       active
                         ? "text-[var(--color-accent)] bg-[var(--color-accent)]/10"
@@ -155,9 +162,9 @@ export function MobileFilterSheet({
             <p className="text-xs font-medium text-white/50 uppercase tracking-wider mb-3">Platforms</p>
             <div className="flex flex-wrap gap-2">
               {PLATFORMS.map((p) => {
-                const active = selectedPlatforms.includes("all")
+                const active = currentPlatforms.includes("all")
                   ? p.id === "all"
-                  : selectedPlatforms.includes(p.id);
+                  : currentPlatforms.includes(p.id);
                 return (
                   <button
                     key={p.id}

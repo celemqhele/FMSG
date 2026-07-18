@@ -82,7 +82,7 @@ export function BlockedList() {
       <div className="flex gap-1 p-1 rounded-lg bg-white/5 border border-white/10 max-w-xs mx-auto">
         <button
           onClick={() => setTab("companies")}
-          className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+          className={`flex-1 px-3 py-2.5 text-xs font-medium rounded-md transition-colors ${
             tab === "companies"
               ? "bg-white dark:bg-[#2C2C2E] text-[#1C1C1E] dark:text-white shadow-sm"
               : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
@@ -92,7 +92,7 @@ export function BlockedList() {
         </button>
         <button
           onClick={() => setTab("jobs")}
-          className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+          className={`flex-1 px-3 py-2.5 text-xs font-medium rounded-md transition-colors ${
             tab === "jobs"
               ? "bg-white dark:bg-[#2C2C2E] text-[#1C1C1E] dark:text-white shadow-sm"
               : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
@@ -119,7 +119,7 @@ export function BlockedList() {
               </div>
               <button
                 onClick={() => tab === "companies" ? handleUnbanCompany(item) : handleUnbanJob(item)}
-                className="shrink-0 text-xs text-[var(--color-accent)] hover:underline transition-colors"
+                className="shrink-0 py-2 px-3 text-xs font-medium text-[var(--color-accent)] hover:underline transition-colors"
               >
                 Unblock
               </button>

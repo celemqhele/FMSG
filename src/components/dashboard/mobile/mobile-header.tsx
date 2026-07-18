@@ -37,7 +37,7 @@ export function MobileHeader({ onAvatarTap }: MobileHeaderProps) {
       </div>
       <button
         onClick={onAvatarTap}
-        className="w-8 h-8 rounded-full bg-white/15 border border-white/20 flex items-center justify-center text-xs font-semibold text-white"
+        className="w-11 h-11 rounded-full bg-white/15 border border-white/20 flex items-center justify-center text-xs font-semibold text-white"
       >
         {initials || "?"}
       </button>

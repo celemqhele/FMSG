@@ -119,7 +119,7 @@ export function RejectedJobs() {
       <div className="flex gap-1 p-1 rounded-lg bg-white/5 border border-white/10 max-w-xs mx-auto">
         <button
           onClick={() => setTab("user")}
-          className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+          className={`flex-1 px-3 py-2.5 text-xs font-medium rounded-md transition-colors ${
             tab === "user"
               ? "bg-white dark:bg-[#2C2C2E] text-[#1C1C1E] dark:text-white shadow-sm"
               : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
@@ -129,7 +129,7 @@ export function RejectedJobs() {
         </button>
         <button
           onClick={() => setTab("system")}
-          className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+          className={`flex-1 px-3 py-2.5 text-xs font-medium rounded-md transition-colors ${
             tab === "system"
               ? "bg-white dark:bg-[#2C2C2E] text-[#1C1C1E] dark:text-white shadow-sm"
               : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"

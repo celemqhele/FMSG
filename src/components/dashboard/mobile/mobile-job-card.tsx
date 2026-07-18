@@ -188,7 +188,7 @@ export function MobileJobCard({
           {matchScore > 0 && (
             <button
               onClick={() => setShowVerdict(true)}
-              className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${scoreBg}`}
+              className={`text-xs font-semibold px-3 py-1.5 rounded-full border min-h-[44px] ${scoreBg}`}
             >
               {scoreLabel} {matchScore}%
             </button>
@@ -224,7 +224,7 @@ export function MobileJobCard({
           <button
             onClick={handleGenerateCv}
             disabled={cvLoading}
-            className="flex items-center justify-center gap-1.5 h-9 px-3 text-[11px] font-medium text-white bg-[var(--color-accent)] rounded-lg active:scale-95 disabled:opacity-50 transition-all"
+            className="flex items-center justify-center gap-1.5 h-11 px-3 text-[11px] font-medium text-white bg-[var(--color-accent)] rounded-lg active:scale-95 disabled:opacity-50 transition-all"
           >
             {cvLoading ? <Loader2 size={13} className="animate-spin" /> : <FileText size={13} />}
             {cvLoading ? "..." : "CV"}
@@ -234,7 +234,7 @@ export function MobileJobCard({
               href={jobUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center justify-center gap-1.5 h-9 px-3 text-[11px] font-medium text-[var(--color-text-primary)] border border-[var(--color-border)] rounded-lg active:scale-95 transition-all"
+              className="flex items-center justify-center gap-1.5 h-11 px-3 text-[11px] font-medium text-[var(--color-text-primary)] border border-[var(--color-border)] rounded-lg active:scale-95 transition-all"
             >
               Apply
               <ExternalLink size={11} />
@@ -243,13 +243,13 @@ export function MobileJobCard({
           <button
             onClick={handleSave}
             disabled={saved}
-            className="flex items-center justify-center h-9 w-9 border border-[var(--color-border)] rounded-lg text-[var(--color-text-secondary)] active:scale-95 disabled:opacity-40 transition-all"
+            className="flex items-center justify-center h-11 w-11 border border-[var(--color-border)] rounded-lg text-[var(--color-text-secondary)] active:scale-95 disabled:opacity-40 transition-all"
           >
             <Bookmark size={14} fill={saved ? "currentColor" : "none"} className={saved ? "text-[var(--color-accent)]" : ""} />
           </button>
           <button
             onClick={openDeleteConfirm}
-            className="flex items-center justify-center h-9 w-9 border border-[var(--color-border)] rounded-lg text-[var(--color-text-secondary)] hover:text-red-400 active:scale-95 transition-all"
+            className="flex items-center justify-center h-11 w-11 border border-[var(--color-border)] rounded-lg text-[var(--color-text-secondary)] hover:text-red-400 active:scale-95 transition-all"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M3 6h18" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />

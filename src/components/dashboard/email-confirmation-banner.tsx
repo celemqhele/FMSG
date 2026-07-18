@@ -46,7 +46,7 @@ export function EmailConfirmationBanner() {
   if (!show) return null;
 
   return (
-    <div className="liquid-glass rounded-xl px-4 py-3 flex items-center justify-between gap-3">
+    <div className="liquid-glass rounded-xl px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
       <div className="flex items-center gap-2.5">
         <Mail size={16} className="text-amber-400 shrink-0" />
         <p className="text-sm text-amber-300">
@@ -56,7 +56,7 @@ export function EmailConfirmationBanner() {
       <button
         onClick={handleResend}
         disabled={sending || sent}
-        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 rounded-full transition-colors disabled:opacity-50 shrink-0"
+        className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 rounded-full transition-colors disabled:opacity-50 shrink-0"
       >
         {sending && <Loader2 size={12} className="animate-spin" />}
         {sent ? "Sent!" : sending ? "Sending..." : "Resend"}

@@ -720,7 +720,7 @@ export default function DashboardPage() {
         {activeTab === "search" && (
           <>
             {isMobile ? (
-              <MobileSearchPill onSearch={handleSearch} onAbort={handleAbort} searching={searching} pfMode={pfMode} onPfModeChange={setPfMode} referralQuery={referralJob?.job_title} />
+              <MobileSearchPill onSearch={handleSearch} onAbort={handleAbort} searching={searching} pfMode={pfMode} onPfModeChange={setPfMode} referralQuery={referralJob?.job_title} sortMode={sortMode} onSortChange={setSortMode} platforms={selectedPlatforms} onPlatformsChange={setSelectedPlatforms} />
             ) : (
               <SearchPill onSearch={handleSearch} onAbort={handleAbort} searching={searching} pfMode={pfMode} onPfModeChange={setPfMode} referralQuery={referralJob?.job_title} />
             )}
