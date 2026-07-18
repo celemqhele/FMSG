@@ -27,7 +27,7 @@ export function MobileBottomNav({ active, onChange }: { active: TabId; onChange:
               }`}
             >
               <Icon size={20} strokeWidth={isActive ? 2.2 : 1.6} />
-              <span className={`text-[10px] font-medium ${isActive ? "text-[var(--color-accent)]" : ""}`}>
+              <span className={`text-xs font-medium ${isActive ? "text-[var(--color-accent)]" : ""}`}>
                 {tab.label}
               </span>
             </button>

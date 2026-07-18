@@ -33,7 +33,7 @@ export function MobileHeader({ onAvatarTap, onEditProfile, hasActiveProfile }: M
   }, []);
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 h-12 liquid-glass-surface flex items-center justify-between px-4 safe-area-top">
+    <header className="fixed top-0 left-0 right-0 z-50 h-11 liquid-glass-surface flex items-center justify-between px-4 safe-area-top">
       <div className="flex items-center gap-2">
         <Image src="/icon.png" alt="FMSG" width={22} height={22} className="shrink-0" priority />
         <span className="text-sm font-semibold text-white select-none">FMSG</span>

@@ -77,9 +77,9 @@ export function MobileProfileSwitcherSheet({
   return (
     <div className="fixed inset-0 z-[100] flex flex-col justify-end">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-[#1C1C1E] rounded-t-2xl" style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
+      <div className="relative bg-[#1C1C1E] rounded-t-[24px]" style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
         <div className="flex justify-center pt-3 pb-2">
-          <div className="w-10 h-1 rounded-full bg-white/20" />
+          <div className="w-9 h-[5px] rounded-full bg-white/20" />
         </div>
 
         <div className="px-5 pb-6">

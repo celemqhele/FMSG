@@ -16,8 +16,13 @@ import { MobileSkeletonCard } from "@/components/dashboard/mobile/mobile-skeleto
 import { MobileLimitModal } from "@/components/dashboard/mobile/mobile-limit-modal";
 import { MobileContinuePopup } from "@/components/dashboard/mobile/mobile-continue-popup";
 import { MobileSearchProgress } from "@/components/dashboard/mobile/mobile-search-progress";
+import { MobileVerifyCodeModal } from "@/components/dashboard/mobile/mobile-verify-code-modal";
+import { MobilePFPromoPopup } from "@/components/dashboard/mobile/mobile-pf-promo-popup";
+import { MobileSearchGuidancePopup } from "@/components/dashboard/mobile/mobile-search-guidance-popup";
+import { MobileDashboardOnboardingSheet } from "@/components/dashboard/mobile/mobile-dashboard-onboarding-sheet";
 import dynamic from "next/dynamic";
 const PFPurchaseModal = dynamic(() => import("@/components/dashboard/pf-purchase-modal").then((mod) => mod.PFPurchaseModal), { ssr: false });
+const MobilePFPurchaseModal = dynamic(() => import("@/components/dashboard/mobile/mobile-pf-purchase-modal").then((mod) => mod.MobilePFPurchaseModal), { ssr: false });
 const OnboardingForm = dynamic(() => import("@/components/onboarding/onboarding-form").then((mod) => mod.OnboardingForm), { ssr: false });
 import { DashboardTabs, type TabId } from "@/components/dashboard/dashboard-tabs";
 import { BalanceChips } from "@/components/dashboard/balance-chips";
@@ -1020,70 +1025,91 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <PFPurchaseModal isOpen={pfModalOpen} onClose={() => setPfModalOpen(false)} />
+      {isMobile ? (
+        <MobilePFPurchaseModal isOpen={pfModalOpen} onClose={() => setPfModalOpen(false)} />
+      ) : (
+        <PFPurchaseModal isOpen={pfModalOpen} onClose={() => setPfModalOpen(false)} />
+      )}
 
-      <VerifyCodeModal
-        isOpen={showVerifyModal}
-        email={userEmail}
-        onClose={() => setShowVerifyModal(false)}
-        onVerified={() => { setEmailVerified(true); window.dispatchEvent(new Event("refresh-balances")); }}
-      />
+      {isMobile ? (
+        <MobileVerifyCodeModal
+          isOpen={showVerifyModal}
+          email={userEmail}
+          onClose={() => setShowVerifyModal(false)}
+          onVerified={() => { setEmailVerified(true); window.dispatchEvent(new Event("refresh-balances")); }}
+        />
+      ) : (
+        <VerifyCodeModal
+          isOpen={showVerifyModal}
+          email={userEmail}
+          onClose={() => setShowVerifyModal(false)}
+          onVerified={() => { setEmailVerified(true); window.dispatchEvent(new Event("refresh-balances")); }}
+        />
+      )}
 
       {needsOnboarding && onboardingMounted && (
-        <div
-          className="fixed inset-0 z-[200] flex items-start justify-center pt-24 bg-black/60 backdrop-blur-sm transition-opacity duration-500"
-          style={{ opacity: onboardingStep === "done" ? 1 : 1 }}
-        >
+        isMobile ? (
+          <MobileDashboardOnboardingSheet
+            isOpen={true}
+            onClose={() => { setNeedsOnboarding(false); setOnboardingMounted(false); window.location.reload(); }}
+            onOnboarded={() => { setNeedsOnboarding(false); setOnboardingMounted(false); window.location.reload(); }}
+          />
+        ) : (
           <div
-            className="w-full max-w-lg mx-4 rounded-2xl bg-white shadow-2xl overflow-hidden transition-all duration-500 ease-out"
+            className="fixed inset-0 z-[200] flex items-start justify-center pt-24 bg-black/60 backdrop-blur-sm transition-opacity duration-500"
+            style={{ opacity: onboardingStep === "done" ? 1 : 1 }}
           >
-            <div className="relative z-10 px-6 py-6 max-h-[80vh] overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-              {onboardingStep === "prompt" && (
-                <div className="flex flex-col items-center gap-5 py-8">
-                  <div className="w-16 h-16 rounded-full bg-[var(--color-accent)]/10 flex items-center justify-center">
-                    <Upload size={28} className="text-[var(--color-accent)]" />
+            <div
+              className="w-full max-w-lg mx-4 rounded-2xl bg-white shadow-2xl overflow-hidden transition-all duration-500 ease-out"
+            >
+              <div className="relative z-10 px-6 py-6 max-h-[80vh] overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+                {onboardingStep === "prompt" && (
+                  <div className="flex flex-col items-center gap-5 py-8">
+                    <div className="w-16 h-16 rounded-full bg-[var(--color-accent)]/10 flex items-center justify-center">
+                      <Upload size={28} className="text-[var(--color-accent)]" />
+                    </div>
+                    <div className="text-center space-y-2">
+                      <h2 className="text-xl font-semibold text-gray-900">Set Up Your Account</h2>
+                      <p className="text-sm text-gray-500 max-w-xs">
+                        Upload your CV and let AI fill in your profile details automatically.
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setOnboardingStep("form")}
+                      className="px-6 py-2.5 text-sm font-medium text-white bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] rounded-full transition-colors"
+                    >
+                      Set up account
+                    </button>
                   </div>
-                  <div className="text-center space-y-2">
-                    <h2 className="text-xl font-semibold text-gray-900">Set Up Your Account</h2>
-                    <p className="text-sm text-gray-500 max-w-xs">
-                      Upload your CV and let AI fill in your profile details automatically.
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => setOnboardingStep("form")}
-                    className="px-6 py-2.5 text-sm font-medium text-white bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] rounded-full transition-colors"
-                  >
-                    Set up account
-                  </button>
-                </div>
-              )}
+                )}
 
-              {onboardingStep === "form" && (
-                <OnboardingForm
-                  onOnboarded={() => setOnboardingStep("done")}
-                />
-              )}
+                {onboardingStep === "form" && (
+                  <OnboardingForm
+                    onOnboarded={() => setOnboardingStep("done")}
+                  />
+                )}
 
-              {onboardingStep === "done" && (
-                <div className="flex flex-col items-center gap-5 py-8">
-                  <div className="w-16 h-16 rounded-full bg-emerald-500/20 flex items-center justify-center">
-                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-500"><polyline points="20 6 9 17 4 12" /></svg>
+                {onboardingStep === "done" && (
+                  <div className="flex flex-col items-center gap-5 py-8">
+                    <div className="w-16 h-16 rounded-full bg-emerald-500/20 flex items-center justify-center">
+                      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-500"><polyline points="20 6 9 17 4 12" /></svg>
+                    </div>
+                    <div className="text-center space-y-2">
+                      <h2 className="text-xl font-semibold text-gray-900">Account set up!</h2>
+                      <p className="text-sm text-gray-500">Your profile is ready to go.</p>
+                    </div>
+                    <button
+                      onClick={() => { setNeedsOnboarding(false); setOnboardingMounted(false); window.location.reload(); }}
+                      className="px-6 py-2.5 text-sm font-medium text-white bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] rounded-full transition-colors"
+                    >
+                      Go to Dashboard
+                    </button>
                   </div>
-                  <div className="text-center space-y-2">
-                    <h2 className="text-xl font-semibold text-gray-900">Account set up!</h2>
-                    <p className="text-sm text-gray-500">Your profile is ready to go.</p>
-                  </div>
-                  <button
-                    onClick={() => { setNeedsOnboarding(false); setOnboardingMounted(false); window.location.reload(); }}
-                    className="px-6 py-2.5 text-sm font-medium text-white bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] rounded-full transition-colors"
-                  >
-                    Go to Dashboard
-                  </button>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           </div>
-        </div>
+        )
       )}
 
       {isMobile && (
@@ -1111,39 +1137,76 @@ export default function DashboardPage() {
       )}
 
       {!searching && hasSearched && results.length > 0 && !showPfPromo && !pfActive && balances.pf === 0 && plan === "free" && (
-        <PFPromoPopup
-          isOpen={true}
-          onEnable={() => {
-            sessionStorage.setItem("fmsg_pf_promo_shown", "true");
-            setShowPfPromo(true);
-            setPfMode(true);
-          }}
+        isMobile ? (
+          <MobilePFPromoPopup
+            isOpen={true}
+            onEnable={() => {
+              sessionStorage.setItem("fmsg_pf_promo_shown", "true");
+              setShowPfPromo(true);
+              setPfMode(true);
+            }}
+            onDismiss={() => {
+              sessionStorage.setItem("fmsg_pf_promo_shown", "true");
+              setShowPfPromo(true);
+            }}
+          />
+        ) : (
+          <PFPromoPopup
+            isOpen={true}
+            onEnable={() => {
+              sessionStorage.setItem("fmsg_pf_promo_shown", "true");
+              setShowPfPromo(true);
+              setPfMode(true);
+            }}
+            onDismiss={() => {
+              sessionStorage.setItem("fmsg_pf_promo_shown", "true");
+              setShowPfPromo(true);
+            }}
+          />
+        )
+      )}
+
+      {isMobile ? (
+        <MobileSearchGuidancePopup
+          isOpen={showGuidance}
           onDismiss={() => {
-            sessionStorage.setItem("fmsg_pf_promo_shown", "true");
-            setShowPfPromo(true);
+            localStorage.setItem("fmsg_guided_search_shown", "true");
+            setShowGuidance(false);
+            if (referralJob) {
+              handleSearch(referralJob.job_title, activeProfileId, undefined, undefined, referralJob.apply_url);
+            } else if (activeProfileId) {
+              const supabase = createClient();
+              supabase.from("search_profiles").select("job_titles").eq("id", activeProfileId).maybeSingle()
+                .then(({ data }: { data: any }) => {
+                  const titles: string[] = data?.job_titles ?? [];
+                  if (titles.length > 0) {
+                    handleSearch(titles[0], activeProfileId);
+                  }
+                });
+            }
+          }}
+        />
+      ) : (
+        <SearchGuidancePopup
+          isOpen={showGuidance}
+          onDismiss={() => {
+            localStorage.setItem("fmsg_guided_search_shown", "true");
+            setShowGuidance(false);
+            if (referralJob) {
+              handleSearch(referralJob.job_title, activeProfileId, undefined, undefined, referralJob.apply_url);
+            } else if (activeProfileId) {
+              const supabase = createClient();
+              supabase.from("search_profiles").select("job_titles").eq("id", activeProfileId).maybeSingle()
+                .then(({ data }: { data: any }) => {
+                  const titles: string[] = data?.job_titles ?? [];
+                  if (titles.length > 0) {
+                    handleSearch(titles[0], activeProfileId);
+                  }
+                });
+            }
           }}
         />
       )}
-
-      <SearchGuidancePopup
-        isOpen={showGuidance}
-        onDismiss={() => {
-          localStorage.setItem("fmsg_guided_search_shown", "true");
-          setShowGuidance(false);
-          if (referralJob) {
-            handleSearch(referralJob.job_title, activeProfileId, undefined, undefined, referralJob.apply_url);
-          } else if (activeProfileId) {
-            const supabase = createClient();
-            supabase.from("search_profiles").select("job_titles").eq("id", activeProfileId).maybeSingle()
-              .then(({ data }: { data: any }) => {
-                const titles: string[] = data?.job_titles ?? [];
-                if (titles.length > 0) {
-                  handleSearch(titles[0], activeProfileId);
-                }
-              });
-          }
-        }}
-      />
 
     </DashboardLayout>
   );

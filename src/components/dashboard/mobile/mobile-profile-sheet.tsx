@@ -112,7 +112,7 @@ export function MobileProfileSheet({ isOpen, onClose, activeProfileId, onSelectP
         onClick={onClose}
       />
       <div
-        className="relative bg-[#1C1C1E] rounded-t-2xl transition-transform duration-300 ease-out"
+        className="relative bg-[#1C1C1E] rounded-t-[24px] transition-transform duration-300 ease-out"
         style={{
           transform: `translateY(${dragY > 0 ? dragY : 0}px)`,
           paddingBottom: "env(safe-area-inset-bottom, 0px)",
@@ -121,7 +121,7 @@ export function MobileProfileSheet({ isOpen, onClose, activeProfileId, onSelectP
         onTouchEnd={handleTouchEnd}
       >
         <div className="flex justify-center pt-3 pb-2">
-          <div className="w-10 h-1 rounded-full bg-white/20" />
+          <div className="w-9 h-[5px] rounded-full bg-white/20" />
         </div>
 
         <div className="px-5 pb-6">

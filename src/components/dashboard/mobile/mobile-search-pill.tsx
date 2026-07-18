@@ -102,7 +102,7 @@ export function MobileSearchPill({ onSearch, onAbort, searching, pfMode, onPfMod
         <div className="fixed inset-0 z-[80] flex items-center justify-center transition-opacity duration-300" style={{ opacity: abortMounted ? 1 : 0 }}>
           <div className="absolute inset-0 bg-black/60" onClick={closeAbortConfirm} />
           <div
-            className="relative bg-white border border-gray-200 rounded-2xl p-6 max-w-[280px] mx-8 text-center transition-all duration-300 ease-out shadow-xl"
+            className="relative bg-white border border-gray-200 rounded-2xl p-6 w-[min(90vw,380px)] mx-4 text-center transition-all duration-300 ease-out shadow-xl"
             style={{ opacity: abortMounted ? 1 : 0, transform: abortMounted ? "translateY(0) scale(1)" : "translateY(8px) scale(0.97)" }}
           >
             <p className="text-gray-900 font-semibold mb-2">Abort search?</p>

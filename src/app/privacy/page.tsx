@@ -5,6 +5,8 @@ import { FloatingNavbar } from "@/components/layout/floating-navbar";
 import { Footer } from "@/components/layout/footer";
 import { SpaceVideoBackground } from "@/components/landing/space-video-background";
 import { AuthModal } from "@/components/auth/auth-modal";
+import { MobileAuthSheet } from "@/components/auth/mobile-auth-sheet";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { PageTransitionWrapper } from "@/components/ui/page-transition-wrapper";
 import { useTransition } from "@/components/providers/transition-provider";
 import { FileText } from "lucide-react";
@@ -61,6 +63,7 @@ export default function PrivacyPage() {
   const [authOpen, setAuthOpen] = useState(false);
   const [authTab, setAuthTab] = useState<"login" | "signup">("signup");
   const { startTransition, endTransition } = useTransition();
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     endTransition();
@@ -114,11 +117,19 @@ export default function PrivacyPage() {
         </main>
       </PageTransitionWrapper>
       <Footer />
-      <AuthModal
-        isOpen={authOpen}
-        onClose={handleClose}
-        defaultTab={authTab}
-      />
+      {isMobile ? (
+        <MobileAuthSheet
+          isOpen={authOpen}
+          onClose={handleClose}
+          defaultTab={authTab}
+        />
+      ) : (
+        <AuthModal
+          isOpen={authOpen}
+          onClose={handleClose}
+          defaultTab={authTab}
+        />
+      )}
     </>
   );
 }

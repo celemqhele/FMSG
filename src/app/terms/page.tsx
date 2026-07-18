@@ -6,6 +6,8 @@ import { Footer } from "@/components/layout/footer";
 import { SpaceVideoBackground } from "@/components/landing/space-video-background";
 import dynamic from "next/dynamic";
 const AuthModal = dynamic(() => import("@/components/auth/auth-modal").then((mod) => mod.AuthModal), { ssr: false });
+const MobileAuthSheet = dynamic(() => import("@/components/auth/mobile-auth-sheet").then((mod) => mod.MobileAuthSheet), { ssr: false });
+import { useIsMobile } from "@/hooks/use-mobile";
 import { PageTransitionWrapper } from "@/components/ui/page-transition-wrapper";
 import { useTransition } from "@/components/providers/transition-provider";
 import { Scale } from "lucide-react";
@@ -92,6 +94,7 @@ export default function TermsPage() {
   const [authOpen, setAuthOpen] = useState(false);
   const [authTab, setAuthTab] = useState<"login" | "signup">("signup");
   const { startTransition, endTransition } = useTransition();
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     endTransition();
@@ -144,11 +147,19 @@ export default function TermsPage() {
         </main>
       </PageTransitionWrapper>
       <Footer />
-      <AuthModal
-        isOpen={authOpen}
-        onClose={handleClose}
-        defaultTab={authTab}
-      />
+      {isMobile ? (
+        <MobileAuthSheet
+          isOpen={authOpen}
+          onClose={handleClose}
+          defaultTab={authTab}
+        />
+      ) : (
+        <AuthModal
+          isOpen={authOpen}
+          onClose={handleClose}
+          defaultTab={authTab}
+        />
+      )}
     </>
   );
 }

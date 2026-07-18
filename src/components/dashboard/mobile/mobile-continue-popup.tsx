@@ -30,7 +30,7 @@ export function MobileContinuePopup({ isOpen, message, onContinue, onCancel }: M
     >
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onCancel} />
       <div
-        className="relative bg-white border border-gray-200 rounded-2xl p-5 max-w-[280px] mx-8 text-center shadow-2xl transition-all duration-300 ease-out"
+        className="relative bg-white border border-gray-200 rounded-2xl p-5 w-[min(90vw,380px)] mx-4 text-center shadow-2xl transition-all duration-300 ease-out"
         style={{
           opacity: mounted ? 1 : 0,
           transform: mounted ? "translateY(0) scale(1)" : "translateY(8px) scale(0.97)",

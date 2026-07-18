@@ -263,7 +263,7 @@ export function MobileJobCard({
         <div className="fixed inset-0 z-[80] flex items-center justify-center transition-opacity duration-300" style={{ opacity: deleteConfirmMounted ? 1 : 0 }}>
           <div className="absolute inset-0 bg-black/60" onClick={closeDeleteConfirm} />
           <div
-            className="relative bg-white border border-gray-200 rounded-2xl p-5 max-w-[280px] mx-8 text-center transition-all duration-300 ease-out shadow-xl"
+            className="relative bg-white border border-gray-200 rounded-2xl p-5 w-[min(90vw,380px)] mx-4 text-center transition-all duration-300 ease-out shadow-xl"
             style={{ opacity: deleteConfirmMounted ? 1 : 0, transform: deleteConfirmMounted ? "translateY(0) scale(1)" : "translateY(8px) scale(0.97)" }}
           >
             <p className="text-gray-900 font-semibold mb-1">Hide this job?</p>

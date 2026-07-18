@@ -29,7 +29,7 @@ export function MobileLimitModal({ code, plan, onClose, onOpenPfModal }: MobileL
     <div className="fixed inset-0 z-[70] flex items-end transition-opacity duration-300" style={{ opacity: mounted ? 1 : 0 }}>
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
       <div
-        className="relative w-full bg-[var(--color-error)] rounded-t-2xl p-6 text-center space-y-4 safe-area-bottom transition-all duration-300 ease-out"
+        className="relative w-full bg-[var(--color-error)] rounded-t-[24px] p-6 text-center space-y-4 safe-area-bottom transition-all duration-300 ease-out"
         style={{
           opacity: mounted ? 1 : 0,
           transform: mounted ? "translateY(0)" : "translateY(20px)",

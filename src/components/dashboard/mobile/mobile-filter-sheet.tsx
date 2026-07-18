@@ -82,7 +82,7 @@ export function MobileFilterSheet({
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
       <div className="relative bg-[#1C1C1E] flex-1 flex flex-col" style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
         <div className="flex justify-center pt-3 pb-1 shrink-0">
-          <div className="w-10 h-1 rounded-full bg-white/20" />
+          <div className="w-9 h-[5px] rounded-full bg-white/20" />
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 space-y-6">

@@ -6,6 +6,8 @@ import { Footer } from "@/components/layout/footer";
 import { AboutSection } from "@/components/about/about-section";
 import { SpaceVideoBackground } from "@/components/landing/space-video-background";
 import { AuthModal } from "@/components/auth/auth-modal";
+import { MobileAuthSheet } from "@/components/auth/mobile-auth-sheet";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { PageTransitionWrapper } from "@/components/ui/page-transition-wrapper";
 import { useTransition } from "@/components/providers/transition-provider";
 
@@ -13,6 +15,7 @@ export default function AboutPage() {
   const [authOpen, setAuthOpen] = useState(false);
   const [authTab, setAuthTab] = useState<"login" | "signup">("signup");
   const { startTransition, endTransition } = useTransition();
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     endTransition();
@@ -46,11 +49,19 @@ export default function AboutPage() {
         </main>
       </PageTransitionWrapper>
       <Footer />
-      <AuthModal
-        isOpen={authOpen}
-        onClose={handleClose}
-        defaultTab={authTab}
-      />
+      {isMobile ? (
+        <MobileAuthSheet
+          isOpen={authOpen}
+          onClose={handleClose}
+          defaultTab={authTab}
+        />
+      ) : (
+        <AuthModal
+          isOpen={authOpen}
+          onClose={handleClose}
+          defaultTab={authTab}
+        />
+      )}
     </>
   );
 }

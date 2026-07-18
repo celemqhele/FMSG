@@ -9,6 +9,8 @@ import { DataPrivacy } from "@/components/landing/data-privacy";
 import { PricingSection } from "@/components/landing/pricing-section";
 import { SpaceVideoBackground } from "@/components/landing/space-video-background";
 import { AuthModal } from "@/components/auth/auth-modal";
+import { MobileAuthSheet } from "@/components/auth/mobile-auth-sheet";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { PageTransitionWrapper } from "@/components/ui/page-transition-wrapper";
 import { useTransition } from "@/components/providers/transition-provider";
 import { createClient } from "@/lib/supabase/client";
@@ -18,6 +20,7 @@ export default function HomePage() {
   const [authTab, setAuthTab] = useState<"login" | "signup">("signup");
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const { startTransition, endTransition } = useTransition();
+  const isMobile = useIsMobile();
 
   useEffect(() => { endTransition(); }, [endTransition]);
 
@@ -66,11 +69,19 @@ export default function HomePage() {
         </main>
       </PageTransitionWrapper>
       <Footer />
-      <AuthModal
-        isOpen={authOpen}
-        onClose={handleClose}
-        defaultTab={authTab}
-      />
+      {isMobile ? (
+        <MobileAuthSheet
+          isOpen={authOpen}
+          onClose={handleClose}
+          defaultTab={authTab}
+        />
+      ) : (
+        <AuthModal
+          isOpen={authOpen}
+          onClose={handleClose}
+          defaultTab={authTab}
+        />
+      )}
     </>
   );
 }
