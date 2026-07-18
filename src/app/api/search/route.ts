@@ -373,7 +373,7 @@ async function fetchAndFilterJobs(
       if (isIndividualJobPage(v.link)) {
         // Already an individual job page — scrape directly
         console.log(`[PIPELINE] Individual job page, scraping directly: ${v.link}`);
-        const job = await scrapeJobPage(v.link, JINA_API ?? null);
+        const job = await withTimeout(scrapeJobPage(v.link, JINA_API ?? null), 15_000, `Jina scrape ${v.domain}`).catch(() => null);
         if (job) {
           job.title = job.title || v.title;
           scrapedGoogleJobs.push(job);
@@ -384,10 +384,10 @@ async function fetchAndFilterJobs(
       } else if (isListingPage(v.link)) {
         // Listing page — extract individual URLs first
         console.log(`[PIPELINE] Listing page detected, extracting URLs: ${v.link}`);
-        const individualUrls = await extractJobUrlsFromListingPage(v.link, JINA_API ?? null);
+        const individualUrls = await withTimeout(extractJobUrlsFromListingPage(v.link, JINA_API ?? null), 15_000, `Jina extract ${v.domain}`).catch(() => [] as string[]);
         console.log(`[PIPELINE] Extracted ${individualUrls.length} individual URLs from ${v.domain}`);
         for (const jobUrl of individualUrls.slice(0, 5)) {
-          const job = await scrapeJobPage(jobUrl, JINA_API ?? null);
+          const job = await withTimeout(scrapeJobPage(jobUrl, JINA_API ?? null), 15_000, `Jina scrape ${v.domain}`).catch(() => null);
           if (job) {
             scrapedGoogleJobs.push(job);
             console.log(`[PIPELINE] Scraped OK: "${job.title}" at "${job.company_name}"`);
@@ -399,7 +399,7 @@ async function fetchAndFilterJobs(
       } else {
         // Unknown pattern — try scraping directly
         console.log(`[PIPELINE] Unknown pattern, scraping directly: ${v.link}`);
-        const job = await scrapeJobPage(v.link, JINA_API ?? null);
+        const job = await withTimeout(scrapeJobPage(v.link, JINA_API ?? null), 15_000, `Jina scrape ${v.domain}`).catch(() => null);
         if (job) {
           job.title = job.title || v.title;
           scrapedGoogleJobs.push(job);

@@ -377,9 +377,9 @@ export async function searchLinkedInJobs(params: SerpParams): Promise<SerpJob[]>
 
 const JINA_SCRAPEABLE_DOMAINS = [
   { domain: "careerjunction.co.za", jobPattern: /job-\d+\.aspx/i, listingPatterns: [/\/jobs\/[a-z0-9-]+$/i, /\/jobs\/[a-z0-9-]+\/[a-z0-9-]+$/i] },
-  { domain: "jobmail.co.za", jobPattern: /-id-\d+$/i, listingPatterns: [/\/jobs\/?$/i, /\/jobs\/[a-z0-9-]+\/?$/i] },
-  { domain: "pnet.co.za", jobPattern: /--[\w-]+--\d+-inline\.html/i, listingPatterns: [/\/jobs\/[a-z0-9-]+$/i, /\/jobs\/[a-z0-9-]+\?/i] },
-  { domain: "za.indeed.com", jobPattern: /\/viewjob\?jk=/i, listingPatterns: [/\/jobs\?/i] },
+  { domain: "jobmail.co.za", jobPattern: /-id-\d+$/i, listingPatterns: [/\/jobs\/?$/i, /\/jobs\/[a-z0-9-]+\/?$/i, /\/jobs\/[a-z0-9-]+\/[a-z0-9-]+\/?$/i] },
+  { domain: "pnet.co.za", jobPattern: /--[\w-]+--\d+-inline\.html/i, listingPatterns: [/\/jobs\/[a-z0-9-]+$/i] },
+  { domain: "za.indeed.com", jobPattern: /\/viewjob\?jk=/i, listingPatterns: [/\/jobs\/?$/i] },
   { domain: "linkedin.com", jobPattern: /\/jobs\/view\/\d+/i, listingPatterns: [/\/jobs\/search\//i] },
 ];
 
@@ -389,7 +389,7 @@ export function isListingPage(url: string): boolean {
     const host = u.hostname.replace(/^www\./, "").toLowerCase();
     const domain = JINA_SCRAPEABLE_DOMAINS.find(d => host === d.domain || host.endsWith(`.${d.domain}`));
     if (!domain) return false;
-    return domain.listingPatterns.some(p => p.test(u.pathname + u.search));
+    return domain.listingPatterns.some(p => p.test(u.pathname));
   } catch {
     return false;
   }
@@ -419,55 +419,61 @@ export async function searchGooglePages(params: SerpParams): Promise<{ title: st
 
   console.log(`[SRC5-GOOGLE-SCRAPE] Starting search for ${JINA_SCRAPEABLE_DOMAINS.length} domains (serpapi quota: ${rl.remaining}/${rl.total})`);
 
-  for (const { domain } of JINA_SCRAPEABLE_DOMAINS) {
-    const query = `${params.q} site:${domain}`;
+  const domainResults = await Promise.all(
+    JINA_SCRAPEABLE_DOMAINS.map(async ({ domain }) => {
+      const query = `${params.q} site:${domain}`;
 
-    const url = new URL("https://serpapi.com/search.json");
-    url.searchParams.set("engine", "google");
-    url.searchParams.set("q", query);
-    url.searchParams.set("api_key", SERPAPI_KEY!);
-    if (params.location) url.searchParams.set("location", params.location);
-    if (params.hl) url.searchParams.set("hl", params.hl || "en");
-    if (params.gl) url.searchParams.set("gl", params.gl || "za");
-    url.searchParams.set("num", "10");
+      const url = new URL("https://serpapi.com/search.json");
+      url.searchParams.set("engine", "google");
+      url.searchParams.set("q", query);
+      url.searchParams.set("api_key", SERPAPI_KEY!);
+      if (params.location) url.searchParams.set("location", params.location);
+      if (params.hl) url.searchParams.set("hl", params.hl || "en");
+      if (params.gl) url.searchParams.set("gl", params.gl || "za");
+      url.searchParams.set("num", "10");
 
-    const fullUrl = url.toString();
-    const safeUrl = fullUrl.replace(/api_key=[^&]+/, "api_key=***");
-    console.log(`[SRC5-GOOGLE-SCRAPE] REQ site:${domain} url=${safeUrl}`);
+      const fullUrl = url.toString();
+      const safeUrl = fullUrl.replace(/api_key=[^&]+/, "api_key=***");
+      console.log(`[SRC5-GOOGLE-SCRAPE] REQ site:${domain} url=${safeUrl}`);
 
-    try {
-      const res = await fetch(fullUrl);
-      console.log(`[SRC5-GOOGLE-SCRAPE] site:${domain} HTTP ${res.status} ${res.statusText}`);
-      if (!res.ok) {
-        console.error(`[SRC5-GOOGLE-SCRAPE] site:${domain} FAIL status=${res.status}`);
-        continue;
+      const matched: { title: string; link: string; snippet: string; domain: string }[] = [];
+
+      try {
+        const res = await fetch(fullUrl);
+        console.log(`[SRC5-GOOGLE-SCRAPE] site:${domain} HTTP ${res.status} ${res.statusText}`);
+        if (!res.ok) {
+          console.error(`[SRC5-GOOGLE-SCRAPE] site:${domain} FAIL status=${res.status}`);
+          return matched;
+        }
+        const data = await res.json();
+        recordApiCall("serpapi");
+        const organic = data.organic_results ?? [];
+        console.log(`[SRC5-GOOGLE-SCRAPE] site:${domain} OK ${organic.length} organic results`);
+        for (const r of organic) {
+          if (!r.link) continue;
+          try {
+            const resultDomain = new URL(r.link).hostname.replace(/^www\./, "").toLowerCase();
+            if (resultDomain === domain || resultDomain.endsWith(`.${domain}`)) {
+              matched.push({
+                title: r.title || "",
+                link: r.link,
+                snippet: r.snippet || "",
+                domain: resultDomain,
+              });
+            }
+          } catch {}
+        }
+        console.log(`[SRC5-GOOGLE-SCRAPE] site:${domain} matched ${matched.length} URLs for scraping`);
+      } catch (err) {
+        console.error(`[SRC5-GOOGLE-SCRAPE] site:${domain} EXCEPTION:`, err);
       }
-      const data = await res.json();
-      recordApiCall("serpapi");
-      const organic = data.organic_results ?? [];
-      console.log(`[SRC5-GOOGLE-SCRAPE] site:${domain} OK ${organic.length} organic results`);
-      let matched = 0;
-      for (const r of organic) {
-        if (!r.link) continue;
-        try {
-          const resultDomain = new URL(r.link).hostname.replace(/^www\./, "").toLowerCase();
-          if (resultDomain === domain || resultDomain.endsWith(`.${domain}`)) {
-            allResults.push({
-              title: r.title || "",
-              link: r.link,
-              snippet: r.snippet || "",
-              domain: resultDomain,
-            });
-            matched++;
-          }
-        } catch {}
-      }
-      console.log(`[SRC5-GOOGLE-SCRAPE] site:${domain} matched ${matched} URLs for scraping`);
-    } catch (err) {
-      console.error(`[SRC5-GOOGLE-SCRAPE] site:${domain} EXCEPTION:`, err);
-    }
 
-    await new Promise((r) => setTimeout(r, 200));
+      return matched;
+    })
+  );
+
+  for (const results of domainResults) {
+    allResults.push(...results);
   }
 
   console.log(`[SRC5-GOOGLE-SCRAPE] TOTAL ${allResults.length} URLs collected across all domains`);
