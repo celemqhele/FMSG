@@ -3,12 +3,15 @@
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import Image from "next/image";
+import { Pencil } from "lucide-react";
 
 interface MobileHeaderProps {
   onAvatarTap: () => void;
+  onEditProfile?: () => void;
+  hasActiveProfile?: boolean;
 }
 
-export function MobileHeader({ onAvatarTap }: MobileHeaderProps) {
+export function MobileHeader({ onAvatarTap, onEditProfile, hasActiveProfile }: MobileHeaderProps) {
   const [initials, setInitials] = useState("");
 
   useEffect(() => {
@@ -35,12 +38,22 @@ export function MobileHeader({ onAvatarTap }: MobileHeaderProps) {
         <Image src="/icon.png" alt="FMSG" width={22} height={22} className="shrink-0" priority />
         <span className="text-sm font-semibold text-white select-none">FMSG</span>
       </div>
-      <button
-        onClick={onAvatarTap}
-        className="w-11 h-11 rounded-full bg-white/15 border border-white/20 flex items-center justify-center text-xs font-semibold text-white"
-      >
-        {initials || "?"}
-      </button>
+      <div className="flex items-center gap-2">
+        {hasActiveProfile && onEditProfile && (
+          <button
+            onClick={onEditProfile}
+            className="w-9 h-9 rounded-full bg-white/10 border border-white/20 flex items-center justify-center text-white/70 hover:text-white transition-colors"
+          >
+            <Pencil size={14} />
+          </button>
+        )}
+        <button
+          onClick={onAvatarTap}
+          className="w-11 h-11 rounded-full bg-white/15 border border-white/20 flex items-center justify-center text-xs font-semibold text-white"
+        >
+          {initials || "?"}
+        </button>
+      </div>
     </header>
   );
 }

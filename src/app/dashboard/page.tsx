@@ -725,6 +725,12 @@ export default function DashboardPage() {
               <SearchPill onSearch={handleSearch} onAbort={handleAbort} searching={searching} pfMode={pfMode} onPfModeChange={setPfMode} referralQuery={referralJob?.job_title} />
             )}
 
+            {isMobile ? (
+              <div className="flex items-center justify-center gap-1.5">
+                <BalanceChips balances={balances} plan={plan} />
+              </div>
+            ) : null}
+
             {!isMobile && (
               <>
                 <div className="flex flex-wrap justify-center gap-1.5">
@@ -930,6 +936,8 @@ export default function DashboardPage() {
             )}
       </div>
 
+      </PageTransitionWrapper>
+
       {isMobile ? (
         <MobileLimitModal
           code={showLimitModal}
@@ -1077,8 +1085,6 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
-
-      </PageTransitionWrapper>
 
       {isMobile && (
         <MobileBottomNav active={activeTab} onChange={setActiveTab} />

@@ -54,6 +54,25 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  useEffect(() => {
+    if (activeProfileId) return;
+    const supabase = createClient();
+    supabase.auth.getUser().then(({ data }: { data: any }) => {
+      const user = data?.user;
+      if (!user) return;
+      supabase
+        .from("search_profiles")
+        .select("id")
+        .eq("user_id", user.id)
+        .order("created_at")
+        .limit(1)
+        .maybeSingle()
+        .then(({ data }: { data: any }) => {
+          if (data?.id) setActiveProfileId(data.id);
+        });
+    });
+  }, [activeProfileId]);
+
   const handleProfileCreated = useCallback((id: string) => {
     setEditProfileId(id);
     setIsNewProfile(true);
@@ -100,6 +119,9 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
           onSelectProfile={setActiveProfileId}
           onProfileCreated={handleProfileCreated}
           profileRefreshKey={profileRefreshKey}
+          onEditProfile={() => activeProfileId && handleOpenEdit(activeProfileId)}
+          isAdmin={isAdmin}
+          onOpenAdminModal={() => setAdminModalOpen(true)}
         >
           <div className="max-w-4xl mx-auto mb-4">
             <EmailConfirmationBanner />
