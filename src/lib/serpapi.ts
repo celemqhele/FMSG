@@ -660,12 +660,25 @@ export async function scrapeJobPage(
 
     const domain = new URL(url).hostname.replace(/^www\./, "").toLowerCase();
 
-    const titleMatch = content.match(/^#\s+(.+)/m) || content.match(/^##\s+(.+)/m);
-    let title = titleMatch?.[1]?.trim() || "";
+    // Find first heading that isn't a sidebar pattern (e.g. "N jobs in Location")
+    const sidebarHeadingPattern = /^[\d,*]+\s+\*{0,2}[\w\s/]+\*{0,2}\s+jobs?\s+in\s+/i;
+    let title = "";
+    for (const match of content.matchAll(/^(#{1,2})\s+(.+)/gm)) {
+      const headingText = match[2].trim();
+      if (!sidebarHeadingPattern.test(headingText)) {
+        title = headingText;
+        break;
+      }
+    }
 
     if (!title) {
       const ogTitle = json.data?.metadata?.title;
       if (ogTitle) title = ogTitle.split(" | ")[0].split(" - ")[0].trim();
+    }
+    if (!title) {
+      // Fall back to URL slug
+      const slug = url.split("/").pop()?.replace(/[-_]/g, " ").replace(/\b\w/g, c => c.toUpperCase()) || "";
+      if (slug.length > 5 && slug.length < 120) title = slug;
     }
     if (!title) {
       const titleLines = content.split("\n").filter((l: string) => l.trim().length > 5 && l.trim().length < 120);
@@ -674,8 +687,8 @@ export async function scrapeJobPage(
 
     let company = "";
     const companyPatterns = [
-      /(?:at|@|company:\s*)(.+)/i,
-      /(?:employer|organisation):\s*(.+)/i,
+      /\*\*(?:Company|Employer)\*\*:\s*(.+)/i,
+      /(?:company|employer|organisation|hiring\s+(?:company|organisation)):\s*(.+)/i,
     ];
     for (const pat of companyPatterns) {
       const m = content.match(pat);
@@ -693,11 +706,13 @@ export async function scrapeJobPage(
     }
 
     console.log(`[SRC5-SCRAPE] OK title="${title.slice(0, 60)}" company="${company || "Unknown"}" desc_len=${content.slice(0, 3000).length}`);
+    const titleIdx = content.indexOf(title);
+    const descriptionStart = titleIdx >= 0 ? titleIdx : 0;
     return {
       title: title.slice(0, 200),
       company_name: company || "Unknown",
       location: location || "",
-      description: content.slice(0, 3000),
+      description: content.slice(descriptionStart, descriptionStart + 3000),
       link: url,
       via: domain,
       hasFullSpec: true,
