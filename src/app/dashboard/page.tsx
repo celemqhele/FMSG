@@ -203,7 +203,7 @@ export default function DashboardPage() {
         .select("onboarding_completed, account_status, email_verified")
         .maybeSingle()
         .then(({ data: profile }: { data: any }) => {
-          if (!profile) {
+          if (!profile || !profile.onboarding_completed) {
             setNeedsOnboarding(true);
             requestAnimationFrame(() => setOnboardingMounted(true));
           } else {

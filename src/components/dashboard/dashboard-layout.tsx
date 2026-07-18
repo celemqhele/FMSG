@@ -118,7 +118,7 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
     <ProfileContext.Provider value={{ activeProfileId, setActiveProfileId }}>
       <SpaceVideoBackground src="/videos/space.mp4" fastPlaybackRate={4} />
 
-      {isMobile ? (
+      {isMobile === null ? null : isMobile ? (
         <MobileLayout
           profileSheetOpen={mobileProfileSheetOpen}
           onProfileSheetOpen={() => setMobileProfileSheetOpen(true)}
