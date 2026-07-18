@@ -379,8 +379,6 @@ const JINA_SCRAPEABLE_DOMAINS = [
   { domain: "careerjunction.co.za", jobPattern: /job-\d+\.aspx/i, listingPatterns: [/\/jobs\/[a-z0-9-]+$/i, /\/jobs\/[a-z0-9-]+\/[a-z0-9-]+$/i] },
   { domain: "jobmail.co.za", jobPattern: /-id-\d+$/i, listingPatterns: [/\/jobs\/?$/i, /\/jobs\/[a-z0-9-]+\/?$/i, /\/jobs\/[a-z0-9-]+\/[a-z0-9-]+\/?$/i] },
   { domain: "pnet.co.za", jobPattern: /--[\w-]+--\d+-inline\.html/i, listingPatterns: [/\/jobs\/[a-z0-9-]+$/i] },
-  { domain: "za.indeed.com", jobPattern: /\/viewjob\?jk=/i, listingPatterns: [/\/jobs\/?$/i] },
-  { domain: "linkedin.com", jobPattern: /\/jobs\/view\/\d+/i, listingPatterns: [/\/jobs\/search\//i] },
 ];
 
 export function isListingPage(url: string): boolean {
@@ -653,8 +651,16 @@ export async function scrapeJobPage(
         lowerContent.match(/we\s+(use|and|store)\s+cookies/i)
       );
 
-    if (isListingPage || isCookieOnly) {
-      console.warn(`[SRC5-SCRAPE] REJECTED listing/cookie page: ${url} (first 100 chars: ${content.slice(0, 100)})`);
+    const isSignInPage =
+      lowerContent.length < 5000 && (
+        lowerContent.includes("join or sign in") ||
+        lowerContent.includes("additional verification required") ||
+        lowerContent.match(/to see more than one page.*sign in/i) ||
+        (lowerContent.includes("sign in") && lowerContent.includes("create an account"))
+      );
+
+    if (isListingPage || isCookieOnly || isSignInPage) {
+      console.warn(`[SRC5-SCRAPE] REJECTED listing/cookie/signin page: ${url} (first 100 chars: ${content.slice(0, 100)})`);
       return null;
     }
 
