@@ -124,19 +124,20 @@ export function MobileJobCard({
     const supabase = createClient();
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return;
-    const { error } = await supabase.from("saved_jobs").insert({
-      user_id: session.user.id,
-      profile_id: activeProfileId,
-      job_title: jobTitle,
-      company,
-      location,
-      estimated_salary: salary,
-      match_score: matchScore,
-      match_summary: "",
-      job_url: jobUrl,
-      full_spec: fullDescription,
-    });
-    if (!error) setSaved(true);
+    try {
+      const res = await fetch("/api/job-results/save", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          job_title: jobTitle, company, location, estimated_salary: salary,
+          match_score: matchScore, match_summary: "", job_url: jobUrl, full_spec: fullDescription,
+          profile_id: activeProfileId,
+        }),
+      });
+      if (res.ok) setSaved(true);
+    } catch {
+      // network error — silently ignore to match existing mobile UX
+    }
   };
 
   const handleGenerateCv = async () => {

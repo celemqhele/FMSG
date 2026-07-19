@@ -139,23 +139,26 @@ export function JobResultCard({
     const supabase = createClient();
     const { data: { session } } = await supabase.auth.getSession();
     if (!session || saved) return;
-    const { error } = await supabase.from("saved_jobs").insert({
-      user_id: session.user.id,
-      profile_id: activeProfileId,
-      job_title: jobTitle,
-      company,
-      location,
-      estimated_salary: salary,
-      match_score: matchScore,
-      match_summary: "",
-      job_url: jobUrl,
-      full_spec: fullDescription,
-    });
-    if (error) {
-      console.error("Failed to save job:", error.message);
-      setSaveError(error.message);
-    } else {
+    try {
+      const res = await fetch("/api/job-results/save", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          job_title: jobTitle, company, location, estimated_salary: salary,
+          match_score: matchScore, match_summary: "", job_url: jobUrl, full_spec: fullDescription,
+          profile_id: activeProfileId,
+        }),
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        console.error("Failed to save job:", errData.error || res.statusText);
+        setSaveError(errData.error || "Failed to save job.");
+        return;
+      }
       setSaved(true);
+    } catch (err) {
+      console.error("Network error saving job:", err);
+      setSaveError("Network error. Please try again.");
     }
   };
 

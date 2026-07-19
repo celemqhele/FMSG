@@ -1039,7 +1039,7 @@ ${blacklistInfo}${bannedInfo}${dateConstraintInfo}`;
 function insertJobRows(dataClient: any, rows: any[]) {
   if (rows.length === 0) return;
   dataClient.from("job_results").insert(rows).then(({ error }: any) => {
-    if (error) console.error("[SEARCH] Failed to insert job results:", error.message);
+    if (error) console.error("[HISTORY] Failed to insert job results:", error.message);
   });
 }
 
@@ -1422,7 +1422,7 @@ Return ONLY valid JSON (no markdown, no code fences):
                   spec_source: r.spec_source,
                 }));
                 dataClient.from("job_results").insert(rows).then(({ error }: any) => {
-                  if (error) console.error("[SEARCH] Failed to insert continuation results:", error.message);
+                  if (error) console.error("[HISTORY] Failed to insert continuation results:", error.message);
                 });
               } else {
                 sendComplete({ type: "complete", results: [], progress: 100, message: "No strong matches found. Try broadening your criteria." });
@@ -1723,7 +1723,7 @@ Return ONLY valid JSON (no markdown, no code fences):
               spec_source: r.spec_source,
             }));
             dataClient.from("job_results").insert(rows).then(({ error }: any) => {
-              if (error) console.error("[PF] Failed to insert job results:", error.message);
+              if (error) console.error("[HISTORY] Failed to insert PF job results:", error.message);
             });
           } else {
             const noResultsMessage = pfAborted
