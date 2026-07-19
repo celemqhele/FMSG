@@ -15,8 +15,8 @@ export function PageTransitionWrapper({ children }: { children: ReactNode }) {
       className="transition-all duration-700 ease-out"
       style={{
         opacity: mounted ? 1 : 0,
-        transform: mounted ? "translateY(0) scale(1)" : "translateY(12px) scale(0.98)",
-        filter: mounted ? "blur(0)" : "blur(4px)",
+        transform: mounted ? undefined : "translateY(12px) scale(0.98)",
+        filter: mounted ? undefined : "blur(4px)",
       }}
     >
       {children}

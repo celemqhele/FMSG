@@ -1,6 +1,6 @@
 "use client";
 
-import { X } from "lucide-react";
+import { useState, useCallback } from "react";
 
 interface MobileVerdictSheetProps {
   isOpen: boolean;
@@ -40,6 +40,18 @@ export function MobileVerdictSheet({
   taxesApplied,
   suggestedCvName,
 }: MobileVerdictSheetProps) {
+  const [dragY, setDragY] = useState(0);
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    const dy = e.touches[0].clientY - (e.currentTarget as HTMLElement).getBoundingClientRect().top;
+    setDragY(Math.max(0, dy));
+  }, []);
+
+  const handleTouchEnd = useCallback(() => {
+    if (dragY > 100) onClose();
+    else setDragY(0);
+  }, [dragY, onClose]);
+
   if (!isOpen) return null;
 
   const grouped: Record<string, typeof dynamicRequirements> = {};
@@ -47,7 +59,7 @@ export function MobileVerdictSheet({
     for (const req of dynamicRequirements) {
       const p = req.pillar || "other";
       if (!grouped[p]) grouped[p] = [];
-      grouped[p].push(req);
+      grouped[p]!.push(req);
     }
   }
   const orderedPillars = PILLAR_ORDER.filter((p) => grouped[p]);
@@ -55,14 +67,27 @@ export function MobileVerdictSheet({
 
   return (
     <div className="fixed inset-0 z-[200] flex flex-col justify-end">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-[#1C1C1E] rounded-t-[19px] overflow-y-auto" style={{ height: "calc(100dvh - 2.5rem)", paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
+      <div
+        className="absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity duration-300"
+        style={{ opacity: isOpen ? 1 : 0 }}
+        onClick={onClose}
+      />
+      <div
+        className="relative bg-[#1C1C1E] rounded-t-[19px] transition-transform duration-300 ease-out overflow-y-auto"
+        style={{
+          maxHeight: "calc(100dvh - 2.5rem)",
+          transform: `translateY(${dragY > 0 ? dragY : 0}px)`,
+          paddingBottom: "env(safe-area-inset-bottom, 0px)",
+        }}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+      >
         {/* Handle */}
         <div className="flex justify-center pt-2.5 pb-1 sticky top-0 bg-[#1C1C1E] z-10">
-          <div className="w-7 h-[5px] rounded-full bg-white/20" />
+          <div className="w-9 h-[5px] rounded-full bg-white/20" />
         </div>
 
-        <div className="px-4 pb-6">
+        <div className="px-4 pb-5">
           {/* Header badges */}
           <div className="flex items-center gap-1.5 flex-wrap mb-3">
             <span className={`text-[10px] font-semibold px-2.5 py-1 rounded-full border ${scoreBg}`}>
