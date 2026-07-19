@@ -14,4 +14,4 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 # Branch Rules
 
-- **DO NOT** merge or cherry-pick the Google Analytics tag (`G-4QMEHZSCXF`) into the `beta` branch. It lives only in `src/app/layout.tsx` on `production`. When merging `beta` into `production`, always check that this tag wasn't accidentally removed.
+- **DO NOT** merge or cherry-pick the Google Analytics tag (`G-4QMEHZSCXF`) into the `beta` branch. It lives only in `src/components/analytics/google-analytics.tsx` on `production`. When merging `beta` into `production`, always check that this tag wasn't accidentally removed.
