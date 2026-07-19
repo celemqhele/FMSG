@@ -80,12 +80,12 @@ export function MobileFilterSheet({
   return (
     <div className="fixed inset-0 z-[90] flex flex-col">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-[#1C1C1E] flex-1 flex flex-col" style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
+      <div className="relative bg-[#1C1C1E] flex flex-col h-full" style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
         <div className="flex justify-center pt-2.5 pb-1 shrink-0">
           <div className="w-7 h-[5px] rounded-full bg-white/20" />
         </div>
 
-        <div className="flex-1 overflow-y-auto px-4 space-y-5">
+        <div className="flex-1 overflow-y-auto px-4 space-y-5 min-h-0">
           {/* Date filter */}
           <div>
             <p className="text-[10px] font-medium text-white/50 uppercase tracking-wider mb-2.5">Date Posted</p>

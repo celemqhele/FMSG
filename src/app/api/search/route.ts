@@ -1416,6 +1416,7 @@ Return ONLY valid JSON (no markdown, no code fences):
                 }));
                 const { error: insertErr } = await getSupabase().from("job_results").insert(rows);
                 if (insertErr) console.error("[HISTORY] Failed to insert continuation results:", insertErr.message);
+                else console.log(`[HISTORY] Auto-saved ${rows.length} jobs to history (continuation)`);
               } else {
                 sendComplete({ type: "complete", results: [], progress: 100, message: "No strong matches found. Try broadening your criteria." });
               }
@@ -1716,6 +1717,7 @@ Return ONLY valid JSON (no markdown, no code fences):
             }));
             const { error: insertErr } = await getSupabase().from("job_results").insert(rows);
             if (insertErr) console.error("[HISTORY] Failed to insert PF job results:", insertErr.message);
+            else console.log(`[HISTORY] Auto-saved ${rows.length} jobs to history (PF mode)`);
           } else {
             const noResultsMessage = pfAborted
               ? "Search stopped early, no results were found. Try again later."
