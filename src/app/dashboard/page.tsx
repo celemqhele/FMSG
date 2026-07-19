@@ -280,27 +280,20 @@ export default function DashboardPage() {
   }, [showLimitModal]);
 
   useEffect(() => {
-    console.log("[HISTORY] effect fired, tab:", activeTab, "profileId:", activeProfileId);
     if (activeTab !== "history") return;
-    if (!activeProfileId) { setHistoryResults([]); setHistoryLoading(false); return; }
     setHistoryLoading(true);
     const supabase = createClient();
     supabase.auth.getSession().then(({ data }: { data: { session: any } }) => {
       if (!data.session) { setHistoryLoading(false); return; }
       const session = data.session;
-      console.log("[HISTORY] querying job_results for user:", session.user.id, "profile:", activeProfileId);
       supabase
         .from("job_results")
         .select("*")
         .eq("user_id", session.user.id)
         .eq("is_deleted", false)
-        .or(`profile_id.eq.${activeProfileId},profile_id.is.null`)
         .order("created_at", { ascending: false })
         .then(({ data, error }: { data: any; error: any }) => {
-          console.log("[HISTORY] query result count:", data?.length, "error:", error?.message);
-          if (error) {
-            console.error("[HISTORY] Failed to load history:", error.message);
-          }
+          if (error) console.error("[HISTORY] Failed to load history:", error.message);
           setHistoryResults((data ?? []) as HistoryResult[]);
           setHistoryLoading(false);
         })
@@ -310,7 +303,7 @@ export default function DashboardPage() {
           setHistoryLoading(false);
         });
     });
-  }, [activeTab, activeProfileId]);
+  }, [activeTab]);
 
   const [pfActive, setPfActive] = useState(false);
 
