@@ -1036,13 +1036,6 @@ ${blacklistInfo}${bannedInfo}${dateConstraintInfo}`;
   return { results: outputs, queryUsed: query, filteredCounts };
 }
 
-function insertJobRows(dataClient: any, rows: any[]) {
-  if (rows.length === 0) return;
-  dataClient.from("job_results").insert(rows).then(({ error }: any) => {
-    if (error) console.error("[HISTORY] Failed to insert job results:", error.message);
-  });
-}
-
 function pinReferralJob(results: any[], referralUrl: string | null): any[] {
   if (!referralUrl || results.length === 0) return results;
   const idx = results.findIndex((r) => r.job_url === referralUrl);
@@ -1421,9 +1414,8 @@ Return ONLY valid JSON (no markdown, no code fences):
                   dynamic_requirements: r.dynamic_requirements,
                   spec_source: r.spec_source,
                 }));
-                dataClient.from("job_results").insert(rows).then(({ error }: any) => {
-                  if (error) console.error("[HISTORY] Failed to insert continuation results:", error.message);
-                });
+                const { error: insertErr } = await getSupabase().from("job_results").insert(rows);
+                if (insertErr) console.error("[HISTORY] Failed to insert continuation results:", insertErr.message);
               } else {
                 sendComplete({ type: "complete", results: [], progress: 100, message: "No strong matches found. Try broadening your criteria." });
               }
@@ -1722,9 +1714,8 @@ Return ONLY valid JSON (no markdown, no code fences):
               dynamic_requirements: r.dynamic_requirements,
               spec_source: r.spec_source,
             }));
-            dataClient.from("job_results").insert(rows).then(({ error }: any) => {
-              if (error) console.error("[HISTORY] Failed to insert PF job results:", error.message);
-            });
+            const { error: insertErr } = await getSupabase().from("job_results").insert(rows);
+            if (insertErr) console.error("[HISTORY] Failed to insert PF job results:", insertErr.message);
           } else {
             const noResultsMessage = pfAborted
               ? "Search stopped early, no results were found. Try again later."
