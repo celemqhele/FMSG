@@ -65,19 +65,24 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (activeProfileId) return;
     const supabase = createClient();
-    supabase.auth.getUser().then(({ data }: { data: any }) => {
-      const user = data?.user;
-      if (!user) return;
+    const loadProfile = (userId: string) => {
       supabase
         .from("search_profiles")
         .select("id")
-        .eq("user_id", user.id)
+        .eq("user_id", userId)
         .order("created_at")
         .limit(1)
         .maybeSingle()
         .then(({ data }: { data: any }) => {
           if (data?.id) setActiveProfileId(data.id);
         });
+    };
+    supabase.auth.getUser().then(({ data }: { data: any }) => {
+      const user = data?.user;
+      if (user) { loadProfile(user.id); return; }
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: string, session: { user: { id: string } } | null) => {
+        if (session?.user) { loadProfile(session.user.id); subscription.unsubscribe(); }
+      });
     });
   }, [activeProfileId]);
 
