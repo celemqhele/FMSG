@@ -288,6 +288,7 @@ export default function DashboardPage() {
     supabase.auth.getSession().then(({ data }: { data: { session: any } }) => {
       if (!data.session) { setHistoryLoading(false); return; }
       const session = data.session;
+      console.log("[HISTORY] querying job_results for user:", session.user.id, "profile:", activeProfileId);
       supabase
         .from("job_results")
         .select("*")
