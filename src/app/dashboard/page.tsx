@@ -292,10 +292,18 @@ export default function DashboardPage() {
         .select("*")
         .eq("user_id", session.user.id)
         .eq("is_deleted", false)
-        .or(`profile_id.eq.${activeProfileId},profile_id.is.null`)
+        .or(`profile_id.eq.${activeProfileId},profile_id.is.`)
         .order("created_at", { ascending: false })
-        .then(({ data }: { data: any }) => {
+        .then(({ data, error }: { data: any; error: any }) => {
+          if (error) {
+            console.error("[HISTORY] Failed to load history:", error.message);
+          }
           setHistoryResults((data ?? []) as HistoryResult[]);
+          setHistoryLoading(false);
+        })
+        .catch((err: unknown) => {
+          console.error("[HISTORY] History query error:", err);
+          setHistoryResults([]);
           setHistoryLoading(false);
         });
     });

@@ -1,7 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
-import { X, Check, ChevronDown } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
 import type { SortMode } from "@/components/dashboard/filter-sort-bar";
 import type { PlatformId } from "@/components/dashboard/platform-filter";
 import { PLATFORMS } from "@/components/dashboard/platform-filter";
@@ -28,10 +27,10 @@ const DATE_OPTIONS = [
 ];
 
 const SORT_OPTIONS: { value: SortMode; label: string }[] = [
-  { value: "date_newest", label: "Date (newest)" },
-  { value: "date_oldest", label: "Date (oldest)" },
-  { value: "score_highest", label: "Score (highest)" },
-  { value: "score_lowest", label: "Score (lowest)" },
+  { value: "date_newest", label: "Newest" },
+  { value: "date_oldest", label: "Oldest" },
+  { value: "score_highest", label: "Top score" },
+  { value: "score_lowest", label: "Low score" },
 ];
 
 export function MobileFilterSheet({
@@ -49,11 +48,13 @@ export function MobileFilterSheet({
 }: MobileFilterSheetProps) {
   const [selectedDays, setSelectedDays] = useState<number | null>(currentDays);
   const [selectedLabel, setSelectedLabel] = useState(currentLabel);
+  const [dragY, setDragY] = useState(0);
 
   useEffect(() => {
     if (isOpen) {
       setSelectedDays(currentDays);
       setSelectedLabel(currentLabel);
+      setDragY(0);
     }
   }, [isOpen, currentDays, currentLabel]);
 
@@ -75,31 +76,53 @@ export function MobileFilterSheet({
     onPlatformsChange(next.length === 0 ? (["all"] as PlatformId[]) : next);
   };
 
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    const dy = e.touches[0].clientY - (e.currentTarget as HTMLElement).getBoundingClientRect().top;
+    setDragY(Math.max(0, dy));
+  }, []);
+
+  const handleTouchEnd = useCallback(() => {
+    if (dragY > 100) onClose();
+    else setDragY(0);
+  }, [dragY, onClose]);
+
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[90] flex flex-col">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-[#1C1C1E] flex flex-col h-full" style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
-        <div className="flex justify-center pt-2.5 pb-1 shrink-0">
-          <div className="w-7 h-[5px] rounded-full bg-white/20" />
+    <div className="fixed inset-0 z-[90] flex flex-col justify-end">
+      <div
+        className="absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity duration-300"
+        style={{ opacity: isOpen ? 1 : 0 }}
+        onClick={onClose}
+      />
+      <div
+        className="relative bg-[#1C1C1E] rounded-t-[19px] transition-transform duration-300 ease-out"
+        style={{
+          transform: `translateY(${dragY > 0 ? dragY : 0}px)`,
+          paddingBottom: "env(safe-area-inset-bottom, 0px)",
+        }}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+      >
+        <div className="flex justify-center pt-2.5 pb-1.5">
+          <div className="w-9 h-[5px] rounded-full bg-white/20" />
         </div>
 
-        <div className="flex-1 overflow-y-auto px-4 space-y-5 min-h-0">
+        <div className="px-4 pb-5 space-y-4">
           {/* Date filter */}
           <div>
-            <p className="text-[10px] font-medium text-white/50 uppercase tracking-wider mb-2.5">Date Posted</p>
-            <div className="flex flex-wrap gap-1.5">
+            <p className="text-[10px] font-medium text-white/50 uppercase tracking-wider mb-2">Date Posted</p>
+            <div className="flex gap-1.5">
               {DATE_OPTIONS.map((opt) => {
                 const active = selectedDays === opt.value;
                 return (
                   <button
                     key={opt.label}
                     onClick={() => { setSelectedDays(opt.value); setSelectedLabel(opt.label); }}
-                    className={`px-3.5 py-1.5 rounded-full text-[10px] font-medium border transition-all ${
+                    className={`flex-1 px-2 py-1.5 rounded-full text-[10px] font-medium border transition-all text-center ${
                       active
                         ? "bg-[var(--color-accent)]/15 border-[var(--color-accent)]/50 text-[var(--color-accent)]"
-                        : "border-white/15 text-white/60 hover:text-white/80"
+                        : "border-white/15 text-white/60"
                     }`}
                   >
                     {opt.label}
@@ -109,47 +132,22 @@ export function MobileFilterSheet({
             </div>
           </div>
 
-          {/* PF toggle */}
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-[11px] text-white font-medium">Persistent Finder</p>
-              <p className="text-[10px] text-white/50 mt-0.5">Search multiple rounds</p>
-            </div>
-            <button
-              onClick={() => onPfModeChange(!pfMode)}
-              className={`relative inline-flex h-8 w-11 items-center rounded-full transition-colors ${
-                pfMode ? "bg-[var(--color-accent)]" : "bg-white/15"
-              }`}
-            >
-              <span
-                className={`inline-block h-5 w-6 rounded-full bg-white shadow transition-transform duration-200 ${
-                  pfMode ? "translate-x-7" : "translate-x-1"
-                }`}
-              />
-            </button>
-          </div>
-
           {/* Sort */}
           <div>
-            <p className="text-[10px] font-medium text-white/50 uppercase tracking-wider mb-2.5">Sort By</p>
-            <div className="space-y-1">
+            <p className="text-[10px] font-medium text-white/50 uppercase tracking-wider mb-2">Sort By</p>
+            <div className="flex gap-1.5">
               {SORT_OPTIONS.map((opt) => {
                 const active = currentSort === opt.value;
                 return (
                   <button
                     key={opt.value}
                     onClick={() => onSortChange(opt.value)}
-                    className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-[11px] rounded-[10px] transition-colors ${
+                    className={`flex-1 px-2 py-1.5 rounded-full text-[10px] font-medium border transition-all text-center ${
                       active
-                        ? "text-[var(--color-accent)] bg-[var(--color-accent)]/10"
-                        : "text-white hover:bg-white/5"
+                        ? "bg-[var(--color-accent)]/15 border-[var(--color-accent)]/50 text-[var(--color-accent)]"
+                        : "border-white/15 text-white/60"
                     }`}
                   >
-                    <span className={`w-3.5 h-4 rounded-full border flex items-center justify-center ${
-                      active ? "border-[var(--color-accent)]" : "border-white/30"
-                    }`}>
-                      {active && <span className="w-1.5 h-2 rounded-full bg-[var(--color-accent)]" />}
-                    </span>
                     {opt.label}
                   </button>
                 );
@@ -159,7 +157,7 @@ export function MobileFilterSheet({
 
           {/* Platforms */}
           <div>
-            <p className="text-[10px] font-medium text-white/50 uppercase tracking-wider mb-2.5">Platforms</p>
+            <p className="text-[10px] font-medium text-white/50 uppercase tracking-wider mb-2">Platforms</p>
             <div className="flex flex-wrap gap-1.5">
               {PLATFORMS.map((p) => {
                 const active = currentPlatforms.includes("all")
@@ -172,7 +170,7 @@ export function MobileFilterSheet({
                     className={`px-2.5 py-1.5 rounded-full text-[10px] font-medium border transition-all ${
                       active
                         ? "bg-[var(--color-accent)]/15 border-[var(--color-accent)]/40 text-[var(--color-accent)]"
-                        : "border-white/15 text-white/60 hover:text-white/80"
+                        : "border-white/15 text-white/60"
                     }`}
                   >
                     {p.label}
@@ -182,15 +180,28 @@ export function MobileFilterSheet({
             </div>
           </div>
 
-        </div>
-
-        <div className="shrink-0 px-4 py-3 border-t border-white/10">
-          <button
-            onClick={handleApply}
-            className="w-full py-2.5 rounded-[10px] bg-[var(--color-accent)] text-white text-[11px] font-semibold hover:bg-[var(--color-accent-hover)] active:scale-[0.98] transition-all"
-          >
-            Apply Filters
-          </button>
+          {/* PF toggle + Apply row */}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => onPfModeChange(!pfMode)}
+              className={`shrink-0 relative inline-flex h-8 w-11 items-center rounded-full transition-colors ${
+                pfMode ? "bg-[var(--color-accent)]" : "bg-white/15"
+              }`}
+            >
+              <span
+                className={`inline-block h-5 w-6 rounded-full bg-white shadow transition-transform duration-200 ${
+                  pfMode ? "translate-x-7" : "translate-x-1"
+                }`}
+              />
+            </button>
+            <span className="text-[10px] text-white/50 shrink-0">PF</span>
+            <button
+              onClick={handleApply}
+              className="flex-1 py-2 rounded-[10px] bg-[var(--color-accent)] text-white text-[11px] font-semibold active:scale-[0.98] transition-all"
+            >
+              Apply
+            </button>
+          </div>
         </div>
       </div>
     </div>
