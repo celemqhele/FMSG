@@ -13,7 +13,7 @@ interface MobileLayoutProps {
   onSelectProfile: (id: string) => void;
   onProfileCreated?: (id: string) => void;
   profileRefreshKey?: number;
-  onEditProfile?: () => void;
+  onEditProfile?: (profileId: string) => void;
   isAdmin?: boolean;
   onOpenAdminModal?: () => void;
 }
@@ -21,11 +21,11 @@ interface MobileLayoutProps {
 export function MobileLayout({ children, profileSheetOpen, onProfileSheetOpen, onProfileSheetClose, activeProfileId, onSelectProfile, onProfileCreated, profileRefreshKey, onEditProfile, isAdmin, onOpenAdminModal }: MobileLayoutProps) {
   return (
     <>
-      <MobileHeader onAvatarTap={onProfileSheetOpen} onEditProfile={onEditProfile} hasActiveProfile={!!activeProfileId} />
+      <MobileHeader onAvatarTap={onProfileSheetOpen} />
       <main className="relative z-10 pt-14 pb-20 px-4 min-h-dvh">
         {children}
       </main>
-      <MobileProfileSheet isOpen={profileSheetOpen} onClose={onProfileSheetClose} activeProfileId={activeProfileId} onSelectProfile={onSelectProfile} onProfileCreated={onProfileCreated} refreshKey={profileRefreshKey} isAdmin={isAdmin} onOpenAdminModal={onOpenAdminModal} />
+      <MobileProfileSheet isOpen={profileSheetOpen} onClose={onProfileSheetClose} activeProfileId={activeProfileId} onSelectProfile={onSelectProfile} onProfileCreated={onProfileCreated} refreshKey={profileRefreshKey} onEditProfile={onEditProfile} isAdmin={isAdmin} onOpenAdminModal={onOpenAdminModal} />
     </>
   );
 }

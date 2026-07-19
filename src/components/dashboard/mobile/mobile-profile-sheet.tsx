@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Settings, LogOut, User, Sparkles, Plus, Check, CirclePlus } from "lucide-react";
+import { Settings, LogOut, User, Sparkles, Plus, Check, CirclePlus, Pencil } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useTransition } from "@/components/providers/transition-provider";
 
@@ -18,12 +18,13 @@ interface MobileProfileSheetProps {
   activeProfileId: string | null;
   onSelectProfile: (id: string) => void;
   onProfileCreated?: (id: string) => void;
+  onEditProfile?: (id: string) => void;
   refreshKey?: number;
   isAdmin?: boolean;
   onOpenAdminModal?: () => void;
 }
 
-export function MobileProfileSheet({ isOpen, onClose, activeProfileId, onSelectProfile, onProfileCreated, refreshKey, isAdmin, onOpenAdminModal }: MobileProfileSheetProps) {
+export function MobileProfileSheet({ isOpen, onClose, activeProfileId, onSelectProfile, onProfileCreated, onEditProfile, refreshKey, isAdmin, onOpenAdminModal }: MobileProfileSheetProps) {
   const { startTransition } = useTransition();
   const router = useRouter();
   const [name, setName] = useState("");
@@ -140,18 +141,30 @@ export function MobileProfileSheet({ isOpen, onClose, activeProfileId, onSelectP
               <p className="text-[10px] font-medium text-white/40 uppercase tracking-wider mb-1.5 px-1">Search Profile</p>
               <div className="space-y-0.5">
                 {profiles.map((p) => (
-                  <button
+                  <div
                     key={p.id}
-                    onClick={() => { onSelectProfile(p.id); onClose(); }}
-                    className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-[10px] text-[11px] transition-colors ${
+                    className={`flex items-center gap-2.5 px-2.5 py-2 rounded-[10px] text-[11px] transition-colors ${
                       p.id === activeProfileId
                         ? "bg-[var(--color-accent)]/10 text-[var(--color-accent)]"
                         : "text-white hover:bg-white/5"
                     }`}
                   >
-                    <span className="flex-1 text-left truncate">{p.name}</span>
-                    {p.id === activeProfileId && <Check size={11} className="shrink-0" />}
-                  </button>
+                    <button
+                      onClick={() => { onSelectProfile(p.id); onClose(); }}
+                      className="flex-1 flex items-center gap-2.5 min-w-0"
+                    >
+                      <span className="flex-1 text-left truncate">{p.name}</span>
+                      {p.id === activeProfileId && <Check size={11} className="shrink-0" />}
+                    </button>
+                    {onEditProfile && (
+                      <button
+                        onClick={() => { onEditProfile(p.id); onClose(); }}
+                        className="shrink-0 w-6 h-6 flex items-center justify-center text-white/30 hover:text-white/70 transition-colors"
+                      >
+                        <Pencil size={10} />
+                      </button>
+                    )}
+                  </div>
                 ))}
                 <button
                   onClick={handleCreateProfile}
