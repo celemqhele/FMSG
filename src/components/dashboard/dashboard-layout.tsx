@@ -127,7 +127,7 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
           onSelectProfile={setActiveProfileId}
           onProfileCreated={handleProfileCreated}
           profileRefreshKey={profileRefreshKey}
-          onEditProfile={() => activeProfileId && handleOpenEdit(activeProfileId)}
+          onEditProfile={(id) => handleOpenEdit(id)}
           isAdmin={isAdmin}
           onOpenAdminModal={() => setAdminModalOpen(true)}
         >

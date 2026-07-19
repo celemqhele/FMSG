@@ -1,17 +1,14 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import Image from "next/image";
-import { Pencil } from "lucide-react";
 
 interface MobileHeaderProps {
   onAvatarTap: () => void;
-  onEditProfile?: () => void;
-  hasActiveProfile?: boolean;
 }
 
-export function MobileHeader({ onAvatarTap, onEditProfile, hasActiveProfile }: MobileHeaderProps) {
+export function MobileHeader({ onAvatarTap }: MobileHeaderProps) {
   const [initials, setInitials] = useState("");
 
   useEffect(() => {
@@ -39,14 +36,6 @@ export function MobileHeader({ onAvatarTap, onEditProfile, hasActiveProfile }: M
         <span className="text-[11px] font-semibold text-white select-none">FMSG</span>
       </div>
       <div className="flex items-center gap-1.5">
-        {hasActiveProfile && onEditProfile && (
-          <button
-            onClick={onEditProfile}
-            className="w-7 h-7 rounded-full bg-white/10 border border-white/20 flex items-center justify-center text-white/70 hover:text-white transition-colors"
-          >
-            <Pencil size={11} />
-          </button>
-        )}
         <button
           onClick={onAvatarTap}
           className="w-9 h-9 rounded-full bg-white/15 border border-white/20 flex items-center justify-center text-[10px] font-semibold text-white"

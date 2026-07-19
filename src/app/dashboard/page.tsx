@@ -280,9 +280,10 @@ export default function DashboardPage() {
   }, [showLimitModal]);
 
   useEffect(() => {
+    console.log("[HISTORY] effect fired, tab:", activeTab, "profileId:", activeProfileId);
     if (activeTab !== "history") return;
     if (!activeProfileId) { setHistoryResults([]); setHistoryLoading(false); return; }
-    startTransition(() => setHistoryLoading(true));
+    setHistoryLoading(true);
     const supabase = createClient();
     supabase.auth.getSession().then(({ data }: { data: { session: any } }) => {
       if (!data.session) { setHistoryLoading(false); return; }
@@ -292,9 +293,10 @@ export default function DashboardPage() {
         .select("*")
         .eq("user_id", session.user.id)
         .eq("is_deleted", false)
-        .or(`profile_id.eq.${activeProfileId},profile_id.is.`)
+        .or(`profile_id.eq.${activeProfileId},profile_id.is.null`)
         .order("created_at", { ascending: false })
         .then(({ data, error }: { data: any; error: any }) => {
+          console.log("[HISTORY] query result count:", data?.length, "error:", error?.message);
           if (error) {
             console.error("[HISTORY] Failed to load history:", error.message);
           }
