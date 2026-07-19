@@ -124,19 +124,20 @@ export function MobileJobCard({
     const supabase = createClient();
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return;
-    const { error } = await supabase.from("saved_jobs").insert({
-      user_id: session.user.id,
-      profile_id: activeProfileId,
-      job_title: jobTitle,
-      company,
-      location,
-      estimated_salary: salary,
-      match_score: matchScore,
-      match_summary: "",
-      job_url: jobUrl,
-      full_spec: fullDescription,
-    });
-    if (!error) setSaved(true);
+    try {
+      const res = await fetch("/api/job-results/save", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          job_title: jobTitle, company, location, estimated_salary: salary,
+          match_score: matchScore, match_summary: "", job_url: jobUrl, full_spec: fullDescription,
+          profile_id: activeProfileId,
+        }),
+      });
+      if (res.ok) setSaved(true);
+    } catch {
+      // network error — silently ignore to match existing mobile UX
+    }
   };
 
   const handleGenerateCv = async () => {
@@ -260,17 +261,17 @@ export function MobileJobCard({
 
       {/* Delete confirmation */}
       {showDeleteConfirm && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center transition-opacity duration-300" style={{ opacity: deleteConfirmMounted ? 1 : 0 }}>
+        <div className="fixed inset-0 z-[80] flex items-end justify-center transition-opacity duration-300" style={{ opacity: deleteConfirmMounted ? 1 : 0 }}>
           <div className="absolute inset-0 bg-black/60" onClick={closeDeleteConfirm} />
           <div
-            className="relative bg-white border border-gray-200 rounded-xl p-4 w-[min(80vw,320px)] mx-3 text-center transition-all duration-300 ease-out shadow-xl"
-            style={{ opacity: deleteConfirmMounted ? 1 : 0, transform: deleteConfirmMounted ? "translateY(0) scale(1)" : "translateY(8px) scale(0.97)" }}
+            className="relative bg-white border border-gray-200 rounded-t-2xl p-5 w-full max-w-md text-center transition-all duration-300 ease-out shadow-xl mb-0"
+            style={{ paddingBottom: "calc(1.25rem + env(safe-area-inset-bottom, 0px))", opacity: deleteConfirmMounted ? 1 : 0, transform: deleteConfirmMounted ? "translateY(0)" : "translateY(100%)" }}
           >
             <p className="text-gray-900 font-semibold mb-1">Hide this job?</p>
-            <p className="text-[10px] text-gray-500 mb-3">It won't appear in your results again.</p>
+            <p className="text-[10px] text-gray-500 mb-4">It won&apos;t appear in your results again.</p>
             <div className="flex justify-center gap-2.5">
-              <button onClick={closeDeleteConfirm} className="px-4 py-2 text-sm text-gray-600 bg-gray-100 rounded-full">Cancel</button>
-              <button onClick={handleDelete} className="px-4 py-2 text-sm font-semibold text-white bg-red-500 rounded-full">Hide</button>
+              <button onClick={closeDeleteConfirm} className="px-5 py-2.5 text-sm text-gray-600 bg-gray-100 rounded-full">Cancel</button>
+              <button onClick={handleDelete} className="px-5 py-2.5 text-sm font-semibold text-white bg-red-500 rounded-full">Hide</button>
             </div>
           </div>
         </div>

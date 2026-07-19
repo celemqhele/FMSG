@@ -291,8 +291,8 @@ export default function DashboardPage() {
         .from("job_results")
         .select("*")
         .eq("user_id", session.user.id)
-        .eq("profile_id", activeProfileId)
         .eq("is_deleted", false)
+        .or(`profile_id.eq.${activeProfileId},profile_id.is.null`)
         .order("created_at", { ascending: false })
         .then(({ data }: { data: any }) => {
           setHistoryResults((data ?? []) as HistoryResult[]);

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Search, Square, X, SlidersHorizontal } from "lucide-react";
+import { Square, X, SlidersHorizontal } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useActiveProfile } from "@/components/dashboard/dashboard-layout";
 import { MobileFilterSheet } from "./mobile-filter-sheet";
@@ -166,9 +166,9 @@ export function MobileSearchPill({ onSearch, onAbort, searching, pfMode, onPfMod
           ) : (
             <button
               onClick={handleSearch}
-              className="flex items-center justify-center w-9 h-full shrink-0 text-[var(--color-accent)]"
+              className="shrink-0 px-3 h-7 mr-1 text-[11px] font-semibold text-black bg-[var(--color-accent)] rounded-full active:scale-95 transition-transform"
             >
-              <Search size={14} />
+              Start Search
             </button>
           )}
         </div>
