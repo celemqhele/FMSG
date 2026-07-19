@@ -12,9 +12,9 @@ const nextConfig: NextConfig = {
             key: "Content-Security-Policy",
             value: [
               "default-src 'self'",
-              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.paystack.co https://vercel.live",
+              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.paystack.co https://vercel.live https://www.googletagmanager.com",
               "style-src 'self' 'unsafe-inline' https://paystack.com",
-              "connect-src 'self' https://nnebtygloqixibbjxsjr.supabase.co https://api.paystack.co https://send.api.mailtrap.io https://vpnapi.io",
+              "connect-src 'self' https://nnebtygloqixibbjxsjr.supabase.co https://api.paystack.co https://send.api.mailtrap.io https://vpnapi.io https://www.googletagmanager.com https://www.google-analytics.com",
               "frame-src https://js.paystack.co https://checkout.paystack.com",
               "img-src 'self' data: blob:",
               "font-src 'self'",
