@@ -13,9 +13,10 @@ function loadGA() {
   script.src = `https://www.googletagmanager.com/gtag/js?id=${GA_ID}`;
   document.head.appendChild(script);
 
-  window.dataLayer = window.dataLayer || [];
+  const w = window as unknown as { dataLayer: unknown[][] };
+  w.dataLayer = w.dataLayer || [];
   function gtag(...args: unknown[]) {
-    window.dataLayer!.push(args);
+    w.dataLayer.push(args);
   }
   gtag("js", new Date());
   gtag("config", GA_ID);
