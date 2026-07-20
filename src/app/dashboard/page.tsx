@@ -390,6 +390,37 @@ export default function DashboardPage() {
     }
   }, [continuationToken, setVideoFast]);
 
+  const handleShowResultsNow = useCallback(async () => {
+    if (!continuationToken) return;
+
+    setSearching(true);
+    setVideoFast(true);
+    setResultMessage("");
+
+    const supabase = createClient();
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+
+    abortRef.current = new AbortController();
+
+    try {
+      const res = await fetch("/api/search", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ continuation: continuationToken, finish_now: true }),
+        signal: abortRef.current.signal,
+      });
+
+      setContinuationToken(null);
+      await handleStreamResponse(res);
+    } catch (err) {
+      if ((err as DOMException)?.name !== "AbortError") throw err;
+    }
+  }, [continuationToken, setVideoFast]);
+
   const handleAbort = useCallback(() => {
     if (abortRef.current) {
       abortRef.current.abort();
@@ -1116,6 +1147,7 @@ export default function DashboardPage() {
             ? `${results.length} results found so far. Continue AI screening for remaining jobs?`
             : "Ready to screen jobs with AI analysis? This may take a minute.")}
           onContinue={handleContinue}
+          onShowResults={pfActive ? handleShowResultsNow : undefined}
           onCancel={() => setContinuationToken(null)}
         />
       ) : (
@@ -1125,6 +1157,7 @@ export default function DashboardPage() {
             ? `${results.length} results found so far. Continue AI screening for remaining jobs?`
             : "Ready to screen jobs with AI analysis? This may take a minute.")}
           onContinue={handleContinue}
+          onShowResults={pfActive ? handleShowResultsNow : undefined}
           onCancel={() => setContinuationToken(null)}
         />
       )}
