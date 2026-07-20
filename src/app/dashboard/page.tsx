@@ -90,6 +90,7 @@ interface Balances {
   search: number;
   cv: number;
   pf: number;
+  has_searched: boolean;
 }
 
 function SkeletonCard({ style }: { style?: React.CSSProperties }) {
@@ -139,13 +140,12 @@ export default function DashboardPage() {
   const [emailVerified, setEmailVerified] = useState<boolean | null>(null);
   const [showVerifyModal, setShowVerifyModal] = useState(false);
   const [userEmail, setUserEmail] = useState("");
-  const [balances, setBalances] = useState<Balances>({ search: 0, cv: 0, pf: 0 });
+  const [balances, setBalances] = useState<Balances>({ search: 0, cv: 0, pf: 0, has_searched: false });
   const [plan, setPlan] = useState("free");
   const [pauseMessage, setPauseMessage] = useState("");
   const { activeProfileId } = useActiveProfile();
   const [showGuidance, setShowGuidance] = useState(false);
   const [showPfPromo, setShowPfPromo] = useState(false);
-  const [pfPromoChecked, setPfPromoChecked] = useState(false);
   const [referralJob, setReferralJob] = useState<{ slug: string; company: string; job_title: string; apply_url: string } | null>(null);
   const [pfMode, setPfMode] = useState(false);
   const referralAutoSearchDone = useRef(false);
@@ -159,7 +159,7 @@ export default function DashboardPage() {
     if (!user) return;
     const { data } = await supabase
       .from("profiles")
-      .select("search_balance, cv_generation_balance, persistent_finder_balance, plan")
+      .select("search_balance, cv_generation_balance, persistent_finder_balance, plan, has_searched")
       .eq("id", user.id)
       .maybeSingle();
     if (data) {
@@ -167,6 +167,7 @@ export default function DashboardPage() {
         search: data.search_balance ?? 0,
         cv: data.cv_generation_balance ?? 0,
         pf: data.persistent_finder_balance ?? 0,
+        has_searched: data.has_searched ?? false,
       });
       setPlan(data.plan ?? "free");
     }
@@ -258,18 +259,6 @@ export default function DashboardPage() {
       return () => clearTimeout(timer);
     }
   }, [profileChecked, needsOnboarding]);
-
-  // Check if PF promo should be shown (session-based, after first search completes)
-  useEffect(() => {
-    if (pfPromoChecked) return;
-    if (!searching && hasSearched && results.length > 0) {
-      const pfShown = sessionStorage.getItem("fmsg_pf_promo_shown");
-      if (pfShown) {
-        setShowPfPromo(true);
-      }
-      setPfPromoChecked(true);
-    }
-  }, [searching, hasSearched, results.length, pfPromoChecked]);
 
   useEffect(() => {
     if (showLimitModal) {
@@ -1140,7 +1129,7 @@ export default function DashboardPage() {
         />
       )}
 
-      {!searching && hasSearched && results.length > 0 && !showPfPromo && !pfActive && balances.pf === 0 && plan === "free" && (
+      {!searching && balances.has_searched && !pfActive && !pfMode && !showPfPromo && results.length > 0 && (
         isMobile ? (
           <MobilePFPromoPopup
             isOpen={true}
