@@ -729,3 +729,97 @@ export async function scrapeJobPage(
     return null;
   }
 }
+
+// ─── Source 6: Gemini Google Search Jobs ─────────────────────────────────────
+// Uses Gemini API with Google Search grounding to find real job listings.
+// Bypasses SerpAPI quota — taps into Google's index directly via Gemini.
+
+import { callGeminiWithSearch } from "./gemini";
+
+export async function searchGoogleJobsViaGemini(params: SerpParams): Promise<SerpJob[]> {
+  const location = params.location || "South Africa";
+  const query = params.q;
+
+  const systemPrompt = `You are a job search assistant. You have access to Google Search. 
+Search for current job listings matching the user's query.
+
+IMPORTANT RULES:
+1. Return ONLY a JSON array — no markdown, no explanation, no wrapping text.
+2. Each object must have exactly these keys: "title", "company_name", "location", "description", "link"
+3. "description" should be a meaningful excerpt from the job listing (50-300 chars), not a summary.
+4. "link" must be the direct URL to the job posting (not a search results page).
+5. Return up to 20 jobs. If fewer found, return what you have.
+6. Focus on South African job boards: careerjunction.co.za, pnet.co.za, indeed.co.za, jobmail.co.za, and company career pages.
+7. Do NOT include aggregator pages like "top 10 jobs" — only individual job postings.`;
+
+  const userText = `Search Google for: ${query} jobs in ${location}, South Africa. Return JSON array of individual job postings.`;
+
+  console.log(`[SRC6-GEMINI-SEARCH] REQ query="${query}" location="${location}"`);
+
+  try {
+    const result = await callGeminiWithSearch(systemPrompt, userText, {
+      temperature: 0.1,
+      maxOutputTokens: 8192,
+    });
+
+    console.log(`[SRC6-GEMINI-SEARCH] Response length: ${result.text.length} chars`);
+
+    // Extract JSON array from response (may be wrapped in markdown code block)
+    let jsonStr = result.text.trim();
+    const jsonMatch = jsonStr.match(/\[[\s\S]*\]/);
+    if (!jsonMatch) {
+      console.warn(`[SRC6-GEMINI-SEARCH] No JSON array found in response`);
+      console.warn(`[SRC6-GEMINI-SEARCH] Response preview: ${jsonStr.slice(0, 300)}`);
+      return [];
+    }
+    jsonStr = jsonMatch[0];
+
+    let parsed: any[];
+    try {
+      parsed = JSON.parse(jsonStr);
+    } catch (parseErr) {
+      console.error(`[SRC6-GEMINI-SEARCH] JSON parse error:`, parseErr);
+      console.error(`[SRC6-GEMINI-SEARCH] Raw JSON: ${jsonStr.slice(0, 500)}`);
+      return [];
+    }
+
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      console.warn(`[SRC6-GEMINI-SEARCH] Empty or non-array result`);
+      return [];
+    }
+
+    // Map to SerpJob format
+    const jobs: SerpJob[] = parsed
+      .filter((j) => j.title && j.link)
+      .map((j) => ({
+        title: String(j.title || "").trim(),
+        company_name: String(j.company_name || j.company || "Unknown").trim(),
+        location: String(j.location || location).trim(),
+        description: String(j.description || "").slice(0, 3000),
+        link: String(j.link || ""),
+        via: (() => { try { return new URL(j.link).hostname.replace(/^www\./, ""); } catch { return "google_search"; } })(),
+        hasFullSpec: (j.description?.length ?? 0) > 300,
+        spec_source: "google_search" as const,
+      }));
+
+    console.log(`[SRC6-GEMINI-SEARCH] OK ${jobs.length} jobs parsed`);
+    if (jobs.length > 0) {
+      console.log(`[SRC6-GEMINI-SEARCH] First: "${jobs[0].title}" at "${jobs[0].company_name}"`);
+    }
+
+    // Log grounding metadata if available
+    if (result.groundingMetadata?.groundingChunks) {
+      const sources = result.groundingMetadata.groundingChunks
+        .filter((c) => c.web)
+        .map((c) => c.web!.title || c.web!.uri)
+        .slice(0, 5);
+      console.log(`[SRC6-GEMINI-SEARCH] Grounding sources: ${sources.join(", ")}`);
+    }
+
+    return jobs;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[SRC6-GEMINI-SEARCH] FAIL: ${msg.slice(0, 300)}`);
+    return [];
+  }
+}
