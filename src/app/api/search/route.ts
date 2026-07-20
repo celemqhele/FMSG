@@ -1153,7 +1153,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Live balances to send back to frontend in streaming events
-      let liveBalances: { search: number; cv: number; pf: number } | undefined;
+      let liveBalances: { search: number; cv: number; pf: number; has_searched: boolean } | undefined;
       let livePlan: string | undefined;
 
       // Balance check
@@ -1190,10 +1190,16 @@ export async function POST(request: NextRequest) {
           }
         }
 
+        // Mark that this user has performed at least one search
+        await dataClient
+          .from("profiles")
+          .update({ has_searched: true })
+          .eq("id", user.id);
+
         // Fetch fresh balances after atomic deduction so frontend gets live values
         const { data: freshBalances } = await dataClient
           .from("profiles")
-          .select("search_balance, cv_generation_balance, persistent_finder_balance, plan")
+          .select("search_balance, cv_generation_balance, persistent_finder_balance, plan, has_searched")
           .eq("id", user.id)
           .maybeSingle();
         if (freshBalances) {
@@ -1201,6 +1207,7 @@ export async function POST(request: NextRequest) {
             search: freshBalances.search_balance ?? 0,
             cv: freshBalances.cv_generation_balance ?? 0,
             pf: freshBalances.persistent_finder_balance ?? 0,
+            has_searched: freshBalances.has_searched ?? false,
           };
         }
         livePlan = freshBalances?.plan ?? profile.plan;
@@ -1212,6 +1219,7 @@ export async function POST(request: NextRequest) {
           search: profile.search_balance ?? 0,
           cv: profile.cv_generation_balance ?? 0,
           pf: profile.persistent_finder_balance ?? 0,
+          has_searched: profile.has_searched ?? false,
         };
         livePlan = profile.plan ?? "free";
       }
