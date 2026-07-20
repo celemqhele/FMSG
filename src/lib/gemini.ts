@@ -48,6 +48,56 @@ async function callGemini(systemPrompt: string, userText: string, config?: AICon
   return data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
 }
 
+export interface GeminiSearchResult {
+  text: string;
+  groundingMetadata?: {
+    searchEntryPoint?: { renderedContent: string };
+    groundingChunks?: { web?: { uri: string; title: string } }[];
+    groundingSupports?: { segment: { text: string }; support: { confidenceScore: number; groundingChunkIndices: number[] }[] }[];
+  };
+}
+
+export async function callGeminiWithSearch(
+  systemPrompt: string,
+  userText: string,
+  config?: AIConfig
+): Promise<GeminiSearchResult> {
+  const generationConfig: Record<string, unknown> = {
+    temperature: config?.temperature ?? 0.1,
+    maxOutputTokens: config?.maxOutputTokens ?? 4096,
+  };
+  if (config?.responseMimeType) {
+    generationConfig.responseMimeType = config.responseMimeType;
+  }
+
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": GEMINI_API_KEY ?? "",
+      },
+      body: JSON.stringify({
+        system_instruction: { parts: [{ text: systemPrompt }] },
+        contents: [{ parts: [{ text: userText }] }],
+        generationConfig,
+        tools: [{ google_search: {} }],
+      }),
+    }
+  );
+
+  if (!res.ok) {
+    const errBody = await res.text();
+    throw new Error(`Gemini Search error (${res.status}): ${errBody.slice(0, 300)}`);
+  }
+
+  const data = await res.json();
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+  const groundingMetadata = data.candidates?.[0]?.groundingMetadata;
+  return { text, groundingMetadata };
+}
+
 export async function callGroq(systemPrompt: string, userText: string, config?: AIConfig): Promise<string> {
   const res = await fetch(GROQ_ENDPOINT, {
     method: "POST",
