@@ -91,6 +91,7 @@ export function MobileProfileSheet({ isOpen, onClose, activeProfileId, onSelectP
     setProfiles((prev) => [...prev, data as SearchProfile]);
     onSelectProfile(data.id);
     onProfileCreated?.(data.id);
+    onClose();
   };
 
   const handleTouchMove = useCallback((e: React.TouchEvent) => {

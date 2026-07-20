@@ -1070,7 +1070,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { query, profile_id, pf_mode, continuation, date_filter_days, platforms, referral_url } = body;
+    const { query, profile_id, pf_mode, continuation, date_filter_days, platforms, referral_url, finish_now } = body;
     const maxAgeDays = date_filter_days ? parseInt(String(date_filter_days), 10) : undefined;
     const isContinuation = !!continuation;
 
@@ -1513,6 +1513,10 @@ Return ONLY valid JSON (no markdown, no code fences):
             titleChainSteps = state.titleChainSteps;
             industryChain = state.industryChain;
             debugLog(`[PF] Resuming at round ${startRoundIndex + 1}/${MAX_ROUNDS}, ${allResults.length} results so far`);
+            if (finish_now) {
+              hardStop = true;
+              debugLog("[PF] finish_now flag set, will finalize after current round");
+            }
           } else {
             pfTitles = state.titles;
             pfLocation = state.profileLocation;

@@ -2,16 +2,17 @@
 
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, ArrowRight } from "lucide-react";
+import { X, ArrowRight, Eye } from "lucide-react";
 
 interface ContinuePopupProps {
   isOpen: boolean;
   message: string;
   onContinue: () => void;
+  onShowResults?: () => void;
   onCancel: () => void;
 }
 
-export function ContinuePopup({ isOpen, message, onContinue, onCancel }: ContinuePopupProps) {
+export function ContinuePopup({ isOpen, message, onContinue, onShowResults, onCancel }: ContinuePopupProps) {
   const [mounted, setMounted] = useState(false);
   const [phase, setPhase] = useState<"closed" | "entering" | "open">("closed");
 
@@ -61,13 +62,25 @@ export function ContinuePopup({ isOpen, message, onContinue, onCancel }: Continu
           {message}
         </p>
 
-        <button
-          onClick={onContinue}
-          className="inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-black text-white text-sm font-medium hover:bg-gray-800 transition-colors"
-        >
-          Continue
-          <ArrowRight size={14} />
-        </button>
+        <div className="flex flex-col gap-2.5">
+          <button
+            onClick={onContinue}
+            className="inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-black text-white text-sm font-medium hover:bg-gray-800 transition-colors"
+          >
+            Continue
+            <ArrowRight size={14} />
+          </button>
+
+          {onShowResults && (
+            <button
+              onClick={onShowResults}
+              className="inline-flex items-center justify-center gap-2 px-6 py-2 text-sm font-medium text-gray-500 hover:text-gray-800 transition-colors"
+            >
+              <Eye size={13} />
+              Show results now
+            </button>
+          )}
+        </div>
       </div>
     </div>,
     document.body
