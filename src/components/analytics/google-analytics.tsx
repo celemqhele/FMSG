@@ -24,14 +24,7 @@ function loadGA() {
 
 export function GoogleAnalytics() {
   useEffect(() => {
-    const consent = localStorage.getItem("cookie_consent");
-    if (consent === "true") loadGA();
-
-    const onConsent = (e: Event) => {
-      if ((e as CustomEvent).detail?.consent === "true") loadGA();
-    };
-    window.addEventListener("cookie-consent-changed", onConsent);
-    return () => window.removeEventListener("cookie-consent-changed", onConsent);
+    loadGA();
   }, []);
 
   return null;
