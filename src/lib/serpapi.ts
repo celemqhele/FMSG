@@ -220,10 +220,11 @@ export async function searchAdzuna(params: SerpParams): Promise<SerpJob[]> {
     return [];
   }
 
-  // Strip Google-style operators that Adzuna doesn't support
+  // Strip Google-style operators and noise words that Adzuna doesn't support
   const what = (params.q || "")
     .replace(/["*]/g, "")           // remove quotes and wildcards
     .replace(/\b(OR|AND|NOT)\b/gi, "") // remove boolean operators
+    .replace(/\b(in|jobs|job|south africa|cape town|johannesburg|durban|pretoria)\b/gi, "") // remove noise/location
     .replace(/\s+/g, " ")           // collapse whitespace
     .trim();
   const where = params.location || "South Africa";
@@ -302,22 +303,38 @@ export async function searchLinkedInJobs(params: SerpParams): Promise<SerpJob[]>
   url.searchParams.set("f_TPR", "r604800"); // past week
   url.searchParams.set("start", "0");
 
+  const linkedinUrl = url.toString();
+  const proxyUrl = process.env.LINKEDIN_PROXY_URL;
+  const viaProxy = !!proxyUrl;
+
   console.log("[SRC4-LINKEDIN] REQ params:", JSON.stringify({ keywords: query, location: "South Africa", geoId: LINKEDIN_SA_GEOID }));
-  console.log("[SRC4-LINKEDIN] URL: https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search");
+  console.log(`[SRC4-LINKEDIN] URL: ${linkedinUrl}`);
+  console.log(`[SRC4-LINKEDIN] Mode: ${viaProxy ? `PROXY (${proxyUrl})` : "DIRECT (will likely fail from Vercel)"}`);
 
   try {
-    const res = await fetch(url.toString(), {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Referer": "https://www.linkedin.com/jobs/search/?keywords=" + encodeURIComponent(query),
-        "Connection": "keep-alive",
-        "Sec-Fetch-Dest": "document",
-        "Sec-Fetch-Mode": "navigate",
-        "Sec-Fetch-Site": "same-origin",
-      },
-    });
+    let res: Response;
+    if (viaProxy) {
+      res = await fetch(proxyUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Target-URL": linkedinUrl,
+        },
+      });
+    } else {
+      res = await fetch(linkedinUrl, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          "Accept-Language": "en-US,en;q=0.9",
+          "Referer": "https://www.linkedin.com/jobs/search/?keywords=" + encodeURIComponent(query),
+          "Connection": "keep-alive",
+          "Sec-Fetch-Dest": "document",
+          "Sec-Fetch-Mode": "navigate",
+          "Sec-Fetch-Site": "same-origin",
+        },
+      });
+    }
 
     console.log(`[SRC4-LINKEDIN] HTTP ${res.status} ${res.statusText}`);
     if (!res.ok) {
