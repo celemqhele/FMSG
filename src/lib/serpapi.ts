@@ -1166,6 +1166,10 @@ function parseBingJobsMarkdown(content: string, defaultLocation?: string): SerpJ
 
   for (const line of lines) {
     if (line.startsWith("## Filters") || line.startsWith("## Sort") || line.startsWith("Show") || line.startsWith("Skip to")) continue;
+    if (line.includes("successfully saved") || line.includes("Something went wrong")) continue;
+    if (line.includes("View it in Saved") || line.includes("was not saved")) continue;
+    if (line.startsWith("Important:") || line.startsWith("Important :")) continue;
+    if (line === "Not applicable" || line === "N/A") continue;
 
     const boldMatch = line.match(/^\*\*(.+?)\*\*/);
     const isJobTitle = boldMatch || (jobKeywords.test(line) && line.length < 150 && !line.startsWith("-") && !line.startsWith("*"));
@@ -1234,9 +1238,16 @@ function parseBingJobsMarkdown(content: string, defaultLocation?: string): SerpJ
 
   return jobs.filter((j) => {
     const t = j.title.toLowerCase();
+    const c = j.company_name.toLowerCase();
     if (t.length < 3 || t.length > 200) return false;
     if (t.includes("filter") || t.includes("sort") || t.includes("show") || t.includes("sign in")) return false;
-    if (j.company_name === "Unknown" && !jobKeywords.test(j.title)) return false;
+    if (t.endsWith(" - search")) return false;
+    if (t.includes("successfully saved") || t.includes("view it in saved")) return false;
+    if (t.includes("important:") || t.includes("something went wrong")) return false;
+    if (t.includes("not applicable") || t === "n/a") return false;
+    if (c === "unknown" && !jobKeywords.test(j.title)) return false;
+    if (c.length <= 1 || c === "[" || c === "n/a") return false;
+    if (j.location.toLowerCase() === "n/a" || j.location === "Not applicable") return false;
     return true;
   });
 }
