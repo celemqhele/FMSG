@@ -1,4 +1,5 @@
 export type SearchEvent =
+  | { type: "search_started"; search_id: string }
   | { type: "found_results"; count: number; progress: number }
   | { type: "screening_job"; current: number; total: number; progress: number }
   | { type: "analyzing_job"; title: string; company: string; current: number; total: number; progress: number }
