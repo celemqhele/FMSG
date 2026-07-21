@@ -693,8 +693,9 @@ export default function DashboardPage() {
           const { data, error } = await supabase
             .from("job_results")
             .select("*")
-            .eq("search_id", currentSearchId);
-          if (!error && data) {
+            .eq("search_id", currentSearchId)
+            .neq("match_score", -1);
+          if (!error && data && data.length > 0) {
             setResults(data as JobResult[]);
             setResultMessage("Connection lost, but partial results recovered.");
           } else {

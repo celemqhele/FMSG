@@ -474,6 +474,19 @@ async function fetchAndFilterJobs(
     addJobs(adzunaJobs);
 
     console.log(`[PIPELINE] Dedup complete: ${rawJobs.length} unique jobs from ${googleJobs.length + jsearchJobs.length + adzunaJobs.length + webJobsJobs.length + scrapedGoogleJobs.length} total`);
+
+    // Persist raw found jobs immediately
+    const rawRows = rawJobs.map(j => ({
+      user_id: user.id,
+      search_id: searchId,
+      job_title: j.title ?? 'Unknown',
+      company: j.company_name ?? 'Unknown',
+      location: j.location ?? '',
+      job_url: buildJobUrl(j),
+      status: 'pending',
+      match_score: -1
+    }));
+    await getSupabase().from("job_results").insert(rawRows);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.includes("(400)")) {
