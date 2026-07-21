@@ -7,7 +7,6 @@ import { TransitionOverlay } from "@/components/ui/transition-overlay";
 import { CookieConsentBanner } from "@/components/ui/cookie-consent-banner";
 import { AuthHandler } from "@/components/auth/auth-handler";
 import { AutoLoginGuard } from "@/components/auth/auto-login-guard";
-import { GoogleAnalytics } from "@/components/analytics/google-analytics";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -65,7 +64,6 @@ export default function RootLayout({
               <AutoLoginGuard />
               <AuthHandler />
               <CookieConsentBanner />
-              <GoogleAnalytics />
             </ErrorPopupProvider>
           </TransitionProvider>
         </ThemeProvider>
