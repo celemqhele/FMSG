@@ -1,4 +1,4 @@
-import { checkApiLimit, recordApiCall } from "./api-rate-limit";
+import { checkApiLimit, recordApiCall, recordApiFailure } from "./api-rate-limit";
 
 const SERPAPI_KEY = process.env.SERPAPI_API_KEY;
 
@@ -56,6 +56,10 @@ export async function searchGoogleJobs(params: SerpParams): Promise<SerpJob[]> {
   if (!res.ok) {
     const err = await res.text();
     console.error(`[SRC1-GOOGLE-JOBS] FAIL status=${res.status} body=${err.slice(0, 300)}`);
+    if (res.status === 429) {
+      recordApiFailure("serpapi");
+      console.warn(`[SRC1-GOOGLE-JOBS] 429 detected — marking serpapi as exhausted until window resets`);
+    }
     throw new Error(`SerpAPI search error (${res.status}): ${err.slice(0, 200)}`);
   }
 
@@ -413,6 +417,10 @@ export async function searchGooglePages(params: SerpParams): Promise<{ title: st
         console.log(`[SRC5-GOOGLE-SCRAPE] site:${domain} HTTP ${res.status} ${res.statusText}`);
         if (!res.ok) {
           console.error(`[SRC5-GOOGLE-SCRAPE] site:${domain} FAIL status=${res.status}`);
+          if (res.status === 429) {
+            recordApiFailure("serpapi");
+            console.warn(`[SRC5-GOOGLE-SCRAPE] 429 detected — marking serpapi as exhausted until window resets`);
+          }
           return matched;
         }
         const data = await res.json();
@@ -840,6 +848,7 @@ async function tryJinaWebJobs(query: string, location: string): Promise<SerpJob[
   bingUrl.searchParams.set("rc", "20");
   bingUrl.searchParams.set("L2", "true");
   bingUrl.searchParams.set("c", "1");
+  bingUrl.searchParams.set("cc", "ZA");
   bingUrl.searchParams.set("form", "JOBL2S");
 
   const jinaFetchUrl = `${JINA_READER_BASE}/${bingUrl.toString()}`;
@@ -986,23 +995,27 @@ async function tryBrightDataWebJobs(query: string, location: string): Promise<Se
 
   console.log(`[SRC7-BRIGHTDATA] Searching jobs: "${query}"`);
 
+  const payload = {
+    query: `${query} jobs`,
+    mode: "standard" as const,
+    language: "en",
+    country: "ZA",
+    city: location || undefined,
+    num_results: 20,
+    intent: `I am a job seeker looking for ${query} positions in ${location || "South Africa"}. Prioritize actual job listings and career pages. Exclude news articles, blog posts, and generic career advice.`,
+    include_content: true,
+    include_images: false,
+    remove_duplicates: true,
+  };
+
   try {
-    const res = await fetch("https://api.brightdata.com/discover", {
+    const res = await fetch("https://api.brightdata.com/discover/sync", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${apiKey}`,
       },
-      body: JSON.stringify({
-        query: `${query} jobs`,
-        mode: "standard",
-        language: "en",
-        country: "ZA",
-        format: "json",
-        remove_duplicates: true,
-        include_content: true,
-        include_images: false,
-      }),
+      body: JSON.stringify(payload),
     });
 
     console.log(`[SRC7-BRIGHTDATA] HTTP ${res.status} ${res.statusText}`);
@@ -1018,11 +1031,13 @@ async function tryBrightDataWebJobs(query: string, location: string): Promise<Se
     }
 
     const data = await res.json();
+    console.log(`[SRC7-BRIGHTDATA] Raw response keys: ${Object.keys(data).join(", ")}`);
     const results = data?.results ?? data?.data ?? (Array.isArray(data) ? data : []);
-    console.log(`[SRC7-BRIGHTDATA] API returned ${results.length} results`);
+    console.log(`[SRC7-BRIGHTDATA] API returned ${results.length} results (status: ${data?.status ?? "unknown"})`);
 
     if (results.length === 0) {
       console.warn(`[SRC7-BRIGHTDATA] No results — will try next source`);
+      console.log(`[SRC7-BRIGHTDATA] Full response: ${JSON.stringify(data).slice(0, 500)}`);
       return [];
     }
 
@@ -1080,6 +1095,7 @@ async function tryApifyWebJobs(query: string, location: string): Promise<SerpJob
   bingUrl.searchParams.set("rc", "20");
   bingUrl.searchParams.set("L2", "true");
   bingUrl.searchParams.set("c", "1");
+  bingUrl.searchParams.set("cc", "ZA");
   bingUrl.searchParams.set("form", "JOBL2S");
 
   console.log(`[SRC7-APIFY] Fetching Bing Jobs via Apify: ${bingUrl.toString()}`);
@@ -1092,7 +1108,7 @@ async function tryApifyWebJobs(query: string, location: string): Promise<SerpJob
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           url: bingUrl.toString(),
-          scrapingTool: "browser",
+          scrapingTool: "browser-playwright",
           removeElementsCssSelector: "nav, footer, script, style, noscript, svg, img",
         }),
       }

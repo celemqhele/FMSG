@@ -86,3 +86,22 @@ export function recordApiCall(apiName: string): void {
     existing.count++;
   }
 }
+
+/**
+ * Mark an API as exhausted (e.g. on HTTP 429).
+ * Sets the counter to max so future checkApiLimit() calls return allowed=false
+ * until the window resets.
+ */
+export function recordApiFailure(apiName: string): void {
+  const cfg = API_LIMITS[apiName];
+  if (!cfg) return;
+
+  const now = Date.now();
+  const existing = windows.get(apiName);
+
+  if (!existing || existing.resetAt <= now) {
+    windows.set(apiName, { count: cfg.max, resetAt: now + cfg.windowMs });
+  } else {
+    existing.count = cfg.max;
+  }
+}
