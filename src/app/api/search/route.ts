@@ -797,7 +797,7 @@ async function screenAndAnalyze(
       spec_source: job.spec_source ?? null,
     }));
     onStatus?.({ type: "almost_done", progress: 90 });
-    return { results, queryUsed: query, filteredCounts };
+    return { results, queryUsed: query, filteredCounts, nextOffset };
   }
 
   const aiRejectedJobs: { job: any; reason: string; stage: string }[] = [];
