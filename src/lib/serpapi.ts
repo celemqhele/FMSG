@@ -797,7 +797,7 @@ IMPORTANT RULES:
 }
 
 // ─── Source 7: Job Search via Fallback Chain ────────────────────────────────
-// Reader chain (URL → markdown): Jina Reader → Firecrawl
+// Reader chain (URL → markdown): Jina → Bright Data → Apify
 // Then Scrappa (Google Jobs API) as last resort
 
 const JINA_READER_BASE = "https://r.jina.ai";
@@ -808,18 +808,18 @@ export async function searchWebJobs(params: SerpParams): Promise<SerpJob[]> {
 
   console.log(`[SRC7-SEARCH] Starting fallback chain for query: "${query}"`);
 
-  // ─── Reader chain: fetch Bing Jobs page as markdown ────────────────────
   const jinaResult = await tryJinaWebJobs(query, location);
   if (jinaResult.length > 0) return jinaResult;
 
-  const firecrawlResult = await tryFirecrawlWebJobs(query, location);
-  if (firecrawlResult.length > 0) return firecrawlResult;
+  const brightDataResult = await tryBrightDataWebJobs(query, location);
+  if (brightDataResult.length > 0) return brightDataResult;
 
-  // ─── Last resort: Scrappa (Google Jobs API) ────────────────────────────
+  const apifyResult = await tryApifyWebJobs(query, location);
+  if (apifyResult.length > 0) return apifyResult;
+
   const scrappaResult = await tryScrappaJobs(query, location);
   if (scrappaResult.length > 0) return scrappaResult;
 
-  // ─── All failed ────────────────────────────────────────────────────────
   console.warn(`[SRC7-SEARCH] ALL SOURCES FAILED — returning 0 jobs`);
   return [];
 }
@@ -969,18 +969,107 @@ async function tryScrappaJobs(rawQuery: string, location: string): Promise<SerpJ
   }
 }
 
-// ─── Reader 2: Firecrawl (500 free credits/month) ─────────────────────────
+// ─── Reader 2: Bright Data Discover (5,000 free credits/month) ─────────────
 
-async function tryFirecrawlWebJobs(query: string, location: string): Promise<SerpJob[]> {
-  const apiKey = process.env.FIRECRAWL_API_KEY;
+async function tryBrightDataWebJobs(query: string, location: string): Promise<SerpJob[]> {
+  const apiKey = process.env.BRIGHTDATA_API;
   if (!apiKey) {
-    console.warn(`[SRC7-FIRECRAWL] SKIP — no FIRECRAWL_API_KEY`);
+    console.warn(`[SRC7-BRIGHTDATA] SKIP — no BRIGHTDATA_API key`);
     return [];
   }
 
-  const rl = checkApiLimit("firecrawl");
+  const rl = checkApiLimit("brightdata");
   if (!rl.allowed) {
-    console.warn(`[SRC7-FIRECRAWL] RATE LIMITED — ${rl.label}, ${rl.remaining}/${rl.total} remaining`);
+    console.warn(`[SRC7-BRIGHTDATA] RATE LIMITED — ${rl.label}, ${rl.remaining}/${rl.total} remaining`);
+    return [];
+  }
+
+  console.log(`[SRC7-BRIGHTDATA] Searching jobs: "${query}"`);
+
+  try {
+    const res = await fetch("https://api.brightdata.com/discover", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        query: `${query} jobs`,
+        mode: "standard",
+        language: "en",
+        country: "ZA",
+        format: "json",
+        remove_duplicates: true,
+        include_content: true,
+        include_images: false,
+      }),
+    });
+
+    console.log(`[SRC7-BRIGHTDATA] HTTP ${res.status} ${res.statusText}`);
+
+    if (!res.ok) {
+      const err = await res.text();
+      if (res.status === 402) {
+        console.error(`[SRC7-BRIGHTDATA] OUT OF CREDITS (402) — will try next source`);
+      } else {
+        console.error(`[SRC7-BRIGHTDATA] FAIL status=${res.status} body=${err.slice(0, 200)}`);
+      }
+      return [];
+    }
+
+    const data = await res.json();
+    const results = data?.results ?? data?.data ?? (Array.isArray(data) ? data : []);
+    console.log(`[SRC7-BRIGHTDATA] API returned ${results.length} results`);
+
+    if (results.length === 0) {
+      console.warn(`[SRC7-BRIGHTDATA] No results — will try next source`);
+      return [];
+    }
+
+    recordApiCall("brightdata");
+    const jobs: SerpJob[] = results
+      .filter((r: any) => r.title && (r.url || r.link))
+      .map((r: any) => {
+        const title = cleanText(r.title || "");
+        const content = cleanText(r.content || r.snippet || r.description || "");
+        const company = r.site_name || r.source || extractCompanyFromUrl(r.url || r.link || "");
+
+        return {
+          title: title.slice(0, 200),
+          company_name: company || "Unknown",
+          location: location,
+          description: content.slice(0, 3000),
+          link: String(r.url || r.link || ""),
+          via: extractDomain(r.url || r.link || ""),
+          hasFullSpec: content.length > 300,
+          spec_source: "web_jobs" as const,
+        };
+      });
+
+    console.log(`[SRC7-BRIGHTDATA] SUCCESS — ${jobs.length} jobs parsed`);
+    if (jobs.length > 0) {
+      console.log(`[SRC7-BRIGHTDATA] First: "${jobs[0].title}" at "${jobs[0].company_name}"`);
+    }
+    return jobs;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[SRC7-BRIGHTDATA] EXCEPTION: ${msg.slice(0, 200)} — will try next source`);
+    return [];
+  }
+}
+
+// ─── Reader 3: Apify URL-to-Markdown ($5 free credits/month) ───────────────
+
+async function tryApifyWebJobs(query: string, location: string): Promise<SerpJob[]> {
+  const apiKey = process.env.APIFY_API;
+  if (!apiKey) {
+    console.warn(`[SRC7-APIFY] SKIP — no APIFY_API key`);
+    return [];
+  }
+
+  const rl = checkApiLimit("apify");
+  if (!rl.allowed) {
+    console.warn(`[SRC7-APIFY] RATE LIMITED — ${rl.label}, ${rl.remaining}/${rl.total} remaining`);
     return [];
   }
 
@@ -993,53 +1082,54 @@ async function tryFirecrawlWebJobs(query: string, location: string): Promise<Ser
   bingUrl.searchParams.set("c", "1");
   bingUrl.searchParams.set("form", "JOBL2S");
 
-  console.log(`[SRC7-FIRECRAWL] Fetching Bing Jobs via Firecrawl: ${bingUrl.toString()}`);
+  console.log(`[SRC7-APIFY] Fetching Bing Jobs via Apify: ${bingUrl.toString()}`);
 
   try {
-    const res = await fetch("https://api.firecrawl.dev/v1/scrape", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        url: bingUrl.toString(),
-        formats: ["markdown"],
-        onlyMainContent: true,
-      }),
-    });
+    const res = await fetch(
+      `https://api.apify.com/v2/acts/apify~url-to-markdown/run-sync-get-dataset-items?token=${apiKey}&timeout=30`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: bingUrl.toString(),
+          scrapingTool: "browser",
+          removeElementsCssSelector: "nav, footer, script, style, noscript, svg, img",
+        }),
+      }
+    );
 
-    console.log(`[SRC7-FIRECRAWL] HTTP ${res.status} ${res.statusText}`);
+    console.log(`[SRC7-APIFY] HTTP ${res.status} ${res.statusText}`);
 
     if (!res.ok) {
       const err = await res.text();
       if (res.status === 402) {
-        console.error(`[SRC7-FIRECRAWL] OUT OF CREDITS (402) — will try next source`);
+        console.error(`[SRC7-APIFY] OUT OF CREDITS (402) — will try next source`);
       } else {
-        console.error(`[SRC7-FIRECRAWL] FAIL status=${res.status} body=${err.slice(0, 200)}`);
+        console.error(`[SRC7-APIFY] FAIL status=${res.status} body=${err.slice(0, 200)}`);
       }
       return [];
     }
 
     const data = await res.json();
-    const content = data?.data?.markdown ?? "";
-    console.log(`[SRC7-FIRECRAWL] Response: ${content.length} chars`);
+    const items = Array.isArray(data) ? data : [data];
+    const content = items[0]?.markdown ?? items[0]?.content ?? "";
+    console.log(`[SRC7-APIFY] Response: ${content.length} chars`);
 
     if (!content || content.length < 50) {
-      console.warn(`[SRC7-FIRECRAWL] Empty or too short response — will try next source`);
+      console.warn(`[SRC7-APIFY] Empty or too short response — will try next source`);
       return [];
     }
 
-    recordApiCall("firecrawl");
+    recordApiCall("apify");
     const jobs = parseBingJobsMarkdown(content, location);
-    console.log(`[SRC7-FIRECRAWL] SUCCESS — ${jobs.length} jobs parsed`);
+    console.log(`[SRC7-APIFY] SUCCESS — ${jobs.length} jobs parsed`);
     if (jobs.length > 0) {
-      console.log(`[SRC7-FIRECRAWL] First: "${jobs[0].title}" at "${jobs[0].company_name}"`);
+      console.log(`[SRC7-APIFY] First: "${jobs[0].title}" at "${jobs[0].company_name}"`);
     }
     return jobs;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[SRC7-FIRECRAWL] EXCEPTION: ${msg.slice(0, 200)} — will try next source`);
+    console.error(`[SRC7-APIFY] EXCEPTION: ${msg.slice(0, 200)} — will try next source`);
     return [];
   }
 }
