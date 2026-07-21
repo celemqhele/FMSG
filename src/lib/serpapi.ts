@@ -986,9 +986,9 @@ async function tryScrappaJobs(rawQuery: string, location: string): Promise<SerpJ
 // ─── Bright Data Browser API — scrapes Bing Jobs page via remote browser ──
 
 async function tryBrightDataWebJobs(query: string, location: string): Promise<SerpJob[]> {
-  const wsEndpoint = process.env.BRIGHTDATA_BROWSER_WS;
+  const wsEndpoint = process.env.BRIGHTDATA_API;
   if (!wsEndpoint) {
-    console.warn(`[SRC7-BRIGHTDATA] SKIP — no BRIGHTDATA_BROWSER_WS key`);
+    console.warn(`[SRC7-BRIGHTDATA] SKIP — no BRIGHTDATA_API key`);
     return [];
   }
 
