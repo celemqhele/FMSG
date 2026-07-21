@@ -811,6 +811,186 @@ IMPORTANT RULES:
 
 const JINA_READER_BASE = "https://r.jina.ai";
 
+// ─── Jina Reader: Google Jobs via ibp=htl;jobs ────────────────────────────
+// Uses Jina Reader to scrape Google's Jobs tab directly.
+// Same token pool as Bing scraping — both fail when tokens are exhausted.
+
+export async function searchJinaGoogleJobs(params: SerpParams): Promise<SerpJob[]> {
+  const rl = checkApiLimit("bing-jina");
+  if (!rl.allowed) {
+    console.warn(`[SRC8-JINA-GOOGLE] RATE LIMITED — ${rl.label}, ${rl.remaining}/${rl.total} remaining`);
+    return [];
+  }
+
+  const query = cleanQueryForSearch([params.q, params.location, "South Africa"].filter(Boolean).join(" "), params.location);
+  const location = params.location || "South Africa";
+
+  const googleJobsUrl = new URL("https://www.google.com/search");
+  googleJobsUrl.searchParams.set("q", `${query} jobs`);
+  googleJobsUrl.searchParams.set("ibp", "htl;jobs");
+  googleJobsUrl.searchParams.set("gl", "za");
+  googleJobsUrl.searchParams.set("hl", "en");
+
+  const jinaFetchUrl = `${JINA_READER_BASE}/${googleJobsUrl.toString()}`;
+  console.log(`[SRC8-JINA-GOOGLE] Fetching Google Jobs via Jina: ${googleJobsUrl.toString()}`);
+
+  try {
+    const jinaKey = process.env.JINA_API;
+    const headers: Record<string, string> = {
+      "Accept": "application/json",
+      "X-Return-Format": "markdown",
+    };
+    if (jinaKey) {
+      headers["Authorization"] = `Bearer ${jinaKey}`;
+    }
+
+    const res = await fetch(jinaFetchUrl, { headers });
+    console.log(`[SRC8-JINA-GOOGLE] HTTP ${res.status} ${res.statusText}`);
+
+    if (!res.ok) {
+      const err = await res.text();
+      if (res.status === 402) {
+        console.error(`[SRC8-JINA-GOOGLE] OUT OF CREDITS (402) — will try next source`);
+      } else {
+        console.error(`[SRC8-JINA-GOOGLE] FAIL status=${res.status} body=${err.slice(0, 200)}`);
+      }
+      return [];
+    }
+
+    const data = await res.json();
+    const content = data?.data?.[0]?.content ?? data?.content ?? "";
+    console.log(`[SRC8-JINA-GOOGLE] Response: ${content.length} chars`);
+
+    if (!content || content.length < 50) {
+      console.warn(`[SRC8-JINA-GOOGLE] Empty or too short response — will try next source`);
+      return [];
+    }
+
+    recordApiCall("bing-jina");
+    const jobs = parseGoogleJobsMarkdown(content, location);
+    console.log(`[SRC8-JINA-GOOGLE] SUCCESS — ${jobs.length} jobs parsed`);
+    if (jobs.length > 0) {
+      console.log(`[SRC8-JINA-GOOGLE] First: "${jobs[0].title}" at "${jobs[0].company_name}"`);
+    }
+    return jobs;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[SRC8-JINA-GOOGLE] EXCEPTION: ${msg.slice(0, 200)} — will try next source`);
+    return [];
+  }
+}
+
+// ─── Parse Google Jobs markdown (from Jina Reader) ────────────────────────
+
+function parseGoogleJobsMarkdown(content: string, defaultLocation?: string): SerpJob[] {
+  const jobs: SerpJob[] = [];
+  const lines = content.split("\n").map((l) => l.trim()).filter(Boolean);
+
+  let currentTitle = "";
+  let currentCompany = "";
+  let currentLocation = "";
+  let currentDescription = "";
+  let currentLink = "";
+  let currentVia = "";
+
+  const jobKeywords = /\b(manager|developer|engineer|analyst|specialist|coordinator|director|assistant|consultant|designer|administrator|officer|lead|senior|junior|executive|representative|account|sales|marketing|finance|hr|human resources|it|tech|data|cloud|devops|product|project)\b/i;
+
+  for (const line of lines) {
+    if (line.startsWith("## Filters") || line.startsWith("## Sort") || line.startsWith("Show") || line.startsWith("Skip to")) continue;
+    if (line.includes("successfully saved") || line.includes("Something went wrong")) continue;
+    if (line.includes("View it in Saved") || line.includes("was not saved")) continue;
+    if (line.startsWith("Important:") || line.startsWith("Important :")) continue;
+    if (line === "Not applicable" || line === "N/A") continue;
+
+    // Detect URLs
+    const urlMatch = line.match(/(https?:\/\/[^\s)]+)/);
+    if (urlMatch && !currentTitle) {
+      currentLink = urlMatch[1];
+      continue;
+    }
+
+    const boldMatch = line.match(/^\*\*(.+?)\*\*/);
+    const isJobTitle = boldMatch || (jobKeywords.test(line) && line.length < 150 && !line.startsWith("-") && !line.startsWith("*"));
+
+    if (isJobTitle && !line.includes("|")) {
+      if (currentTitle) {
+        jobs.push({
+          title: cleanText(currentTitle),
+          company_name: cleanText(currentCompany) || "Unknown",
+          location: cleanText(currentLocation) || defaultLocation || "",
+          description: cleanText(currentDescription).slice(0, 3000),
+          link: currentLink,
+          via: currentVia || "google_jobs",
+          hasFullSpec: currentDescription.length > 300,
+          spec_source: "web_jobs" as const,
+        });
+      }
+      currentTitle = boldMatch ? boldMatch[1] : line;
+      currentCompany = "";
+      currentLocation = "";
+      currentDescription = "";
+      currentLink = "";
+      currentVia = "";
+      continue;
+    }
+
+    if (currentTitle && !currentCompany) {
+      const atMatch = line.match(/(?:at|@)\s+(.+)/i);
+      if (atMatch) {
+        currentCompany = atMatch[1];
+      } else if (line.length < 100 && !line.match(/\d{4}/) && !line.startsWith("**")) {
+        currentCompany = line;
+      }
+      continue;
+    }
+
+    if (currentTitle && currentCompany && !currentLocation) {
+      const locationPattern = /(?:,\s*(?:GT|WC|KZN|EC|FS|MP|NW|LP|NC)|Johannesburg|Cape Town|Durban|Pretoria|Sandton|Midrand|Remote|South Africa)/i;
+      if (locationPattern.test(line) || line.length < 60) {
+        currentLocation = line;
+        continue;
+      }
+    }
+
+    if (currentTitle && line.length > 30) {
+      currentDescription += (currentDescription ? " " : "") + line;
+    }
+
+    const viaMatch = line.match(/via\s+(LinkedIn|Indeed|Glassdoor|ZipRecruiter|PNet|CareerJunction|JobMail|Company Site|Direct)/i);
+    if (viaMatch) {
+      currentVia = viaMatch[1].toLowerCase();
+    }
+  }
+
+  if (currentTitle) {
+    jobs.push({
+      title: cleanText(currentTitle),
+      company_name: cleanText(currentCompany) || "Unknown",
+      location: cleanText(currentLocation) || defaultLocation || "",
+      description: cleanText(currentDescription).slice(0, 3000),
+      link: currentLink,
+      via: currentVia || "google_jobs",
+      hasFullSpec: currentDescription.length > 300,
+      spec_source: "web_jobs" as const,
+    });
+  }
+
+  return jobs.filter((j) => {
+    const t = j.title.toLowerCase();
+    const c = j.company_name.toLowerCase();
+    if (t.length < 3 || t.length > 200) return false;
+    if (t.includes("filter") || t.includes("sort") || t.includes("show") || t.includes("sign in")) return false;
+    if (t.endsWith(" - search")) return false;
+    if (t.includes("successfully saved") || t.includes("view it in saved")) return false;
+    if (t.includes("important:") || t.includes("something went wrong")) return false;
+    if (t.includes("not applicable") || t === "n/a") return false;
+    if (c === "unknown" && !jobKeywords.test(j.title)) return false;
+    if (c.length <= 1 || c === "[" || c === "n/a") return false;
+    if (j.location.toLowerCase() === "n/a" || j.location === "Not applicable") return false;
+    return true;
+  });
+}
+
 export async function searchWebJobs(params: SerpParams): Promise<SerpJob[]> {
   const query = cleanQueryForSearch([params.q, params.location, "South Africa"].filter(Boolean).join(" "), params.location);
   const location = params.location || "South Africa";
