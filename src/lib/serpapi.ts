@@ -796,23 +796,53 @@ IMPORTANT RULES:
   }
 }
 
-// ─── Source 7: Bing Jobs via Jina Reader ───────────────────────────────────
+// ─── Source 7: Job Search via Fallback Chain ────────────────────────────────
+// Primary: Jina Reader (Bing Jobs) → Scrappa (Google Jobs) → Tavily → Exa
+
 const JINA_READER_BASE = "https://r.jina.ai";
 
 export async function searchBingJobs(params: SerpParams): Promise<SerpJob[]> {
+  const query = [params.q, params.location, "South Africa"].filter(Boolean).join(" ");
+  const location = params.location || "South Africa";
+
+  console.log(`[SRC7-SEARCH] Starting fallback chain for query: "${query}"`);
+
+  // ─── Attempt 1: Jina Reader (Bing Jobs) ────────────────────────────────
+  const jinaResult = await tryJinaBingJobs(query, location);
+  if (jinaResult.length > 0) return jinaResult;
+
+  // ─── Attempt 2: Scrappa (Google Jobs) ──────────────────────────────────
+  const scrappaResult = await tryScrappaJobs(query, location);
+  if (scrappaResult.length > 0) return scrappaResult;
+
+  // ─── Attempt 3: Tavily ─────────────────────────────────────────────────
+  const tavilyResult = await tryTavilyJobs(query, location);
+  if (tavilyResult.length > 0) return tavilyResult;
+
+  // ─── Attempt 4: Exa ────────────────────────────────────────────────────
+  const exaResult = await tryExaJobs(query, location);
+  if (exaResult.length > 0) return exaResult;
+
+  // ─── All failed ────────────────────────────────────────────────────────
+  console.warn(`[SRC7-SEARCH] ALL SOURCES FAILED — returning 0 jobs`);
+  return [];
+}
+
+// ─── Attempt 1: Jina Reader → Bing Jobs ──────────────────────────────────
+
+async function tryJinaBingJobs(query: string, location: string): Promise<SerpJob[]> {
   const jinaKey = process.env.JINA_API;
   if (!jinaKey) {
-    console.warn("[SRC7-BING-JOBS] SKIP — no JINA_API key set");
+    console.warn(`[SRC7-JINA] SKIP — no JINA_API key`);
     return [];
   }
 
   const rl = checkApiLimit("bing-jina");
   if (!rl.allowed) {
-    console.warn(`[SRC7-BING-JOBS] RATE LIMITED — ${rl.label}, ${rl.remaining}/${rl.total} remaining, retry in ${Math.ceil(rl.retryAfterMs / 1000)}s`);
+    console.warn(`[SRC7-JINA] RATE LIMITED — ${rl.label}, ${rl.remaining}/${rl.total} remaining`);
     return [];
   }
 
-  const query = [params.q, params.location, "South Africa"].filter(Boolean).join(" ");
   const bingUrl = new URL("https://www.bing.com/jobs");
   bingUrl.searchParams.set("q", query);
   bingUrl.searchParams.set("scp", "0");
@@ -823,10 +853,7 @@ export async function searchBingJobs(params: SerpParams): Promise<SerpJob[]> {
   bingUrl.searchParams.set("form", "JOBL2S");
 
   const jinaFetchUrl = `${JINA_READER_BASE}/${bingUrl.toString()}`;
-
-  console.log(`[SRC7-BING-JOBS] REQ params:`, JSON.stringify({ query, location: params.location || "South Africa" }));
-  console.log(`[SRC7-BING-JOBS] Bing URL: ${bingUrl.toString()}`);
-  console.log(`[SRC7-BING-JOBS] Jina fetch: ${jinaFetchUrl}`);
+  console.log(`[SRC7-JINA] Fetching Bing Jobs via Jina: ${bingUrl.toString()}`);
 
   try {
     const res = await fetch(jinaFetchUrl, {
@@ -837,55 +864,321 @@ export async function searchBingJobs(params: SerpParams): Promise<SerpJob[]> {
       },
     });
 
-    console.log(`[SRC7-BING-JOBS] HTTP ${res.status} ${res.statusText}`);
+    console.log(`[SRC7-JINA] HTTP ${res.status} ${res.statusText}`);
 
     if (!res.ok) {
       const err = await res.text();
-      console.error(`[SRC7-BING-JOBS] FAIL status=${res.status} body=${err.slice(0, 300)}`);
+      if (res.status === 402) {
+        console.error(`[SRC7-JINA] OUT OF CREDITS (402) — will try next source`);
+      } else {
+        console.error(`[SRC7-JINA] FAIL status=${res.status} body=${err.slice(0, 200)}`);
+      }
       return [];
     }
 
     const data = await res.json();
     const content = data?.data?.[0]?.content ?? data?.content ?? "";
-    console.log(`[SRC7-BING-JOBS] Response length: ${content.length} chars`);
+    console.log(`[SRC7-JINA] Response: ${content.length} chars`);
 
     if (!content || content.length < 50) {
-      console.warn(`[SRC7-BING-JOBS] Empty or too short response`);
+      console.warn(`[SRC7-JINA] Empty or too short response — will try next source`);
       return [];
     }
 
     recordApiCall("bing-jina");
-    const remaining = rl.remaining - 1;
-    console.log(`[SRC7-BING-JOBS] Quota: ${remaining}/${rl.total} remaining`);
-
-    // Parse job cards from the markdown content
-    const jobs = parseBingJobsMarkdown(content, params.location);
-    console.log(`[SRC7-BING-JOBS] OK ${jobs.length} jobs parsed`);
+    const jobs = parseBingJobsMarkdown(content, location);
+    console.log(`[SRC7-JINA] SUCCESS — ${jobs.length} jobs parsed`);
     if (jobs.length > 0) {
-      console.log(`[SRC7-BING-JOBS] First: "${jobs[0].title}" at "${jobs[0].company_name}"`);
+      console.log(`[SRC7-JINA] First: "${jobs[0].title}" at "${jobs[0].company_name}"`);
     }
-
     return jobs;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[SRC7-BING-JOBS] FAIL: ${msg.slice(0, 300)}`);
+    console.error(`[SRC7-JINA] EXCEPTION: ${msg.slice(0, 200)} — will try next source`);
     return [];
+  }
+}
+
+// ─── Attempt 2: Scrappa (Google Jobs API) ────────────────────────────────
+
+async function tryScrappaJobs(query: string, location: string): Promise<SerpJob[]> {
+  const apiKey = process.env.SCRAPPA_API;
+  if (!apiKey) {
+    console.warn(`[SRC7-SCRAPPA] SKIP — no SCRAPPA_API key`);
+    return [];
+  }
+
+  const rl = checkApiLimit("scrappa");
+  if (!rl.allowed) {
+    console.warn(`[SRC7-SCRAPPA] RATE LIMITED — ${rl.label}, ${rl.remaining}/${rl.total} remaining`);
+    return [];
+  }
+
+  const url = new URL("https://scrappa.co/api/google/jobs");
+  url.searchParams.set("q", query);
+  url.searchParams.set("gl", "za");
+  url.searchParams.set("hl", "en");
+
+  console.log(`[SRC7-SCRAPPA] Fetching Google Jobs: ${url.toString()}`);
+
+  try {
+    const res = await fetch(url.toString(), {
+      headers: {
+        "X-API-KEY": apiKey,
+        "Accept": "application/json",
+      },
+    });
+
+    console.log(`[SRC7-SCRAPPA] HTTP ${res.status} ${res.statusText}`);
+
+    if (!res.ok) {
+      const err = await res.text();
+      if (res.status === 402) {
+        console.error(`[SRC7-SCRAPPA] OUT OF CREDITS (402) — will try next source`);
+      } else {
+        console.error(`[SRC7-SCRAPPA] FAIL status=${res.status} body=${err.slice(0, 200)}`);
+      }
+      return [];
+    }
+
+    const data = await res.json();
+    const results = data?.jobs_results ?? [];
+    console.log(`[SRC7-SCRAPPA] API returned ${results.length} results`);
+
+    if (results.length === 0) {
+      console.warn(`[SRC7-SCRAPPA] No jobs returned — will try next source`);
+      return [];
+    }
+
+    recordApiCall("scrappa");
+    const jobs: SerpJob[] = results.map((j: any) => ({
+      title: String(j.title || "").trim(),
+      company_name: String(j.company_name || "Unknown").trim(),
+      location: String(j.location || location).trim(),
+      description: String(j.description || "").slice(0, 3000),
+      link: String(j.link || ""),
+      via: String(j.via || "google_jobs").toLowerCase(),
+      posted_at: j.detected_extensions?.posted_at || "",
+      hasFullSpec: (j.description?.length ?? 0) > 300,
+      spec_source: "bing_jobs" as const,
+    }));
+
+    console.log(`[SRC7-SCRAPPA] SUCCESS — ${jobs.length} jobs parsed`);
+    if (jobs.length > 0) {
+      console.log(`[SRC7-SCRAPPA] First: "${jobs[0].title}" at "${jobs[0].company_name}"`);
+    }
+    return jobs;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[SRC7-SCRAPPA] EXCEPTION: ${msg.slice(0, 200)} — will try next source`);
+    return [];
+  }
+}
+
+// ─── Attempt 3: Tavily ───────────────────────────────────────────────────
+
+async function tryTavilyJobs(query: string, location: string): Promise<SerpJob[]> {
+  const apiKey = process.env.TAVILY_API_KEY;
+  if (!apiKey) {
+    console.warn(`[SRC7-TAVILY] SKIP — no TAVILY_API_KEY key`);
+    return [];
+  }
+
+  const rl = checkApiLimit("tavily");
+  if (!rl.allowed) {
+    console.warn(`[SRC7-TAVILY] RATE LIMITED — ${rl.label}, ${rl.remaining}/${rl.total} remaining`);
+    return [];
+  }
+
+  const searchQuery = `${query} jobs site:linkedin.com OR site:indeed.com OR site:careerjunction.co.za OR site:pnet.co.za`;
+  console.log(`[SRC7-TAVILY] Searching: "${searchQuery.slice(0, 100)}..."`);
+
+  try {
+    const res = await fetch("https://api.tavily.com/search", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        query: searchQuery,
+        max_results: 10,
+        topic: "general",
+        search_depth: "basic",
+        include_domains: ["linkedin.com", "indeed.com", "careerjunction.co.za", "pnet.co.za", "glassdoor.co.za", "jobmail.co.za"],
+      }),
+    });
+
+    console.log(`[SRC7-TAVILY] HTTP ${res.status} ${res.statusText}`);
+
+    if (!res.ok) {
+      const err = await res.text();
+      if (res.status === 402) {
+        console.error(`[SRC7-TAVILY] OUT OF CREDITS (402) — will try next source`);
+      } else {
+        console.error(`[SRC7-TAVILY] FAIL status=${res.status} body=${err.slice(0, 200)}`);
+      }
+      return [];
+    }
+
+    const data = await res.json();
+    const results = data?.results ?? [];
+    console.log(`[SRC7-TAVILY] API returned ${results.length} results`);
+
+    if (results.length === 0) {
+      console.warn(`[SRC7-TAVILY] No results — will try next source`);
+      return [];
+    }
+
+    recordApiCall("tavily");
+    const jobs: SerpJob[] = results
+      .filter((r: any) => r.title && r.url)
+      .map((r: any) => {
+        const title = cleanText(r.title || "");
+        const content = r.content || "";
+        // Try to extract company from content (often "Company · Location" or "at Company")
+        const companyMatch = content.match(/(?:at|·|–|-)\s*([A-Z][A-Za-z\s&]+?)(?:\s*[·–-]|\s*$)/);
+        const company = companyMatch ? companyMatch[1].trim() : extractCompanyFromUrl(r.url);
+
+        return {
+          title: title.slice(0, 200),
+          company_name: company || "Unknown",
+          location: location,
+          description: content.slice(0, 3000),
+          link: String(r.url || ""),
+          via: extractDomain(r.url),
+          hasFullSpec: content.length > 300,
+          spec_source: "bing_jobs" as const,
+        };
+      });
+
+    console.log(`[SRC7-TAVILY] SUCCESS — ${jobs.length} jobs parsed`);
+    if (jobs.length > 0) {
+      console.log(`[SRC7-TAVILY] First: "${jobs[0].title}" at "${jobs[0].company_name}"`);
+    }
+    return jobs;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[SRC7-TAVILY] EXCEPTION: ${msg.slice(0, 200)} — will try next source`);
+    return [];
+  }
+}
+
+// ─── Attempt 4: Exa (Neural Search) ──────────────────────────────────────
+
+async function tryExaJobs(query: string, location: string): Promise<SerpJob[]> {
+  const apiKey = process.env.EXA_API_KEY;
+  if (!apiKey) {
+    console.warn(`[SRC7-EXA] SKIP — no EXA_API_KEY key`);
+    return [];
+  }
+
+  const rl = checkApiLimit("exa");
+  if (!rl.allowed) {
+    console.warn(`[SRC7-EXA] RATE LIMITED — ${rl.label}, ${rl.remaining}/${rl.total} remaining`);
+    return [];
+  }
+
+  const searchQuery = `${query} jobs in ${location}, South Africa`;
+  console.log(`[SRC7-EXA] Searching: "${searchQuery.slice(0, 100)}..."`);
+
+  try {
+    const res = await fetch("https://api.exa.ai/search", {
+      method: "POST",
+      headers: {
+        "x-api-key": apiKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        query: searchQuery,
+        type: "auto",
+        numResults: 10,
+        contents: { highlights: true },
+        includeDomains: ["linkedin.com", "indeed.com", "careerjunction.co.za", "pnet.co.za", "glassdoor.co.za", "jobmail.co.za"],
+      }),
+    });
+
+    console.log(`[SRC7-EXA] HTTP ${res.status} ${res.statusText}`);
+
+    if (!res.ok) {
+      const err = await res.text();
+      if (res.status === 402) {
+        console.error(`[SRC7-EXA] OUT OF CREDITS (402) — no more sources to try`);
+      } else {
+        console.error(`[SRC7-EXA] FAIL status=${res.status} body=${err.slice(0, 200)}`);
+      }
+      return [];
+    }
+
+    const data = await res.json();
+    const results = data?.results ?? [];
+    console.log(`[SRC7-EXA] API returned ${results.length} results`);
+
+    if (results.length === 0) {
+      console.warn(`[SRC7-EXA] No results — no more sources to try`);
+      return [];
+    }
+
+    recordApiCall("exa");
+    const jobs: SerpJob[] = results
+      .filter((r: any) => r.title && r.url)
+      .map((r: any) => {
+        const title = cleanText(r.title || "");
+        const highlights = (r.highlights ?? []).join(" ");
+        const content = highlights || r.text || "";
+        const company = extractCompanyFromUrl(r.url);
+
+        return {
+          title: title.slice(0, 200),
+          company_name: company || "Unknown",
+          location: location,
+          description: content.slice(0, 3000),
+          link: String(r.url || ""),
+          via: extractDomain(r.url),
+          hasFullSpec: content.length > 300,
+          spec_source: "bing_jobs" as const,
+        };
+      });
+
+    console.log(`[SRC7-EXA] SUCCESS — ${jobs.length} jobs parsed`);
+    if (jobs.length > 0) {
+      console.log(`[SRC7-EXA] First: "${jobs[0].title}" at "${jobs[0].company_name}"`);
+    }
+    return jobs;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[SRC7-EXA] EXCEPTION: ${msg.slice(0, 200)} — no more sources to try`);
+    return [];
+  }
+}
+
+// ─── Shared Helpers ───────────────────────────────────────────────────────
+
+function extractCompanyFromUrl(url: string): string {
+  try {
+    const hostname = new URL(url).hostname.replace(/^www\./, "");
+    if (hostname.includes("linkedin")) return "LinkedIn";
+    if (hostname.includes("indeed")) return "Indeed";
+    if (hostname.includes("glassdoor")) return "Glassdoor";
+    if (hostname.includes("careerjunction")) return "CareerJunction";
+    if (hostname.includes("pnet")) return "PNet";
+    if (hostname.includes("jobmail")) return "JobMail";
+    return hostname.split(".")[0];
+  } catch {
+    return "Unknown";
+  }
+}
+
+function extractDomain(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "").split(".")[0];
+  } catch {
+    return "unknown";
   }
 }
 
 function parseBingJobsMarkdown(content: string, defaultLocation?: string): SerpJob[] {
   const jobs: SerpJob[] = [];
-
-  // Bing Jobs markdown typically has job cards as sections with:
-  // **Job Title** at Company Name
-  // Location, Job Type
-  // Description snippet
-  // Source: via LinkedIn / Indeed / etc.
-
-  // Strategy: look for patterns that indicate job cards
-  // Pattern 1: Lines with **bold text** followed by company/location info
-  // Pattern 2: Lines with job titles that contain common job keywords
-
   const lines = content.split("\n").map((l) => l.trim()).filter(Boolean);
 
   let currentTitle = "";
@@ -897,30 +1190,24 @@ function parseBingJobsMarkdown(content: string, defaultLocation?: string): SerpJ
   const jobKeywords = /\b(manager|developer|engineer|analyst|specialist|coordinator|director|assistant|consultant|designer|administrator|officer|lead|senior|junior|executive|representative|account|sales|marketing|finance|hr|human resources|it|tech|data|cloud|devops|product|project)\b/i;
 
   for (const line of lines) {
-    // Skip navigation/filter noise
     if (line.startsWith("## Filters") || line.startsWith("## Sort") || line.startsWith("Show") || line.startsWith("Skip to")) continue;
 
-    // Detect job title lines: **Bold text** or lines with job keywords
     const boldMatch = line.match(/^\*\*(.+?)\*\*/);
     const isJobTitle = boldMatch || (jobKeywords.test(line) && line.length < 150 && !line.startsWith("-") && !line.startsWith("*"));
 
     if (isJobTitle && !line.includes("|")) {
-      // Save previous job if we have one
       if (currentTitle) {
-        const viaSource = currentVia || extractViaSource(content, currentTitle);
         jobs.push({
           title: cleanText(currentTitle),
           company_name: cleanText(currentCompany) || "Unknown",
           location: cleanText(currentLocation) || defaultLocation || "",
           description: cleanText(currentDescription).slice(0, 3000),
           link: "",
-          via: viaSource,
+          via: currentVia || "bing_jobs",
           hasFullSpec: false,
           spec_source: "bing_jobs" as const,
         });
       }
-
-      // Start new job card
       currentTitle = boldMatch ? boldMatch[1] : line;
       currentCompany = "";
       currentLocation = "";
@@ -929,9 +1216,7 @@ function parseBingJobsMarkdown(content: string, defaultLocation?: string): SerpJ
       continue;
     }
 
-    // After a title, look for company/location
     if (currentTitle && !currentCompany) {
-      // Lines with "at Company" or just company name
       const atMatch = line.match(/(?:at|@)\s+(.+)/i);
       if (atMatch) {
         currentCompany = atMatch[1];
@@ -941,7 +1226,6 @@ function parseBingJobsMarkdown(content: string, defaultLocation?: string): SerpJ
       continue;
     }
 
-    // Look for location (contains comma, state abbreviations, or "South Africa")
     if (currentTitle && currentCompany && !currentLocation) {
       const locationPattern = /(?:,\s*(?:GT|WC|KZN|EC|FS|MP|NW|LP|NC)|Johannesburg|Cape Town|Durban|Pretoria|Sandton|Midrand|Remote|South Africa)/i;
       if (locationPattern.test(line) || line.length < 60) {
@@ -950,34 +1234,29 @@ function parseBingJobsMarkdown(content: string, defaultLocation?: string): SerpJ
       }
     }
 
-    // Accumulate description
     if (currentTitle && line.length > 30) {
       currentDescription += (currentDescription ? " " : "") + line;
     }
 
-    // Detect source/via
     const viaMatch = line.match(/via\s+(LinkedIn|Indeed|Glassdoor|ZipRecruiter|PNet|CareerJunction|JobMail|Company Site|Direct)/i);
     if (viaMatch) {
       currentVia = viaMatch[1].toLowerCase();
     }
   }
 
-  // Don't forget the last job
   if (currentTitle) {
-    const viaSource = currentVia || extractViaSource(content, currentTitle);
     jobs.push({
       title: cleanText(currentTitle),
       company_name: cleanText(currentCompany) || "Unknown",
       location: cleanText(currentLocation) || defaultLocation || "",
       description: cleanText(currentDescription).slice(0, 3000),
       link: "",
-      via: viaSource,
+      via: currentVia || "bing_jobs",
       hasFullSpec: false,
       spec_source: "bing_jobs" as const,
     });
   }
 
-  // Filter out obviously non-job entries
   return jobs.filter((j) => {
     const t = j.title.toLowerCase();
     if (t.length < 3 || t.length > 200) return false;
@@ -985,17 +1264,6 @@ function parseBingJobsMarkdown(content: string, defaultLocation?: string): SerpJ
     if (j.company_name === "Unknown" && !jobKeywords.test(j.title)) return false;
     return true;
   });
-}
-
-function extractViaSource(content: string, title: string): string {
-  // Try to find "via X" near the job title in the content
-  const idx = content.indexOf(title);
-  if (idx >= 0) {
-    const snippet = content.slice(idx, idx + 300);
-    const viaMatch = snippet.match(/via\s+(LinkedIn|Indeed|Glassdoor|ZipRecruiter|PNet|CareerJunction|JobMail|Company Site|Direct)/i);
-    if (viaMatch) return viaMatch[1].toLowerCase();
-  }
-  return "bing_jobs";
 }
 
 function cleanText(text: string): string {
