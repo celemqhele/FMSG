@@ -81,8 +81,10 @@ export async function callGeminiWithSearch(
       body: JSON.stringify({
         system_instruction: { parts: [{ text: systemPrompt }] },
         contents: [{ parts: [{ text: userText }] }],
-        generationConfig,
-        tools: [{ google_search: {} }],
+        generationConfig: {
+          ...generationConfig,
+          dynamicRetrieval: "MODE_DYNAMIC",
+        },
       }),
     }
   );

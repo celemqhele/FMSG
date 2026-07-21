@@ -220,7 +220,12 @@ export async function searchAdzuna(params: SerpParams): Promise<SerpJob[]> {
     return [];
   }
 
-  const what = params.q || "";
+  // Strip Google-style operators that Adzuna doesn't support
+  const what = (params.q || "")
+    .replace(/["*]/g, "")           // remove quotes and wildcards
+    .replace(/\b(OR|AND|NOT)\b/gi, "") // remove boolean operators
+    .replace(/\s+/g, " ")           // collapse whitespace
+    .trim();
   const where = params.location || "South Africa";
 
   const url = new URL("https://api.adzuna.com/v1/api/jobs/za/search/1");
@@ -305,6 +310,12 @@ export async function searchLinkedInJobs(params: SerpParams): Promise<SerpJob[]>
       headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Referer": "https://www.linkedin.com/jobs/search/?keywords=" + encodeURIComponent(query),
+        "Connection": "keep-alive",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "same-origin",
       },
     });
 
