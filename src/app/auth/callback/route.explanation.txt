@@ -1,1 +1,0 @@
-Server route for OAuth code exchange (used by password reset flow). Exchanges code for session via exchangeCodeForSession, then redirects to /auth/confirm by default.

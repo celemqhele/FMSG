@@ -89,17 +89,7 @@ export async function POST(request: NextRequest) {
 
     const now = new Date();
     const newExpiry = new Date(now);
-    let newNextPayment: Date | null = null;
-    if (billing_cycle === "annual") {
-      newExpiry.setFullYear(newExpiry.getFullYear() + 1);
-      newNextPayment = new Date(newExpiry);
-    } else if (billing_cycle === "once") {
-      newExpiry.setMonth(newExpiry.getMonth() + 1);
-      newNextPayment = null;
-    } else {
-      newExpiry.setMonth(newExpiry.getMonth() + 1);
-      newNextPayment = new Date(newExpiry);
-    }
+    newExpiry.setMonth(newExpiry.getMonth() + 1);
 
     const limits = PLAN_LIMITS[newPlan] ?? { searches: 1, cv_gens: 0, pf_balance: 0 };
 
@@ -107,7 +97,7 @@ export async function POST(request: NextRequest) {
       // Calculate prorated upgrade charge
       const oldPricePerRun = calculatePFPrice(currentPfRefill);
       const newPricePerRun = calculatePFPrice(newPfCount);
-      const billingMonths = billing_cycle === "annual" ? 12 : 1;
+      const billingMonths = 1;
       const oldPfTotalKobo = currentPfRefill * oldPricePerRun * 100 * billingMonths;
       const newPfTotalKobo = newPfCount * newPricePerRun * 100 * billingMonths;
 
@@ -172,7 +162,6 @@ export async function POST(request: NextRequest) {
         email: sub.email,
         start_date: now.toISOString(),
         expiry_date: newExpiry.toISOString(),
-        next_payment_date: newNextPayment?.toISOString() ?? null,
         status: "active",
       });
 

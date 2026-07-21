@@ -29,19 +29,11 @@ const API_LIMITS: Record<string, { windowMs: number; max: number; label: string 
   jina:      { windowMs: 60 * 60 * 1000,           max: 40,  label: "Jina (40/hour)" },
 };
 
-export interface ApiLimitResult {
-  allowed: boolean;
-  remaining: number;
-  total: number;
-  retryAfterMs: number;
-  label: string;
-}
-
 /**
  * Check if an API call is allowed under the rate limit.
  * Does NOT record the call — call `recordApiCall()` after a successful fetch.
  */
-export function checkApiLimit(apiName: string): ApiLimitResult {
+export function checkApiLimit(apiName: string): { allowed: boolean; remaining: number; total: number; retryAfterMs: number; label: string } {
   const cfg = API_LIMITS[apiName];
   if (!cfg) {
     // Unknown API — allow (don't block)
@@ -85,28 +77,4 @@ export function recordApiCall(apiName: string): void {
   } else {
     existing.count++;
   }
-}
-
-/**
- * Reset the counter for an API (for testing or manual override).
- */
-export function resetApiLimit(apiName: string): void {
-  windows.delete(apiName);
-}
-
-/**
- * Get current remaining quota for an API (read-only, doesn't increment).
- */
-export function getApiRemaining(apiName: string): { remaining: number; total: number } {
-  const cfg = API_LIMITS[apiName];
-  if (!cfg) return { remaining: 999, total: 999 };
-
-  const now = Date.now();
-  const existing = windows.get(apiName);
-
-  if (!existing || existing.resetAt <= now) {
-    return { remaining: cfg.max, total: cfg.max };
-  }
-
-  return { remaining: Math.max(0, cfg.max - existing.count), total: cfg.max };
 }

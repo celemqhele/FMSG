@@ -24,7 +24,3 @@ export function createClient() {
   }
   return client;
 }
-
-export function resetClient() {
-  client = null;
-}

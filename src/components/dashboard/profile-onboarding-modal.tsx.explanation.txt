@@ -1,9 +1,0 @@
-When a user creates a new search profile via ProfileSwitcher, this modal appears as a z-[200] overlay with a three-step flow:
-
-1. Upload step: User drags/clicks to upload a PDF CV (max 10MB, validated client-side).
-2. Extracting step: Sends file to /api/extract-cv, shows a loading spinner with Loader2.
-3. Form step: Job titles (array, add/remove) and preferred location pre-filled from AI extraction. User can edit. On "Save & Start Searching", updates the search_profiles row in Supabase, then closes.
-
-On close, DashboardLayout calls startTransition() and pushes to `/dashboard`.
-
-The modal is rendered inside ProfileContext so it can access the active profile. If the user closes the modal without saving, the profile still exists (as a stub with no job_titles/location) and can be configured later.

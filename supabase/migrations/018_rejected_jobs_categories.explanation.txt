@@ -1,1 +1,0 @@
-Adds rejection_category and rejection_reason columns to rejected_jobs table for structured rejection tracking. Backfills existing rows from the reason column. Supports the rejected jobs tab's "System filtered" sub-tab with proper category/specific-reason display.

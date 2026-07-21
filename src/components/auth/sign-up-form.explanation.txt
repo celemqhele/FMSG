@@ -1,1 +1,0 @@
-Sign-up form with name/surname/email/password fields. Calls supabase.auth.signUp with full_name metadata. Shows "already registered" error for duplicate emails. On success, parent shows confirmation message ("Check your email").

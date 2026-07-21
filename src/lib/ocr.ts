@@ -33,13 +33,3 @@ export async function ocrPdfBuffer(buffer: Buffer): Promise<string> {
 
   return texts.join("\n\n");
 }
-
-export async function ocrImageBuffer(buffer: Buffer): Promise<string> {
-  const worker = await createWorker("eng");
-  try {
-    const { data } = await worker.recognize(buffer);
-    return data.text.trim();
-  } finally {
-    await worker.terminate();
-  }
-}

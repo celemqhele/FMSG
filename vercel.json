@@ -10,14 +10,7 @@
   "git": {
     "deploymentEnabled": {
       "beta": true,
-      "production": true,
-      "production-v2": true
+      "production": true
     }
-  },
-  "crons": [
-    {
-      "path": "/api/cron/billing",
-      "schedule": "0 6 * * *"
-    }
-  ]
+  }
 }

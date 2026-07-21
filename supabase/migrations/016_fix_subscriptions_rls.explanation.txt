@@ -1,1 +1,0 @@
-Fixes subscriptions table RLS policies that were wide open. Previous INSERT and UPDATE policies used WITH CHECK (true), allowing any authenticated user to create or modify subscription records for any user. This migration replaces them with policies that check auth.uid() = user_id and adds a DELETE policy.

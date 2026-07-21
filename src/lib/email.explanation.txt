@@ -1,1 +1,0 @@
-Transactional email service powered by Resend. Contains templated emails for: welcome (post-onboarding), subscription confirmation, subscription renewal, payment failed, subscription cancelled, PF receipt, and account deleted. All sends are fire-and-forget (not awaited) so they never block API responses. Falls back gracefully if RESEND_API_KEY is not configured.

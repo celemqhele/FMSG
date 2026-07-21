@@ -9,12 +9,7 @@ setInterval(() => {
   }
 }, 60_000);
 
-export interface RateLimitConfig {
-  windowMs: number;
-  max: number;
-}
-
-const DEFAULTS: Record<string, RateLimitConfig> = {
+const DEFAULTS: Record<string, { windowMs: number; max: number }> = {
   search:       { windowMs: 60_000, max: 5 },
   extract:      { windowMs: 60_000, max: 3 },
   generate:     { windowMs: 60_000, max: 3 },
@@ -27,11 +22,9 @@ const DEFAULTS: Record<string, RateLimitConfig> = {
   guest_search: { windowMs: 86_400_000, max: 1 },
 };
 
-export type RateLimitScope = string;
-
 export function checkRateLimit(
   key: string,
-  scope: RateLimitScope = "general"
+  scope: string = "general"
 ): { allowed: boolean; remaining: number; resetAt: number } {
   const cfg = DEFAULTS[scope] ?? DEFAULTS.general;
   const now = Date.now();

@@ -23,6 +23,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "file_path is required." }, { status: 400 });
     }
 
+    if (!filePath.startsWith(user.id + "/")) {
+      return NextResponse.json({ error: "Access denied." }, { status: 403 });
+    }
+
     const { data: fileData } = await supabase.storage
       .from("cv-files")
       .download(filePath);

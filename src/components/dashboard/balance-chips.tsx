@@ -95,8 +95,6 @@ export function BalanceChips({ balances: propBalances, plan: propPlan }: { balan
     );
   };
 
-  if (plan === "free" && balances.search === 0 && balances.cv === 0 && balances.pf === 0) return null;
-
   return (
     <div className="flex items-center gap-1.5">
       {chip("search", <Search size={12} />, balances.search)}

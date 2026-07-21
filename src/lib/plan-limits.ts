@@ -1,4 +1,4 @@
-export interface PlanConfig {
+interface PlanConfig {
   searches: number;
   cv_gens: number;
   pf_balance: number;
@@ -37,12 +37,6 @@ export function calculatePFPrice(count: number): number {
   }
   return 45;
 }
-
-export const PAYSTACK_PLAN_CODES: Record<string, string> = {
-  Seeker: process.env.NEXT_PUBLIC_PLAN_CODE_SEEKER ?? "",
-  Hunter: process.env.NEXT_PUBLIC_PLAN_CODE_HUNTER ?? "",
-  Pro: process.env.NEXT_PUBLIC_PLAN_CODE_PRO ?? "",
-};
 
 export function formatPlanPrice(plan: string): string {
   const kobo = PLAN_PRICES[plan] ?? 0;

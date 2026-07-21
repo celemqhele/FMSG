@@ -1,1 +1,0 @@
-Modal container wrapping LogInForm, SignUpForm, ForgotPasswordForm. Tabs for login/signup. After sign-up submission shows "Check your email" message (signup-sent screen). After login redirects to /auth/confirm. VerifyCode removed — sign-up now uses signUp (confirmation link) instead of OTP code.

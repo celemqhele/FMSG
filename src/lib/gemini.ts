@@ -6,7 +6,7 @@ const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const GROQ_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions";
 const GROQ_MODEL = "openai/gpt-oss-120b";
 
-export interface AIConfig {
+interface AIConfig {
   maxOutputTokens?: number;
   temperature?: number;
   responseMimeType?: string;
@@ -48,7 +48,7 @@ async function callGemini(systemPrompt: string, userText: string, config?: AICon
   return data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
 }
 
-export interface GeminiSearchResult {
+interface GeminiSearchResult {
   text: string;
   groundingMetadata?: {
     searchEntryPoint?: { renderedContent: string };

@@ -331,6 +331,7 @@ export async function POST(request: NextRequest) {
       .from("job_results")
       .select("job_title, company, full_spec, search_query, profile_id, suggested_cv")
       .eq("id", job_result_id)
+      .eq("user_id", user.id)
       .maybeSingle();
 
     if (jobErr || !jobRow) {
