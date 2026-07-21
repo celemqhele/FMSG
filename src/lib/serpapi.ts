@@ -1,4 +1,5 @@
 import { checkApiLimit, recordApiCall, recordApiFailure } from "./api-rate-limit";
+import puppeteer from "puppeteer-core";
 
 const SERPAPI_KEY = process.env.SERPAPI_API_KEY;
 
@@ -982,12 +983,12 @@ async function tryScrappaJobs(rawQuery: string, location: string): Promise<SerpJ
   }
 }
 
-// ─── Reader 2: Bright Data Discover (5,000 free credits/month) ─────────────
+// ─── Bright Data Browser API — scrapes Bing Jobs page via remote browser ──
 
 async function tryBrightDataWebJobs(query: string, location: string): Promise<SerpJob[]> {
-  const apiKey = process.env.BRIGHTDATA_API;
-  if (!apiKey) {
-    console.warn(`[SRC7-BRIGHTDATA] SKIP — no BRIGHTDATA_API key`);
+  const wsEndpoint = process.env.BRIGHTDATA_BROWSER_WS;
+  if (!wsEndpoint) {
+    console.warn(`[SRC7-BRIGHTDATA] SKIP — no BRIGHTDATA_BROWSER_WS key`);
     return [];
   }
 
@@ -997,74 +998,42 @@ async function tryBrightDataWebJobs(query: string, location: string): Promise<Se
     return [];
   }
 
-  console.log(`[SRC7-BRIGHTDATA] Searching jobs: "${query}"`);
+  const bingUrl = new URL("https://www.bing.com/jobs");
+  bingUrl.searchParams.set("q", query);
+  bingUrl.searchParams.set("scp", "0");
+  bingUrl.searchParams.set("rb", "0");
+  bingUrl.searchParams.set("rc", "20");
+  bingUrl.searchParams.set("L2", "true");
+  bingUrl.searchParams.set("c", "1");
+  bingUrl.searchParams.set("cc", "ZA");
+  bingUrl.searchParams.set("form", "JOBL2S");
 
-  const payload = {
-    query: `${query} jobs`,
-    mode: "standard" as const,
-    language: "en",
-    country: "ZA",
-    city: location || undefined,
-    num_results: 20,
-    intent: `I am a job seeker looking for ${query} positions in ${location || "South Africa"}. Prioritize actual job listings and career pages. Exclude news articles, blog posts, and generic career advice.`,
-    include_content: true,
-    include_images: false,
-    remove_duplicates: true,
-  };
+  console.log(`[SRC7-BRIGHTDATA] Scraping Bing Jobs via Browser API: ${bingUrl.toString()}`);
 
+  let browser;
   try {
-    const res = await fetch("https://api.brightdata.com/discover/sync", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(payload),
-    });
+    browser = await puppeteer.connect({ browserWSEndpoint: wsEndpoint });
+    const page = await browser.newPage();
 
-    console.log(`[SRC7-BRIGHTDATA] HTTP ${res.status} ${res.statusText}`);
+    await page.goto(bingUrl.toString(), { waitUntil: "domcontentloaded", timeout: 25000 });
 
-    if (!res.ok) {
-      const err = await res.text();
-      if (res.status === 402) {
-        console.error(`[SRC7-BRIGHTDATA] OUT OF CREDITS (402) — will try next source`);
-      } else {
-        console.error(`[SRC7-BRIGHTDATA] FAIL status=${res.status} body=${err.slice(0, 200)}`);
-      }
-      return [];
+    // Wait for job cards to render
+    try {
+      await page.waitForSelector("#b_results", { timeout: 5000 });
+    } catch {
+      console.warn(`[SRC7-BRIGHTDATA] #b_results not found — proceeding with page content`);
     }
 
-    const data = await res.json();
-    console.log(`[SRC7-BRIGHTDATA] Raw response keys: ${Object.keys(data).join(", ")}`);
-    const results = data?.results ?? data?.data ?? (Array.isArray(data) ? data : []);
-    console.log(`[SRC7-BRIGHTDATA] API returned ${results.length} results (status: ${data?.status ?? "unknown"})`);
+    const content = await page.evaluate(() => document.body.innerText);
+    console.log(`[SRC7-BRIGHTDATA] Page content: ${content.length} chars`);
 
-    if (results.length === 0) {
-      console.warn(`[SRC7-BRIGHTDATA] No results — will try next source`);
-      console.log(`[SRC7-BRIGHTDATA] Full response: ${JSON.stringify(data).slice(0, 500)}`);
+    if (!content || content.length < 50) {
+      console.warn(`[SRC7-BRIGHTDATA] Empty page content — will try next source`);
       return [];
     }
 
     recordApiCall("brightdata");
-    const jobs: SerpJob[] = results
-      .filter((r: any) => r.title && (r.url || r.link))
-      .map((r: any) => {
-        const title = cleanText(r.title || "");
-        const content = cleanText(r.content || r.snippet || r.description || "");
-        const company = r.site_name || r.source || extractCompanyFromUrl(r.url || r.link || "");
-
-        return {
-          title: title.slice(0, 200),
-          company_name: company || "Unknown",
-          location: location,
-          description: content.slice(0, 3000),
-          link: String(r.url || r.link || ""),
-          via: extractDomain(r.url || r.link || ""),
-          hasFullSpec: content.length > 300,
-          spec_source: "web_jobs" as const,
-        };
-      });
-
+    const jobs = parseBingJobsMarkdown(content, location);
     console.log(`[SRC7-BRIGHTDATA] SUCCESS — ${jobs.length} jobs parsed`);
     if (jobs.length > 0) {
       console.log(`[SRC7-BRIGHTDATA] First: "${jobs[0].title}" at "${jobs[0].company_name}"`);
@@ -1074,6 +1043,10 @@ async function tryBrightDataWebJobs(query: string, location: string): Promise<Se
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`[SRC7-BRIGHTDATA] EXCEPTION: ${msg.slice(0, 200)} — will try next source`);
     return [];
+  } finally {
+    if (browser) {
+      try { await browser.close(); } catch {}
+    }
   }
 }
 
