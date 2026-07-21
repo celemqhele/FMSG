@@ -341,7 +341,7 @@ async function fetchAndFilterJobs(
         case "googleJobs":
           return ["googleJobs", withTimeout(fetchPaginatedJobs(serpParams, pages), 15_000, "Google Jobs").catch((err) => { console.error(`[PIPELINE] Google Jobs TIMEOUT/FAIL: ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}`); return [] as SerpJob[]; })] as const;
         case "jSearch":
-          return ["jSearch", withTimeout(searchJSearch(serpParams), 15_000, "JSearch").catch((err) => { console.error(`[PIPELINE] JSearch TIMEOUT/FAIL: ${err}`); return [] as SerpJob[]; })] as const;
+          return ["jSearch", withTimeout(searchJSearch(serpParams), 7_500, "JSearch").catch((err) => { console.error(`[PIPELINE] JSearch TIMEOUT/FAIL: ${err}`); return [] as SerpJob[]; })] as const;
         case "adzuna":
           return ["adzuna", withTimeout(searchAdzuna(serpParams), 8_000, "Adzuna").catch((err) => { console.error(`[PIPELINE] Adzuna TIMEOUT/FAIL: ${err}`); return [] as SerpJob[]; })] as const;
         case "webJobs":
@@ -494,6 +494,42 @@ async function fetchAndFilterJobs(
       debugLog(`[SEARCH] All jobs filtered out by date filter (${maxAgeDays}d)`);
       return { rawJobs: [], jobSpecs: [], jobUrls: [], queryUsed: query };
     }
+  }
+
+  // Location safety net — filter out obviously non-SA jobs
+  const SA_CITIES = /\b(johannesburg|cape town|durban|pretoria|gqeberha|port elizabeth|bloemfontein|east london|polokwane|nelspruit|kimberley|soweto|centurion|sandton|midrand|stellenbosch|roodepoort|benoni|boksburg|germiston|vereeniging|umhlanga|pinetown|pietermaritzburg|howick|newcastle|barberton|white river|graskop|hoedspruit|phalaborwa|thohoyandou|tzaneen|haenertsburg|rustenburg|klerksdorp|potchefstroom|upington|george|knysna|plettenberg bay|mossel bay|hermanus|paarl|worcester|makhanda|jeffreys bay)\b/i;
+  const SA_PROVINCES = /\b(gauteng|western cape|kwazulu-natal|kwa-zulu natal|eastern cape|free state|limpopo|mpumalanga|north west|northern cape|south africa)\b/i;
+  const NON_SA_CITIES = /\b(los angeles|new york|chicago|houston|phoenix|philadelphia|san antonio|san diego|dallas|san jose|austin|jacksonville|fort worth|columbus|charlotte|indianapolis|san francisco|seattle|denver|washington|nashville|oklahoma city|el paso|boston|portland|las vegas|memphis|louisville|baltimore|milwaukee|albuquerque|tucson|fresno|sacramento|mesa|kansas city|atlanta|omaha|colorado springs|raleigh|miami|long beach|virginia beach|oakland|minneapolis|tulsa|tampa|arlington|new orleans|wichita|cleveland|bakersfield|aurora|anaheim|honolulu|santa ana|riverside|corpus christi|lexington|stockton|st paul|cincinnati|pittsburgh|anchorage|greensboro|plano|newark|lincoln|irvine|glendale|jersey city|st louis|chula vista|norfolk|orlando|chandler|madison|lubbock|reno|buffalo|gilbert|glendale|north las vegas|winston|chesapeake|reno|scottsdale|fremont|baton rouge|irvine|spokane|boise|richmond|des moines|tacoma|san bernardino|birmingham|modesto|rochester|fontana|moreno valley|glendale|salt lake city|yakima|huntsville|augusta|columbus|tallahassee|knoxville|lincoln|memphis|jersey|st petersburg|lakewood|madison|worcester|olathe|brownsville|jackson|overland|knoxville|provo|mobile|boise|fayetteville|rochester|auburn|spokane|salem|lakewood)\b/i;
+  const NON_SA_STATES = /\b(california|texas|florida|new york|illinois|pennsylvania|ohio|georgia|north carolina|michigan|new jersey|virginia|washington|arizona|massachusetts|tennessee|indiana|missouri|maryland|wisconsin|colorado|minnesota|south carolina|alabama|louisiana|kentucky|oregon|oklahoma|connecticut|utah|iowa|nevada|arkansas|mississippi|kansas|new mexico|nebraska|west virginia|idaho|hawaii|new hampshire|maine|montana|rhode island|delaware|south dakota|north dakota|alaska|vermont|wyoming|district of columbia)\b/i;
+  const NON_SA_COUNTRY = /\b(united states|usa|u\.s\.a\.|u\.s\.|canada|united kingdom|uk|australia|india|germany|france|netherlands|ireland|singapore|dubai|uae|qatar|saudi arabia|nigeria|kenya|ghana|egypt|morocco)\b/i;
+
+  const beforeCount = rawJobs.length;
+  rawJobs = rawJobs.filter((j) => {
+    const loc = ((j as any).location ?? "").toLowerCase();
+    const title = ((j as any).title ?? "").toLowerCase();
+    const company = ((j as any).company_name ?? "").toLowerCase();
+    const combined = `${loc} ${title} ${company}`;
+
+    // Remote jobs — keep (can be worked from anywhere)
+    if (/\b(remote|work from home|anywhere|worldwide)\b/i.test(combined)) return true;
+
+    // Jobs with no location — keep (don't lose potential matches)
+    if (!loc || loc.length < 2) return true;
+
+    // Explicitly SA — keep
+    if (SA_CITIES.test(loc) || SA_PROVINCES.test(loc) || /south africa|\bSA\b|\bZA\b/i.test(loc)) return true;
+
+    // Explicitly non-SA — remove
+    if (NON_SA_CITIES.test(loc) || NON_SA_STATES.test(loc) || NON_SA_COUNTRY.test(loc)) {
+      return false;
+    }
+
+    // Ambiguous — keep (don't over-filter)
+    return true;
+  });
+
+  if (rawJobs.length < beforeCount) {
+    console.log(`[PIPELINE] Location filter removed ${beforeCount - rawJobs.length} non-SA jobs (${beforeCount} → ${rawJobs.length})`);
   }
 
   const blacklistRejected: { job: any; reason: string }[] = [];
@@ -1102,6 +1138,14 @@ export async function POST(request: NextRequest) {
 
     let state: any = {};
 
+    // Rotation state — hoisted to outer scope so ReadableStream can access
+    let industrySteps: string[] = [];
+    let rotationTitleIndex = 0;
+    let rotationIndustryIndex = 0;
+    let titles: string[] = [];
+    let profileLocation = "";
+    let profileIndustry = "";
+
     if (isContinuation) {
       // Decode continuation state
       state = JSON.parse(Buffer.from(continuation, "base64").toString());
@@ -1233,9 +1277,6 @@ export async function POST(request: NextRequest) {
       state.bannedCompanies = profile.banned_companies ?? [];
 
       // Get search profile data
-      let titles: string[] = [];
-      let profileLocation = "";
-      let profileIndustry = "";
       let cvVariations: { name: string; file_path: string }[] = [];
 
       if (profile_id) {
@@ -1263,6 +1304,32 @@ export async function POST(request: NextRequest) {
 
       if (titles.length === 0) {
         return NextResponse.json({ results: [], code: "NO_TITLES", message: "Add job titles to your search profile first." });
+      }
+
+      // Build industry steps array from profile
+      industrySteps = [
+        state.industryStep1 || "",
+        state.industryStep2 || "",
+        state.industryStep3 || "",
+        state.industryStep4 || "",
+        state.industryStep5 || "",
+      ].filter(Boolean);
+
+      // Look up search rotation state (which title/industry combo to use next)
+      if (profile_id) {
+        try {
+          const { data: rotation } = await dataClient
+            .from("search_rotation")
+            .select("last_title_index, last_industry_index")
+            .eq("profile_id", profile_id)
+            .maybeSingle();
+          if (rotation) {
+            rotationTitleIndex = rotation.last_title_index ?? 0;
+            rotationIndustryIndex = rotation.last_industry_index ?? 0;
+          }
+        } catch {
+          // Table may not exist yet — default to index 0
+        }
       }
 
 
@@ -1380,11 +1447,17 @@ Return ONLY valid JSON (no markdown, no code fences):
           const effectivePfMode = state.pf_mode ?? (state.mode === "pf");
 
           if (!effectivePfMode) {
-            const nicheTitle = state.titles?.[0] ?? "";
+            // Rotate through titles and industries (most relevant first)
+            const nicheTitle = state.titles?.[rotationTitleIndex % titles.length] ?? state.titles?.[0] ?? "";
             const titleQuery = buildOrQuery([nicheTitle]);
-            const industryPart = state.profileIndustry ? state.profileIndustry : "";
+            const rotatedIndustry = industrySteps.length > 0
+              ? industrySteps[rotationIndustryIndex % industrySteps.length]
+              : (state.profileIndustry ?? "");
+            const industryPart = rotatedIndustry || "";
             const locationPart = state.profileLocation ? `in ${state.profileLocation}` : "";
             const searchQuery = [titleQuery, industryPart, locationPart, "jobs"].filter(Boolean).join(" ");
+
+            console.log(`[SEARCH] Rotation: title[${rotationTitleIndex % titles.length}]="${nicheTitle}", industry[${rotationIndustryIndex % (industrySteps.length || 1)}]="${industryPart}"`);
 
             if (!searchQuery || searchQuery === "jobs") {
               writer.send({ type: "error", code: "NO_QUERY", message: "Add job titles to your search profile first.", progress: 0 });
@@ -1443,6 +1516,25 @@ Return ONLY valid JSON (no markdown, no code fences):
               state.bannedJobs, state.bannedCompanies, dataClient, state.profile_id, sendStatus, undefined,
               hiddenKeys, state.maxAgeDays, 2, platforms
             );
+
+            // Advance rotation for next search
+            if (profile_id) {
+              const nextTitleIdx = (rotationTitleIndex + 1) % titles.length;
+              const nextIndustryIdx = industrySteps.length > 0
+                ? (rotationIndustryIndex + 1) % industrySteps.length
+                : 0;
+              try {
+                await dataClient.from("search_rotation").upsert({
+                  profile_id,
+                  last_title_index: nextTitleIdx,
+                  last_industry_index: nextIndustryIdx,
+                  updated_at: new Date().toISOString(),
+                }, { onConflict: "profile_id" });
+                console.log(`[SEARCH] Rotation advanced: title=${nextTitleIdx}, industry=${nextIndustryIdx}`);
+              } catch (e) {
+                console.warn(`[SEARCH] Failed to update rotation:`, e);
+              }
+            }
 
             if (rawJobs.length === 0) {
               sendComplete({ type: "complete", results: [], progress: 100, message: "No matching jobs found. Try broadening your criteria." });

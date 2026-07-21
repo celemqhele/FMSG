@@ -1,5 +1,3 @@
-import { debugLog } from "@/lib/debug";
-
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 
@@ -23,6 +21,7 @@ async function callGemini(systemPrompt: string, userText: string, config?: AICon
     generationConfig.responseMimeType = config.responseMimeType;
   }
 
+  const t0 = Date.now();
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent`,
     {
@@ -39,13 +38,17 @@ async function callGemini(systemPrompt: string, userText: string, config?: AICon
     }
   );
 
+  const elapsed = Date.now() - t0;
   if (!res.ok) {
     const errBody = await res.text();
+    console.error(`[AI-GEMINI] FAIL HTTP ${res.status} (${elapsed}ms) input=${userText.length}chars — ${errBody.slice(0, 150)}`);
     throw new Error(`Gemini error (${res.status}): ${errBody.slice(0, 200)}`);
   }
 
   const data = await res.json();
-  return data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+  const output = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+  console.log(`[AI-GEMINI] OK (${elapsed}ms) input=${userText.length}chars output=${output.length}chars`);
+  return output;
 }
 
 interface GeminiSearchResult {
@@ -70,6 +73,7 @@ export async function callGeminiWithSearch(
     generationConfig.responseMimeType = config.responseMimeType;
   }
 
+  const t0 = Date.now();
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent`,
     {
@@ -87,18 +91,23 @@ export async function callGeminiWithSearch(
     }
   );
 
+  const elapsed = Date.now() - t0;
   if (!res.ok) {
     const errBody = await res.text();
+    console.error(`[AI-GEMINI-SEARCH] FAIL HTTP ${res.status} (${elapsed}ms) input=${userText.length}chars — ${errBody.slice(0, 150)}`);
     throw new Error(`Gemini Search error (${res.status}): ${errBody.slice(0, 300)}`);
   }
 
   const data = await res.json();
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
   const groundingMetadata = data.candidates?.[0]?.groundingMetadata;
+  const chunks = groundingMetadata?.groundingChunks?.length ?? 0;
+  console.log(`[AI-GEMINI-SEARCH] OK (${elapsed}ms) input=${userText.length}chars output=${text.length}chars grounded_chunks=${chunks}`);
   return { text, groundingMetadata };
 }
 
 export async function callGroq(systemPrompt: string, userText: string, config?: AIConfig): Promise<string> {
+  const t0 = Date.now();
   const res = await fetch(GROQ_ENDPOINT, {
     method: "POST",
     headers: {
@@ -116,13 +125,17 @@ export async function callGroq(systemPrompt: string, userText: string, config?: 
     }),
   });
 
+  const elapsed = Date.now() - t0;
   if (!res.ok) {
     const errBody = await res.text();
+    console.error(`[AI-GROQ] FAIL HTTP ${res.status} (${elapsed}ms) input=${userText.length}chars — ${errBody.slice(0, 150)}`);
     throw new Error(`Groq error (${res.status}): ${errBody.slice(0, 200)}`);
   }
 
   const data = await res.json();
-  return data.choices?.[0]?.message?.content ?? "";
+  const output = data.choices?.[0]?.message?.content ?? "";
+  console.log(`[AI-GROQ] OK (${elapsed}ms) input=${userText.length}chars output=${output.length}chars`);
+  return output;
 }
 
 const OPENROUTER_FALLBACK_MODELS = [
@@ -145,6 +158,7 @@ async function callOpenRouterSingle(model: string, systemPrompt: string, userTex
   // which breaks prompts that expect arrays. Omit it here — the system prompt
   // already instructs the model to return valid JSON.
 
+  const t0 = Date.now();
   const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -156,13 +170,17 @@ async function callOpenRouterSingle(model: string, systemPrompt: string, userTex
     body: JSON.stringify(body),
   });
 
+  const elapsed = Date.now() - t0;
   if (!res.ok) {
     const errBody = await res.text();
+    console.error(`[AI-OPENROUTER] FAIL HTTP ${res.status} model=${model} (${elapsed}ms) input=${userText.length}chars — ${errBody.slice(0, 150)}`);
     throw new Error(`OpenRouter error (${res.status}) on ${model}: ${errBody.slice(0, 200)}`);
   }
 
   const data = await res.json();
-  return data.choices?.[0]?.message?.content ?? "";
+  const output = data.choices?.[0]?.message?.content ?? "";
+  console.log(`[AI-OPENROUTER] OK model=${model} (${elapsed}ms) input=${userText.length}chars output=${output.length}chars`);
+  return output;
 }
 
 async function callOpenRouter(systemPrompt: string, userText: string, config?: AIConfig): Promise<string> {
@@ -175,17 +193,14 @@ async function callOpenRouter(systemPrompt: string, userText: string, config?: A
   for (const apiKey of keys) {
     for (const model of OPENROUTER_FALLBACK_MODELS) {
       try {
-        const keyLabel = apiKey === keys[0] ? "primary" : "fallback";
         const result = await callOpenRouterSingle(model, systemPrompt, userText, apiKey, config);
-        debugLog(`[AI] OpenRouter model used: ${model} (${keyLabel} key)`);
         return result;
       } catch (err: any) {
         const msg = err?.message ?? String(err);
-        debugLog(`[AI] OpenRouter model ${model} failed: ${msg.slice(0, 100)}`);
         lastErr.push(err);
       }
     }
-    debugLog(`[AI] OpenRouter key exhausted — trying next key`);
+    console.warn(`[AI-OPENROUTER] All models failed for this key — trying next key`);
   }
   throw new Error(`OpenRouter — all ${OPENROUTER_FALLBACK_MODELS.length} models failed with all keys. Last error: ${(lastErr.at(-1)?.message ?? "").slice(0, 200)}`);
 }
@@ -197,15 +212,17 @@ export async function callAIWithFallback(
   stepName: string,
   config?: AIConfig
 ): Promise<string> {
+  const t0 = Date.now();
+
   // Tier 1: Gemini
   try {
     const result = await callGemini(systemPrompt, userText, config);
     lastAITier = "gemini";
-    debugLog("AI handled by: Gemini");
+    console.log(`[AI-TIER] step="${stepName}" tier=gemini total=${Date.now() - t0}ms`);
     return result;
   } catch (err: any) {
     const msg = err?.message ?? String(err);
-    debugLog(`[AI] Gemini error on "${stepName}": ${msg}`);
+    console.warn(`[AI-TIER] step="${stepName}" gemini FAILED: ${msg.slice(0, 100)}`);
     const isRetryable = msg.includes("429") || msg.includes("quota") || msg.includes("401") || msg.includes("403") || /5\d{2}/.test(msg) || /UNAVAILABLE/i.test(msg);
     if (!isRetryable) throw err;
   }
@@ -220,11 +237,11 @@ export async function callAIWithFallback(
     try {
       const result = await callGroq(systemPrompt, truncatedText, config);
       lastAITier = "groq";
-      debugLog("AI handled by: Groq");
+      console.log(`[AI-TIER] step="${stepName}" tier=groq total=${Date.now() - t0}ms`);
       return result;
     } catch (err: any) {
       const msg = err?.message ?? String(err);
-      debugLog(`[AI] Groq error on "${stepName}": ${msg}`);
+      console.warn(`[AI-TIER] step="${stepName}" groq FAILED: ${msg.slice(0, 100)}`);
       const isRetryable = msg.includes("429") || msg.includes("quota") || msg.includes("401") || msg.includes("403") || msg.includes("413") || /5\d{2}/.test(msg) || /UNAVAILABLE/i.test(msg);
       if (!isRetryable) throw err;
     }
@@ -234,11 +251,11 @@ export async function callAIWithFallback(
   try {
     const result = await callOpenRouter(systemPrompt, truncatedText, config);
     lastAITier = "openrouter";
-    debugLog("AI handled by: OpenRouter");
+    console.log(`[AI-TIER] step="${stepName}" tier=openrouter total=${Date.now() - t0}ms`);
     return result;
   } catch (err: any) {
     const msg = err?.message ?? String(err);
-    debugLog(`[AI] OpenRouter error on "${stepName}": ${msg}`);
+    console.error(`[AI-TIER] step="${stepName}" ALL TIERS FAILED after ${Date.now() - t0}ms: ${msg.slice(0, 150)}`);
     throw err;
   }
 }
