@@ -66,6 +66,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
     }
 
+    // Create job record
+    const { data: job } = await supabase
+      .from("job_extractions")
+      .insert({
+        user_id: user.id,
+        status: "processing",
+        results: {},
+        current_round: 1,
+        total_rounds: 1,
+      })
+      .select()
+      .single();
+    
+    const jobId = job?.id;
+
     const rl = checkRateLimit(`extract:${user.id}`, "extract");
     if (!rl.allowed) {
       return NextResponse.json(
@@ -112,24 +127,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: `Failed to parse file: ${parseMsg.slice(0, 200)}`, code: "PARSE_ERROR" }, { status: 400 });
     }
 
-    // Always run OCR on PDFs as safety net for scanned CVs
-    let ocrText = "";
-    if (isPDF) {
+    // Only run OCR if text layer is empty or very sparse
+    if (isPDF && text.trim().length < 50) {
       try {
-        console.log("[CV-EXTRACT] Running OCR on PDF...");
-        ocrText = await ocrPdfBuffer(buffer);
+        console.log("[CV-EXTRACT] Text layer sparse, running OCR...");
+        const ocrText = await ocrPdfBuffer(buffer);
         console.log(`[CV-EXTRACT] OCR extracted ${ocrText.length} chars`);
+        if (ocrText.length > text.length) {
+          text = ocrText;
+        }
       } catch (ocrErr) {
-        console.error("[CV-EXTRACT] OCR failed, continuing with text layer:", ocrErr instanceof Error ? ocrErr.message : String(ocrErr));
+        console.error("[CV-EXTRACT] OCR failed:", ocrErr instanceof Error ? ocrErr.message : String(ocrErr));
       }
-    }
-
-    // Use the longer result (text layer vs OCR)
-    if (ocrText.length > text.length) {
-      console.log("[CV-EXTRACT] OCR result longer, using OCR text");
-      text = ocrText;
-    } else {
-      console.log(`[CV-EXTRACT] Using text layer (${text.length} chars) vs OCR (${ocrText.length} chars)`);
     }
 
     if (!text.trim()) {
@@ -178,7 +187,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "AI returned invalid JSON. Please try again.", code: "INVALID_JSON" }, { status: 502 });
     }
 
-    return NextResponse.json({
+    const result = {
       name: parsed.name ?? "",
       surname: parsed.surname ?? "",
       phone: parsed.phone ?? "",
@@ -190,7 +199,20 @@ export async function POST(request: NextRequest) {
       current_salary: typeof parsed.current_salary === "number" ? parsed.current_salary : null,
       desired_salary: typeof parsed.desired_salary === "number" ? parsed.desired_salary : null,
       cv_file_path: storagePath,
-    });
+    };
+
+    if (jobId) {
+      await supabase
+        .from("job_extractions")
+        .update({
+          status: "completed",
+          results: result,
+          updated_at: new Date().toISOString()
+        })
+        .eq("id", jobId);
+    }
+
+    return NextResponse.json(result);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("Extract CV error:", msg);

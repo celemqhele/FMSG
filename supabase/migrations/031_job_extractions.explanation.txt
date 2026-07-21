@@ -1,0 +1,1 @@
+Added job_extractions table to support persisting intermediate AI results for PF and single-search flows, allowing early Vercel connection termination and subsequent resume.
