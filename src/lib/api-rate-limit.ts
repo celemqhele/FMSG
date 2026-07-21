@@ -27,6 +27,8 @@ const API_LIMITS: Record<string, { windowMs: number; max: number; label: string 
   linkedin:  { windowMs: 60 * 60 * 1000,           max: 20,  label: "LinkedIn (20/hour)" },
   // Jina: rate-limited free tier. Conservative hourly cap.
   jina:      { windowMs: 60 * 60 * 1000,           max: 40,  label: "Jina (40/hour)" },
+  // Bing Jobs via Jina: uses Jina Reader to fetch Bing Jobs. Share Jina rate limit.
+  "bing-jina": { windowMs: 60 * 60 * 1000,         max: 30,  label: "Bing Jobs via Jina (30/hour)" },
 };
 
 /**

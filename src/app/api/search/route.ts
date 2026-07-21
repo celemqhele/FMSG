@@ -1,7 +1,7 @@
 // BUILD_CACHE_BUST: jun30-1
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { searchGoogleJobs, searchJSearch, searchAdzuna, searchLinkedInJobs, searchGooglePages, searchGoogleJobsViaGemini, scrapeJobPage, extractJobUrlsFromListingPage, isListingPage, isIndividualJobPage, type SerpJob } from "@/lib/serpapi";
+import { searchGoogleJobs, searchJSearch, searchAdzuna, searchBingJobs, searchGooglePages, scrapeJobPage, extractJobUrlsFromListingPage, isListingPage, isIndividualJobPage, type SerpJob } from "@/lib/serpapi";
 import { extractText } from "@/lib/pdf";
 import { callAIWithFallback, lastAITier } from "@/lib/gemini";
 import { StreamWriter, type SearchEvent } from "@/lib/search-stream";
@@ -321,17 +321,14 @@ async function fetchAndFilterJobs(
   try {
     // ─── Platform-aware source selection ──────────────────────────────────
     const isAll = !allowedPlatforms || allowedPlatforms.length === 0;
-    const hasLinkedIn = isAll || allowedPlatforms?.includes("linkedin");
-    const hasOnlyLinkedIn = !isAll && allowedPlatforms?.length === 1 && allowedPlatforms[0] === "linkedin";
-    const hasNonLinkedIn = !isAll && !hasOnlyLinkedIn;
+    const hasNonLinkedIn = !isAll;
 
     const sources = {
       googleJobs: true,            // always run
       jSearch: isAll || hasNonLinkedIn,  // skip when only LinkedIn
       adzuna: isAll,               // only when All
-      linkedIn: isAll || hasLinkedIn,     // when LinkedIn selected or All
+      bingJobs: isAll,             // Bing Jobs via Jina Reader
       googlePages: isAll,          // only when All
-      geminiSearch: isAll,         // Gemini with Google Search grounding
     };
 
     const enabledCount = Object.values(sources).filter(Boolean).length;
@@ -346,12 +343,10 @@ async function fetchAndFilterJobs(
           return ["jSearch", withTimeout(searchJSearch(serpParams), 15_000, "JSearch").catch((err) => { console.error(`[PIPELINE] JSearch TIMEOUT/FAIL: ${err}`); return [] as SerpJob[]; })] as const;
         case "adzuna":
           return ["adzuna", withTimeout(searchAdzuna(serpParams), 8_000, "Adzuna").catch((err) => { console.error(`[PIPELINE] Adzuna TIMEOUT/FAIL: ${err}`); return [] as SerpJob[]; })] as const;
-        case "linkedIn":
-          return ["linkedIn", withTimeout(searchLinkedInJobs(serpParams), 10_000, "LinkedIn").catch((err) => { console.error(`[PIPELINE] LinkedIn TIMEOUT/FAIL: ${err}`); return [] as SerpJob[]; })] as const;
+        case "bingJobs":
+          return ["bingJobs", withTimeout(searchBingJobs(serpParams), 20_000, "Bing Jobs").catch((err) => { console.error(`[PIPELINE] Bing Jobs TIMEOUT/FAIL: ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}`); return [] as SerpJob[]; })] as const;
         case "googlePages":
           return ["googlePages", withTimeout(searchGooglePages(serpParams), 25_000, "Google Search/Jina").catch((err) => { console.error(`[PIPELINE] Google Search/Jina TIMEOUT/FAIL: ${err}`); return [] as { title: string; link: string; snippet: string; domain: string }[]; })] as const;
-        case "geminiSearch":
-          return ["geminiSearch", withTimeout(searchGoogleJobsViaGemini(serpParams), 20_000, "Gemini Search").catch((err) => { console.error(`[PIPELINE] Gemini Search TIMEOUT/FAIL: ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}`); return [] as SerpJob[]; })] as const;
         default:
           return [key, Promise.resolve([])] as const;
       }
@@ -364,11 +359,10 @@ async function fetchAndFilterJobs(
     const googleJobs = (resultObj["googleJobs"] ?? []) as SerpJob[];
     const jsearchJobs = (resultObj["jSearch"] ?? []) as SerpJob[];
     const adzunaJobs = (resultObj["adzuna"] ?? []) as SerpJob[];
-    const linkedInJobs = (resultObj["linkedIn"] ?? []) as SerpJob[];
+    const bingJobsJobs = (resultObj["bingJobs"] ?? []) as SerpJob[];
     const googlePages = (resultObj["googlePages"] ?? []) as { title: string; link: string; snippet: string; domain: string }[];
-    const geminiSearchJobs = (resultObj["geminiSearch"] ?? []) as SerpJob[];
 
-    console.log(`[PIPELINE] Sources returned: GoogleJobs=${googleJobs.length} JSearch=${jsearchJobs.length} Adzuna=${adzunaJobs.length} LinkedIn=${linkedInJobs.length} GooglePages=${googlePages.length} GeminiSearch=${geminiSearchJobs.length}`);
+    console.log(`[PIPELINE] Sources returned: GoogleJobs=${googleJobs.length} JSearch=${jsearchJobs.length} Adzuna=${adzunaJobs.length} BingJobs=${bingJobsJobs.length} GooglePages=${googlePages.length}`);
 
     // Scrape Google Search URLs with Jina (two-step crawl, parallel)
     console.log(`[PIPELINE] Starting two-step crawl for ${googlePages.length} Google Search URLs`);
@@ -450,16 +444,15 @@ async function fetchAndFilterJobs(
       }
     }
 
-    // Priority order: JSearch (best inline) → Google Jobs → Gemini Search → LinkedIn → Google Search (Jina) → Adzuna (snippet)
-    console.log("[PIPELINE] Merging sources (priority: JSearch > Google > Gemini > LinkedIn > Scrape > Adzuna)");
+    // Priority order: JSearch (best inline) → Google Jobs → Bing Jobs → Google Search (Jina) → Adzuna (snippet)
+    console.log("[PIPELINE] Merging sources (priority: JSearch > Google > Bing Jobs > Scrape > Adzuna)");
     addJobs(jsearchJobs);
     addJobs(googleJobs);
-    addJobs(geminiSearchJobs);
-    addJobs(linkedInJobs);
+    addJobs(bingJobsJobs);
     addJobs(scrapedGoogleJobs);
     addJobs(adzunaJobs);
 
-    console.log(`[PIPELINE] Dedup complete: ${rawJobs.length} unique jobs from ${googleJobs.length + jsearchJobs.length + adzunaJobs.length + linkedInJobs.length + scrapedGoogleJobs.length + geminiSearchJobs.length} total`);
+    console.log(`[PIPELINE] Dedup complete: ${rawJobs.length} unique jobs from ${googleJobs.length + jsearchJobs.length + adzunaJobs.length + bingJobsJobs.length + scrapedGoogleJobs.length} total`);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.includes("(400)")) {

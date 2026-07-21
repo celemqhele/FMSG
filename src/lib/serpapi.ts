@@ -19,7 +19,7 @@ export interface SerpJob {
   apply_options?: ApplyOption[];
   job_highlights?: { link?: string };
   hasFullSpec?: boolean;
-  spec_source?: "google_jobs" | "jsearch" | "adzuna" | "linkedin" | "google_search";
+  spec_source?: "google_jobs" | "jsearch" | "adzuna" | "linkedin" | "google_search" | "bing_jobs";
 }
 
 interface SerpParams {
@@ -794,4 +794,210 @@ IMPORTANT RULES:
     console.error(`[SRC6-GEMINI-SEARCH] FAIL: ${msg.slice(0, 300)}`);
     return [];
   }
+}
+
+// ─── Source 7: Bing Jobs via Jina Reader ───────────────────────────────────
+const JINA_READER_BASE = "https://r.jina.ai";
+
+export async function searchBingJobs(params: SerpParams): Promise<SerpJob[]> {
+  const jinaKey = process.env.JINA_API;
+  if (!jinaKey) {
+    console.warn("[SRC7-BING-JOBS] SKIP — no JINA_API key set");
+    return [];
+  }
+
+  const rl = checkApiLimit("bing-jina");
+  if (!rl.allowed) {
+    console.warn(`[SRC7-BING-JOBS] RATE LIMITED — ${rl.label}, ${rl.remaining}/${rl.total} remaining, retry in ${Math.ceil(rl.retryAfterMs / 1000)}s`);
+    return [];
+  }
+
+  const query = [params.q, params.location, "South Africa"].filter(Boolean).join(" ");
+  const bingUrl = new URL("https://www.bing.com/jobs");
+  bingUrl.searchParams.set("q", query);
+  bingUrl.searchParams.set("scp", "0");
+  bingUrl.searchParams.set("rb", "0");
+  bingUrl.searchParams.set("rc", "20");
+  bingUrl.searchParams.set("L2", "true");
+  bingUrl.searchParams.set("c", "1");
+  bingUrl.searchParams.set("form", "JOBL2S");
+
+  const jinaFetchUrl = `${JINA_READER_BASE}/${bingUrl.toString()}`;
+
+  console.log(`[SRC7-BING-JOBS] REQ params:`, JSON.stringify({ query, location: params.location || "South Africa" }));
+  console.log(`[SRC7-BING-JOBS] Bing URL: ${bingUrl.toString()}`);
+  console.log(`[SRC7-BING-JOBS] Jina fetch: ${jinaFetchUrl}`);
+
+  try {
+    const res = await fetch(jinaFetchUrl, {
+      headers: {
+        "Authorization": `Bearer ${jinaKey}`,
+        "Accept": "application/json",
+        "X-Return-Format": "markdown",
+      },
+    });
+
+    console.log(`[SRC7-BING-JOBS] HTTP ${res.status} ${res.statusText}`);
+
+    if (!res.ok) {
+      const err = await res.text();
+      console.error(`[SRC7-BING-JOBS] FAIL status=${res.status} body=${err.slice(0, 300)}`);
+      return [];
+    }
+
+    const data = await res.json();
+    const content = data?.data?.[0]?.content ?? data?.content ?? "";
+    console.log(`[SRC7-BING-JOBS] Response length: ${content.length} chars`);
+
+    if (!content || content.length < 50) {
+      console.warn(`[SRC7-BING-JOBS] Empty or too short response`);
+      return [];
+    }
+
+    recordApiCall("bing-jina");
+    const remaining = rl.remaining - 1;
+    console.log(`[SRC7-BING-JOBS] Quota: ${remaining}/${rl.total} remaining`);
+
+    // Parse job cards from the markdown content
+    const jobs = parseBingJobsMarkdown(content, params.location);
+    console.log(`[SRC7-BING-JOBS] OK ${jobs.length} jobs parsed`);
+    if (jobs.length > 0) {
+      console.log(`[SRC7-BING-JOBS] First: "${jobs[0].title}" at "${jobs[0].company_name}"`);
+    }
+
+    return jobs;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[SRC7-BING-JOBS] FAIL: ${msg.slice(0, 300)}`);
+    return [];
+  }
+}
+
+function parseBingJobsMarkdown(content: string, defaultLocation?: string): SerpJob[] {
+  const jobs: SerpJob[] = [];
+
+  // Bing Jobs markdown typically has job cards as sections with:
+  // **Job Title** at Company Name
+  // Location, Job Type
+  // Description snippet
+  // Source: via LinkedIn / Indeed / etc.
+
+  // Strategy: look for patterns that indicate job cards
+  // Pattern 1: Lines with **bold text** followed by company/location info
+  // Pattern 2: Lines with job titles that contain common job keywords
+
+  const lines = content.split("\n").map((l) => l.trim()).filter(Boolean);
+
+  let currentTitle = "";
+  let currentCompany = "";
+  let currentLocation = "";
+  let currentDescription = "";
+  let currentVia = "";
+
+  const jobKeywords = /\b(manager|developer|engineer|analyst|specialist|coordinator|director|assistant|consultant|designer|administrator|officer|lead|senior|junior|executive|representative|account|sales|marketing|finance|hr|human resources|it|tech|data|cloud|devops|product|project)\b/i;
+
+  for (const line of lines) {
+    // Skip navigation/filter noise
+    if (line.startsWith("## Filters") || line.startsWith("## Sort") || line.startsWith("Show") || line.startsWith("Skip to")) continue;
+
+    // Detect job title lines: **Bold text** or lines with job keywords
+    const boldMatch = line.match(/^\*\*(.+?)\*\*/);
+    const isJobTitle = boldMatch || (jobKeywords.test(line) && line.length < 150 && !line.startsWith("-") && !line.startsWith("*"));
+
+    if (isJobTitle && !line.includes("|")) {
+      // Save previous job if we have one
+      if (currentTitle) {
+        const viaSource = currentVia || extractViaSource(content, currentTitle);
+        jobs.push({
+          title: cleanText(currentTitle),
+          company_name: cleanText(currentCompany) || "Unknown",
+          location: cleanText(currentLocation) || defaultLocation || "",
+          description: cleanText(currentDescription).slice(0, 3000),
+          link: "",
+          via: viaSource,
+          hasFullSpec: false,
+          spec_source: "bing_jobs" as const,
+        });
+      }
+
+      // Start new job card
+      currentTitle = boldMatch ? boldMatch[1] : line;
+      currentCompany = "";
+      currentLocation = "";
+      currentDescription = "";
+      currentVia = "";
+      continue;
+    }
+
+    // After a title, look for company/location
+    if (currentTitle && !currentCompany) {
+      // Lines with "at Company" or just company name
+      const atMatch = line.match(/(?:at|@)\s+(.+)/i);
+      if (atMatch) {
+        currentCompany = atMatch[1];
+      } else if (line.length < 100 && !line.match(/\d{4}/) && !line.startsWith("**")) {
+        currentCompany = line;
+      }
+      continue;
+    }
+
+    // Look for location (contains comma, state abbreviations, or "South Africa")
+    if (currentTitle && currentCompany && !currentLocation) {
+      const locationPattern = /(?:,\s*(?:GT|WC|KZN|EC|FS|MP|NW|LP|NC)|Johannesburg|Cape Town|Durban|Pretoria|Sandton|Midrand|Remote|South Africa)/i;
+      if (locationPattern.test(line) || line.length < 60) {
+        currentLocation = line;
+        continue;
+      }
+    }
+
+    // Accumulate description
+    if (currentTitle && line.length > 30) {
+      currentDescription += (currentDescription ? " " : "") + line;
+    }
+
+    // Detect source/via
+    const viaMatch = line.match(/via\s+(LinkedIn|Indeed|Glassdoor|ZipRecruiter|PNet|CareerJunction|JobMail|Company Site|Direct)/i);
+    if (viaMatch) {
+      currentVia = viaMatch[1].toLowerCase();
+    }
+  }
+
+  // Don't forget the last job
+  if (currentTitle) {
+    const viaSource = currentVia || extractViaSource(content, currentTitle);
+    jobs.push({
+      title: cleanText(currentTitle),
+      company_name: cleanText(currentCompany) || "Unknown",
+      location: cleanText(currentLocation) || defaultLocation || "",
+      description: cleanText(currentDescription).slice(0, 3000),
+      link: "",
+      via: viaSource,
+      hasFullSpec: false,
+      spec_source: "bing_jobs" as const,
+    });
+  }
+
+  // Filter out obviously non-job entries
+  return jobs.filter((j) => {
+    const t = j.title.toLowerCase();
+    if (t.length < 3 || t.length > 200) return false;
+    if (t.includes("filter") || t.includes("sort") || t.includes("show") || t.includes("sign in")) return false;
+    if (j.company_name === "Unknown" && !jobKeywords.test(j.title)) return false;
+    return true;
+  });
+}
+
+function extractViaSource(content: string, title: string): string {
+  // Try to find "via X" near the job title in the content
+  const idx = content.indexOf(title);
+  if (idx >= 0) {
+    const snippet = content.slice(idx, idx + 300);
+    const viaMatch = snippet.match(/via\s+(LinkedIn|Indeed|Glassdoor|ZipRecruiter|PNet|CareerJunction|JobMail|Company Site|Direct)/i);
+    if (viaMatch) return viaMatch[1].toLowerCase();
+  }
+  return "bing_jobs";
+}
+
+function cleanText(text: string): string {
+  return text.replace(/\*\*/g, "").replace(/\s+/g, " ").trim();
 }
