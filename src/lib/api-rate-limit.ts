@@ -27,14 +27,12 @@ const API_LIMITS: Record<string, { windowMs: number; max: number; label: string 
   linkedin:  { windowMs: 60 * 60 * 1000,           max: 20,  label: "LinkedIn (20/hour)" },
   // Jina: rate-limited free tier. Conservative hourly cap.
   jina:      { windowMs: 60 * 60 * 1000,           max: 40,  label: "Jina (40/hour)" },
-  // Bing Jobs via Jina: uses Jina Reader to fetch Bing Jobs. Share Jina rate limit.
-  "bing-jina": { windowMs: 60 * 60 * 1000,         max: 30,  label: "Bing Jobs via Jina (30/hour)" },
+  // Bing Jobs via Jina: uses Jina Reader to fetch Bing Jobs pages. Free tier (no key required).
+  "bing-jina": { windowMs: 60 * 60 * 1000,         max: 30,  label: "Web Jobs / Jina (30/hour)" },
   // Scrappa: 500 credits/month (free). Reserve 50.
   scrappa:   { windowMs: 30 * 24 * 60 * 60 * 1000, max: 450, label: "Scrappa (450/500 monthly)" },
-  // Tavily: 1,000 credits/month (free). Reserve 100.
-  tavily:    { windowMs: 30 * 24 * 60 * 60 * 1000, max: 900, label: "Tavily (900/1000 monthly)" },
-  // Exa: 1,000 credits/month (free). Reserve 100.
-  exa:       { windowMs: 30 * 24 * 60 * 60 * 1000, max: 900, label: "Exa (900/1000 monthly)" },
+  // Firecrawl: 500 credits/month (free). Reserve 50.
+  firecrawl: { windowMs: 30 * 24 * 60 * 60 * 1000, max: 450, label: "Firecrawl (450/500 monthly)" },
 };
 
 /**
