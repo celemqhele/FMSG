@@ -1,7 +1,7 @@
 // BUILD_CACHE_BUST: jun30-1
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { searchGoogleJobs, searchJSearch, searchAdzuna, searchBingJobs, searchGooglePages, scrapeJobPage, extractJobUrlsFromListingPage, isListingPage, isIndividualJobPage, type SerpJob } from "@/lib/serpapi";
+import { searchGoogleJobs, searchJSearch, searchAdzuna, searchWebJobs, searchGooglePages, scrapeJobPage, extractJobUrlsFromListingPage, isListingPage, isIndividualJobPage, type SerpJob } from "@/lib/serpapi";
 import { extractText } from "@/lib/pdf";
 import { callAIWithFallback, lastAITier } from "@/lib/gemini";
 import { StreamWriter, type SearchEvent } from "@/lib/search-stream";
@@ -328,7 +328,7 @@ async function fetchAndFilterJobs(
       googleJobs: true,            // always run
       jSearch: isAll || hasNonLinkedIn,  // skip when only LinkedIn
       adzuna: isAll,               // only when All
-      bingJobs: isAll,             // Bing Jobs via Jina Reader
+      webJobs: isAll,               // Multi-service fallback (Jina → Firecrawl → Scrappa)
       googlePages: isAll,          // only when All
     };
 
@@ -344,8 +344,8 @@ async function fetchAndFilterJobs(
           return ["jSearch", withTimeout(searchJSearch(serpParams), 15_000, "JSearch").catch((err) => { console.error(`[PIPELINE] JSearch TIMEOUT/FAIL: ${err}`); return [] as SerpJob[]; })] as const;
         case "adzuna":
           return ["adzuna", withTimeout(searchAdzuna(serpParams), 8_000, "Adzuna").catch((err) => { console.error(`[PIPELINE] Adzuna TIMEOUT/FAIL: ${err}`); return [] as SerpJob[]; })] as const;
-        case "bingJobs":
-          return ["bingJobs", withTimeout(searchBingJobs(serpParams), 20_000, "Bing Jobs").catch((err) => { console.error(`[PIPELINE] Bing Jobs TIMEOUT/FAIL: ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}`); return [] as SerpJob[]; })] as const;
+        case "webJobs":
+          return ["webJobs", withTimeout(searchWebJobs(serpParams), 20_000, "Web Jobs").catch((err) => { console.error(`[PIPELINE] Web Jobs TIMEOUT/FAIL: ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}`); return [] as SerpJob[]; })] as const;
         case "googlePages":
           return ["googlePages", withTimeout(searchGooglePages(serpParams), 25_000, "Google Search/Jina").catch((err) => { console.error(`[PIPELINE] Google Search/Jina TIMEOUT/FAIL: ${err}`); return [] as { title: string; link: string; snippet: string; domain: string }[]; })] as const;
         default:
@@ -360,10 +360,10 @@ async function fetchAndFilterJobs(
     const googleJobs = (resultObj["googleJobs"] ?? []) as SerpJob[];
     const jsearchJobs = (resultObj["jSearch"] ?? []) as SerpJob[];
     const adzunaJobs = (resultObj["adzuna"] ?? []) as SerpJob[];
-    const bingJobsJobs = (resultObj["bingJobs"] ?? []) as SerpJob[];
+    const webJobsJobs = (resultObj["webJobs"] ?? []) as SerpJob[];
     const googlePages = (resultObj["googlePages"] ?? []) as { title: string; link: string; snippet: string; domain: string }[];
 
-    console.log(`[PIPELINE] Sources returned: GoogleJobs=${googleJobs.length} JSearch=${jsearchJobs.length} Adzuna=${adzunaJobs.length} BingJobs=${bingJobsJobs.length} GooglePages=${googlePages.length}`);
+    console.log(`[PIPELINE] Sources returned: GoogleJobs=${googleJobs.length} JSearch=${jsearchJobs.length} Adzuna=${adzunaJobs.length} WebJobs=${webJobsJobs.length} GooglePages=${googlePages.length}`);
 
     // Scrape Google Search URLs with Jina (two-step crawl, parallel)
     console.log(`[PIPELINE] Starting two-step crawl for ${googlePages.length} Google Search URLs`);
@@ -450,15 +450,15 @@ async function fetchAndFilterJobs(
       }
     }
 
-    // Priority order: JSearch (best inline) → Google Jobs → Bing Jobs → Google Search (Jina) → Adzuna (snippet)
-    console.log("[PIPELINE] Merging sources (priority: JSearch > Google > Bing Jobs > Scrape > Adzuna)");
+    // Priority order: JSearch (best inline) → Google Jobs → Web Jobs → Google Search (Jina) → Adzuna (snippet)
+    console.log("[PIPELINE] Merging sources (priority: JSearch > Google > Web Jobs > Scrape > Adzuna)");
     addJobs(jsearchJobs);
     addJobs(googleJobs);
-    addJobs(bingJobsJobs);
+    addJobs(webJobsJobs);
     addJobs(scrapedGoogleJobs);
     addJobs(adzunaJobs);
 
-    console.log(`[PIPELINE] Dedup complete: ${rawJobs.length} unique jobs from ${googleJobs.length + jsearchJobs.length + adzunaJobs.length + bingJobsJobs.length + scrapedGoogleJobs.length} total`);
+    console.log(`[PIPELINE] Dedup complete: ${rawJobs.length} unique jobs from ${googleJobs.length + jsearchJobs.length + adzunaJobs.length + webJobsJobs.length + scrapedGoogleJobs.length} total`);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.includes("(400)")) {

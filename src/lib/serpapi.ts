@@ -19,7 +19,7 @@ export interface SerpJob {
   apply_options?: ApplyOption[];
   job_highlights?: { link?: string };
   hasFullSpec?: boolean;
-  spec_source?: "google_jobs" | "jsearch" | "adzuna" | "linkedin" | "google_search" | "bing_jobs";
+  spec_source?: "google_jobs" | "jsearch" | "adzuna" | "linkedin" | "google_search" | "web_jobs";
 }
 
 interface SerpParams {
@@ -85,7 +85,7 @@ export async function searchJSearch(params: SerpParams): Promise<SerpJob[]> {
     return [];
   }
 
-  const query = [params.q, params.location, "South Africa"].filter(Boolean).join(" ");
+  const query = cleanQueryForSearch([params.q, params.location, "South Africa"].filter(Boolean).join(" "), params.location);
   const url = new URL("https://jsearch.p.rapidapi.com/search-v2");
   url.searchParams.set("query", query);
   url.searchParams.set("page", "1");
@@ -797,46 +797,36 @@ IMPORTANT RULES:
 }
 
 // ─── Source 7: Job Search via Fallback Chain ────────────────────────────────
-// Primary: Jina Reader (Bing Jobs) → Scrappa (Google Jobs) → Tavily → Exa
+// Reader chain (URL → markdown): Jina Reader → Firecrawl
+// Then Scrappa (Google Jobs API) as last resort
 
 const JINA_READER_BASE = "https://r.jina.ai";
 
-export async function searchBingJobs(params: SerpParams): Promise<SerpJob[]> {
-  const query = [params.q, params.location, "South Africa"].filter(Boolean).join(" ");
+export async function searchWebJobs(params: SerpParams): Promise<SerpJob[]> {
+  const query = cleanQueryForSearch([params.q, params.location, "South Africa"].filter(Boolean).join(" "), params.location);
   const location = params.location || "South Africa";
 
   console.log(`[SRC7-SEARCH] Starting fallback chain for query: "${query}"`);
 
-  // ─── Attempt 1: Jina Reader (Bing Jobs) ────────────────────────────────
-  const jinaResult = await tryJinaBingJobs(query, location);
+  // ─── Reader chain: fetch Bing Jobs page as markdown ────────────────────
+  const jinaResult = await tryJinaWebJobs(query, location);
   if (jinaResult.length > 0) return jinaResult;
 
-  // ─── Attempt 2: Scrappa (Google Jobs) ──────────────────────────────────
+  const firecrawlResult = await tryFirecrawlWebJobs(query, location);
+  if (firecrawlResult.length > 0) return firecrawlResult;
+
+  // ─── Last resort: Scrappa (Google Jobs API) ────────────────────────────
   const scrappaResult = await tryScrappaJobs(query, location);
   if (scrappaResult.length > 0) return scrappaResult;
-
-  // ─── Attempt 3: Tavily ─────────────────────────────────────────────────
-  const tavilyResult = await tryTavilyJobs(query, location);
-  if (tavilyResult.length > 0) return tavilyResult;
-
-  // ─── Attempt 4: Exa ────────────────────────────────────────────────────
-  const exaResult = await tryExaJobs(query, location);
-  if (exaResult.length > 0) return exaResult;
 
   // ─── All failed ────────────────────────────────────────────────────────
   console.warn(`[SRC7-SEARCH] ALL SOURCES FAILED — returning 0 jobs`);
   return [];
 }
 
-// ─── Attempt 1: Jina Reader → Bing Jobs ──────────────────────────────────
+// ─── Reader 1: Jina Reader (free, no key required) ────────────────────────
 
-async function tryJinaBingJobs(query: string, location: string): Promise<SerpJob[]> {
-  const jinaKey = process.env.JINA_API;
-  if (!jinaKey) {
-    console.warn(`[SRC7-JINA] SKIP — no JINA_API key`);
-    return [];
-  }
-
+async function tryJinaWebJobs(query: string, location: string): Promise<SerpJob[]> {
   const rl = checkApiLimit("bing-jina");
   if (!rl.allowed) {
     console.warn(`[SRC7-JINA] RATE LIMITED — ${rl.label}, ${rl.remaining}/${rl.total} remaining`);
@@ -856,13 +846,16 @@ async function tryJinaBingJobs(query: string, location: string): Promise<SerpJob
   console.log(`[SRC7-JINA] Fetching Bing Jobs via Jina: ${bingUrl.toString()}`);
 
   try {
-    const res = await fetch(jinaFetchUrl, {
-      headers: {
-        "Authorization": `Bearer ${jinaKey}`,
-        "Accept": "application/json",
-        "X-Return-Format": "markdown",
-      },
-    });
+    const jinaKey = process.env.JINA_API;
+    const headers: Record<string, string> = {
+      "Accept": "application/json",
+      "X-Return-Format": "markdown",
+    };
+    if (jinaKey) {
+      headers["Authorization"] = `Bearer ${jinaKey}`;
+    }
+
+    const res = await fetch(jinaFetchUrl, { headers });
 
     console.log(`[SRC7-JINA] HTTP ${res.status} ${res.statusText}`);
 
@@ -901,7 +894,8 @@ async function tryJinaBingJobs(query: string, location: string): Promise<SerpJob
 
 // ─── Attempt 2: Scrappa (Google Jobs API) ────────────────────────────────
 
-async function tryScrappaJobs(query: string, location: string): Promise<SerpJob[]> {
+async function tryScrappaJobs(rawQuery: string, location: string): Promise<SerpJob[]> {
+  const query = cleanQueryForSearch(rawQuery, location);
   const apiKey = process.env.SCRAPPA_API;
   if (!apiKey) {
     console.warn(`[SRC7-SCRAPPA] SKIP — no SCRAPPA_API key`);
@@ -960,7 +954,7 @@ async function tryScrappaJobs(query: string, location: string): Promise<SerpJob[
       via: String(j.via || "google_jobs").toLowerCase(),
       posted_at: j.detected_extensions?.posted_at || "",
       hasFullSpec: (j.description?.length ?? 0) > 300,
-      spec_source: "bing_jobs" as const,
+      spec_source: "web_jobs" as const,
     }));
 
     console.log(`[SRC7-SCRAPPA] SUCCESS — ${jobs.length} jobs parsed`);
@@ -975,179 +969,77 @@ async function tryScrappaJobs(query: string, location: string): Promise<SerpJob[
   }
 }
 
-// ─── Attempt 3: Tavily ───────────────────────────────────────────────────
+// ─── Reader 2: Firecrawl (500 free credits/month) ─────────────────────────
 
-async function tryTavilyJobs(query: string, location: string): Promise<SerpJob[]> {
-  const apiKey = process.env.TAVILY_API_KEY;
+async function tryFirecrawlWebJobs(query: string, location: string): Promise<SerpJob[]> {
+  const apiKey = process.env.FIRECRAWL_API_KEY;
   if (!apiKey) {
-    console.warn(`[SRC7-TAVILY] SKIP — no TAVILY_API_KEY key`);
+    console.warn(`[SRC7-FIRECRAWL] SKIP — no FIRECRAWL_API_KEY`);
     return [];
   }
 
-  const rl = checkApiLimit("tavily");
+  const rl = checkApiLimit("firecrawl");
   if (!rl.allowed) {
-    console.warn(`[SRC7-TAVILY] RATE LIMITED — ${rl.label}, ${rl.remaining}/${rl.total} remaining`);
+    console.warn(`[SRC7-FIRECRAWL] RATE LIMITED — ${rl.label}, ${rl.remaining}/${rl.total} remaining`);
     return [];
   }
 
-  const searchQuery = `${query} jobs site:linkedin.com OR site:indeed.com OR site:careerjunction.co.za OR site:pnet.co.za`;
-  console.log(`[SRC7-TAVILY] Searching: "${searchQuery.slice(0, 100)}..."`);
+  const bingUrl = new URL("https://www.bing.com/jobs");
+  bingUrl.searchParams.set("q", query);
+  bingUrl.searchParams.set("scp", "0");
+  bingUrl.searchParams.set("rb", "0");
+  bingUrl.searchParams.set("rc", "20");
+  bingUrl.searchParams.set("L2", "true");
+  bingUrl.searchParams.set("c", "1");
+  bingUrl.searchParams.set("form", "JOBL2S");
+
+  console.log(`[SRC7-FIRECRAWL] Fetching Bing Jobs via Firecrawl: ${bingUrl.toString()}`);
 
   try {
-    const res = await fetch("https://api.tavily.com/search", {
+    const res = await fetch("https://api.firecrawl.dev/v1/scrape", {
       method: "POST",
       headers: {
-        "Content-Type": "application/json",
         "Authorization": `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        query: searchQuery,
-        max_results: 10,
-        topic: "general",
-        search_depth: "basic",
-        include_domains: ["linkedin.com", "indeed.com", "careerjunction.co.za", "pnet.co.za", "glassdoor.co.za", "jobmail.co.za"],
-      }),
-    });
-
-    console.log(`[SRC7-TAVILY] HTTP ${res.status} ${res.statusText}`);
-
-    if (!res.ok) {
-      const err = await res.text();
-      if (res.status === 402) {
-        console.error(`[SRC7-TAVILY] OUT OF CREDITS (402) — will try next source`);
-      } else {
-        console.error(`[SRC7-TAVILY] FAIL status=${res.status} body=${err.slice(0, 200)}`);
-      }
-      return [];
-    }
-
-    const data = await res.json();
-    const results = data?.results ?? [];
-    console.log(`[SRC7-TAVILY] API returned ${results.length} results`);
-
-    if (results.length === 0) {
-      console.warn(`[SRC7-TAVILY] No results — will try next source`);
-      return [];
-    }
-
-    recordApiCall("tavily");
-    const jobs: SerpJob[] = results
-      .filter((r: any) => r.title && r.url)
-      .map((r: any) => {
-        const title = cleanText(r.title || "");
-        const content = r.content || "";
-        // Try to extract company from content (often "Company · Location" or "at Company")
-        const companyMatch = content.match(/(?:at|·|–|-)\s*([A-Z][A-Za-z\s&]+?)(?:\s*[·–-]|\s*$)/);
-        const company = companyMatch ? companyMatch[1].trim() : extractCompanyFromUrl(r.url);
-
-        return {
-          title: title.slice(0, 200),
-          company_name: company || "Unknown",
-          location: location,
-          description: content.slice(0, 3000),
-          link: String(r.url || ""),
-          via: extractDomain(r.url),
-          hasFullSpec: content.length > 300,
-          spec_source: "bing_jobs" as const,
-        };
-      });
-
-    console.log(`[SRC7-TAVILY] SUCCESS — ${jobs.length} jobs parsed`);
-    if (jobs.length > 0) {
-      console.log(`[SRC7-TAVILY] First: "${jobs[0].title}" at "${jobs[0].company_name}"`);
-    }
-    return jobs;
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[SRC7-TAVILY] EXCEPTION: ${msg.slice(0, 200)} — will try next source`);
-    return [];
-  }
-}
-
-// ─── Attempt 4: Exa (Neural Search) ──────────────────────────────────────
-
-async function tryExaJobs(query: string, location: string): Promise<SerpJob[]> {
-  const apiKey = process.env.EXA_API_KEY;
-  if (!apiKey) {
-    console.warn(`[SRC7-EXA] SKIP — no EXA_API_KEY key`);
-    return [];
-  }
-
-  const rl = checkApiLimit("exa");
-  if (!rl.allowed) {
-    console.warn(`[SRC7-EXA] RATE LIMITED — ${rl.label}, ${rl.remaining}/${rl.total} remaining`);
-    return [];
-  }
-
-  const searchQuery = `${query} jobs in ${location}, South Africa`;
-  console.log(`[SRC7-EXA] Searching: "${searchQuery.slice(0, 100)}..."`);
-
-  try {
-    const res = await fetch("https://api.exa.ai/search", {
-      method: "POST",
-      headers: {
-        "x-api-key": apiKey,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        query: searchQuery,
-        type: "auto",
-        numResults: 10,
-        contents: { highlights: true },
-        includeDomains: ["linkedin.com", "indeed.com", "careerjunction.co.za", "pnet.co.za", "glassdoor.co.za", "jobmail.co.za"],
+        url: bingUrl.toString(),
+        formats: ["markdown"],
+        onlyMainContent: true,
       }),
     });
 
-    console.log(`[SRC7-EXA] HTTP ${res.status} ${res.statusText}`);
+    console.log(`[SRC7-FIRECRAWL] HTTP ${res.status} ${res.statusText}`);
 
     if (!res.ok) {
       const err = await res.text();
       if (res.status === 402) {
-        console.error(`[SRC7-EXA] OUT OF CREDITS (402) — no more sources to try`);
+        console.error(`[SRC7-FIRECRAWL] OUT OF CREDITS (402) — will try next source`);
       } else {
-        console.error(`[SRC7-EXA] FAIL status=${res.status} body=${err.slice(0, 200)}`);
+        console.error(`[SRC7-FIRECRAWL] FAIL status=${res.status} body=${err.slice(0, 200)}`);
       }
       return [];
     }
 
     const data = await res.json();
-    const results = data?.results ?? [];
-    console.log(`[SRC7-EXA] API returned ${results.length} results`);
+    const content = data?.data?.markdown ?? "";
+    console.log(`[SRC7-FIRECRAWL] Response: ${content.length} chars`);
 
-    if (results.length === 0) {
-      console.warn(`[SRC7-EXA] No results — no more sources to try`);
+    if (!content || content.length < 50) {
+      console.warn(`[SRC7-FIRECRAWL] Empty or too short response — will try next source`);
       return [];
     }
 
-    recordApiCall("exa");
-    const jobs: SerpJob[] = results
-      .filter((r: any) => r.title && r.url)
-      .map((r: any) => {
-        const title = cleanText(r.title || "");
-        const highlights = (r.highlights ?? []).join(" ");
-        const content = highlights || r.text || "";
-        const company = extractCompanyFromUrl(r.url);
-
-        return {
-          title: title.slice(0, 200),
-          company_name: company || "Unknown",
-          location: location,
-          description: content.slice(0, 3000),
-          link: String(r.url || ""),
-          via: extractDomain(r.url),
-          hasFullSpec: content.length > 300,
-          spec_source: "bing_jobs" as const,
-        };
-      });
-
-    console.log(`[SRC7-EXA] SUCCESS — ${jobs.length} jobs parsed`);
+    recordApiCall("firecrawl");
+    const jobs = parseBingJobsMarkdown(content, location);
+    console.log(`[SRC7-FIRECRAWL] SUCCESS — ${jobs.length} jobs parsed`);
     if (jobs.length > 0) {
-      console.log(`[SRC7-EXA] First: "${jobs[0].title}" at "${jobs[0].company_name}"`);
+      console.log(`[SRC7-FIRECRAWL] First: "${jobs[0].title}" at "${jobs[0].company_name}"`);
     }
     return jobs;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[SRC7-EXA] EXCEPTION: ${msg.slice(0, 200)} — no more sources to try`);
+    console.error(`[SRC7-FIRECRAWL] EXCEPTION: ${msg.slice(0, 200)} — will try next source`);
     return [];
   }
 }
@@ -1203,9 +1095,9 @@ function parseBingJobsMarkdown(content: string, defaultLocation?: string): SerpJ
           location: cleanText(currentLocation) || defaultLocation || "",
           description: cleanText(currentDescription).slice(0, 3000),
           link: "",
-          via: currentVia || "bing_jobs",
+          via: currentVia || "bing",
           hasFullSpec: false,
-          spec_source: "bing_jobs" as const,
+          spec_source: "web_jobs" as const,
         });
       }
       currentTitle = boldMatch ? boldMatch[1] : line;
@@ -1253,7 +1145,7 @@ function parseBingJobsMarkdown(content: string, defaultLocation?: string): SerpJ
       link: "",
       via: currentVia || "bing_jobs",
       hasFullSpec: false,
-      spec_source: "bing_jobs" as const,
+      spec_source: "web_jobs" as const,
     });
   }
 
@@ -1268,4 +1160,59 @@ function parseBingJobsMarkdown(content: string, defaultLocation?: string): SerpJ
 
 function cleanText(text: string): string {
   return text.replace(/\*\*/g, "").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Strip Google operators and noise words from queries so they work
+ * across all sources (Adzuna, Scrappa, Bing, etc.).
+ */
+function cleanQueryForSearch(raw: string, location?: string): string {
+  let q = raw;
+  // Remove Google operators
+  q = q.replace(/"/g, "");
+  q = q.replace(/\*/g, "");
+  q = q.replace(/\bOR\b/gi, " ");
+  q = q.replace(/\bAND\b/gi, " ");
+  q = q.replace(/\bNOT\b/gi, " ");
+  // Remove noise words
+  const noiseWords = ["in", "jobs", "job", "hiring", "now", "near", "the", "a", "for", "of"];
+  const locLower = (location || "").toLowerCase();
+  for (const w of noiseWords) {
+    const re = new RegExp(`\\b${w}\\b`, "gi");
+    q = q.replace(re, " ");
+  }
+  // Strip location name if duplicated
+  if (locLower) {
+    for (const part of locLower.split(/[,\s]+/)) {
+      if (part.length > 2) {
+        const re = new RegExp(`\\b${part}\\b`, "gi");
+        q = q.replace(re, " ");
+      }
+    }
+  }
+  return q.replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Detect search/category pages that are NOT actual job listings.
+ * Returns true if the result should be filtered out.
+ */
+function isCategoryPage(title: string, url: string): boolean {
+  const t = title.toLowerCase();
+  const u = url.toLowerCase();
+
+  // Title patterns: "X+ jobs in Y", "X jobs in Y", etc.
+  if (/^\d+[\+]?\s+(jobs|vacancies|openings)/.test(t)) return true;
+  if (/^\d+[\+]?\s+\w+\s+jobs\b/.test(t)) return true;
+  if (/\bjobs\s+(and|&)\s+work\b/.test(t)) return true;
+  if (/^all\b/.test(t) && /\bjobs?\b/.test(t)) return true;
+  if (/^job\s+ad\b/.test(t)) return true;
+
+  // URL patterns: search/listing pages, not individual jobs
+  if (u.includes("/jobs/search")) return true;
+  if (u.includes("/jobs?")) return true;
+  if (u.includes("?q=") && u.includes("/jobs")) return true;
+  if (/\/jobs\/?$/.test(u)) return true;
+
+  return false;
 }
