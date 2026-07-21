@@ -817,15 +817,19 @@ export async function searchWebJobs(params: SerpParams): Promise<SerpJob[]> {
   console.log(`[SRC7-SEARCH] Starting fallback chain for query: "${query}"`);
 
   const jinaResult = await tryJinaWebJobs(query, location);
+  console.log(`[SRC7-SEARCH] Jina returned ${jinaResult.length} jobs`);
   if (jinaResult.length > 0) return jinaResult;
 
   const brightDataResult = await tryBrightDataWebJobs(query, location);
+  console.log(`[SRC7-SEARCH] Bright Data returned ${brightDataResult.length} jobs`);
   if (brightDataResult.length > 0) return brightDataResult;
 
   const apifyResult = await tryApifyWebJobs(query, location);
+  console.log(`[SRC7-SEARCH] Apify returned ${apifyResult.length} jobs`);
   if (apifyResult.length > 0) return apifyResult;
 
   const scrappaResult = await tryScrappaJobs(query, location);
+  console.log(`[SRC7-SEARCH] Scrappa returned ${scrappaResult.length} jobs`);
   if (scrappaResult.length > 0) return scrappaResult;
 
   console.warn(`[SRC7-SEARCH] ALL SOURCES FAILED — returning 0 jobs`);

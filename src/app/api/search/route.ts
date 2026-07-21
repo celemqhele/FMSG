@@ -353,9 +353,18 @@ async function fetchAndFilterJobs(
       }
     });
 
-    const results = await Promise.all(promiseEntries.map(([, p]) => p));
+    const pipelineStart = Date.now();
     const resultObj: Record<string, any[]> = {};
-    promiseEntries.forEach(([key], i) => { resultObj[key] = results[i]; });
+    const sourcePromises = promiseEntries.map(([key, promise]) => {
+      return promise.then((result) => {
+        resultObj[key] = result;
+        console.log(`[PIPELINE] ${key} resolved: ${(result as any[]).length} jobs (${Date.now() - pipelineStart}ms elapsed)`);
+      }).catch(() => { resultObj[key] = []; });
+    });
+
+    const PIPELINE_DEADLINE_MS = 60_000;
+    const deadline = new Promise<void>((resolve) => setTimeout(resolve, PIPELINE_DEADLINE_MS));
+    await Promise.race([Promise.all(sourcePromises), deadline]);
 
     const googleJobs = (resultObj["googleJobs"] ?? []) as SerpJob[];
     const jsearchJobs = (resultObj["jSearch"] ?? []) as SerpJob[];
@@ -363,7 +372,7 @@ async function fetchAndFilterJobs(
     const webJobsJobs = (resultObj["webJobs"] ?? []) as SerpJob[];
     const googlePages = (resultObj["googlePages"] ?? []) as { title: string; link: string; snippet: string; domain: string }[];
 
-    console.log(`[PIPELINE] Sources returned: GoogleJobs=${googleJobs.length} JSearch=${jsearchJobs.length} Adzuna=${adzunaJobs.length} WebJobs=${webJobsJobs.length} GooglePages=${googlePages.length}`);
+    console.log(`[PIPELINE] Sources returned after ${Date.now() - pipelineStart}ms: GoogleJobs=${googleJobs.length} JSearch=${jsearchJobs.length} Adzuna=${adzunaJobs.length} WebJobs=${webJobsJobs.length} GooglePages=${googlePages.length}`);
 
     // Scrape Google Search URLs with Jina (two-step crawl, parallel)
     console.log(`[PIPELINE] Starting two-step crawl for ${googlePages.length} Google Search URLs`);
