@@ -8,6 +8,7 @@ import { StreamWriter, type SearchEvent } from "@/lib/search-stream";
 import { debugLog } from "@/lib/debug";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { validateScrapeUrl } from "@/lib/url-validation";
+import { signContinuationToken, verifyAndDecodeContinuationToken } from "@/lib/continuation-token";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -1161,8 +1162,12 @@ export async function POST(request: NextRequest) {
     let profileIndustry = "";
 
     if (isContinuation) {
-      // Decode continuation state
-      state = JSON.parse(Buffer.from(continuation, "base64").toString());
+      // Decode continuation state securely
+      try {
+        state = verifyAndDecodeContinuationToken(continuation, SUPABASE_SERVICE_KEY);
+      } catch (err) {
+        return NextResponse.json({ error: "Invalid or tampered continuation token." }, { status: 400 });
+      }
     } else {
       // Get profile
       const { data: profile, error: profileErr } = await dataClient
@@ -1561,7 +1566,7 @@ Return ONLY valid JSON (no markdown, no code fences):
               type: "pause",
               message: `Found ${rawJobs.length} matching results. Ready to score?`,
               progress: 20,
-              continuation: Buffer.from(JSON.stringify({
+              continuation: signContinuationToken({
                 mode: "normal",
                 rawJobs,
                 jobSpecs,
@@ -1580,7 +1585,7 @@ Return ONLY valid JSON (no markdown, no code fences):
                 maxAgeDays: state.maxAgeDays,
                 profile_id: state.profile_id,
                 referralUrl: state.referralUrl,
-              })).toString("base64"),
+              }, SUPABASE_SERVICE_KEY),
             });
             writer.close();
             return;
@@ -1667,10 +1672,44 @@ Return ONLY valid JSON (no markdown, no code fences):
           for (let i = startRoundIndex; i < MAX_ROUNDS; i++) {
             const roundNum = i + 1;
 
-            if (Date.now() - pfStartTime > 240_000) {
-              debugLog(`[PF] Time limit reached, stopping after ${pfRoundsExecuted} rounds`);
+            if (Date.now() - pfStartTime > 270_000) {
+              debugLog(`[PF] Time limit reached (270s), pausing after round ${roundNum - 1}`);
               pfAborted = true;
-              break;
+              
+              // Immediate checkpoint and pause
+              sendComplete({
+                type: "pause",
+                message: `Timeout approaching, saving progress at round ${roundNum - 1}.`,
+                progress: Math.min(((roundNum - 1) / MAX_ROUNDS) * 80, 80),
+                continuation: Buffer.from(JSON.stringify({
+                  mode: "pf",
+                  nextRoundIndex: i, // Resume from current round
+                  allResults,
+                  seenUrls: [...seenUrls],
+                  pfFilteredCounts,
+                  pfRoundsExecuted,
+                  pfAborted: true,
+                  searchId,
+                  titles: pfTitles,
+                  titleChainSteps,
+                  industryChain,
+                  profileLocation: pfLocation,
+                  profileIndustry: pfIndustry,
+                  cvTexts: pfCvTexts,
+                  bannedJobs: pfBannedJobs,
+                  bannedCompanies: pfBannedCompanies,
+                  dedupSets: {
+                    history: pfDedupSets.history ? [...pfDedupSets.history] : [],
+                    saved: pfDedupSets.saved ? [...pfDedupSets.saved] : [],
+                    blocked: pfDedupSets.blocked ? [...pfDedupSets.blocked] : [],
+                    rejected: pfDedupSets.rejected ? [...pfDedupSets.rejected] : [],
+                  },
+                  maxAgeDays: state.maxAgeDays,
+                  profile_id: state.profile_id,
+                })).toString("base64"),
+              });
+              writer.close();
+              return;
             }
 
             const titles = titleChainSteps[i];
@@ -1749,7 +1788,7 @@ Return ONLY valid JSON (no markdown, no code fences):
                   type: "pause",
                   message: `Round ${roundNum} of ${MAX_ROUNDS} complete, ${allResults.length} results so far. Continue to round ${roundNum + 1}?`,
                   progress: Math.min((roundNum / MAX_ROUNDS) * 80, 80),
-                  continuation: Buffer.from(JSON.stringify({
+                  continuation: signContinuationToken({
                     mode: "pf",
                     nextRoundIndex: i + 1,
                     allResults,
@@ -1774,7 +1813,7 @@ Return ONLY valid JSON (no markdown, no code fences):
                     },
                     maxAgeDays: state.maxAgeDays,
                     profile_id: state.profile_id,
-                  })).toString("base64"),
+                  }, SUPABASE_SERVICE_KEY),
                 });
                 writer.close();
                 return;

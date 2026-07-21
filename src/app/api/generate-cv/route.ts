@@ -316,8 +316,12 @@ export async function POST(request: NextRequest) {
     const isAdmin = (profile as any)?.is_admin ?? false;
 
     if (!isAdmin) {
-      const balance = (profile as any)?.cv_generation_balance ?? 0;
-      if (balance <= 0) {
+      const { data: newBalance, error: decErr } = await supabase.rpc("decrement_cv_balance", {
+        p_user_id: user.id,
+        p_amount: 1,
+      });
+
+      if (decErr || newBalance === null || newBalance < 0) {
         return NextResponse.json({ code: "LIMIT_002", message: "No CV generation credits remaining." }, { status: 403 });
       }
     }
@@ -539,17 +543,6 @@ Use the job spec to identify what skills and experience to emphasise. Use the CV
     // Build DOCX with teal-bar design
     const doc = buildDoc(parsed);
     const buffer = await Packer.toBuffer(doc);
-
-    // Decrement balance (skip if admin)
-    if (!isAdmin) {
-      const { error: decErr } = await supabase.rpc("decrement_cv_balance", {
-        p_user_id: user.id,
-        p_amount: 1,
-      });
-      if (decErr) {
-        console.error("[GENERATE-CV] Failed to decrement balance:", decErr.message);
-      }
-    }
 
     const filename = `CV - ${parsed.name || jobTitle} - ${company} - FMSG.docx`.replace(/[/\\?%*:|"<>]/g, "_");
     return new NextResponse(new Uint8Array(buffer), {

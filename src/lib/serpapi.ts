@@ -831,7 +831,7 @@ export async function searchJinaGoogleJobs(params: SerpParams): Promise<SerpJob[
   googleJobsUrl.searchParams.set("gl", "za");
   googleJobsUrl.searchParams.set("hl", "en");
 
-  const jinaFetchUrl = `${JINA_READER_BASE}/${googleJobsUrl.toString()}`;
+  const jinaFetchUrl = `${JINA_READER_BASE}/${encodeURIComponent(googleJobsUrl.toString())}`;
   console.log(`[SRC8-JINA-GOOGLE] Fetching Google Jobs via Jina: ${googleJobsUrl.toString()}`);
 
   try {
@@ -1036,7 +1036,7 @@ async function tryJinaWebJobs(query: string, location: string): Promise<SerpJob[
   bingUrl.searchParams.set("cc", "ZA");
   bingUrl.searchParams.set("form", "JOBL2S");
 
-  const jinaFetchUrl = `${JINA_READER_BASE}/${bingUrl.toString()}`;
+  const jinaFetchUrl = `${JINA_READER_BASE}/${encodeURIComponent(bingUrl.toString())}`;
   console.log(`[SRC7-JINA] Fetching Bing Jobs via Jina: ${bingUrl.toString()}`);
 
   try {
@@ -1195,7 +1195,7 @@ async function tryBrightDataWebJobs(query: string, location: string): Promise<Se
     browser = await puppeteer.connect({ browserWSEndpoint: wsEndpoint });
     const page = await browser.newPage();
 
-    await page.goto(bingUrl.toString(), { waitUntil: "domcontentloaded", timeout: 25000 });
+    await page.goto(bingUrl.toString(), { waitUntil: "domcontentloaded", timeout: 60000 });
 
     // Wait for job cards to render
     try {
@@ -1265,8 +1265,6 @@ async function tryApifyWebJobs(query: string, location: string): Promise<SerpJob
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           url: bingUrl.toString(),
-          scrapingTool: "browser-playwright",
-          removeElementsCssSelector: "nav, footer, script, style, noscript, svg, img",
         }),
       }
     );

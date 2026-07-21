@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { checkBodySize } from "@/lib/body-size";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -27,6 +28,9 @@ export async function POST(request: NextRequest) {
   if (!hash) {
     return NextResponse.json({ error: "Missing signature" }, { status: 401 });
   }
+
+  const sizeError = checkBodySize(request, 1_000_000);
+  if (sizeError) return sizeError;
 
   const body = await request.text();
   const expectedHash = await createHmac(body, PAYSTACK_SECRET_KEY);

@@ -70,23 +70,16 @@ export async function POST(request: NextRequest) {
 
     const isAdmin = (profile as any)?.is_admin ?? false;
 
-    // Balance check
+    // Decrement balance atomically (skip if admin)
     if (!isAdmin) {
-      const balance = profile.cv_generation_balance ?? 0;
-      if (balance <= 0) {
-        return NextResponse.json({ error: "LIMIT_002", code: "LIMIT_002" }, { status: 403 });
-      }
-    }
-
-    // Decrement balance atomically
-    if (!isAdmin) {
-      const { error: decErr } = await supabase.rpc("decrement_cv_balance", {
+      const { data: newBalance, error: decErr } = await supabase.rpc("decrement_cv_balance", {
         p_user_id: user.id,
         p_amount: 1,
       });
 
-      if (decErr) {
-        console.error("[TAILOR-CV] Failed to decrement balance:", decErr.message);
+      if (decErr || newBalance === null || newBalance < 0) {
+        console.error("[TAILOR-CV] Failed to decrement balance:", decErr?.message);
+        return NextResponse.json({ error: "LIMIT_002", code: "LIMIT_002" }, { status: 403 });
       }
     }
 
