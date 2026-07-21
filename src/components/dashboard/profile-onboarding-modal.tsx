@@ -128,11 +128,11 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
       try {
         // Upload all files to storage in parallel
         const uploads = files.map(async (f) => {
-          const ext = f.name.split('.').pop();
-          const filePath = `${session.user.id}/${crypto.randomUUID()}.${ext}`;
+          const safeName = f.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+          const filePath = `${session.user.id}/${safeName}`;
           const { error: uploadErr } = await supabase.storage
             .from("cv-files")
-            .upload(filePath, f, { contentType: f.type || "application/pdf" });
+            .upload(filePath, f, { contentType: f.type || "application/pdf", upsert: true });
           if (uploadErr) throw new Error("Failed to upload CV.");
           return { file: f, filePath };
         });
@@ -267,11 +267,11 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
     const uploadedPaths: string[] = [];
 
     for (const f of toUpload) {
-      const fileExt = f.name.split('.').pop();
-      const filePath = `${session.user.id}/${crypto.randomUUID()}.${fileExt}`;
+      const safeName = f.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const filePath = `${session.user.id}/${safeName}`;
       const { error: uploadErr } = await supabase.storage
         .from("cv-files")
-        .upload(filePath, f, { contentType: f.type || "application/pdf" });
+        .upload(filePath, f, { contentType: f.type || "application/pdf", upsert: true });
 
       if (uploadErr) {
         setError("Failed to upload CV. Please try again.");
@@ -346,11 +346,11 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
         await supabase.storage.from("cv-files").remove([oldCv.file_path]);
       }
 
-      const fileExt = f.name.split('.').pop();
-      const filePath = `${session.user.id}/${crypto.randomUUID()}.${fileExt}`;
+      const safeName = f.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const filePath = `${session.user.id}/${safeName}`;
       const { error: uploadErr } = await supabase.storage
         .from("cv-files")
-        .upload(filePath, f, { contentType: f.type || "application/pdf" });
+        .upload(filePath, f, { contentType: f.type || "application/pdf", upsert: true });
 
       if (uploadErr) {
         setError("Failed to upload CV. Please try again.");

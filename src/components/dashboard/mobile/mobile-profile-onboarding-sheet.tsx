@@ -106,9 +106,9 @@ export function MobileProfileOnboardingSheet({ profileId, onClose, onDelete, edi
       if (!session) { setError("Not authenticated."); setStep("upload"); return; }
       try {
         const uploads = files.map(async (f) => {
-          const ext = f.name.split('.').pop();
-          const filePath = `${session.user.id}/${crypto.randomUUID()}.${ext}`;
-          const { error: uploadErr } = await supabase.storage.from("cv-files").upload(filePath, f, { contentType: f.type || "application/pdf" });
+          const safeName = f.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+          const filePath = `${session.user.id}/${safeName}`;
+          const { error: uploadErr } = await supabase.storage.from("cv-files").upload(filePath, f, { contentType: f.type || "application/pdf", upsert: true });
           if (uploadErr) throw new Error("Failed to upload CV.");
           return { file: f, filePath };
         });
@@ -170,8 +170,9 @@ export function MobileProfileOnboardingSheet({ profileId, onClose, onDelete, edi
 
     const uploadedPaths: string[] = [];
     for (const f of toUpload) {
-      const filePath = `${session.user.id}/${crypto.randomUUID()}.${f.name.split('.').pop()}`;
-      const { error: uploadErr } = await supabase.storage.from("cv-files").upload(filePath, f, { contentType: f.type || "application/pdf" });
+      const safeName = f.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const filePath = `${session.user.id}/${safeName}`;
+      const { error: uploadErr } = await supabase.storage.from("cv-files").upload(filePath, f, { contentType: f.type || "application/pdf", upsert: true });
       if (uploadErr) { setError("Failed to upload CV."); setUploadingCv(false); return; }
       uploadedPaths.push(filePath);
     }
@@ -345,7 +346,7 @@ export function MobileProfileOnboardingSheet({ profileId, onClose, onDelete, edi
                       </div>
                       <div className="flex items-center gap-1.5 text-[10px] text-white/60 mt-1 pl-5">
                         <span className="truncate flex-1">{cv.file_path.split('/').pop()}</span>
-                        <button onClick={() => { const input = document.createElement("input"); input.type = "file"; input.accept = ".pdf,.docx"; input.onchange = async (e) => { const f = (e.target as HTMLInputElement).files?.[0]; if (!f) return; setUploadingCv(true); const supabase = createClient(); const { data: { session } } = await supabase.auth.getSession(); if (!session) { setUploadingCv(false); return; } if (cvVariations[i]?.file_path) await supabase.storage.from("cv-files").remove([cvVariations[i].file_path]); const filePath = `${session.user.id}/${crypto.randomUUID()}.${f.name.split('.').pop()}`; await supabase.storage.from("cv-files").upload(filePath, f, { contentType: f.type }); setCvVariations((prev) => prev.map((cv, idx) => idx === i ? { ...cv, file_path: filePath } : cv)); setUploadingCv(false); }; input.click(); }}
+                        <button onClick={() => { const input = document.createElement("input"); input.type = "file"; input.accept = ".pdf,.docx"; input.onchange = async (e) => { const f = (e.target as HTMLInputElement).files?.[0]; if (!f) return; setUploadingCv(true); const supabase = createClient(); const { data: { session } } = await supabase.auth.getSession(); if (!session) { setUploadingCv(false); return; } if (cvVariations[i]?.file_path) await supabase.storage.from("cv-files").remove([cvVariations[i].file_path]); const safeName = f.name.replace(/[^a-zA-Z0-9._-]/g, "_"); const filePath = `${session.user.id}/${safeName}`; await supabase.storage.from("cv-files").upload(filePath, f, { contentType: f.type, upsert: true }); setCvVariations((prev) => prev.map((cv, idx) => idx === i ? { ...cv, file_path: filePath } : cv)); setUploadingCv(false); }; input.click(); }}
                           className="text-[var(--color-accent)]">Replace</button>
                         {cvVariations.length > 1 && <button onClick={() => setCvVariations((prev) => prev.filter((_, idx) => idx !== i))} className="text-red-400"><X size={10} /></button>}
                       </div>

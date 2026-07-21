@@ -68,11 +68,11 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
 
     try {
       const uploads = fileArr.map(async (f) => {
-        const ext = f.name.split('.').pop();
-        const filePath = `${session?.user?.id ?? "unknown"}/${crypto.randomUUID()}.${ext}`;
+        const safeName = f.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+        const filePath = `${session?.user?.id ?? "unknown"}/${safeName}`;
         const { error: uploadErr } = await supabase.storage
           .from("cv-files")
-          .upload(filePath, f, { contentType: f.type || "application/pdf" });
+          .upload(filePath, f, { contentType: f.type || "application/pdf", upsert: true });
         if (uploadErr) throw new Error("Failed to upload CV.");
         return { file: f, filePath };
       });
