@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { callAIWithFallback } from "@/lib/gemini";
 import { extractText } from "@/lib/pdf";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } from "docx";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -33,6 +34,14 @@ export async function POST(request: NextRequest) {
     const { data: { user }, error: authErr } = await supabase.auth.getUser(authHeader);
     if (authErr || !user) {
       return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+    }
+
+    const rl = checkRateLimit(`tailor:${user.id}`, "tailor");
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { code: "RATE_LIMITED", message: `Too many requests. Try again in ${Math.ceil((rl.resetAt - Date.now()) / 1000)}s.` },
+        { status: 429, headers: { "Retry-After": String(Math.ceil((rl.resetAt - Date.now()) / 1000)) } }
+      );
     }
 
     const { job_description, job_title, company } = await request.json();

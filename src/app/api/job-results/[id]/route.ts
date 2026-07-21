@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { logError } from "@/lib/debug";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -21,6 +22,14 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
       console.error("[HISTORY] Hide request auth failed:", authErr?.message ?? "no user");
       logError(null, "HISTORY_AUTH_FAIL", authErr?.message ?? "no user");
       return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+    }
+
+    const rl = checkRateLimit(`job-results:${user.id}`, "job-results");
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { code: "RATE_LIMITED", message: `Too many requests. Try again in ${Math.ceil((rl.resetAt - Date.now()) / 1000)}s.` },
+        { status: 429, headers: { "Retry-After": String(Math.ceil((rl.resetAt - Date.now()) / 1000)) } }
+      );
     }
 
     const body = await request.json().catch(() => ({}));

@@ -20,6 +20,9 @@ const DEFAULTS: Record<string, { windowMs: number; max: number }> = {
   verify:       { windowMs: 300_000, max: 10 },
   appeal:       { windowMs: 3_600_000, max: 2 },
   guest_search: { windowMs: 86_400_000, max: 1 },
+  tailor:       { windowMs: 60_000, max: 3 },
+  "change-plan": { windowMs: 3_600_000, max: 3 },
+  "job-results": { windowMs: 60_000, max: 20 },
 };
 
 export function checkRateLimit(
