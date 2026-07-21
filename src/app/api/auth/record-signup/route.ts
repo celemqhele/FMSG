@@ -25,6 +25,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const { data: alreadyBlocked } = await supabase
+      .from("blocked_ips")
+      .select("id")
+      .eq("ip", ip)
+      .maybeSingle();
+
+    if (alreadyBlocked) {
+      await supabase
+        .from("profiles")
+        .update({ signup_ip: ip, account_status: "blocked" })
+        .eq("id", user.id);
+      return NextResponse.json({ ok: true });
+    }
+
     await supabase
       .from("profiles")
       .update({ signup_ip: ip })
@@ -47,7 +61,8 @@ export async function POST(request: NextRequest) {
         await supabase
           .from("profiles")
           .update({ account_status: "blocked" })
-          .eq("signup_ip", ip);
+          .eq("signup_ip", ip)
+          .gte("created_at", twentyFourHoursAgo);
       }
     }
 

@@ -85,7 +85,8 @@ export async function POST(request: NextRequest) {
       .single();
 
     const currentPfRefill = profile?.pf_refill ?? 0;
-    const newPfCount = pf_count != null ? pf_count : PLAN_LIMITS[newPlan]?.pf_balance ?? 0;
+    const rawPfCount = pf_count != null ? pf_count : PLAN_LIMITS[newPlan]?.pf_balance ?? 0;
+    const newPfCount = Math.min(Math.max(0, Math.floor(Number(rawPfCount) || 0)), 25);
 
     const now = new Date();
     const newExpiry = new Date(now);

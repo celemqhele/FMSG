@@ -281,6 +281,7 @@ export default function DashboardPage() {
         .eq("user_id", session.user.id)
         .eq("is_deleted", false)
         .order("created_at", { ascending: false })
+        .limit(100)
         .then(({ data, error }: { data: any; error: any }) => {
           if (error) console.error("[HISTORY] Failed to load history:", error.message);
           setHistoryResults((data ?? []) as HistoryResult[]);
