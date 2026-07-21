@@ -339,15 +339,15 @@ async function fetchAndFilterJobs(
     const promiseEntries = Object.entries(sources).filter(([, enabled]) => enabled).map(([key]) => {
       switch (key) {
         case "googleJobs":
-          return ["googleJobs", withTimeout(fetchPaginatedJobs(serpParams, pages), 7_500, "Google Jobs").catch((err) => { console.error(`[PIPELINE] Google Jobs TIMEOUT/FAIL: ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}`); return [] as SerpJob[]; })] as const;
+          return ["googleJobs", withTimeout(fetchPaginatedJobs(serpParams, pages), 60_000, "Google Jobs").catch((err) => { console.error(`[PIPELINE] Google Jobs TIMEOUT/FAIL: ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}`); return [] as SerpJob[]; })] as const;
         case "jSearch":
-          return ["jSearch", withTimeout(searchJSearch(serpParams), 3_750, "JSearch").catch((err) => { console.error(`[PIPELINE] JSearch TIMEOUT/FAIL: ${err}`); return [] as SerpJob[]; })] as const;
+          return ["jSearch", withTimeout(searchJSearch(serpParams), 60_000, "JSearch").catch((err) => { console.error(`[PIPELINE] JSearch TIMEOUT/FAIL: ${err}`); return [] as SerpJob[]; })] as const;
         case "adzuna":
-          return ["adzuna", withTimeout(searchAdzuna(serpParams), 4_000, "Adzuna").catch((err) => { console.error(`[PIPELINE] Adzuna TIMEOUT/FAIL: ${err}`); return [] as SerpJob[]; })] as const;
+          return ["adzuna", withTimeout(searchAdzuna(serpParams), 60_000, "Adzuna").catch((err) => { console.error(`[PIPELINE] Adzuna TIMEOUT/FAIL: ${err}`); return [] as SerpJob[]; })] as const;
         case "webJobs":
-          return ["webJobs", withTimeout(searchWebJobs(serpParams), 10_000, "Web Jobs").catch((err) => { console.error(`[PIPELINE] Web Jobs TIMEOUT/FAIL: ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}`); return [] as SerpJob[]; })] as const;
+          return ["webJobs", withTimeout(searchWebJobs(serpParams), 60_000, "Web Jobs").catch((err) => { console.error(`[PIPELINE] Web Jobs TIMEOUT/FAIL: ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}`); return [] as SerpJob[]; })] as const;
         case "googlePages":
-          return ["googlePages", withTimeout(searchGooglePages(serpParams), 12_500, "Google Search/Jina").catch((err) => { console.error(`[PIPELINE] Google Search/Jina TIMEOUT/FAIL: ${err}`); return [] as { title: string; link: string; snippet: string; domain: string }[]; })] as const;
+          return ["googlePages", withTimeout(searchGooglePages(serpParams), 60_000, "Google Search/Jina").catch((err) => { console.error(`[PIPELINE] Google Search/Jina TIMEOUT/FAIL: ${err}`); return [] as { title: string; link: string; snippet: string; domain: string }[]; })] as const;
         default:
           return [key, Promise.resolve([])] as const;
       }
@@ -377,7 +377,7 @@ async function fetchAndFilterJobs(
         return { type: "direct" as const, url: v.link, domain: v.domain, title: v.title };
       } else if (isListingPage(v.link)) {
         console.log(`[PIPELINE] Listing page detected, extracting URLs: ${v.link}`);
-        const individualUrls = await withTimeout(extractJobUrlsFromListingPage(v.link, JINA_API ?? null), 7_500, `Jina extract ${v.domain}`).catch(() => [] as string[]);
+        const individualUrls = await withTimeout(extractJobUrlsFromListingPage(v.link, JINA_API ?? null), 60_000, `Jina extract ${v.domain}`).catch(() => [] as string[]);
         console.log(`[PIPELINE] Extracted ${individualUrls.length} individual URLs from ${v.domain}`);
         return { type: "listing" as const, urls: individualUrls, domain: v.domain };
       } else {
@@ -407,7 +407,7 @@ async function fetchAndFilterJobs(
       const batch = safeUrlsToScrape.slice(i, i + CONCURRENCY);
       const batchResults = await Promise.all(
         batch.map(({ url, domain, title }) =>
-          withTimeout(scrapeJobPage(url, JINA_API ?? null), 7_500, `Jina scrape ${domain}`)
+          withTimeout(scrapeJobPage(url, JINA_API ?? null), 60_000, `Jina scrape ${domain}`)
             .then((job) => {
               if (job) {
                 if (title) job.title = job.title || title;
