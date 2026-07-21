@@ -1,5 +1,5 @@
 import { checkApiLimit, recordApiCall, recordApiFailure } from "./api-rate-limit";
-import { chromium } from "playwright";
+import puppeteer from "puppeteer-core";
 
 const SERPAPI_KEY = process.env.SERPAPI_API_KEY;
 
@@ -1192,10 +1192,10 @@ async function tryBrightDataWebJobs(query: string, location: string): Promise<Se
 
   let browser;
   try {
-    browser = await chromium.connectOverCDP(wsEndpoint);
+    browser = await puppeteer.connect({ browserWSEndpoint: wsEndpoint });
     const page = await browser.newPage();
 
-    await page.goto(bingUrl.toString(), { timeout: 60000 });
+    await page.goto(bingUrl.toString(), { waitUntil: "domcontentloaded", timeout: 60000 });
 
     // Wait for job cards to render
     try {
