@@ -40,6 +40,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Job description required." }, { status: 400 });
     }
 
+    if (job_description.length > 10000) {
+      return NextResponse.json({ error: "Job description too long (max 10,000 characters)." }, { status: 400 });
+    }
+
     // Get profile for CV file path
     const { data: profile, error: profileErr } = await supabase
       .from("profiles")

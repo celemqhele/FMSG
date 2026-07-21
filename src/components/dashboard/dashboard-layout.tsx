@@ -52,13 +52,17 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
   const [mobileProfileSheetOpen, setMobileProfileSheetOpen] = useState(false);
 
   useEffect(() => {
-    const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL;
-    if (!adminEmail) return;
     const supabase = createClient();
     supabase.auth.getSession().then(({ data: { session } }: { data: { session: any } }) => {
-      if (session?.user?.email === adminEmail) {
-        setIsAdmin(true);
-      }
+      if (!session?.user) return;
+      supabase
+        .from("profiles")
+        .select("is_admin")
+        .eq("id", session.user.id)
+        .maybeSingle()
+        .then(({ data }: { data: any }) => {
+          if (data?.is_admin) setIsAdmin(true);
+        });
     });
   }, []);
 
