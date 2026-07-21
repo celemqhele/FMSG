@@ -1,1 +1,0 @@
-About page content component. Shows four liquid glass cards in a 2x2 grid: Mission, How It Works, Privacy First, Who It's For. Uses lucide-react icons.

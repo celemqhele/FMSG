@@ -1,1 +1,0 @@
-Global client component in root layout. Listens for SIGNED_IN events, checks profiles table for onboarding_completed. If done → redirects to / (dashboard). If not → redirects to /auth/confirm. Skips if already on /auth/* routes. Uses onAuthStateChange only (no mount-time detection) to avoid redirect loops.

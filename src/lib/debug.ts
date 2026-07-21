@@ -8,12 +8,6 @@ export function debugLog(...args: unknown[]) {
   }
 }
 
-export function debugError(...args: unknown[]) {
-  if (DEBUG) {
-    console.error(...args);
-  }
-}
-
 export function logError(userId: string | null, errorCode: string, message: string) {
   try {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;

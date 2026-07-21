@@ -75,27 +75,11 @@ function btn(label: string, href: string) {
   return `<div style="margin:28px 0 8px"><a href="${href}" style="display:inline-block;background:#0071E3;background:linear-gradient(180deg,rgba(255,255,255,0.12) 0%,transparent 100%),#0071E3;color:#fff;text-decoration:none;padding:12px 32px;border-radius:10px;font-size:14px;font-weight:600;border:1px solid rgba(255,255,255,0.12);box-shadow:0 1px 0 rgba(255,255,255,0.06) inset,0 2px 8px rgba(0,113,227,0.25)">${label}</a></div>`;
 }
 
-function subtleBtn(label: string, href: string) {
-  return `<div style="margin:28px 0 8px"><a href="${href}" style="display:inline-block;background:rgba(255,255,255,0.08);color:#F5F5F7;text-decoration:none;padding:12px 32px;border-radius:10px;font-size:14px;font-weight:600;border:1px solid rgba(255,255,255,0.10);box-shadow:0 1px 0 rgba(255,255,255,0.03) inset,0 2px 8px rgba(0,0,0,0.3)">${label}</a></div>`;
-}
-
 function p(text: string) {
   return `<p style="font-size:15px;line-height:1.6;color:#E4E4E4;margin:0 0 16px">${text}</p>`;
 }
 
 // ── Public functions ─────────────────────────────────────────────
-
-export async function sendWelcomeEmail(to: string, name?: string) {
-  const greeting = name ? `Hi ${name.split(" ")[0]},` : "Hi,";
-  const subject = "Welcome to Find Me Some Jobs";
-  const html = wrap(`
-    <p style="font-size:15px;line-height:1.6;color:#F5F5F7;margin:0 0 16px">${greeting}</p>
-    ${p("Your account is all set up. Upload your CV and start finding jobs that match your skills.")}
-    ${p("You get <strong style=\"color:#F5F5F7\">1 free search</strong> to try it out. Paid packages unlock more searches, CV generations, and Persistent Finder rounds.")}
-    ${btn("Go to Dashboard", "https://findmesomejobs.co.za/dashboard")}
-  `);
-  await sendEmail(to, subject, html, "welcome");
-}
 
 export async function sendSubscriptionConfirmation(to: string, plan: string, billingCycle: string, amount: string) {
   const expiryDays = billingCycle === "annual" ? 365 : 30;
@@ -110,40 +94,6 @@ export async function sendSubscriptionConfirmation(to: string, plan: string, bil
     <p style="font-size:12px;color:#8E8E93;margin:12px 0 0">Reference will appear on your statement as "FMSG" or "Find Me Some Jobs".</p>
   `);
   await sendEmail(to, subject, html, "subscription");
-}
-
-export async function sendPaymentFailed(to: string, plan: string) {
-  const subject = "Your payment did not go through";
-  const html = wrap(`
-    <p style="font-size:15px;line-height:1.6;color:#F5F5F7;margin:0 0 16px">We were unable to process your payment for the <strong style="color:#fff">${plan}</strong> package.</p>
-    ${p("This could be due to insufficient funds, an expired card, or your bank declining the transaction. Don't worry, we'll retry automatically.")}
-    ${btn("Update Payment Method", "https://findmesomejobs.co.za/upgrade")}
-    <p style="font-size:12px;color:#8E8E93;margin:12px 0 0">Your access continues until the end of your current billing period.</p>
-  `);
-  await sendEmail(to, subject, html, "payment-failed");
-}
-
-export async function sendSubscriptionRenewed(to: string, plan: string, amount: string) {
-  const expiryDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
-    .toLocaleDateString("en-ZA", { day: "numeric", month: "long", year: "numeric" });
-  const subject = `Your ${plan} package has been topped up`;
-  const html = wrap(`
-    <p style="font-size:15px;line-height:1.6;color:#F5F5F7;margin:0 0 16px">Your <strong style="color:#fff">${plan}</strong> package has been topped up for <strong style="color:#F5F5F7">${amount}</strong>.</p>
-    ${p(`Your new credits have been added to your account. Your package is active until <strong style="color:#F5F5F7">${expiryDate}</strong>.`)}
-    ${subtleBtn("Go to Dashboard", "https://findmesomejobs.co.za/dashboard")}
-  `);
-  await sendEmail(to, subject, html, "renewal");
-}
-
-export async function sendSubscriptionCancelled(to: string, plan: string) {
-  const subject = `Your ${plan} package has been cancelled`;
-  const html = wrap(`
-    <p style="font-size:15px;line-height:1.6;color:#F5F5F7;margin:0 0 16px">Your <strong style="color:#fff">${plan}</strong> package has been cancelled.</p>
-    ${p("You'll retain access to your remaining credits until they're used up. No auto-renewal, no surprises.")}
-    ${p("You can purchase again anytime, only pay when you're actually job hunting.")}
-    ${subtleBtn("View Packages", "https://findmesomejobs.co.za/upgrade")}
-  `);
-  await sendEmail(to, subject, html, "cancellation");
 }
 
 export async function sendPFReceipt(to: string, runs: number, amount: string) {
@@ -195,16 +145,6 @@ export async function sendPlanUpgraded(to: string, fromPlan: string, toPlan: str
   await sendEmail(to, subject, html, "plan-upgraded");
 }
 
-export async function sendPlanDowngraded(to: string, fromPlan: string, toPlan: string, effectiveDate: string) {
-  const subject = "Package change scheduled";
-  const html = wrap(`
-    <p style="font-size:15px;line-height:1.6;color:#F5F5F7;margin:0 0 16px">Your package change from <strong style="color:#fff">${fromPlan}</strong> to <strong style="color:#fff">${toPlan}</strong> has been scheduled.</p>
-    ${p(`It will take effect on <strong style="color:#F5F5F7">${effectiveDate}</strong>. You'll keep your current credits until then.`)}
-    ${subtleBtn("Manage Balance", "https://findmesomejobs.co.za/upgrade")}
-  `);
-  await sendEmail(to, subject, html, "plan-downgraded");
-}
-
 export async function sendPlanExpired(to: string, plan: string) {
   const subject = `Your ${plan} package has expired`;
   const html = wrap(`
@@ -214,17 +154,6 @@ export async function sendPlanExpired(to: string, plan: string) {
     ${btn("Top Up Now", "https://findmesomejobs.co.za/upgrade")}
   `);
   await sendEmail(to, subject, html, "plan-expired");
-}
-
-export async function sendAccountDisabled(to: string, reason: string) {
-  const subject = "Your account has been disabled";
-  const html = wrap(`
-    <p style="font-size:15px;line-height:1.6;color:#F5F5F7;margin:0 0 16px">Your Find Me Some Jobs account has been disabled.</p>
-    ${p(`Reason: <strong style="color:#F5F5F7">${reason}</strong>`)}
-    ${p("If you believe this is a mistake, you can submit an appeal from your dashboard.")}
-    ${btn("Open Dashboard", "https://findmesomejobs.co.za/dashboard")}
-  `);
-  await sendEmail(to, subject, html, "account-disabled");
 }
 
 export async function sendAccountDeleted(to: string) {

@@ -1,9 +1,0 @@
-Replaces all Gemini AI scoring in the search route with pure keyword matching.
-
-- `scoreJobMatch()`: Tokenizes CV + job spec using natural (lowercase, stop words, stemming). Extracts keywords from spec using compromise (nouns, proper nouns). Identifies required terms by checking proximity to "must/required/essential" markers. Uses Fuse.js for fuzzy matching so "Meta Ads" ~ "Facebook Ads". Scoring: title match 3pts (cap 30), location match 10pts, required keyword 2pts (cap 30), preferred keyword 1pt (cap 30). Returns 0-100% + summary + extracted salary.
-
-- `isJobValid()`: Rejects specs under 300 chars or containing expired-listing phrases.
-
-- `extractSalary()`: Regex for "R [0-9]" or "ZAR [0-9]" patterns. Returns blank if none found.
-
-Packages: natural (NLP), compromise (NER), fuse.js (fuzzy matching).

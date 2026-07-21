@@ -1,1 +1,0 @@
-Privacy policy page at /privacy. Placeholder content: "No articles yet." Same layout pattern as pricing/about pages.

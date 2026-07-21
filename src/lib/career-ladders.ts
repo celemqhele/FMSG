@@ -9,7 +9,7 @@ function getSupabase(): SupabaseClient {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 }
 
-export interface IndustryLadderSteps {
+interface IndustryLadderSteps {
   step_1: string;
   step_1_taxonomy_id: string | null;
   step_2: string;
@@ -20,66 +20,6 @@ export interface IndustryLadderSteps {
   step_4_taxonomy_id: string | null;
   step_5: string;
   step_5_taxonomy_id: string | null;
-}
-
-// ─── Prompt A: Seed industry taxonomy ────────────────────────────────────
-
-const PROMPT_SEED_TAXONOMY = `You are building a global industry taxonomy for a job matching system.
-Generate a comprehensive 4-level hierarchical taxonomy.
-
-Rules:
-- Level 0 = broadest economic sectors
-- Level 1 = sub-sectors
-- Level 2 = industry niches
-- Level 3 = hyper-niche (most specific)
-- Every node at depth 1-3 must have a parent at depth-1 that is a genuine
-  broader category. No fictional or crossover paths.
-- This is about INDUSTRIES (where employers operate), NOT job titles.
-  "Cybersecurity" is an industry. "Penetration Tester" is a title — do not
-  include titles.
-
-Cover these major sectors at minimum: Financial Services, Technology,
-Healthcare, Manufacturing, Energy & Utilities, Retail & E-commerce,
-Education, Government & Public Sector, Transportation & Logistics,
-Media & Entertainment, Agriculture & Food, Legal Services, Real Estate,
-Hospitality & Tourism, Telecommunications, Construction & Engineering,
-Insurance, Mining & Resources, Pharmaceuticals, Automotive,
-Aerospace & Defence.
-
-Return a flat JSON array where each node has:
-- name (string): the industry name
-- parent (string | null): exact name of the parent node, null for depth 0
-- depth (number): 0-3
-
-Return ONLY valid JSON, no markdown, no code fences.`;
-
-export async function seedIndustryTaxonomy(): Promise<{ inserted: number }> {
-  const supabase = getSupabase();
-  const raw = await callAIWithFallback(PROMPT_SEED_TAXONOMY, "", "seed industry taxonomy", {
-    responseMimeType: "application/json",
-    temperature: 0.3,
-  });
-
-  const cleaned = raw.slice(raw.indexOf("["), raw.lastIndexOf("]") + 1);
-  const nodes: { name: string; parent: string | null; depth: number }[] = JSON.parse(cleaned);
-
-  const nameToId = new Map<string, string>();
-
-  for (let depth = 0; depth <= 3; depth++) {
-    const batch = nodes.filter((n) => n.depth === depth);
-    for (const node of batch) {
-      const parentId = node.parent ? nameToId.get(node.parent) ?? null : null;
-      const { data } = await supabase
-        .from("industry_taxonomy")
-        .insert({ name: node.name, parent_id: parentId, depth: node.depth })
-        .select("id")
-        .single();
-      if (data) nameToId.set(node.name, data.id);
-    }
-  }
-
-  debugLog(`[TAXONOMY] Seeded ${nodes.length} nodes into industry_taxonomy`);
-  return { inserted: nodes.length };
 }
 
 // ─── Taxonomy subtree fetcher ────────────────────────────────────────────
@@ -291,43 +231,4 @@ Return ONLY valid JSON:
       step_5: step, step_5_taxonomy_id: null,
     };
   }
-}
-
-// ─── Upsert industry ladder directly on search_profiles ──────────────────
-
-export async function upsertIndustryLadder(searchProfileId: string, steps: IndustryLadderSteps): Promise<void> {
-  const supabase = getSupabase();
-  const { error } = await supabase
-    .from("search_profiles")
-    .update({
-      industry_step_1: steps.step_1, industry_step_1_taxonomy_id: steps.step_1_taxonomy_id,
-      industry_step_2: steps.step_2, industry_step_2_taxonomy_id: steps.step_2_taxonomy_id,
-      industry_step_3: steps.step_3, industry_step_3_taxonomy_id: steps.step_3_taxonomy_id,
-      industry_step_4: steps.step_4, industry_step_4_taxonomy_id: steps.step_4_taxonomy_id,
-      industry_step_5: steps.step_5, industry_step_5_taxonomy_id: steps.step_5_taxonomy_id,
-      industry_ladder_generated_at: new Date().toISOString(),
-      needs_reanalysis: false,
-      last_analysed_at: new Date().toISOString(),
-    })
-    .eq("id", searchProfileId);
-  if (error) {
-    debugLog(`[LADDER] Failed to upsert industry ladder: ${error.message}`);
-    throw error;
-  }
-}
-
-// ─── Read taxonomy for UI dropdowns ──────────────────────────────────────
-
-export async function getTaxonomyForBranch(industry: string): Promise<
-  { id: string; name: string; depth: number; parent_id: string | null }[]
-> {
-  return getTaxonomyBranch(industry);
-}
-
-export async function getAllTaxonomy(): Promise<
-  { id: string; name: string; depth: number; parent_id: string | null }[]
-> {
-  const supabase = getSupabase();
-  const { data } = await supabase.from("industry_taxonomy").select("*").order("depth", { ascending: true });
-  return data ?? [];
 }
