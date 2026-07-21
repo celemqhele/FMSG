@@ -7,6 +7,7 @@ import { callAIWithFallback, lastAITier } from "@/lib/gemini";
 import { StreamWriter, type SearchEvent } from "@/lib/search-stream";
 import { debugLog } from "@/lib/debug";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { validateScrapeUrl } from "@/lib/url-validation";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -370,7 +371,9 @@ async function fetchAndFilterJobs(
 
     // Phase 1: Classify all URLs and extract individual URLs from listing pages (parallel)
     const classifications = await Promise.all(googlePages.map(async (v) => {
-      if (isIndividualJobPage(v.link)) {
+      if (!validateScrapeUrl(v.link).ok) {
+        return { type: "skipped" as const, domain: v.domain };
+      } else if (isIndividualJobPage(v.link)) {
         return { type: "direct" as const, url: v.link, domain: v.domain, title: v.title };
       } else if (isListingPage(v.link)) {
         console.log(`[PIPELINE] Listing page detected, extracting URLs: ${v.link}`);
@@ -385,7 +388,9 @@ async function fetchAndFilterJobs(
     // Collect all URLs to scrape
     const urlsToScrape: { url: string; domain: string; title?: string }[] = [];
     for (const c of classifications) {
-      if (c.type === "direct") {
+      if (c.type === "skipped") {
+        continue;
+      } else if (c.type === "direct") {
         urlsToScrape.push({ url: c.url, domain: c.domain, title: c.title });
       } else {
         for (const url of c.urls) {
@@ -397,8 +402,9 @@ async function fetchAndFilterJobs(
 
     // Phase 2: Scrape all URLs in parallel batches of 5
     const CONCURRENCY = 5;
-    for (let i = 0; i < urlsToScrape.length; i += CONCURRENCY) {
-      const batch = urlsToScrape.slice(i, i + CONCURRENCY);
+    const safeUrlsToScrape = urlsToScrape.filter(({ url }) => validateScrapeUrl(url).ok);
+    for (let i = 0; i < safeUrlsToScrape.length; i += CONCURRENCY) {
+      const batch = safeUrlsToScrape.slice(i, i + CONCURRENCY);
       const batchResults = await Promise.all(
         batch.map(({ url, domain, title }) =>
           withTimeout(scrapeJobPage(url, JINA_API ?? null), 15_000, `Jina scrape ${domain}`)
