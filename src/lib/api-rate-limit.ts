@@ -31,8 +31,10 @@ const API_LIMITS: Record<string, { windowMs: number; max: number; label: string 
   "bing-jina": { windowMs: 60 * 60 * 1000,         max: 30,  label: "Web Jobs / Jina (30/hour)" },
   // Scrappa: 500 credits/month (free). Reserve 50.
   scrappa:   { windowMs: 30 * 24 * 60 * 60 * 1000, max: 450, label: "Scrappa (450/500 monthly)" },
-  // Firecrawl: 500 credits/month (free). Reserve 50.
-  firecrawl: { windowMs: 30 * 24 * 60 * 60 * 1000, max: 450, label: "Firecrawl (450/500 monthly)" },
+  // Bright Data: 5,000 free credits/month (Web Unlocker). Reserve 500.
+  brightdata: { windowMs: 30 * 24 * 60 * 60 * 1000, max: 4500, label: "Bright Data (4500/5000 monthly)" },
+  // Apify: $5 free/month (~3,300 page conversions). Reserve 300.
+  apify:     { windowMs: 30 * 24 * 60 * 60 * 1000, max: 3000, label: "Apify (3000/3300 monthly)" },
 };
 
 /**
