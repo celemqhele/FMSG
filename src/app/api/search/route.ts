@@ -746,8 +746,11 @@ async function screenAndAnalyze(
   pfRound?: number,
   dedupSets?: { history: Set<string>; saved: Set<string>; blocked: Set<string>; rejected?: Set<string> },
   maxAgeDays?: number,
-): Promise<{ results: JobRow[]; queryUsed: string; filteredCounts: { history: number; saved: number; rejected: number; blocked: number } }> {
+  offset: number = 0,
+  limit: number = 10,
+): Promise<{ results: JobRow[]; queryUsed: string; filteredCounts: { history: number; saved: number; rejected: number; blocked: number }; nextOffset: number }> {
   const filteredCounts = { history: 0, saved: 0, rejected: 0, blocked: 0 };
+  let nextOffset = offset;
 
   // AI scoring toggle — set AI_SCORING=false to disable matching — jun27
   const aiScoringEnabled = process.env.AI_SCORING !== "false";
@@ -935,11 +938,12 @@ ${blacklistInfo}${bannedInfo}${dateConstraintInfo}`;
     if (s.size > 0) allExisting = s;
   }
 
-  debugLog(`[SEARCH] Starting one-by-one scoring (${rawJobs.length} jobs)`);
+  debugLog(`[SEARCH] Starting one-by-one scoring (${rawJobs.length} jobs, offset ${offset}, limit ${limit})`);
   onStatus?.({ type: "screening_job", current: 0, total: rawJobs.length, progress: 25 });
 
-  for (let i = 0; i < rawJobs.length; i++) {
+  for (let i = offset; i < Math.min(offset + limit, rawJobs.length); i++) {
     const job = rawJobs[i];
+    nextOffset = i + 1;
     const jobUrl = jobUrls.get(i) || buildJobUrl(job);
 
     // Pre-scoring dedup: skip jobs already seen — save AI calls
@@ -1088,7 +1092,7 @@ ${blacklistInfo}${bannedInfo}${dateConstraintInfo}`;
 
   onStatus?.({ type: "almost_done", progress: 90 });
 
-  return { results: outputs, queryUsed: query, filteredCounts };
+  return { results: outputs, queryUsed: query, filteredCounts, nextOffset };
 }
 
 function pinReferralJob(results: any[], referralUrl: string | null): any[] {
@@ -1454,6 +1458,7 @@ Return ONLY valid JSON (no markdown, no code fences):
     const stream = new ReadableStream({
       async start(controller) {
         const writer = new StreamWriter(controller);
+        writer.send({ type: "search_started", search_id: searchId });
         const sendStatus = (event: SearchEvent) => writer.send(event);
         const sendComplete = (event: SearchEvent) => {
           if (state.balances) {
@@ -1484,14 +1489,16 @@ Return ONLY valid JSON (no markdown, no code fences):
               return;
             }
 
-            if (isContinuation) {
+             if (isContinuation) {
+              const offset = state.nextOffset ?? 0;
               const result = await screenAndAnalyze(
                 state.rawJobs, state.jobSpecs, state.jobUrls, state.queryUsed,
                 state.profileLocation, state.profileIndustry, state.titles, state.cvTexts,
                 user, searchId, dataClient, state.bannedJobs, state.bannedCompanies, state.profile_id,
                 sendStatus, undefined,
                 { history: new Set(state.dedupSets.history), saved: new Set(state.dedupSets.saved), blocked: new Set(state.dedupSets.blocked), rejected: new Set(state.dedupSets.rejected ?? []) },
-                state.maxAgeDays
+                state.maxAgeDays,
+                offset
               );
 
               const totalFiltered = result.filteredCounts.history + result.filteredCounts.saved + result.filteredCounts.rejected + result.filteredCounts.blocked;
@@ -1499,12 +1506,48 @@ Return ONLY valid JSON (no markdown, no code fences):
                 writer.send({ type: "filtered_summary", ...result.filteredCounts, progress: 50 });
               }
 
-              if (result.results.length > 0) {
-                const withIds = result.results.map((r: JobRow) => ({ ...r, id: crypto.randomUUID() }));
+              if (result.nextOffset < state.rawJobs.length) {
+                // More jobs to process
+                const allResults = [...(state.allResults || []), ...result.results];
+                sendComplete({
+                  type: "pause",
+                  message: `Processed ${result.nextOffset} of ${state.rawJobs.length} jobs. Continue?`,
+                  progress: Math.min((result.nextOffset / state.rawJobs.length) * 80, 80),
+                  continuation: signContinuationToken({
+                    mode: "normal",
+                    rawJobs: state.rawJobs,
+                    jobSpecs: state.jobSpecs,
+                    jobUrls: state.jobUrls,
+                    queryUsed: state.queryUsed,
+                    searchId: state.searchId,
+                    titles: state.titles,
+                    profileLocation: state.profileLocation,
+                    profileIndustry: state.profileIndustry,
+                    cvTexts: state.cvTexts,
+                    bannedJobs: state.bannedJobs,
+                    bannedCompanies: state.bannedCompanies,
+                    hiddenJobKeys: state.hiddenJobKeys,
+                    query: state.query,
+                    dedupSets: state.dedupSets,
+                    maxAgeDays: state.maxAgeDays,
+                    profile_id: state.profile_id,
+                    referralUrl: state.referralUrl,
+                    allResults, // Persist progress
+                    nextOffset: result.nextOffset,
+                  }, SUPABASE_SERVICE_KEY),
+                });
+                writer.close();
+                return;
+              }
+
+              // All jobs processed
+              const allResults = [...(state.allResults || []), ...result.results];
+              if (allResults.length > 0) {
+                const withIds = allResults.map((r: JobRow) => ({ ...r, id: crypto.randomUUID() }));
                 const normalized = withIds.map(normalize);
                 pinReferralJob(normalized, state.referralUrl);
                 sendComplete({ type: "complete", results: normalized, progress: 100, ...(totalFiltered > 0 ? { filtered_summary: result.filteredCounts } : {}) });
-                const rows = withIds.map((r) => ({
+                const rows = withIds.map((r: JobRow) => ({
                   id: r.id,
                   user_id: r.user_id, search_id: r.search_id, profile_id: state.profile_id ?? null,
                   job_title: r.job_title, company: r.company, location: r.location,
@@ -1566,27 +1609,29 @@ Return ONLY valid JSON (no markdown, no code fences):
               type: "pause",
               message: `Found ${rawJobs.length} matching results. Ready to score?`,
               progress: 20,
-              continuation: signContinuationToken({
-                mode: "normal",
-                rawJobs,
-                jobSpecs,
-                jobUrls,
-                queryUsed,
-                searchId,
-                titles: state.titles,
-                profileLocation: state.profileLocation,
-                profileIndustry: state.profileIndustry,
-                cvTexts: state.cvTexts,
-                bannedJobs: state.bannedJobs,
-                bannedCompanies: state.bannedCompanies,
-                hiddenJobKeys: state.hiddenJobKeys,
-                query: searchQuery,
-                dedupSets: { history: [...state.dedupSets.history], saved: [...state.dedupSets.saved], blocked: [...state.dedupSets.blocked], rejected: [...state.dedupSets.rejected] },
-                maxAgeDays: state.maxAgeDays,
-                profile_id: state.profile_id,
-                referralUrl: state.referralUrl,
-              }, SUPABASE_SERVICE_KEY),
-            });
+                continuation: signContinuationToken({
+                  mode: "normal",
+                  rawJobs,
+                  jobSpecs,
+                  jobUrls,
+                  queryUsed,
+                  searchId,
+                  titles: state.titles,
+                  profileLocation: state.profileLocation,
+                  profileIndustry: state.profileIndustry,
+                  cvTexts: state.cvTexts,
+                  bannedJobs: state.bannedJobs,
+                  bannedCompanies: state.bannedCompanies,
+                  hiddenJobKeys: state.hiddenJobKeys,
+                  query: searchQuery,
+                  dedupSets: { history: [...state.dedupSets.history], saved: [...state.dedupSets.saved], blocked: [...state.dedupSets.blocked], rejected: [...state.dedupSets.rejected] },
+                  maxAgeDays: state.maxAgeDays,
+                  profile_id: state.profile_id,
+                  referralUrl: state.referralUrl,
+                  allResults: [],
+                  nextOffset: 10,
+                }, SUPABASE_SERVICE_KEY),
+              });
             writer.close();
             return;
           }

@@ -148,6 +148,7 @@ export default function DashboardPage() {
   const [showPfPromo, setShowPfPromo] = useState(false);
   const [referralJob, setReferralJob] = useState<{ slug: string; company: string; job_title: string; apply_url: string } | null>(null);
   const [pfMode, setPfMode] = useState(false);
+  const [currentSearchId, setCurrentSearchId] = useState<string | null>(null);
   const referralAutoSearchDone = useRef(false);
 
   useEffect(() => { endTransition(); }, [endTransition]);
@@ -323,6 +324,7 @@ export default function DashboardPage() {
   const handleSearch = useCallback(async (query: string, profileId?: string | null, pfMode?: boolean, dateFilterDays?: number | null, referralUrl?: string) => {
     console.log("[DASHBOARD] Search clicked:", { query, profileId, pfMode, dateFilterDays, referralUrl, time: new Date().toISOString() });
     setSearching(true);
+    setCurrentSearchId(null);
     setProgress(0);
     setHasSearched(true);
     setResultMessage("");
@@ -521,6 +523,10 @@ export default function DashboardPage() {
           try { event = JSON.parse(line); } catch { continue; }
 
           switch (event.type) {
+            case "search_started":
+              setCurrentSearchId(event.search_id);
+              break;
+
             case "found_results":
               setStatusCompleted((prev) => [...prev, "Searching live job listings"]);
               currentStatusActive = `Found ${event.count} matching results`;
@@ -682,6 +688,21 @@ export default function DashboardPage() {
 
       // Stream ended without complete/error/pause event
       if (!streamComplete) {
+        if (currentSearchId) {
+          const supabase = createClient();
+          const { data, error } = await supabase
+            .from("job_results")
+            .select("*")
+            .eq("search_id", currentSearchId);
+          if (!error && data) {
+            setResults(data as JobResult[]);
+            setResultMessage("Connection lost, but partial results recovered.");
+          } else {
+            setResultMessage("Connection lost. Please try again.");
+          }
+        } else {
+          setResultMessage("Connection lost. Please try again.");
+        }
         setSearching(false);
         setProgress(0);
         setVideoFast(false);
@@ -689,7 +710,6 @@ export default function DashboardPage() {
         setContinuationToken(null);
         setStatusCompleted([]);
         setStatusActive("");
-        setResultMessage("Connection lost. Please try again.");
       }
     } catch (err) {
       if ((err as DOMException)?.name === "AbortError") return;
