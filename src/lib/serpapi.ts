@@ -1167,8 +1167,8 @@ async function tryScrappaJobs(rawQuery: string, location: string): Promise<SerpJ
 
 async function tryBrightDataWebJobs(query: string, location: string): Promise<SerpJob[]> {
   const wsEndpoint = process.env.BRIGHTDATA_API;
-  if (!wsEndpoint) {
-    console.warn(`[SRC7-BRIGHTDATA] SKIP — no BRIGHTDATA_API key`);
+  if (!wsEndpoint || !wsEndpoint.startsWith("wss://")) {
+    console.warn(`[SRC7-BRIGHTDATA] SKIP — BRIGHTDATA_API is not a valid WebSocket URL (must start with wss://)`);
     return [];
   }
 
@@ -1287,6 +1287,7 @@ async function tryApifyWebJobs(query: string, location: string): Promise<SerpJob
     const items = Array.isArray(data) ? data : [data];
     const content = items[0]?.markdown ?? items[0]?.content ?? "";
     console.log(`[SRC7-APIFY] Response: ${content.length} chars`);
+    console.log(`[SRC7-APIFY] Preview: ${content.slice(0, 500)}`);
 
     if (!content || content.length < 50) {
       console.warn(`[SRC7-APIFY] Empty or too short response — will try next source`);
