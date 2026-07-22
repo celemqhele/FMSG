@@ -499,8 +499,19 @@ export async function searchJinaBingJobs(params: SerpParams): Promise<SerpJob[]>
   bingJobsUrl.searchParams.set("cc", "ZA");
   bingJobsUrl.searchParams.set("form", "JOBL2S");
 
+  recordApiCall("bing-jina");
+
+  // Primary: Bright Data click-to-expand (always works, gets full specs)
+  console.log(`[SRC8-JINA-BING] Trying Bright Data click-to-expand first`);
+  const brightDataJobs = await tryBrightDataWebJobs(query, location);
+  if (brightDataJobs.length > 0) {
+    console.log(`[SRC8-JINA-BING] Bright Data returned ${brightDataJobs.length} jobs with full specs`);
+    return brightDataJobs;
+  }
+
+  // Fallback: Jina Reader (free, fast, but returns 0 chars for Bing Jobs)
+  console.log(`[SRC8-JINA-BING] Bright Data returned 0 — falling back to Jina Reader`);
   const jinaFetchUrl = `${JINA_READER_BASE}/${encodeURIComponent(bingJobsUrl.toString())}`;
-  console.log(`[SRC8-JINA-BING] Fetching Bing Jobs via Jina: ${bingJobsUrl.toString()}`);
 
   try {
     const jinaKey = process.env.JINA_API;
@@ -513,39 +524,32 @@ export async function searchJinaBingJobs(params: SerpParams): Promise<SerpJob[]>
     }
 
     const res = await fetch(jinaFetchUrl, { headers });
-    console.log(`[SRC8-JINA-BING] HTTP ${res.status} ${res.statusText}`);
+    console.log(`[SRC8-JINA-BING] Jina HTTP ${res.status} ${res.statusText}`);
 
     if (!res.ok) {
-      const err = await res.text();
-      if (res.status === 402) {
-        console.error(`[SRC8-JINA-BING] OUT OF CREDITS (402) — will try next source`);
-      } else {
-        console.error(`[SRC8-JINA-BING] FAIL status=${res.status} body=${err.slice(0, 200)}`);
-      }
+      console.error(`[SRC8-JINA-BING] Jina FAIL status=${res.status}`);
       return [];
     }
 
     const data = await res.json();
     const content = data?.data?.[0]?.content ?? data?.content ?? "";
-    console.log(`[SRC8-JINA-BING] Response: ${content.length} chars`);
+    console.log(`[SRC8-JINA-BING] Jina response: ${content.length} chars`);
 
     if (!content || content.length < 50) {
-      console.warn(`[SRC8-JINA-BING] Jina returned empty — falling back to Bright Data click-to-expand`);
-      recordApiCall("bing-jina");
-      return tryBrightDataWebJobs(query, location);
+      console.warn(`[SRC8-JINA-BING] Jina also returned empty — no results`);
+      return [];
     }
 
-    recordApiCall("bing-jina");
     const jobs = parseBingJobsMarkdown(content, location);
-    console.log(`[SRC8-JINA-BING] SUCCESS — ${jobs.length} jobs parsed`);
+    console.log(`[SRC8-JINA-BING] Jina SUCCESS — ${jobs.length} jobs parsed`);
     if (jobs.length > 0) {
       console.log(`[SRC8-JINA-BING] First: "${jobs[0].title}" at "${jobs[0].company_name}"`);
     }
     return jobs;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[SRC8-JINA-BING] EXCEPTION: ${msg.slice(0, 200)} — falling back to Bright Data`);
-    return tryBrightDataWebJobs(query, location);
+    console.error(`[SRC8-JINA-BING] Jina EXCEPTION: ${msg.slice(0, 200)}`);
+    return [];
   }
 }
 
@@ -709,6 +713,20 @@ async function tryScrappaJobs(rawQuery: string, location: string): Promise<SerpJ
 
 // ─── Bright Data Browser API — click-to-expand Bing Jobs for full specs ──
 
+function decodeBingRedirect(url: string): string {
+  try {
+    const u = new URL(url);
+    if (u.hostname.includes("bing.com") && u.pathname.includes("/ck/a")) {
+      const raw = u.searchParams.get("u");
+      if (raw && raw.length > 1) {
+        const decoded = Buffer.from(raw.slice(1), "base64").toString("utf-8");
+        if (decoded.startsWith("http")) return decoded;
+      }
+    }
+  } catch {}
+  return url;
+}
+
 async function tryBrightDataWebJobs(query: string, location: string): Promise<SerpJob[]> {
   const wsEndpoint = process.env.BRIGHTDATA_API;
   if (!wsEndpoint || !wsEndpoint.startsWith("wss://")) {
@@ -765,25 +783,54 @@ async function tryBrightDataWebJobs(query: string, location: string): Promise<Se
 
         const job = await page.evaluate(() => {
           const title = document.querySelector(".jb_title")?.textContent?.trim() ?? "";
-          const companyLocation = document.querySelector(".jbpnl_coLoc")?.textContent?.trim() ?? "";
+
+          // coLoc: try child elements first, fall back to innerText split
+          let company = "";
+          let loc = "";
+          const coLocEl = document.querySelector(".jbpnl_coLoc");
+          if (coLocEl) {
+            const coNameEl = coLocEl.querySelector(".jbpnl_coName, .jb_coName, [class*='coName']");
+            const locEl = coLocEl.querySelector(".jbpnl_loc, .jb_loc, [class*='loc']");
+            if (coNameEl && locEl) {
+              company = coNameEl.textContent?.trim() ?? "";
+              loc = locEl.textContent?.trim() ?? "";
+            } else {
+              const text = (coLocEl as HTMLElement).innerText?.trim() ?? "";
+              const lines = text.split("\n").map((s: string) => s.trim()).filter(Boolean);
+              company = lines[0] || "";
+              loc = lines[1] || "";
+            }
+          }
+
           const description = (document.querySelector(".jbpnl_description") as HTMLElement | null)?.innerText?.trim() ?? "";
-          const applyLink = (document.querySelector(".jb_slimApply a") as HTMLAnchorElement)?.href ?? "";
-          const parts = companyLocation.split("·").map((s: string) => s.trim());
-          return { title, company: parts[0] || "", location: parts[1] || "", description, applyLink };
+
+          // Apply link: try multiple selectors, decode Bing redirects
+          let applyLink = "";
+          const selectors = [".jb_slimApply a", ".jb_applyBtnContainer a", "a[href*='bing.com/ck/a']", ".jb_l2_jbpnl a[href]"];
+          for (const sel of selectors) {
+            const el = document.querySelector(sel) as HTMLAnchorElement | null;
+            if (el?.href && !el.href.includes("javascript:")) {
+              applyLink = el.href;
+              break;
+            }
+          }
+
+          return { title, company, location: loc, description, applyLink };
         });
 
         if (job.title && job.description.length > 50) {
+          const decodedLink = decodeBingRedirect(job.applyLink);
           jobs.push({
             title: job.title,
             company_name: job.company || "Unknown",
             location: job.location || location,
             description: job.description.slice(0, 3000),
-            link: job.applyLink,
+            link: decodedLink,
             via: "bing",
             hasFullSpec: job.description.length > 300,
             spec_source: "bing_jobs" as const,
           });
-          console.log(`[BRIGHTDATA] Card ${i + 1}: "${job.title}" at "${job.company}" — ${job.description.length} chars`);
+          console.log(`[BRIGHTDATA] Card ${i + 1}: "${job.title}" at "${job.company}" — ${job.description.length} chars, link=${decodedLink ? "yes" : "no"}`);
         }
       } catch (cardErr) {
         console.warn(`[BRIGHTDATA] Card ${i} failed: ${cardErr instanceof Error ? cardErr.message.slice(0, 100) : String(cardErr).slice(0, 100)}`);
