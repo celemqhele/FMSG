@@ -958,13 +958,13 @@ ${blacklistInfo}${bannedInfo}${dateConstraintInfo}`;
 
   let outputs: JobRow[] = [];
 
-  // Pre-scoring dedup: filter out jobs already in user's history/saved/blocked
-  let allExisting: Set<string> | null = null;
+  // PRE-SCORING DEDUP DISABLED FOR TESTING — was filtering out legitimate jobs
+  // let allExisting: Set<string> | null = null;
   let preDedupCount = 0;
-  if (dedupSets) {
-    const s = new Set([...dedupSets.history, ...dedupSets.saved, ...dedupSets.blocked, ...(dedupSets.rejected ?? [])]);
-    if (s.size > 0) allExisting = s;
-  }
+  // if (dedupSets) {
+  //   const s = new Set([...dedupSets.history, ...dedupSets.saved, ...dedupSets.blocked, ...(dedupSets.rejected ?? [])]);
+  //   if (s.size > 0) allExisting = s;
+  // }
 
   debugLog(`[SEARCH] Starting one-by-one scoring (${rawJobs.length} jobs, offset ${offset}, limit ${limit})`);
   onStatus?.({ type: "screening_job", current: 0, total: rawJobs.length, progress: 25 });
@@ -974,15 +974,15 @@ ${blacklistInfo}${bannedInfo}${dateConstraintInfo}`;
     nextOffset = i + 1;
     const jobUrl = jobUrls.get(i) || buildJobUrl(job);
 
-    // Pre-scoring dedup: skip jobs already seen — save AI calls
-    if (allExisting?.has(jobUrl)) {
-      if (dedupSets!.history.has(jobUrl)) filteredCounts.history++;
-      else if (dedupSets!.saved.has(jobUrl)) filteredCounts.saved++;
-      else if (dedupSets!.rejected?.has(jobUrl)) filteredCounts.rejected++;
-      else if (dedupSets!.blocked.has(jobUrl)) filteredCounts.blocked++;
-      preDedupCount++;
-      continue;
-    }
+    // Pre-scoring dedup DISABLED FOR TESTING
+    // if (allExisting?.has(jobUrl)) {
+    //   if (dedupSets!.history.has(jobUrl)) filteredCounts.history++;
+    //   else if (dedupSets!.saved.has(jobUrl)) filteredCounts.saved++;
+    //   else if (dedupSets!.rejected?.has(jobUrl)) filteredCounts.rejected++;
+    //   else if (dedupSets!.blocked.has(jobUrl)) filteredCounts.blocked++;
+    //   preDedupCount++;
+    //   continue;
+    // }
 
     const fullSpec = jobSpecs.get(i) || "";
 
