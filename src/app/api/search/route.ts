@@ -701,6 +701,7 @@ async function fetchAndFilterJobs(
     console.log(`[PIPELINE] Rejected ${snippetRejected.length} low-quality search snippets`);
   }
 
+  console.log(`[PIPELINE] Spec assignment: ${rawJobs.length} jobs entering (bing=${rawJobs.filter((j) => j.spec_source === "bing_jobs").length}, fullSpec=${rawJobs.filter((j) => j.hasFullSpec).length})`);
   for (let i = 0; i < rawJobs.length; i++) {
     const job = rawJobs[i];
     const jobUrl = buildJobUrl(job);
@@ -775,7 +776,10 @@ async function fetchAndFilterJobs(
   rawJobs = rawJobs.filter((j) => !(j as any)._noSpec);
   if (rawJobs.length === 0) return { rawJobs: [], jobSpecs: [], jobUrls: [], queryUsed: query };
 
+  const expiredCount = rawJobs.filter((j) => (j as any)._expired).length;
+  if (expiredCount > 0) console.log(`[PIPELINE] ${expiredCount} jobs flagged expired before spec-length gate`);
   rawJobs = rawJobs.filter((j) => !(j as any)._expired);
+  console.log(`[PIPELINE] Pre-spec-gate: ${rawJobs.length} jobs (specs set=${rawJobs.filter((j) => (j as any)._spec).length}, bing=${rawJobs.filter((j) => j.spec_source === "bing_jobs").length})`);
 
   {
     const filtered: typeof rawJobs = [];
@@ -800,6 +804,7 @@ async function fetchAndFilterJobs(
       console.log(`[PIPELINE] Dropped ${droppedAts.length} jobs containing ATS trackers`);
     }
     rawJobs = filtered;
+    console.log(`[PIPELINE] fetchAndFilterJobs returning ${rawJobs.length} jobs for scoring (specs=${filteredSpecs.size})`);
     return { rawJobs, jobSpecs: [...filteredSpecs.entries()], jobUrls: [...filteredUrls.entries()], queryUsed: query };
   }
 }
