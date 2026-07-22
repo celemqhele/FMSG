@@ -658,9 +658,13 @@ function decodeBingRedirect(url: string): string {
     const u = new URL(url);
     if (u.hostname.includes("bing.com") && u.pathname.includes("/ck/a")) {
       const raw = u.searchParams.get("u");
-      if (raw && raw.length > 1) {
-        const decoded = Buffer.from(raw.slice(1), "base64").toString("utf-8");
-        if (decoded.startsWith("http")) return decoded;
+      if (raw) {
+        for (let offset = 1; offset <= 3; offset++) {
+          if (raw.length > offset) {
+            const decoded = Buffer.from(raw.slice(offset), "base64").toString("utf-8");
+            if (decoded.startsWith("http")) return decoded;
+          }
+        }
       }
     }
   } catch {}

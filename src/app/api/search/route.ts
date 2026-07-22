@@ -133,6 +133,24 @@ function decodeGoogleRedirect(url: string): string {
   return url;
 }
 
+function decodeBingRedirect(url: string): string {
+  try {
+    const u = new URL(url);
+    if (u.hostname.includes("bing.com") && u.pathname.includes("/ck/a")) {
+      const raw = u.searchParams.get("u");
+      if (raw) {
+        for (let offset = 1; offset <= 3; offset++) {
+          if (raw.length > offset) {
+            const decoded = Buffer.from(raw.slice(offset), "base64").toString("utf-8");
+            if (decoded.startsWith("http")) return decoded;
+          }
+        }
+      }
+    }
+  } catch {}
+  return url;
+}
+
 function isBlacklistedByVia(via: string | undefined): boolean {
   if (!via) return false;
   const lower = via.toLowerCase();
@@ -242,7 +260,7 @@ function buildJobUrl(job: {
   title: string;
   company_name: string;
 }): string {
-  const tryDecode = (u: string) => decodeGoogleRedirect(u);
+  const tryDecode = (u: string) => decodeBingRedirect(decodeGoogleRedirect(u));
   if (job.apply_options?.[0]?.link) return tryDecode(job.apply_options[0].link);
   if (job.job_highlights?.link) return tryDecode(job.job_highlights.link);
   if (job.link) return tryDecode(job.link);
