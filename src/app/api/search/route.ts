@@ -1598,6 +1598,8 @@ Return ONLY valid JSON (no markdown, no code fences):
               return;
             }
 
+            sendStatus({ type: "searching", query: searchQuery, progress: 10 });
+
              if (isContinuation) {
               const offset = state.nextOffset ?? 0;
               const result = await screenAndAnalyze(

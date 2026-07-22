@@ -533,6 +533,12 @@ export default function DashboardPage() {
               setCurrentSearchId(event.search_id);
               break;
 
+            case "searching":
+              currentStatusActive = event.query;
+              setStatusActive(currentStatusActive);
+              setProgress(event.progress ?? 10);
+              break;
+
             case "found_results":
               setStatusCompleted((prev) => [...prev, "Searching live job listings"]);
               currentStatusActive = `Found ${event.count} matching results`;
