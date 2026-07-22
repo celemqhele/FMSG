@@ -530,8 +530,9 @@ export async function searchJinaBingJobs(params: SerpParams): Promise<SerpJob[]>
     console.log(`[SRC8-JINA-BING] Response: ${content.length} chars`);
 
     if (!content || content.length < 50) {
-      console.warn(`[SRC8-JINA-BING] Empty or too short response — will try next source`);
-      return [];
+      console.warn(`[SRC8-JINA-BING] Jina returned empty — falling back to Bright Data click-to-expand`);
+      recordApiCall("bing-jina");
+      return tryBrightDataWebJobs(query, location);
     }
 
     recordApiCall("bing-jina");
@@ -543,8 +544,8 @@ export async function searchJinaBingJobs(params: SerpParams): Promise<SerpJob[]>
     return jobs;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[SRC8-JINA-BING] EXCEPTION: ${msg.slice(0, 200)} — will try next source`);
-    return [];
+    console.error(`[SRC8-JINA-BING] EXCEPTION: ${msg.slice(0, 200)} — falling back to Bright Data`);
+    return tryBrightDataWebJobs(query, location);
   }
 }
 
@@ -706,18 +707,18 @@ async function tryScrappaJobs(rawQuery: string, location: string): Promise<SerpJ
   }
 }
 
-// ─── Bright Data Browser API — scrapes Bing Jobs page via remote browser ──
+// ─── Bright Data Browser API — click-to-expand Bing Jobs for full specs ──
 
 async function tryBrightDataWebJobs(query: string, location: string): Promise<SerpJob[]> {
   const wsEndpoint = process.env.BRIGHTDATA_API;
   if (!wsEndpoint || !wsEndpoint.startsWith("wss://")) {
-    console.warn(`[SRC7-BRIGHTDATA] SKIP — BRIGHTDATA_API is not a valid WebSocket URL (must start with wss://)`);
+    console.warn(`[BRIGHTDATA] SKIP — BRIGHTDATA_API is not a valid WebSocket URL`);
     return [];
   }
 
   const rl = checkApiLimit("brightdata");
   if (!rl.allowed) {
-    console.warn(`[SRC7-BRIGHTDATA] RATE LIMITED — ${rl.label}, ${rl.remaining}/${rl.total} remaining`);
+    console.warn(`[BRIGHTDATA] RATE LIMITED — ${rl.label}, ${rl.remaining}/${rl.total} remaining`);
     return [];
   }
 
@@ -731,7 +732,7 @@ async function tryBrightDataWebJobs(query: string, location: string): Promise<Se
   bingUrl.searchParams.set("cc", "ZA");
   bingUrl.searchParams.set("form", "JOBL2S");
 
-  console.log(`[SRC7-BRIGHTDATA] Scraping Bing Jobs via Browser API: ${bingUrl.toString()}`);
+  console.log(`[BRIGHTDATA] Click-to-expand Bing Jobs: ${bingUrl.toString()}`);
 
   let browser;
   try {
@@ -739,42 +740,66 @@ async function tryBrightDataWebJobs(query: string, location: string): Promise<Se
     const page = await browser.newPage();
 
     await page.goto(bingUrl.toString(), { waitUntil: "domcontentloaded", timeout: 60000 });
+    await page.waitForSelector(".jb_l2_cardlist", { timeout: 15000 });
+    await page.waitForSelector(".jb_jlc", { timeout: 15000 });
 
-    // Wait for job cards to render
-    try {
-      await page.waitForSelector("#b_results", { timeout: 5000 });
-    } catch {
-      console.warn(`[SRC7-BRIGHTDATA] #b_results not found — proceeding with page content`);
-    }
+    const cardCount = await page.evaluate(() => document.querySelectorAll(".jb_jlc").length);
+    console.log(`[BRIGHTDATA] Found ${cardCount} job cards`);
 
-    // Extract both text AND links — innerText strips URLs, so we need HTML links separately
-    const content = await page.evaluate(() => document.body.innerText);
-    const links: { text: string; href: string }[] = await page.evaluate(() => {
-      return [...document.querySelectorAll("a[href]")].map((a) => ({
-        text: (a.textContent ?? "").trim(),
-        href: (a as HTMLAnchorElement).href,
-      })).filter((l) => l.href && l.text);
-    });
-    console.log(`[SRC7-BRIGHTDATA] Page content: ${content.length} chars, ${links.length} links`);
-    if (links.length > 0) {
-      console.log(`[SRC7-BRIGHTDATA] Sample links: ${links.slice(0, 5).map((l) => `${l.text.slice(0, 50)} → ${l.href.slice(0, 80)}`).join(" | ")}`);
-    }
-
-    if (!content || content.length < 50) {
-      console.warn(`[SRC7-BRIGHTDATA] Empty page content — will try next source`);
+    if (cardCount === 0) {
+      console.warn(`[BRIGHTDATA] No job cards found`);
       return [];
     }
 
+    const jobs: SerpJob[] = [];
+    const maxCards = Math.min(cardCount, 20);
+
+    for (let i = 0; i < maxCards; i++) {
+      try {
+        await page.evaluate((idx) => {
+          const cards = document.querySelectorAll(".jb_jlc");
+          if (cards[idx]) (cards[idx] as HTMLElement).click();
+        }, i);
+
+        await new Promise(r => setTimeout(r, 1500));
+
+        const job = await page.evaluate(() => {
+          const title = document.querySelector(".jb_title")?.textContent?.trim() ?? "";
+          const companyLocation = document.querySelector(".jbpnl_coLoc")?.textContent?.trim() ?? "";
+          const description = (document.querySelector(".jbpnl_description") as HTMLElement | null)?.innerText?.trim() ?? "";
+          const applyLink = (document.querySelector(".jb_slimApply a") as HTMLAnchorElement)?.href ?? "";
+          const parts = companyLocation.split("·").map((s: string) => s.trim());
+          return { title, company: parts[0] || "", location: parts[1] || "", description, applyLink };
+        });
+
+        if (job.title && job.description.length > 50) {
+          jobs.push({
+            title: job.title,
+            company_name: job.company || "Unknown",
+            location: job.location || location,
+            description: job.description.slice(0, 3000),
+            link: job.applyLink,
+            via: "bing",
+            hasFullSpec: job.description.length > 300,
+            spec_source: "bing_jobs" as const,
+          });
+          console.log(`[BRIGHTDATA] Card ${i + 1}: "${job.title}" at "${job.company}" — ${job.description.length} chars`);
+        }
+      } catch (cardErr) {
+        console.warn(`[BRIGHTDATA] Card ${i} failed: ${cardErr instanceof Error ? cardErr.message.slice(0, 100) : String(cardErr).slice(0, 100)}`);
+      }
+    }
+
     recordApiCall("brightdata");
-    const jobs = parseBingJobsMarkdown(content, location, links);
-    console.log(`[SRC7-BRIGHTDATA] SUCCESS — ${jobs.length} jobs parsed`);
-    if (jobs.length > 0) {
-      console.log(`[SRC7-BRIGHTDATA] First: "${jobs[0].title}" at "${jobs[0].company_name}" link=${jobs[0].link ? "yes" : "no"}`);
+    console.log(`[BRIGHTDATA] SUCCESS — ${jobs.length} jobs with full specs`);
+    const first = jobs[0];
+    if (first) {
+      console.log(`[BRIGHTDATA] First: "${first.title}" at "${first.company_name}" — desc=${first.description?.length ?? 0} chars`);
     }
     return jobs;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[SRC7-BRIGHTDATA] EXCEPTION: ${msg.slice(0, 200)} — will try next source`);
+    console.error(`[BRIGHTDATA] EXCEPTION: ${msg.slice(0, 200)}`);
     return [];
   } finally {
     if (browser) {

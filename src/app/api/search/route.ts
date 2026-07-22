@@ -357,7 +357,7 @@ async function fetchAndFilterJobs(
         case "webJobs":
           return ["webJobs", withTimeout(searchWebJobs(serpParams), 60_000, "Web Jobs").catch((err) => { console.error(`[PIPELINE] Web Jobs TIMEOUT/FAIL: ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}`); return [] as SerpJob[]; })] as const;
         case "jinaBing":
-          return ["jinaBing", withTimeout(searchJinaBingJobs(serpParams), 60_000, "Jina Bing Jobs").catch((err) => { console.error(`[PIPELINE] Jina Bing Jobs TIMEOUT/FAIL: ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}`); return [] as SerpJob[]; })] as const;
+          return ["jinaBing", searchJinaBingJobs(serpParams).catch((err) => { console.error(`[PIPELINE] Jina Bing Jobs FAIL: ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}`); return [] as SerpJob[]; })] as const;
         default:
           return [key, Promise.resolve([])] as const;
       }
