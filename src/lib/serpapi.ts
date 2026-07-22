@@ -1206,8 +1206,18 @@ async function tryBrightDataWebJobs(query: string, location: string): Promise<Se
       console.warn(`[SRC7-BRIGHTDATA] #b_results not found — proceeding with page content`);
     }
 
+    // Extract both text AND links — innerText strips URLs, so we need HTML links separately
     const content = await page.evaluate(() => document.body.innerText);
-    console.log(`[SRC7-BRIGHTDATA] Page content: ${content.length} chars`);
+    const links: { text: string; href: string }[] = await page.evaluate(() => {
+      return [...document.querySelectorAll("a[href]")].map((a) => ({
+        text: (a.textContent ?? "").trim(),
+        href: (a as HTMLAnchorElement).href,
+      })).filter((l) => l.href && l.text);
+    });
+    console.log(`[SRC7-BRIGHTDATA] Page content: ${content.length} chars, ${links.length} links`);
+    if (links.length > 0) {
+      console.log(`[SRC7-BRIGHTDATA] Sample links: ${links.slice(0, 5).map((l) => `${l.text.slice(0, 50)} → ${l.href.slice(0, 80)}`).join(" | ")}`);
+    }
 
     if (!content || content.length < 50) {
       console.warn(`[SRC7-BRIGHTDATA] Empty page content — will try next source`);
@@ -1215,10 +1225,10 @@ async function tryBrightDataWebJobs(query: string, location: string): Promise<Se
     }
 
     recordApiCall("brightdata");
-    const jobs = parseBingJobsMarkdown(content, location);
+    const jobs = parseBingJobsMarkdown(content, location, links);
     console.log(`[SRC7-BRIGHTDATA] SUCCESS — ${jobs.length} jobs parsed`);
     if (jobs.length > 0) {
-      console.log(`[SRC7-BRIGHTDATA] First: "${jobs[0].title}" at "${jobs[0].company_name}"`);
+      console.log(`[SRC7-BRIGHTDATA] First: "${jobs[0].title}" at "${jobs[0].company_name}" link=${jobs[0].link ? "yes" : "no"}`);
     }
     return jobs;
   } catch (err) {
@@ -1333,9 +1343,56 @@ function extractDomain(url: string): string {
   }
 }
 
-function parseBingJobsMarkdown(content: string, defaultLocation?: string): SerpJob[] {
+function parseBingJobsMarkdown(content: string, defaultLocation?: string, pageLinks?: { text: string; href: string }[]): SerpJob[] {
   const jobs: SerpJob[] = [];
   const lines = content.split("\n").map((l) => l.trim()).filter(Boolean);
+
+  // Pre-filter links: skip Bing internal navigation, keep only external job board URLs
+  const filteredLinks = (pageLinks ?? []).filter((l) => {
+    const href = l.href.toLowerCase();
+    if (href.includes("bing.com/search") || href.includes("bing.com/jobs/redirect") || href.includes("go.microsoft.com")) return false;
+    if (href.includes("google.com/search") || href.includes("google.com/url")) return false;
+    if (href.includes("javascript:") || href.startsWith("mailto:")) return false;
+    // Keep links that point to actual job boards
+    try {
+      const host = new URL(l.href).hostname.replace(/^www\./, "").toLowerCase();
+      const isJobBoard = /linkedin\.com|indeed\.com|careerjunction|jobmail|pnet\.co\.za|glassdoor|ziprecruiter|simplyhired|monster\.com|reed\.co\.uk|totaljobs|jobs\.co|bright|adzuna|jooble|careerjet|jobrapido|glassdoor/.test(host);
+      return isJobBoard || l.href.includes("/job") || l.href.includes("/viewjob") || l.href.includes("/jobs/view/");
+    } catch {
+      return false;
+    }
+  });
+  if (filteredLinks.length > 0) {
+    console.log(`[BING-PARSER] ${filteredLinks.length} external job board links found`);
+  }
+
+  // Match a job title to the best link by text similarity
+  function findBestLink(title: string, company: string): string {
+    if (filteredLinks.length === 0) return "";
+    const titleLower = title.toLowerCase();
+    const companyLower = company.toLowerCase();
+    let bestHref = "";
+    let bestScore = 0;
+    for (const link of filteredLinks) {
+      const textLower = link.text.toLowerCase();
+      // Exact title match in link text
+      if (textLower.includes(titleLower) && titleLower.length > 5) {
+        return link.href;
+      }
+      // Title words match
+      const titleWords = titleLower.split(/\s+/).filter((w) => w.length > 3);
+      const matchCount = titleWords.filter((w) => textLower.includes(w)).length;
+      const score = titleWords.length > 0 ? matchCount / titleWords.length : 0;
+      // Boost if company name also matches
+      const companyBoost = companyLower.length > 2 && textLower.includes(companyLower) ? 0.2 : 0;
+      const totalScore = score + companyBoost;
+      if (totalScore > bestScore && totalScore >= 0.3) {
+        bestScore = totalScore;
+        bestHref = link.href;
+      }
+    }
+    return bestHref;
+  }
 
   let currentTitle = "";
   let currentCompany = "";
@@ -1362,7 +1419,7 @@ function parseBingJobsMarkdown(content: string, defaultLocation?: string): SerpJ
           company_name: cleanText(currentCompany) || "Unknown",
           location: cleanText(currentLocation) || defaultLocation || "",
           description: cleanText(currentDescription).slice(0, 3000),
-          link: extractBestJobUrl(currentDescription),
+          link: findBestLink(currentTitle, currentCompany) || extractBestJobUrl(currentDescription),
           via: currentVia || "bing",
           hasFullSpec: currentDescription.length > 300,
           spec_source: "web_jobs" as const,
@@ -1410,7 +1467,7 @@ function parseBingJobsMarkdown(content: string, defaultLocation?: string): SerpJ
       company_name: cleanText(currentCompany) || "Unknown",
       location: cleanText(currentLocation) || defaultLocation || "",
       description: cleanText(currentDescription).slice(0, 3000),
-      link: extractBestJobUrl(currentDescription),
+      link: findBestLink(currentTitle, currentCompany) || extractBestJobUrl(currentDescription),
       via: currentVia || "bing_jobs",
       hasFullSpec: currentDescription.length > 300,
       spec_source: "web_jobs" as const,
