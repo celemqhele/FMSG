@@ -1,13 +1,12 @@
 // BUILD_CACHE_BUST: jun30-1
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { searchGoogleJobs, searchJSearch, searchAdzuna, searchWebJobs, searchJinaGoogleJobs, searchGooglePages, scrapeJobPage, extractJobUrlsFromListingPage, isListingPage, isIndividualJobPage, isCategoryPage, scrapePageBrightData, scrapePageApify, type SerpJob } from "@/lib/serpapi";
+import { searchGoogleJobs, searchJSearch, searchAdzuna, searchWebJobs, searchJinaBingJobs, isCategoryPage, scrapePageBrightData, scrapePageApify, type SerpJob } from "@/lib/serpapi";
 import { extractText } from "@/lib/pdf";
 import { callAIWithFallback, lastAITier } from "@/lib/gemini";
 import { StreamWriter, type SearchEvent } from "@/lib/search-stream";
 import { debugLog } from "@/lib/debug";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { validateScrapeUrl } from "@/lib/url-validation";
 import { signContinuationToken, verifyAndDecodeContinuationToken } from "@/lib/continuation-token";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -206,7 +205,7 @@ interface JobRow {
   yes_answers: number | null;
   recruiter_verdict: string | null;
   dynamic_requirements: { requirement: string; mandatory: boolean; pillar: string; met: boolean; evidence: string }[] | null;
-  spec_source: "google_jobs" | "jsearch" | "adzuna" | "linkedin" | "google_search" | null;
+  spec_source: "google_jobs" | "jsearch" | "adzuna" | "linkedin" | "bing_jobs" | "scrappa" | null;
 }
 
 function normalize(r: any) {
@@ -339,9 +338,8 @@ async function fetchAndFilterJobs(
       googleJobs: true,            // always run
       jSearch: isAll || hasNonLinkedIn,  // skip when only LinkedIn
       adzuna: isAll,               // only when All
-      webJobs: isAll,               // Multi-service fallback (Jina Bing → Bright Data → Apify → Scrappa)
-      jinaGoogle: isAll,            // Jina Reader scraping Google Jobs (ibp=htl;jobs)
-      googlePages: isAll,          // only when All
+      webJobs: isAll,               // Scrappa (Google Jobs API)
+      jinaBing: isAll,              // Jina Reader scraping Bing Jobs
     };
 
     const enabledCount = Object.values(sources).filter(Boolean).length;
@@ -358,10 +356,8 @@ async function fetchAndFilterJobs(
           return ["adzuna", withTimeout(searchAdzuna(serpParams), 60_000, "Adzuna").catch((err) => { console.error(`[PIPELINE] Adzuna TIMEOUT/FAIL: ${err}`); return [] as SerpJob[]; })] as const;
         case "webJobs":
           return ["webJobs", withTimeout(searchWebJobs(serpParams), 60_000, "Web Jobs").catch((err) => { console.error(`[PIPELINE] Web Jobs TIMEOUT/FAIL: ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}`); return [] as SerpJob[]; })] as const;
-        case "jinaGoogle":
-          return ["jinaGoogle", withTimeout(searchJinaGoogleJobs(serpParams), 60_000, "Jina Google Jobs").catch((err) => { console.error(`[PIPELINE] Jina Google Jobs TIMEOUT/FAIL: ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}`); return [] as SerpJob[]; })] as const;
-        case "googlePages":
-          return ["googlePages", withTimeout(searchGooglePages(serpParams), 60_000, "Google Search/Jina").catch((err) => { console.error(`[PIPELINE] Google Search/Jina TIMEOUT/FAIL: ${err}`); return [] as { title: string; link: string; snippet: string; domain: string }[]; })] as const;
+        case "jinaBing":
+          return ["jinaBing", withTimeout(searchJinaBingJobs(serpParams), 60_000, "Jina Bing Jobs").catch((err) => { console.error(`[PIPELINE] Jina Bing Jobs TIMEOUT/FAIL: ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}`); return [] as SerpJob[]; })] as const;
         default:
           return [key, Promise.resolve([])] as const;
       }
@@ -384,69 +380,11 @@ async function fetchAndFilterJobs(
     const jsearchJobs = (resultObj["jSearch"] ?? []) as SerpJob[];
     const adzunaJobs = (resultObj["adzuna"] ?? []) as SerpJob[];
     const webJobsJobs = (resultObj["webJobs"] ?? []) as SerpJob[];
-    const jinaGoogleJobs = (resultObj["jinaGoogle"] ?? []) as SerpJob[];
-    const googlePages = (resultObj["googlePages"] ?? []) as { title: string; link: string; snippet: string; domain: string }[];
+    const jinaBingJobs = (resultObj["jinaBing"] ?? []) as SerpJob[];
 
-    console.log(`[PIPELINE] Sources returned after ${Date.now() - pipelineStart}ms: GoogleJobs=${googleJobs.length} JSearch=${jsearchJobs.length} Adzuna=${adzunaJobs.length} WebJobs=${webJobsJobs.length} JinaGoogle=${jinaGoogleJobs.length} GooglePages=${googlePages.length}`);
+    console.log(`[PIPELINE] Sources returned after ${Date.now() - pipelineStart}ms: GoogleJobs=${googleJobs.length} JSearch=${jsearchJobs.length} Adzuna=${adzunaJobs.length} WebJobs=${webJobsJobs.length} JinaBing=${jinaBingJobs.length}`);
 
-    // Scrape Google Search URLs with Jina (two-step crawl, parallel)
-    console.log(`[PIPELINE] Starting two-step crawl for ${googlePages.length} Google Search URLs`);
-    const scrapedGoogleJobs: SerpJob[] = [];
-
-    // Phase 1: Classify all URLs and extract individual URLs from listing pages (parallel)
-    const classifications = await Promise.all(googlePages.map(async (v) => {
-      if (!validateScrapeUrl(v.link).ok) {
-        return { type: "skipped" as const, domain: v.domain };
-      } else if (isIndividualJobPage(v.link)) {
-        return { type: "direct" as const, url: v.link, domain: v.domain, title: v.title };
-      } else if (isListingPage(v.link)) {
-        console.log(`[PIPELINE] Listing page detected, extracting URLs: ${v.link}`);
-        const individualUrls = await withTimeout(extractJobUrlsFromListingPage(v.link, JINA_API ?? null), 60_000, `Jina extract ${v.domain}`).catch(() => [] as string[]);
-        console.log(`[PIPELINE] Extracted ${individualUrls.length} individual URLs from ${v.domain}`);
-        return { type: "listing" as const, urls: individualUrls, domain: v.domain };
-      } else {
-        return { type: "direct" as const, url: v.link, domain: v.domain, title: v.title };
-      }
-    }));
-
-    // Collect all URLs to scrape
-    const urlsToScrape: { url: string; domain: string; title?: string }[] = [];
-    for (const c of classifications) {
-      if (c.type === "skipped") {
-        continue;
-      } else if (c.type === "direct") {
-        urlsToScrape.push({ url: c.url, domain: c.domain, title: c.title });
-      } else {
-        for (const url of c.urls) {
-          urlsToScrape.push({ url, domain: c.domain });
-        }
-      }
-    }
-    console.log(`[PIPELINE] Phase 1 complete: ${urlsToScrape.length} URLs to scrape`);
-
-    // Phase 2: Scrape all URLs in parallel batches of 5
-    const CONCURRENCY = 5;
-    const safeUrlsToScrape = urlsToScrape.filter(({ url }) => validateScrapeUrl(url).ok);
-    for (let i = 0; i < safeUrlsToScrape.length; i += CONCURRENCY) {
-      const batch = safeUrlsToScrape.slice(i, i + CONCURRENCY);
-      const batchResults = await Promise.all(
-        batch.map(({ url, domain, title }) =>
-          withTimeout(scrapeJobPage(url, JINA_API ?? null), 60_000, `Jina scrape ${domain}`)
-            .then((job) => {
-              if (job) {
-                if (title) job.title = job.title || title;
-                console.log(`[PIPELINE] Scraped OK: "${job.title}" at "${job.company_name}"`);
-              }
-              return job;
-            })
-            .catch(() => null)
-        )
-      );
-      scrapedGoogleJobs.push(...batchResults.filter((j): j is SerpJob => j !== null));
-    }
-    console.log(`[PIPELINE] Two-step crawl complete: ${scrapedGoogleJobs.length} jobs scraped from ${urlsToScrape.length} URLs`);
-
-    // Merge all sources with dedup (priority: JSearch > Google Jobs > LinkedIn > Google Search > Adzuna)
+    // Merge all sources with dedup (priority: JSearch > Google Jobs > Bing Jobs > Scrappa > Adzuna)
     rawJobs = [];
     const seenKeys = new Set<string>();
 
@@ -474,16 +412,15 @@ async function fetchAndFilterJobs(
       }
     }
 
-    // Priority order: JSearch (best inline) → Google Jobs → Jina Google Jobs → Web Jobs → Google Search (Jina) → Adzuna (snippet)
-    console.log("[PIPELINE] Merging sources (priority: JSearch > Google > JinaGoogle > Web Jobs > Scrape > Adzuna)");
+    // Priority order: JSearch (best inline) → Google Jobs → Bing Jobs → Scrappa → Adzuna
+    console.log("[PIPELINE] Merging sources (priority: JSearch > Google > Bing > Scrappa > Adzuna)");
     addJobs(jsearchJobs);
     addJobs(googleJobs);
-    addJobs(jinaGoogleJobs);
+    addJobs(jinaBingJobs);
     addJobs(webJobsJobs);
-    addJobs(scrapedGoogleJobs);
     addJobs(adzunaJobs);
 
-    console.log(`[PIPELINE] Dedup complete: ${rawJobs.length} unique jobs from ${googleJobs.length + jsearchJobs.length + adzunaJobs.length + webJobsJobs.length + scrapedGoogleJobs.length} total`);
+    console.log(`[PIPELINE] Dedup complete: ${rawJobs.length} unique jobs from ${googleJobs.length + jsearchJobs.length + adzunaJobs.length + webJobsJobs.length + jinaBingJobs.length} total`);
 
     // Filter out category/search/listing pages masquerading as individual job listings
     const beforeCatFilter = rawJobs.length;
