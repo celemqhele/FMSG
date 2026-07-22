@@ -89,6 +89,12 @@ const BLACKLISTED_DOMAINS = [
   // Job aggregator / meta-search sites (redirect to other boards, no real listings)
   'jobrapido.com',
   'jobrapido.co.za',
+  'jobrapido.co.uk',
+  'jobrapido.com.au',
+  'jobrapido.de',
+  'jobrapido.fr',
+  'jobrapido.it',
+  'jobrapido.es',
   'careerjet.co.za',
   'careerjet.co',
   'jobsearch101.co.za',
@@ -390,20 +396,26 @@ async function fetchAndFilterJobs(
 
     function addJobs(jobs: SerpJob[]) {
       for (const j of jobs) {
-        const key = `${j.title ?? ""}|${j.company_name ?? ""}`.toLowerCase();
+        const url = buildJobUrl(j);
+        const key = url
+          ? url.toLowerCase().replace(/\/+$/, "")
+          : `${j.title ?? ""}|${j.company_name ?? ""}`.toLowerCase();
         if (!seenKeys.has(key)) {
           seenKeys.add(key);
           rawJobs.push(j);
         } else {
           // If existing job has shorter description, replace with this one
-          const existing = rawJobs.find(
-            (r) => `${r.title ?? ""}|${r.company_name ?? ""}`.toLowerCase() === key
-          );
+          const existing = rawJobs.find((r) => {
+            const eUrl = buildJobUrl(r);
+            const eKey = eUrl
+              ? eUrl.toLowerCase().replace(/\/+$/, "")
+              : `${r.title ?? ""}|${r.company_name ?? ""}`.toLowerCase();
+            return eKey === key;
+          });
           if (existing) {
             const existingLen = existing.description?.length ?? 0;
             const newLen = j.description?.length ?? 0;
             if (newLen > existingLen) {
-              // Preserve spec_source of the better source
               j.spec_source = j.spec_source ?? existing.spec_source;
               Object.assign(existing, { description: j.description, hasFullSpec: j.hasFullSpec, spec_source: j.spec_source });
             }
