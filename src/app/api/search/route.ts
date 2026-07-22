@@ -642,6 +642,8 @@ async function fetchAndFilterJobs(
     const url = j.link ?? '';
     const desc = j.description ?? '';
     const hasSpec = j.hasFullSpec && desc.length >= SHORT_SPEC_THRESHOLD;
+    // Bing Jobs always have real specs from Bright Data — never reject as snippet
+    if (j.spec_source === "bing_jobs") return true;
     // If no real link AND short description AND no inline spec → it's a search snippet, not a job
     if (!url && !hasSpec && desc.length < 500) {
       snippetRejected.push(j);
@@ -660,7 +662,7 @@ async function fetchAndFilterJobs(
     const jobUrl = buildJobUrl(job);
     tempJobUrls.set(i, jobUrl);
 
-    if (job.hasFullSpec && job.description && job.description.length >= SHORT_SPEC_THRESHOLD) {
+    if (job.hasFullSpec && job.description && (job.description.length >= SHORT_SPEC_THRESHOLD || job.spec_source === "bing_jobs")) {
       tempJobSpecs.set(i, job.description);
       if (isExpired(job.description)) (job as any)._expired = true;
       continue;
@@ -690,6 +692,7 @@ async function fetchAndFilterJobs(
 
   const noSpecRejected = rawJobs.filter((j) => (j as any)._noSpec);
   if (noSpecRejected.length > 0) {
+    console.log(`[PIPELINE] Rejected ${noSpecRejected.length} jobs with no spec (Jina+BD+Apify all failed)`);
     const rows = noSpecRejected.map((j) => ({
       user_id: user.id, search_id: searchId, search_query: query,
       profile_id: profile_id,
@@ -775,7 +778,6 @@ async function screenAndAnalyze(
   dedupSets?: { history: Set<string>; saved: Set<string>; blocked: Set<string>; rejected?: Set<string> },
   maxAgeDays?: number,
   offset: number = 0,
-  limit: number = 10,
 ): Promise<{ results: JobRow[]; queryUsed: string; filteredCounts: { history: number; saved: number; rejected: number; blocked: number }; nextOffset: number }> {
   const filteredCounts = { history: 0, saved: 0, rejected: 0, blocked: 0 };
   let nextOffset = offset;
@@ -966,10 +968,10 @@ ${blacklistInfo}${bannedInfo}${dateConstraintInfo}`;
   //   if (s.size > 0) allExisting = s;
   // }
 
-  debugLog(`[SEARCH] Starting one-by-one scoring (${rawJobs.length} jobs, offset ${offset}, limit ${limit})`);
+  debugLog(`[SEARCH] Starting one-by-one scoring (${rawJobs.length} jobs, offset ${offset})`);
   onStatus?.({ type: "screening_job", current: 0, total: rawJobs.length, progress: 25 });
 
-  for (let i = offset; i < Math.min(offset + limit, rawJobs.length); i++) {
+  for (let i = offset; i < rawJobs.length; i++) {
     const job = rawJobs[i];
     nextOffset = i + 1;
     const jobUrl = jobUrls.get(i) || buildJobUrl(job);
@@ -1536,40 +1538,6 @@ Return ONLY valid JSON (no markdown, no code fences):
               const totalFiltered = result.filteredCounts.history + result.filteredCounts.saved + result.filteredCounts.rejected + result.filteredCounts.blocked;
               if (totalFiltered > 0) {
                 writer.send({ type: "filtered_summary", ...result.filteredCounts, progress: 50 });
-              }
-
-              if (result.nextOffset < state.rawJobs.length) {
-                // More jobs to process
-                const allResults = [...(state.allResults || []), ...result.results];
-                sendComplete({
-                  type: "pause",
-                  message: `Processed ${result.nextOffset} of ${state.rawJobs.length} jobs. Continue?`,
-                  progress: Math.min((result.nextOffset / state.rawJobs.length) * 80, 80),
-                  continuation: signContinuationToken({
-                    mode: "normal",
-                    rawJobs: state.rawJobs,
-                    jobSpecs: state.jobSpecs,
-                    jobUrls: state.jobUrls,
-                    queryUsed: state.queryUsed,
-                    searchId: state.searchId,
-                    titles: state.titles,
-                    profileLocation: state.profileLocation,
-                    profileIndustry: state.profileIndustry,
-                    cvTexts: state.cvTexts,
-                    bannedJobs: state.bannedJobs,
-                    bannedCompanies: state.bannedCompanies,
-                    hiddenJobKeys: state.hiddenJobKeys,
-                    query: state.query,
-                    dedupSets: state.dedupSets,
-                    maxAgeDays: state.maxAgeDays,
-                    profile_id: state.profile_id,
-                    referralUrl: state.referralUrl,
-                    allResults, // Persist progress
-                    nextOffset: result.nextOffset,
-                  }, SUPABASE_SERVICE_KEY),
-                });
-                writer.close();
-                return;
               }
 
               // All jobs processed
