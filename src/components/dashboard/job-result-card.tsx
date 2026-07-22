@@ -209,9 +209,17 @@ export function JobResultCard({
     }
   };
 
+  const sourceColor = specSource === "google_jobs" ? "border-l-blue-500" :
+    specSource === "jsearch" ? "border-l-violet-500" :
+    specSource === "adzuna" ? "border-l-orange-500" :
+    specSource === "scrappa" ? "border-l-cyan-500" :
+    specSource === "bing_jobs" ? "border-l-emerald-500" :
+    specSource === "linkedin" ? "border-l-sky-500" :
+    "border-l-slate-400";
+
   return (
     <div
-      className={`liquid-glass rounded-xl p-5 transition-all duration-300 ${
+      className={`liquid-glass rounded-xl p-5 border-l-4 ${sourceColor} transition-all duration-300 ${
         deleting ? "opacity-0 scale-95" : "opacity-100 scale-100"
       }`}
     >
