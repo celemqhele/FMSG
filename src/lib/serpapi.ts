@@ -20,7 +20,7 @@ export interface SerpJob {
   apply_options?: ApplyOption[];
   job_highlights?: { link?: string };
   hasFullSpec?: boolean;
-  spec_source?: "google_jobs" | "jsearch" | "adzuna" | "linkedin" | "google_search" | "web_jobs";
+  spec_source?: "google_jobs" | "jsearch" | "adzuna" | "linkedin" | "bing_jobs" | "web_jobs";
 }
 
 interface SerpParams {
@@ -352,209 +352,8 @@ export async function searchLinkedInJobs(params: SerpParams): Promise<SerpJob[]>
 // Step 2: Jina reads listing page → extract individual job URLs
 // Step 3: Jina reads each individual URL → full spec
 
-const JINA_SCRAPEABLE_DOMAINS = [
-  { domain: "careerjunction.co.za", jobPattern: /job-\d+\.aspx/i, listingPatterns: [/\/jobs\/[a-z0-9-]+$/i, /\/jobs\/[a-z0-9-]+\/[a-z0-9-]+$/i] },
-  { domain: "jobmail.co.za", jobPattern: /-id-\d+$/i, listingPatterns: [/\/jobs\/?$/i, /\/jobs\/[a-z0-9-]+\/?$/i, /\/jobs\/[a-z0-9-]+\/[a-z0-9-]+\/?$/i] },
-  { domain: "pnet.co.za", jobPattern: /--[\w-]+--\d+-inline\.html/i, listingPatterns: [/\/jobs\/[a-z0-9-]+$/i] },
-  { domain: "linkedin.com", jobPattern: /\/jobs\/view\/\d+/i, listingPatterns: [/\/jobs\/?$/i, /\/jobs\/search/i] },
-  { domain: "za.indeed.com", jobPattern: /\/viewjob\?/i, listingPatterns: [/\/jobs\?/i, /\/jobs\/[a-z0-9-]+$/i] },
-];
 
-export function isListingPage(url: string): boolean {
-  try {
-    const u = new URL(url);
-    const host = u.hostname.replace(/^www\./, "").toLowerCase();
-    const domain = JINA_SCRAPEABLE_DOMAINS.find(d => host === d.domain || host.endsWith(`.${d.domain}`));
-    if (!domain) return false;
-    return domain.listingPatterns.some(p => p.test(u.pathname));
-  } catch {
-    return false;
-  }
-}
-
-export function isIndividualJobPage(url: string): boolean {
-  try {
-    const u = new URL(url);
-    const host = u.hostname.replace(/^www\./, "").toLowerCase();
-    const domain = JINA_SCRAPEABLE_DOMAINS.find(d => host === d.domain || host.endsWith(`.${d.domain}`));
-    if (!domain) return false;
-    return domain.jobPattern.test(u.pathname + u.search);
-  } catch {
-    return false;
-  }
-}
-
-export async function searchGooglePages(params: SerpParams): Promise<{ title: string; link: string; snippet: string; domain: string }[]> {
-  const allResults: { title: string; link: string; snippet: string; domain: string }[] = [];
-
-  // Check shared SerpAPI rate limit before starting
-  const rl = checkApiLimit("serpapi");
-  if (!rl.allowed) {
-    console.warn(`[SRC5-GOOGLE-SCRAPE] RATE LIMITED — serpapi quota exhausted (${rl.remaining}/${rl.total}), skipping`);
-    return [];
-  }
-
-  console.log(`[SRC5-GOOGLE-SCRAPE] Starting search for ${JINA_SCRAPEABLE_DOMAINS.length} domains (serpapi quota: ${rl.remaining}/${rl.total})`);
-
-  const domainResults = await Promise.all(
-    JINA_SCRAPEABLE_DOMAINS.map(async ({ domain }) => {
-      const query = `${params.q} site:${domain}`;
-
-      const url = new URL("https://serpapi.com/search.json");
-      url.searchParams.set("engine", "google");
-      url.searchParams.set("q", query);
-      url.searchParams.set("api_key", SERPAPI_KEY!);
-      if (params.location) url.searchParams.set("location", params.location);
-      if (params.hl) url.searchParams.set("hl", params.hl || "en");
-      if (params.gl) url.searchParams.set("gl", params.gl || "za");
-      url.searchParams.set("num", "10");
-
-      const fullUrl = url.toString();
-      const safeUrl = fullUrl.replace(/api_key=[^&]+/, "api_key=***");
-      console.log(`[SRC5-GOOGLE-SCRAPE] REQ site:${domain} url=${safeUrl}`);
-
-      const matched: { title: string; link: string; snippet: string; domain: string }[] = [];
-
-      try {
-        const res = await fetch(fullUrl);
-        console.log(`[SRC5-GOOGLE-SCRAPE] site:${domain} HTTP ${res.status} ${res.statusText}`);
-        if (!res.ok) {
-          console.error(`[SRC5-GOOGLE-SCRAPE] site:${domain} FAIL status=${res.status}`);
-          if (res.status === 429) {
-            recordApiFailure("serpapi");
-            console.warn(`[SRC5-GOOGLE-SCRAPE] 429 detected — marking serpapi as exhausted until window resets`);
-          }
-          return matched;
-        }
-        const data = await res.json();
-        recordApiCall("serpapi");
-        const organic = data.organic_results ?? [];
-        console.log(`[SRC5-GOOGLE-SCRAPE] site:${domain} OK ${organic.length} organic results`);
-        for (const r of organic) {
-          if (!r.link) continue;
-          try {
-            const resultDomain = new URL(r.link).hostname.replace(/^www\./, "").toLowerCase();
-            if (resultDomain === domain || resultDomain.endsWith(`.${domain}`)) {
-              matched.push({
-                title: r.title || "",
-                link: r.link,
-                snippet: r.snippet || "",
-                domain: resultDomain,
-              });
-            }
-          } catch {}
-        }
-        console.log(`[SRC5-GOOGLE-SCRAPE] site:${domain} matched ${matched.length} URLs for scraping`);
-      } catch (err) {
-        console.error(`[SRC5-GOOGLE-SCRAPE] site:${domain} EXCEPTION:`, err);
-      }
-
-      return matched;
-    })
-  );
-
-  for (const results of domainResults) {
-    allResults.push(...results);
-  }
-
-  console.log(`[SRC5-GOOGLE-SCRAPE] TOTAL ${allResults.length} URLs collected across all domains`);
-  return allResults;
-}
-
-export async function extractJobUrlsFromListingPage(
-  listingUrl: string,
-  jinaApiKey: string | null
-): Promise<string[]> {
-  const rl = checkApiLimit("jina");
-  if (!rl.allowed) {
-    console.warn(`[SRC5-EXTRACT] RATE LIMITED — ${rl.label}, ${rl.remaining}/${rl.total} remaining, skipping ${listingUrl}`);
-    return [];
-  }
-
-  try {
-    const headers: Record<string, string> = {
-      "Accept": "application/json",
-      "X-Return-Format": "markdown",
-      "X-Remove-Images": "true",
-    };
-    if (jinaApiKey) headers["Authorization"] = `Bearer ${jinaApiKey}`;
-
-    console.log(`[SRC5-EXTRACT] Jina REQ: ${listingUrl} (jina quota: ${rl.remaining}/${rl.total})`);
-    let res = await fetch(`https://r.jina.ai/${encodeURIComponent(listingUrl)}`, { headers });
-    console.log(`[SRC5-EXTRACT] Jina HTTP ${res.status} ${res.statusText} for ${listingUrl}`);
-
-    // Retry once on 429 with backoff
-    if (res.status === 429) {
-      const retryAfter = parseInt(res.headers.get("retry-after") || "5", 10);
-      console.warn(`[SRC5-EXTRACT] Jina 429, retrying in ${retryAfter}s...`);
-      await new Promise(r => setTimeout(r, retryAfter * 1000));
-      res = await fetch(`https://r.jina.ai/${encodeURIComponent(listingUrl)}`, { headers });
-      console.log(`[SRC5-EXTRACT] Jina retry HTTP ${res.status} ${res.statusText} for ${listingUrl}`);
-    }
-
-    if (!res.ok) {
-      console.error(`[SRC5-EXTRACT] Jina FAIL status=${res.status} for ${listingUrl}`);
-      return [];
-    }
-
-    recordApiCall("jina");
-
-    const json = await res.json();
-    if (json.code !== 200 || !json.data?.content) {
-      console.warn(`[SRC5-EXTRACT] Jina OK but no content (code=${json.code}) for ${listingUrl}`);
-      return [];
-    }
-
-    const content: string = json.data.content;
-    console.log(`[SRC5-EXTRACT] Content length: ${content.length} for ${listingUrl}`);
-
-    const baseHost = new URL(listingUrl).hostname.replace(/^www\./, "").toLowerCase();
-    const domain = JINA_SCRAPEABLE_DOMAINS.find(d => baseHost === d.domain || baseHost.endsWith(`.${d.domain}`));
-    if (!domain) {
-      console.warn(`[SRC5-EXTRACT] No domain config for ${baseHost}`);
-      return [];
-    }
-
-    // Extract all URLs from the markdown content
-    const urlRegex = /https?:\/\/[^\s\)>\]"]+/g;
-    const allUrls: string[] = [...(content.match(urlRegex) ?? [])];
-
-    // Also extract relative URLs and convert to absolute
-    const relativeUrlRegex = /\]\((\/[^\)]+)\)/g;
-    let match;
-    while ((match = relativeUrlRegex.exec(content)) !== null) {
-      allUrls.push(`https://${baseHost}${match[1]}`);
-    }
-
-    const jobUrls: string[] = [];
-    const seen = new Set<string>();
-
-    for (const rawUrl of allUrls) {
-      try {
-        const u = new URL(rawUrl);
-        const host = u.hostname.replace(/^www\./, "").toLowerCase();
-
-        // Must be same domain
-        if (host !== domain.domain && !host.endsWith(`.${domain.domain}`)) continue;
-
-        // Must match individual job page pattern
-        if (!domain.jobPattern.test(u.pathname + u.search)) continue;
-
-        const clean = u.origin + u.pathname;
-        if (!seen.has(clean)) {
-          seen.add(clean);
-          jobUrls.push(clean);
-        }
-      } catch {}
-    }
-
-    console.log(`[SRC5-EXTRACT] Found ${jobUrls.length} individual job URLs from ${listingUrl}`);
-    return jobUrls.slice(0, 8);
-  } catch (err) {
-    console.error(`[SRC5-EXTRACT] EXCEPTION for ${listingUrl}:`, err);
-    return [];
-  }
-}
+// ─── Scrape a single job page via Jina (used by admin create-job-post) ──────
 
 export async function scrapeJobPage(
   url: string,
@@ -562,7 +361,7 @@ export async function scrapeJobPage(
 ): Promise<SerpJob | null> {
   const rl = checkApiLimit("jina");
   if (!rl.allowed) {
-    console.warn(`[SRC5-SCRAPE] RATE LIMITED — ${rl.label}, ${rl.remaining}/${rl.total} remaining, skipping ${url}`);
+    console.warn(`[SCRAPE-JOB] RATE LIMITED — ${rl.label}, ${rl.remaining}/${rl.total} remaining, skipping ${url}`);
     return null;
   }
 
@@ -574,27 +373,20 @@ export async function scrapeJobPage(
     };
     if (jinaApiKey) headers["Authorization"] = `Bearer ${jinaApiKey}`;
 
-    console.log(`[SRC5-SCRAPE] Jina REQ: ${url} (jina quota: ${rl.remaining}/${rl.total})`);
+    console.log(`[SCRAPE-JOB] Jina REQ: ${url} (jina quota: ${rl.remaining}/${rl.total})`);
     let res = await fetch(`https://r.jina.ai/${encodeURIComponent(url)}`, { headers });
-    console.log(`[SRC5-SCRAPE] Jina HTTP ${res.status} ${res.statusText} for ${url}`);
+    console.log(`[SCRAPE-JOB] Jina HTTP ${res.status} ${res.statusText} for ${url}`);
 
-    // Retry once on 429 with backoff
     if (res.status === 429) {
       const retryAfter = parseInt(res.headers.get("retry-after") || "5", 10);
-      console.warn(`[SRC5-SCRAPE] Jina 429, retrying in ${retryAfter}s...`);
+      console.warn(`[SCRAPE-JOB] Jina 429, retrying in ${retryAfter}s...`);
       await new Promise(r => setTimeout(r, retryAfter * 1000));
       res = await fetch(`https://r.jina.ai/${encodeURIComponent(url)}`, { headers });
-      console.log(`[SRC5-SCRAPE] Jina retry HTTP ${res.status} ${res.statusText} for ${url}`);
+      console.log(`[SCRAPE-JOB] Jina retry HTTP ${res.status} ${res.statusText} for ${url}`);
     }
 
     if (!res.ok) {
-      if (res.status === 429 || res.status === 403) {
-        try {
-          const err = await res.json();
-          console.warn(`[SRC5-SCRAPE] Jina rate/auth error code=${err.code} for ${url}`);
-        } catch {}
-      }
-      console.error(`[SRC5-SCRAPE] Jina FAIL status=${res.status} for ${url}`);
+      console.error(`[SCRAPE-JOB] Jina FAIL status=${res.status} for ${url}`);
       return null;
     }
 
@@ -602,54 +394,20 @@ export async function scrapeJobPage(
 
     const json = await res.json();
     if (json.code !== 200 || !json.data?.content) {
-      console.warn(`[SRC5-SCRAPE] Jina OK but bad code=${json.code} or no content for ${url}`);
+      console.warn(`[SCRAPE-JOB] Jina OK but bad code=${json.code} or no content for ${url}`);
       return null;
     }
 
     const content: string = json.data.content.trim();
-    console.log(`[SRC5-SCRAPE] Content length: ${content.length} for ${url}`);
+    console.log(`[SCRAPE-JOB] Content length: ${content.length} for ${url}`);
     if (content.length < 300) {
-      console.warn(`[SRC5-SCRAPE] Rejected too short (${content.length} chars): ${url}`);
-      return null;
-    }
-
-    // Validate this looks like an individual job page, not a search/listing/cookie page
-    const lowerContent = content.toLowerCase();
-    const isListingPage =
-      lowerContent.includes("total jobs found") ||
-      (lowerContent.includes("results for") && lowerContent.includes("jobs in")) ||
-      lowerContent.includes("search results") ||
-      lowerContent.includes("refine your search") ||
-      (lowerContent.includes("sort by") && lowerContent.includes("per page")) ||
-      lowerContent.match(/\d+\s+jobs?\s+found/i) ||
-      lowerContent.match(/\d+\s+results?\s+for/i) ||
-      lowerContent.match(/show\s+\d+\s+\d+\s+\d+/i) ||
-      (lowerContent.includes("save this job") && lowerContent.split("save this job").length > 3);
-
-    const isCookieOnly =
-      lowerContent.length < 5000 && (
-        (lowerContent.includes("cookie") && (lowerContent.includes("privacy") || lowerContent.includes("consent") || lowerContent.includes("policy"))) ||
-        lowerContent.includes("we use cookies") ||
-        lowerContent.includes("cookie policy") ||
-        lowerContent.match(/we\s+(use|and|store)\s+cookies/i)
-      );
-
-    const isSignInPage =
-      lowerContent.length < 5000 && (
-        lowerContent.includes("join or sign in") ||
-        lowerContent.includes("additional verification required") ||
-        lowerContent.match(/to see more than one page.*sign in/i) ||
-        (lowerContent.includes("sign in") && lowerContent.includes("create an account"))
-      );
-
-    if (isListingPage || isCookieOnly || isSignInPage) {
-      console.warn(`[SRC5-SCRAPE] REJECTED listing/cookie/signin page: ${url} (first 100 chars: ${content.slice(0, 100)})`);
+      console.warn(`[SCRAPE-JOB] Rejected too short (${content.length} chars): ${url}`);
       return null;
     }
 
     const domain = new URL(url).hostname.replace(/^www\./, "").toLowerCase();
 
-    // Find first heading that isn't a sidebar pattern (e.g. "N jobs in Location")
+    // Find first heading that isn't a sidebar pattern
     const sidebarHeadingPattern = /^[\d,*]+\s+\*{0,2}[\w\s/]+\*{0,2}\s+jobs?\s+in\s+/i;
     let title = "";
     for (const match of content.matchAll(/^(#{1,2})\s+(.+)/gm)) {
@@ -659,13 +417,11 @@ export async function scrapeJobPage(
         break;
       }
     }
-
     if (!title) {
       const ogTitle = json.data?.metadata?.title;
       if (ogTitle) title = ogTitle.split(" | ")[0].split(" - ")[0].trim();
     }
     if (!title) {
-      // Fall back to URL slug
       const slug = url.split("/").pop()?.replace(/[-_]/g, " ").replace(/\b\w/g, c => c.toUpperCase()) || "";
       if (slug.length > 5 && slug.length < 120) title = slug;
     }
@@ -694,7 +450,7 @@ export async function scrapeJobPage(
       if (m) { location = m[1].trim().split("\n")[0].slice(0, 80); break; }
     }
 
-    console.log(`[SRC5-SCRAPE] OK title="${title.slice(0, 60)}" company="${company || "Unknown"}" desc_len=${content.slice(0, 3000).length}`);
+    console.log(`[SCRAPE-JOB] OK title="${title.slice(0, 60)}" company="${company || "Unknown"}" desc_len=${content.slice(0, 3000).length}`);
     const titleIdx = content.indexOf(title);
     const descriptionStart = titleIdx >= 0 ? titleIdx : 0;
     return {
@@ -705,107 +461,13 @@ export async function scrapeJobPage(
       link: url,
       via: domain,
       hasFullSpec: true,
-      spec_source: "google_search",
     };
   } catch (err) {
-    console.error(`[SRC5-SCRAPE] EXCEPTION for ${url}:`, err);
+    console.error(`[SCRAPE-JOB] EXCEPTION for ${url}:`, err);
     return null;
   }
 }
 
-// ─── Source 6: Gemini Google Search Jobs ─────────────────────────────────────
-// Uses Gemini API with Google Search grounding to find real job listings.
-// Bypasses SerpAPI quota — taps into Google's index directly via Gemini.
-
-import { callGeminiWithSearch } from "./gemini";
-
-export async function searchGoogleJobsViaGemini(params: SerpParams): Promise<SerpJob[]> {
-  const location = params.location || "South Africa";
-  const query = params.q;
-
-  const systemPrompt = `You are a job search assistant. You have access to Google Search. 
-Search for current job listings matching the user's query.
-
-IMPORTANT RULES:
-1. Return ONLY a JSON array — no markdown, no explanation, no wrapping text.
-2. Each object must have exactly these keys: "title", "company_name", "location", "description", "link"
-3. "description" should be a meaningful excerpt from the job listing (50-300 chars), not a summary.
-4. "link" must be the direct URL to the job posting (not a search results page).
-5. Return up to 20 jobs. If fewer found, return what you have.
-6. Focus on South African job boards: careerjunction.co.za, pnet.co.za, indeed.co.za, jobmail.co.za, and company career pages.
-7. Do NOT include aggregator pages like "top 10 jobs" — only individual job postings.`;
-
-  const userText = `Search Google for: ${query} jobs in ${location}, South Africa. Return JSON array of individual job postings.`;
-
-  console.log(`[SRC6-GEMINI-SEARCH] REQ query="${query}" location="${location}"`);
-
-  try {
-    const result = await callGeminiWithSearch(systemPrompt, userText, {
-      temperature: 0.1,
-      maxOutputTokens: 8192,
-    });
-
-    console.log(`[SRC6-GEMINI-SEARCH] Response length: ${result.text.length} chars`);
-
-    // Extract JSON array from response (may be wrapped in markdown code block)
-    let jsonStr = result.text.trim();
-    const jsonMatch = jsonStr.match(/\[[\s\S]*\]/);
-    if (!jsonMatch) {
-      console.warn(`[SRC6-GEMINI-SEARCH] No JSON array found in response`);
-      console.warn(`[SRC6-GEMINI-SEARCH] Response preview: ${jsonStr.slice(0, 300)}`);
-      return [];
-    }
-    jsonStr = jsonMatch[0];
-
-    let parsed: any[];
-    try {
-      parsed = JSON.parse(jsonStr);
-    } catch (parseErr) {
-      console.error(`[SRC6-GEMINI-SEARCH] JSON parse error:`, parseErr);
-      console.error(`[SRC6-GEMINI-SEARCH] Raw JSON: ${jsonStr.slice(0, 500)}`);
-      return [];
-    }
-
-    if (!Array.isArray(parsed) || parsed.length === 0) {
-      console.warn(`[SRC6-GEMINI-SEARCH] Empty or non-array result`);
-      return [];
-    }
-
-    // Map to SerpJob format
-    const jobs: SerpJob[] = parsed
-      .filter((j) => j.title && j.link)
-      .map((j) => ({
-        title: String(j.title || "").trim(),
-        company_name: String(j.company_name || j.company || "Unknown").trim(),
-        location: String(j.location || location).trim(),
-        description: String(j.description || "").slice(0, 3000),
-        link: String(j.link || ""),
-        via: (() => { try { return new URL(j.link).hostname.replace(/^www\./, ""); } catch { return "google_search"; } })(),
-        hasFullSpec: (j.description?.length ?? 0) > 300,
-        spec_source: "google_search" as const,
-      }));
-
-    console.log(`[SRC6-GEMINI-SEARCH] OK ${jobs.length} jobs parsed`);
-    if (jobs.length > 0) {
-      console.log(`[SRC6-GEMINI-SEARCH] First: "${jobs[0].title}" at "${jobs[0].company_name}"`);
-    }
-
-    // Log grounding metadata if available
-    if (result.groundingMetadata?.groundingChunks) {
-      const sources = result.groundingMetadata.groundingChunks
-        .filter((c) => c.web)
-        .map((c) => c.web!.title || c.web!.uri)
-        .slice(0, 5);
-      console.log(`[SRC6-GEMINI-SEARCH] Grounding sources: ${sources.join(", ")}`);
-    }
-
-    return jobs;
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[SRC6-GEMINI-SEARCH] FAIL: ${msg.slice(0, 300)}`);
-    return [];
-  }
-}
 
 // ─── Source 7: Job Search via Fallback Chain ────────────────────────────────
 // Reader chain (URL → markdown): Jina → Bright Data → Apify
@@ -817,24 +479,28 @@ const JINA_READER_BASE = "https://r.jina.ai";
 // Uses Jina Reader to scrape Google's Jobs tab directly.
 // Same token pool as Bing scraping — both fail when tokens are exhausted.
 
-export async function searchJinaGoogleJobs(params: SerpParams): Promise<SerpJob[]> {
+export async function searchJinaBingJobs(params: SerpParams): Promise<SerpJob[]> {
   const rl = checkApiLimit("bing-jina");
   if (!rl.allowed) {
-    console.warn(`[SRC8-JINA-GOOGLE] RATE LIMITED — ${rl.label}, ${rl.remaining}/${rl.total} remaining`);
+    console.warn(`[SRC8-JINA-BING] RATE LIMITED — ${rl.label}, ${rl.remaining}/${rl.total} remaining`);
     return [];
   }
 
   const query = cleanQueryForSearch([params.q, params.location, "South Africa"].filter(Boolean).join(" "), params.location);
   const location = params.location || "South Africa";
 
-  const googleJobsUrl = new URL("https://www.google.com/search");
-  googleJobsUrl.searchParams.set("q", `${query} jobs`);
-  googleJobsUrl.searchParams.set("udm", "8");
-  googleJobsUrl.searchParams.set("gl", "za");
-  googleJobsUrl.searchParams.set("hl", "en");
+  const bingJobsUrl = new URL("https://www.bing.com/jobs");
+  bingJobsUrl.searchParams.set("q", query);
+  bingJobsUrl.searchParams.set("scp", "0");
+  bingJobsUrl.searchParams.set("rb", "0");
+  bingJobsUrl.searchParams.set("rc", "20");
+  bingJobsUrl.searchParams.set("L2", "true");
+  bingJobsUrl.searchParams.set("c", "1");
+  bingJobsUrl.searchParams.set("cc", "ZA");
+  bingJobsUrl.searchParams.set("form", "JOBL2S");
 
-  const jinaFetchUrl = `${JINA_READER_BASE}/${encodeURIComponent(googleJobsUrl.toString())}`;
-  console.log(`[SRC8-JINA-GOOGLE] Fetching Google Jobs via Jina: ${googleJobsUrl.toString()}`);
+  const jinaFetchUrl = `${JINA_READER_BASE}/${encodeURIComponent(bingJobsUrl.toString())}`;
+  console.log(`[SRC8-JINA-BING] Fetching Bing Jobs via Jina: ${bingJobsUrl.toString()}`);
 
   try {
     const jinaKey = process.env.JINA_API;
@@ -847,151 +513,42 @@ export async function searchJinaGoogleJobs(params: SerpParams): Promise<SerpJob[
     }
 
     const res = await fetch(jinaFetchUrl, { headers });
-    console.log(`[SRC8-JINA-GOOGLE] HTTP ${res.status} ${res.statusText}`);
+    console.log(`[SRC8-JINA-BING] HTTP ${res.status} ${res.statusText}`);
 
     if (!res.ok) {
       const err = await res.text();
       if (res.status === 402) {
-        console.error(`[SRC8-JINA-GOOGLE] OUT OF CREDITS (402) — will try next source`);
+        console.error(`[SRC8-JINA-BING] OUT OF CREDITS (402) — will try next source`);
       } else {
-        console.error(`[SRC8-JINA-GOOGLE] FAIL status=${res.status} body=${err.slice(0, 200)}`);
+        console.error(`[SRC8-JINA-BING] FAIL status=${res.status} body=${err.slice(0, 200)}`);
       }
       return [];
     }
 
     const data = await res.json();
     const content = data?.data?.[0]?.content ?? data?.content ?? "";
-    console.log(`[SRC8-JINA-GOOGLE] Response: ${content.length} chars`);
+    console.log(`[SRC8-JINA-BING] Response: ${content.length} chars`);
 
     if (!content || content.length < 50) {
-      console.warn(`[SRC8-JINA-GOOGLE] Empty or too short response — will try next source`);
+      console.warn(`[SRC8-JINA-BING] Empty or too short response — will try next source`);
       return [];
     }
 
     recordApiCall("bing-jina");
-    const jobs = parseGoogleJobsMarkdown(content, location);
-    console.log(`[SRC8-JINA-GOOGLE] SUCCESS — ${jobs.length} jobs parsed`);
+    const jobs = parseBingJobsMarkdown(content, location);
+    console.log(`[SRC8-JINA-BING] SUCCESS — ${jobs.length} jobs parsed`);
     if (jobs.length > 0) {
-      console.log(`[SRC8-JINA-GOOGLE] First: "${jobs[0].title}" at "${jobs[0].company_name}"`);
+      console.log(`[SRC8-JINA-BING] First: "${jobs[0].title}" at "${jobs[0].company_name}"`);
     }
     return jobs;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[SRC8-JINA-GOOGLE] EXCEPTION: ${msg.slice(0, 200)} — will try next source`);
+    console.error(`[SRC8-JINA-BING] EXCEPTION: ${msg.slice(0, 200)} — will try next source`);
     return [];
   }
 }
 
-// ─── Parse Google Jobs markdown (from Jina Reader) ────────────────────────
 
-function parseGoogleJobsMarkdown(content: string, defaultLocation?: string): SerpJob[] {
-  const jobs: SerpJob[] = [];
-  const lines = content.split("\n").map((l) => l.trim()).filter(Boolean);
-
-  let currentTitle = "";
-  let currentCompany = "";
-  let currentLocation = "";
-  let currentDescription = "";
-  let currentLink = "";
-  let currentVia = "";
-
-  const jobKeywords = /\b(manager|developer|engineer|analyst|specialist|coordinator|director|assistant|consultant|designer|administrator|officer|lead|senior|junior|executive|representative|account|sales|marketing|finance|hr|human resources|it|tech|data|cloud|devops|product|project)\b/i;
-
-  for (const line of lines) {
-    if (line.startsWith("## Filters") || line.startsWith("## Sort") || line.startsWith("Show") || line.startsWith("Skip to")) continue;
-    if (line.includes("successfully saved") || line.includes("Something went wrong")) continue;
-    if (line.includes("View it in Saved") || line.includes("was not saved")) continue;
-    if (line.startsWith("Important:") || line.startsWith("Important :")) continue;
-    if (line === "Not applicable" || line === "N/A") continue;
-
-    // Detect URLs
-    const urlMatch = line.match(/(https?:\/\/[^\s)]+)/);
-    if (urlMatch && !currentTitle) {
-      currentLink = urlMatch[1];
-      continue;
-    }
-
-    const boldMatch = line.match(/^\*\*(.+?)\*\*/);
-    const isJobTitle = boldMatch || (jobKeywords.test(line) && line.length < 150 && !line.startsWith("-") && !line.startsWith("*"));
-
-    if (isJobTitle && !line.includes("|")) {
-      if (currentTitle) {
-        jobs.push({
-          title: cleanText(currentTitle),
-          company_name: cleanText(currentCompany) || "Unknown",
-          location: cleanText(currentLocation) || defaultLocation || "",
-          description: cleanText(currentDescription).slice(0, 3000),
-          link: currentLink || extractBestJobUrl(currentDescription),
-          via: currentVia || "google_jobs",
-          hasFullSpec: currentDescription.length > 300,
-          spec_source: "web_jobs" as const,
-        });
-      }
-      currentTitle = boldMatch ? boldMatch[1] : line;
-      currentCompany = "";
-      currentLocation = "";
-      currentDescription = "";
-      currentLink = "";
-      currentVia = "";
-      continue;
-    }
-
-    if (currentTitle && !currentCompany) {
-      const atMatch = line.match(/(?:at|@)\s+(.+)/i);
-      if (atMatch) {
-        currentCompany = atMatch[1];
-      } else if (line.length < 100 && !line.match(/\d{4}/) && !line.startsWith("**")) {
-        currentCompany = line;
-      }
-      continue;
-    }
-
-    if (currentTitle && currentCompany && !currentLocation) {
-      const locationPattern = /(?:,\s*(?:GT|WC|KZN|EC|FS|MP|NW|LP|NC)|Johannesburg|Cape Town|Durban|Pretoria|Sandton|Midrand|Remote|South Africa)/i;
-      if (locationPattern.test(line) || line.length < 60) {
-        currentLocation = line;
-        continue;
-      }
-    }
-
-    if (currentTitle && line.length > 30) {
-      currentDescription += (currentDescription ? " " : "") + line;
-    }
-
-    const viaMatch = line.match(/via\s+(LinkedIn|Indeed|Glassdoor|ZipRecruiter|PNet|CareerJunction|JobMail|Company Site|Direct)/i);
-    if (viaMatch) {
-      currentVia = viaMatch[1].toLowerCase();
-    }
-  }
-
-  if (currentTitle) {
-    jobs.push({
-      title: cleanText(currentTitle),
-      company_name: cleanText(currentCompany) || "Unknown",
-      location: cleanText(currentLocation) || defaultLocation || "",
-      description: cleanText(currentDescription).slice(0, 3000),
-      link: currentLink || extractBestJobUrl(currentDescription),
-      via: currentVia || "google_jobs",
-      hasFullSpec: currentDescription.length > 300,
-      spec_source: "web_jobs" as const,
-    });
-  }
-
-  return jobs.filter((j) => {
-    const t = j.title.toLowerCase();
-    const c = j.company_name.toLowerCase();
-    if (t.length < 3 || t.length > 200) return false;
-    if (t.includes("filter") || t.includes("sort") || t.includes("show") || t.includes("sign in")) return false;
-    if (t.endsWith(" - search")) return false;
-    if (t.includes("successfully saved") || t.includes("view it in saved")) return false;
-    if (t.includes("important:") || t.includes("something went wrong")) return false;
-    if (t.includes("not applicable") || t === "n/a") return false;
-    if (c === "unknown" && !jobKeywords.test(j.title)) return false;
-    if (c.length <= 1 || c === "[" || c === "n/a") return false;
-    if (j.location.toLowerCase() === "n/a" || j.location === "Not applicable") return false;
-    return true;
-  });
-}
 
 export async function searchWebJobs(params: SerpParams): Promise<SerpJob[]> {
   const query = cleanQueryForSearch([params.q, params.location, "South Africa"].filter(Boolean).join(" "), params.location);
@@ -1406,7 +963,7 @@ function parseBingJobsMarkdown(content: string, defaultLocation?: string, pageLi
           link: findBestLink(currentTitle, currentCompany) || extractBestJobUrl(currentDescription),
           via: currentVia || "bing",
           hasFullSpec: currentDescription.length > 300,
-          spec_source: "web_jobs" as const,
+          spec_source: "bing_jobs" as const,
         });
       }
       currentTitle = boldMatch ? boldMatch[1] : line;
@@ -1454,7 +1011,7 @@ function parseBingJobsMarkdown(content: string, defaultLocation?: string, pageLi
       link: findBestLink(currentTitle, currentCompany) || extractBestJobUrl(currentDescription),
       via: currentVia || "bing_jobs",
       hasFullSpec: currentDescription.length > 300,
-      spec_source: "web_jobs" as const,
+      spec_source: "bing_jobs" as const,
     });
   }
 
