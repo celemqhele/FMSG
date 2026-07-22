@@ -299,7 +299,7 @@ export default function DashboardPage() {
   const [pfActive, setPfActive] = useState(false);
 
   // Sort state
-  const [sortMode, setSortMode] = useState<SortMode>("date_newest");
+  const [sortMode, setSortMode] = useState<SortMode>("score_highest");
 
   // Platform filter state
   const [selectedPlatforms, setSelectedPlatforms] = useState<PlatformId[]>(["all"]);
