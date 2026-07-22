@@ -1,7 +1,7 @@
 // BUILD_CACHE_BUST: jun30-1
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { searchGoogleJobs, searchJSearch, searchAdzuna, searchWebJobs, searchJinaGoogleJobs, searchGooglePages, scrapeJobPage, extractJobUrlsFromListingPage, isListingPage, isIndividualJobPage, isCategoryPage, type SerpJob } from "@/lib/serpapi";
+import { searchGoogleJobs, searchJSearch, searchAdzuna, searchWebJobs, searchJinaGoogleJobs, searchGooglePages, scrapeJobPage, extractJobUrlsFromListingPage, isListingPage, isIndividualJobPage, isCategoryPage, scrapePageBrightData, scrapePageApify, type SerpJob } from "@/lib/serpapi";
 import { extractText } from "@/lib/pdf";
 import { callAIWithFallback, lastAITier } from "@/lib/gemini";
 import { StreamWriter, type SearchEvent } from "@/lib/search-stream";
@@ -718,10 +718,17 @@ async function fetchAndFilterJobs(
 
     let specText = "";
     if (jobUrl) {
+      // Cascade: Jina (fast, free) → Bright Data (renders JS) → Apify (markdown)
       try {
         specText = await fetchJinaPage(jobUrl, JINA_API ?? null);
         if (!specText && JINA_API) specText = await fetchJinaPage(jobUrl, null);
       } catch {}
+      if (!specText) {
+        try { specText = await scrapePageBrightData(jobUrl); } catch {}
+      }
+      if (!specText) {
+        try { specText = await scrapePageApify(jobUrl); } catch {}
+      }
     }
     if (!specText) {
       (job as any)._noSpec = true;
