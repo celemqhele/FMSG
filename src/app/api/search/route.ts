@@ -701,15 +701,12 @@ async function fetchAndFilterJobs(
     console.log(`[PIPELINE] Rejected ${snippetRejected.length} low-quality search snippets`);
   }
 
-  const tempJobUrls = new Map<number, string>();
-  const tempJobSpecs = new Map<number, string>();
   for (let i = 0; i < rawJobs.length; i++) {
     const job = rawJobs[i];
     const jobUrl = buildJobUrl(job);
-    tempJobUrls.set(i, jobUrl);
 
     if (job.hasFullSpec && job.description && (job.description.length >= SHORT_SPEC_THRESHOLD || job.spec_source === "bing_jobs")) {
-      tempJobSpecs.set(i, job.description);
+      (job as any)._spec = job.description;
       if (isExpired(job.description)) (job as any)._expired = true;
       continue;
     }
@@ -732,7 +729,7 @@ async function fetchAndFilterJobs(
       (job as any)._noSpec = true;
       continue;
     }
-    tempJobSpecs.set(i, specText);
+    (job as any)._spec = specText;
     if (isExpired(specText)) (job as any)._expired = true;
   }
 
@@ -745,7 +742,7 @@ async function fetchAndFilterJobs(
     for (let i = 0; i < rawJobs.length; i++) {
       const j = rawJobs[i];
       if ((j as any)._postedAtMs > 0) { filtered.push(j); continue; }
-      const spec = tempJobSpecs.get(i) ?? j.description ?? "";
+      const spec = (j as any)._spec ?? j.description ?? "";
       const dateStr = extractPostedDateFromSpec(spec);
       if (!dateStr) { filtered.push(j); continue; }
       const ms = parsePostedAt(dateStr);
@@ -778,29 +775,30 @@ async function fetchAndFilterJobs(
   rawJobs = rawJobs.filter((j) => !(j as any)._noSpec);
   if (rawJobs.length === 0) return { rawJobs: [], jobSpecs: [], jobUrls: [], queryUsed: query };
 
-  const preFilterUrls = new Map(tempJobUrls);
-  const preFilterSpecs = new Map(tempJobSpecs);
   rawJobs = rawJobs.filter((j) => !(j as any)._expired);
-  const rebuiltUrls = new Map(rawJobs.map((j, i) => [i, buildJobUrl(j)] as const));
-  const rebuiltSpecs = new Map<number, string>();
-  for (let i = 0; i < rawJobs.length; i++) {
-    const url = rebuiltUrls.get(i) ?? "";
-    const origEntry = [...preFilterSpecs.entries()].find(([origIdx]) => preFilterUrls.get(origIdx) === url);
-    rebuiltSpecs.set(i, origEntry?.[1] ?? "");
-  }
 
   {
     const filtered: typeof rawJobs = [];
     const filteredSpecs = new Map<number, string>();
     const filteredUrls = new Map<number, string>();
-    rawJobs.forEach((j, i) => {
-      const spec = rebuiltSpecs.get(i) ?? "";
-      if (BLOCKED_ATS_TRACKERS.some(t => spec.includes(t))) return;
-      if (spec.length >= SHORT_SPEC_THRESHOLD) {
+    const droppedShort: any[] = [];
+    const droppedAts: any[] = [];
+    rawJobs.forEach((j) => {
+      const spec = (j as any)._spec ?? "";
+      if (BLOCKED_ATS_TRACKERS.some(t => spec.includes(t))) { droppedAts.push(j); return; }
+      if (spec.length >= SHORT_SPEC_THRESHOLD || j.spec_source === "bing_jobs") {
         const newIdx = filtered.length;
         filtered.push(j); filteredSpecs.set(newIdx, spec); filteredUrls.set(newIdx, buildJobUrl(j));
+      } else {
+        droppedShort.push(j);
       }
     });
+    if (droppedShort.length > 0) {
+      console.log(`[PIPELINE] Dropped ${droppedShort.length} jobs with short spec (<${SHORT_SPEC_THRESHOLD} chars): [${droppedShort.slice(0, 5).map((j: any) => `"${j.title}" (${j.company_name}) spec=${((j as any)._spec ?? "").length}ch`).join(', ')}]`);
+    }
+    if (droppedAts.length > 0) {
+      console.log(`[PIPELINE] Dropped ${droppedAts.length} jobs containing ATS trackers`);
+    }
     rawJobs = filtered;
     return { rawJobs, jobSpecs: [...filteredSpecs.entries()], jobUrls: [...filteredUrls.entries()], queryUsed: query };
   }
