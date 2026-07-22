@@ -995,28 +995,12 @@ function parseGoogleJobsMarkdown(content: string, defaultLocation?: string): Ser
 
 export async function searchWebJobs(params: SerpParams): Promise<SerpJob[]> {
   const query = cleanQueryForSearch([params.q, params.location, "South Africa"].filter(Boolean).join(" "), params.location);
-  const location = params.location || "South Africa";
 
-  console.log(`[SRC7-SEARCH] Starting fallback chain for query: "${query}"`);
+  console.log(`[SRC7-SEARCH] Searching Google Jobs via Scrappa: "${query}"`);
 
-  const jinaResult = await tryJinaWebJobs(query, location);
-  console.log(`[SRC7-SEARCH] Jina returned ${jinaResult.length} jobs`);
-  if (jinaResult.length > 0) return jinaResult;
-
-  const brightDataResult = await tryBrightDataWebJobs(query, location);
-  console.log(`[SRC7-SEARCH] Bright Data returned ${brightDataResult.length} jobs`);
-  if (brightDataResult.length > 0) return brightDataResult;
-
-  const apifyResult = await tryApifyWebJobs(query, location);
-  console.log(`[SRC7-SEARCH] Apify returned ${apifyResult.length} jobs`);
-  if (apifyResult.length > 0) return apifyResult;
-
-  const scrappaResult = await tryScrappaJobs(query, location);
+  const scrappaResult = await tryScrappaJobs(query, params.location || "South Africa");
   console.log(`[SRC7-SEARCH] Scrappa returned ${scrappaResult.length} jobs`);
-  if (scrappaResult.length > 0) return scrappaResult;
-
-  console.warn(`[SRC7-SEARCH] ALL SOURCES FAILED — returning 0 jobs`);
-  return [];
+  return scrappaResult;
 }
 
 // ─── Reader 1: Jina Reader (free, no key required) ────────────────────────
@@ -1602,4 +1586,68 @@ export function isCategoryPage(title: string, url: string): boolean {
   if (/\/jobs\/?$/.test(u)) return true;
 
   return false;
+}
+
+// ─── Individual Page Scrapers (for spec fetch loop) ─────────────────────────
+
+export async function scrapePageBrightData(url: string): Promise<string> {
+  const wsEndpoint = process.env.BRIGHTDATA_API;
+  if (!wsEndpoint || !wsEndpoint.startsWith("wss://")) return "";
+
+  const rl = checkApiLimit("brightdata");
+  if (!rl.allowed) return "";
+
+  let browser;
+  try {
+    browser = await puppeteer.connect({ browserWSEndpoint: wsEndpoint });
+    const page = await browser.newPage();
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+
+    const content = await page.evaluate(() => document.body.innerText);
+    if (!content || content.length < 100) return "";
+
+    recordApiCall("brightdata");
+    console.log(`[SCRAPE-BRIGHTDATA] OK ${content.length} chars from ${url.slice(0, 80)}`);
+    return content.trim();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`[SCRAPE-BRIGHTDATA] FAIL ${msg.slice(0, 100)} from ${url.slice(0, 80)}`);
+    return "";
+  } finally {
+    if (browser) try { await browser.close(); } catch {}
+  }
+}
+
+export async function scrapePageApify(url: string): Promise<string> {
+  const apiKey = process.env.APIFY_API;
+  if (!apiKey) return "";
+
+  const rl = checkApiLimit("apify");
+  if (!rl.allowed) return "";
+
+  try {
+    const res = await fetch(
+      `https://api.apify.com/v2/acts/apify~url-to-markdown/run-sync-get-dataset-items?token=${apiKey}&timeout=30`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      }
+    );
+
+    if (!res.ok) return "";
+
+    const data = await res.json();
+    const items = Array.isArray(data) ? data : [data];
+    const content = items[0]?.markdown ?? items[0]?.content ?? "";
+    if (!content || content.length < 100) return "";
+
+    recordApiCall("apify");
+    console.log(`[SCRAPE-APIFY] OK ${content.length} chars from ${url.slice(0, 80)}`);
+    return content.trim();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`[SCRAPE-APIFY] FAIL ${msg.slice(0, 100)} from ${url.slice(0, 80)}`);
+    return "";
+  }
 }
