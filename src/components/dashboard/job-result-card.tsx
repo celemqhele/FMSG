@@ -209,17 +209,9 @@ export function JobResultCard({
     }
   };
 
-  const sourceColor = specSource === "google_jobs" ? "border-l-blue-500" :
-    specSource === "jsearch" ? "border-l-violet-500" :
-    specSource === "adzuna" ? "border-l-orange-500" :
-    specSource === "scrappa" ? "border-l-cyan-500" :
-    specSource === "bing_jobs" ? "border-l-emerald-500" :
-    specSource === "linkedin" ? "border-l-sky-500" :
-    "border-l-slate-400";
-
   return (
     <div
-      className={`liquid-glass rounded-xl p-5 border-l-4 ${sourceColor} transition-all duration-300 ${
+      className={`liquid-glass rounded-xl p-5 transition-all duration-300 ${
         deleting ? "opacity-0 scale-95" : "opacity-100 scale-100"
       }`}
     >
@@ -237,41 +229,6 @@ export function JobResultCard({
           {suggestedCvName && (
             <span className="text-xs font-medium px-3 py-1 rounded-full bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400 border border-purple-500/30">
               CV: {suggestedCvName}
-            </span>
-          )}
-          {specSource === "google_jobs" && (
-            <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 border border-blue-500/30">
-              SerpAPI
-            </span>
-          )}
-          {specSource === "jsearch" && (
-            <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-violet-100 dark:bg-violet-500/20 text-violet-700 dark:text-violet-400 border border-violet-500/30">
-              JSearch
-            </span>
-          )}
-          {specSource === "adzuna" && (
-            <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-orange-100 dark:bg-orange-500/20 text-orange-700 dark:text-orange-400 border border-orange-500/30">
-              Adzuna
-            </span>
-          )}
-          {specSource === "scrappa" && (
-            <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-cyan-100 dark:bg-cyan-500/20 text-cyan-700 dark:text-cyan-400 border border-cyan-500/30">
-              Scrappa
-            </span>
-          )}
-          {specSource === "bing_jobs" && (
-            <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30">
-              Bing Jobs
-            </span>
-          )}
-          {specSource === "linkedin" && (
-            <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 border border-blue-500/30">
-              LinkedIn
-            </span>
-          )}
-          {!specSource && (
-            <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-500/20 text-slate-500 dark:text-slate-400 border border-slate-500/30">
-              Unknown
             </span>
           )}
         </div>
