@@ -151,6 +151,22 @@ function parsePostedAt(posted?: string): number | null {
   return Date.now() - ms * 24 * 60 * 60 * 1000;
 }
 
+function extractPostedDateFromSpec(spec: string): string {
+  const text = spec.toLowerCase().slice(0, 3000);
+  const patterns = [
+    /posted\s+(\d+)\s+(day|week|month|year)s?\s+ago/i,
+    /(\d+)\s+(day|week|month|year)s?\s+ago/i,
+    /active\s+since\s+(.+)/i,
+    /date posted[:\s]+(.+)/i,
+    /posted on[:\s]+(.+)/i,
+  ];
+  for (const pat of patterns) {
+    const m = text.match(pat);
+    if (m) return m[0];
+  }
+  return "";
+}
+
 const EXPIRED_PATTERNS = [
   "no longer accepting applications",
   "no longer accepting",
@@ -700,6 +716,32 @@ async function fetchAndFilterJobs(
     }
     tempJobSpecs.set(i, specText);
     if (isExpired(specText)) (job as any)._expired = true;
+  }
+
+  // Extract posting dates from spec text for jobs that have no source metadata
+  // Jobs without any date are kept (no date = assume fresh)
+  if (maxAgeDays) {
+    const cutoffMs = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000;
+    const dateRejected: any[] = [];
+    const filtered: any[] = [];
+    for (let i = 0; i < rawJobs.length; i++) {
+      const j = rawJobs[i];
+      if ((j as any)._postedAtMs > 0) { filtered.push(j); continue; }
+      const spec = tempJobSpecs.get(i) ?? j.description ?? "";
+      const dateStr = extractPostedDateFromSpec(spec);
+      if (!dateStr) { filtered.push(j); continue; }
+      const ms = parsePostedAt(dateStr);
+      if (ms && ms < cutoffMs) {
+        (j as any)._dateRejected = dateStr;
+        dateRejected.push(j);
+      } else {
+        filtered.push(j);
+      }
+    }
+    rawJobs = filtered;
+    if (dateRejected.length > 0) {
+      console.log(`[PIPELINE] Rejected ${dateRejected.length} jobs older than ${maxAgeDays} days (extracted from spec)`);
+    }
   }
 
   const noSpecRejected = rawJobs.filter((j) => (j as any)._noSpec);
