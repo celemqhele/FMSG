@@ -225,7 +225,7 @@ function buildJobUrl(job: {
   if (job.apply_options?.[0]?.link) return tryDecode(job.apply_options[0].link);
   if (job.job_highlights?.link) return tryDecode(job.job_highlights.link);
   if (job.link) return tryDecode(job.link);
-  return `https://www.google.com/search?q=${encodeURIComponent(`${job.title} ${job.company_name} apply`)}`;
+  return '';
 }
 
 /** JSON response_format wraps arrays in objects. Unwrap by finding the first array value. */
@@ -654,6 +654,53 @@ async function fetchAndFilterJobs(
       passed_domain_filter: false, passed_banned_filter: false,
     }));
     dataClient.from("rejected_jobs").insert(rows).then((r: any) => r.error && debugLog('[SEARCH] Failed to log ATS rejected:', r.error));
+  }
+
+  // Reject jobs with no real URL or search-result-page URLs (saves Jina API calls)
+  const noUrlRejected: any[] = [];
+  rawJobs = rawJobs.filter((j) => {
+    const url = buildJobUrl(j);
+    if (!url) {
+      noUrlRejected.push(j);
+      return false;
+    }
+    // Reject Google/Bing search URLs masquerading as job links
+    const lower = url.toLowerCase();
+    if (lower.includes('google.com/search') || lower.includes('bing.com/search')) {
+      noUrlRejected.push(j);
+      return false;
+    }
+    return true;
+  });
+  if (noUrlRejected.length > 0) {
+    const rows = noUrlRejected.map(j => ({
+      user_id: user.id, search_id: searchId, search_query: query,
+      profile_id: profile_id,
+      job_title: j.title, company: j.company_name, location: j.location ?? '',
+      snippet: (j.description ?? '').slice(0, 500), job_url: buildJobUrl(j),
+      reason: 'no_real_url', rejection_category: 'spam', rejection_reason: 'no_real_job_url_or_search_page',
+      passed_domain_filter: false, passed_banned_filter: false,
+    }));
+    dataClient.from("rejected_jobs").insert(rows).then((r: any) => r.error && debugLog('[SEARCH] Failed to log no-URL rejected:', r.error));
+    console.log(`[PIPELINE] Rejected ${noUrlRejected.length} jobs with no real URL`);
+  }
+
+  // Reject low-quality search snippets (e.g. Bing search results masquerading as jobs)
+  // These have short descriptions, no real URL, and no inline spec
+  const snippetRejected: any[] = [];
+  rawJobs = rawJobs.filter((j) => {
+    const url = j.link ?? '';
+    const desc = j.description ?? '';
+    const hasSpec = j.hasFullSpec && desc.length >= SHORT_SPEC_THRESHOLD;
+    // If no real link AND short description AND no inline spec → it's a search snippet, not a job
+    if (!url && !hasSpec && desc.length < 500) {
+      snippetRejected.push(j);
+      return false;
+    }
+    return true;
+  });
+  if (snippetRejected.length > 0) {
+    console.log(`[PIPELINE] Rejected ${snippetRejected.length} low-quality search snippets`);
   }
 
   const tempJobUrls = new Map<number, string>();

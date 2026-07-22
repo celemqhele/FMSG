@@ -829,7 +829,7 @@ export async function searchJinaGoogleJobs(params: SerpParams): Promise<SerpJob[
 
   const googleJobsUrl = new URL("https://www.google.com/search");
   googleJobsUrl.searchParams.set("q", `${query} jobs`);
-  googleJobsUrl.searchParams.set("ibp", "htl;jobs");
+  googleJobsUrl.searchParams.set("udm", "8");
   googleJobsUrl.searchParams.set("gl", "za");
   googleJobsUrl.searchParams.set("hl", "en");
 
