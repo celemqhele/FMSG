@@ -1717,7 +1717,7 @@ Return ONLY valid JSON (no markdown, no code fences):
                   profile_id: state.profile_id,
                   referralUrl: state.referralUrl,
                   allResults: [],
-                  nextOffset: 10,
+                  nextOffset: 0,
                 }, SUPABASE_SERVICE_KEY),
               });
             writer.close();
