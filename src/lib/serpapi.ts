@@ -489,68 +489,8 @@ export async function searchJinaBingJobs(params: SerpParams): Promise<SerpJob[]>
   const query = cleanQueryForSearch([params.q, params.location, "South Africa"].filter(Boolean).join(" "), params.location);
   const location = params.location || "South Africa";
 
-  const bingJobsUrl = new URL("https://www.bing.com/jobs");
-  bingJobsUrl.searchParams.set("q", query);
-  bingJobsUrl.searchParams.set("scp", "0");
-  bingJobsUrl.searchParams.set("rb", "0");
-  bingJobsUrl.searchParams.set("rc", "20");
-  bingJobsUrl.searchParams.set("L2", "true");
-  bingJobsUrl.searchParams.set("c", "1");
-  bingJobsUrl.searchParams.set("cc", "ZA");
-  bingJobsUrl.searchParams.set("form", "JOBL2S");
-
   recordApiCall("bing-jina");
-
-  // Primary: Bright Data click-to-expand (always works, gets full specs)
-  console.log(`[SRC8-JINA-BING] Trying Bright Data click-to-expand first`);
-  const brightDataJobs = await tryBrightDataWebJobs(query, location);
-  if (brightDataJobs.length > 0) {
-    console.log(`[SRC8-JINA-BING] Bright Data returned ${brightDataJobs.length} jobs with full specs`);
-    return brightDataJobs;
-  }
-
-  // Fallback: Jina Reader (free, fast, but returns 0 chars for Bing Jobs)
-  console.log(`[SRC8-JINA-BING] Bright Data returned 0 — falling back to Jina Reader`);
-  const jinaFetchUrl = `${JINA_READER_BASE}/${encodeURIComponent(bingJobsUrl.toString())}`;
-
-  try {
-    const jinaKey = process.env.JINA_API;
-    const headers: Record<string, string> = {
-      "Accept": "application/json",
-      "X-Return-Format": "markdown",
-    };
-    if (jinaKey) {
-      headers["Authorization"] = `Bearer ${jinaKey}`;
-    }
-
-    const res = await fetch(jinaFetchUrl, { headers });
-    console.log(`[SRC8-JINA-BING] Jina HTTP ${res.status} ${res.statusText}`);
-
-    if (!res.ok) {
-      console.error(`[SRC8-JINA-BING] Jina FAIL status=${res.status}`);
-      return [];
-    }
-
-    const data = await res.json();
-    const content = data?.data?.[0]?.content ?? data?.content ?? "";
-    console.log(`[SRC8-JINA-BING] Jina response: ${content.length} chars`);
-
-    if (!content || content.length < 50) {
-      console.warn(`[SRC8-JINA-BING] Jina also returned empty — no results`);
-      return [];
-    }
-
-    const jobs = parseBingJobsMarkdown(content, location);
-    console.log(`[SRC8-JINA-BING] Jina SUCCESS — ${jobs.length} jobs parsed`);
-    if (jobs.length > 0) {
-      console.log(`[SRC8-JINA-BING] First: "${jobs[0].title}" at "${jobs[0].company_name}"`);
-    }
-    return jobs;
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[SRC8-JINA-BING] Jina EXCEPTION: ${msg.slice(0, 200)}`);
-    return [];
-  }
+  return tryBrightDataWebJobs(query, location);
 }
 
 
