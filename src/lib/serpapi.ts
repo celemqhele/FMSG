@@ -356,6 +356,8 @@ const JINA_SCRAPEABLE_DOMAINS = [
   { domain: "careerjunction.co.za", jobPattern: /job-\d+\.aspx/i, listingPatterns: [/\/jobs\/[a-z0-9-]+$/i, /\/jobs\/[a-z0-9-]+\/[a-z0-9-]+$/i] },
   { domain: "jobmail.co.za", jobPattern: /-id-\d+$/i, listingPatterns: [/\/jobs\/?$/i, /\/jobs\/[a-z0-9-]+\/?$/i, /\/jobs\/[a-z0-9-]+\/[a-z0-9-]+\/?$/i] },
   { domain: "pnet.co.za", jobPattern: /--[\w-]+--\d+-inline\.html/i, listingPatterns: [/\/jobs\/[a-z0-9-]+$/i] },
+  { domain: "linkedin.com", jobPattern: /\/jobs\/view\/\d+/i, listingPatterns: [/\/jobs\/?$/i, /\/jobs\/search/i] },
+  { domain: "za.indeed.com", jobPattern: /\/viewjob\?/i, listingPatterns: [/\/jobs\?/i, /\/jobs\/[a-z0-9-]+$/i] },
 ];
 
 export function isListingPage(url: string): boolean {
@@ -919,7 +921,7 @@ function parseGoogleJobsMarkdown(content: string, defaultLocation?: string): Ser
           company_name: cleanText(currentCompany) || "Unknown",
           location: cleanText(currentLocation) || defaultLocation || "",
           description: cleanText(currentDescription).slice(0, 3000),
-          link: currentLink,
+          link: currentLink || extractBestJobUrl(currentDescription),
           via: currentVia || "google_jobs",
           hasFullSpec: currentDescription.length > 300,
           spec_source: "web_jobs" as const,
@@ -968,7 +970,7 @@ function parseGoogleJobsMarkdown(content: string, defaultLocation?: string): Ser
       company_name: cleanText(currentCompany) || "Unknown",
       location: cleanText(currentLocation) || defaultLocation || "",
       description: cleanText(currentDescription).slice(0, 3000),
-      link: currentLink,
+      link: currentLink || extractBestJobUrl(currentDescription),
       via: currentVia || "google_jobs",
       hasFullSpec: currentDescription.length > 300,
       spec_source: "web_jobs" as const,
@@ -1360,9 +1362,9 @@ function parseBingJobsMarkdown(content: string, defaultLocation?: string): SerpJ
           company_name: cleanText(currentCompany) || "Unknown",
           location: cleanText(currentLocation) || defaultLocation || "",
           description: cleanText(currentDescription).slice(0, 3000),
-          link: "",
+          link: extractBestJobUrl(currentDescription),
           via: currentVia || "bing",
-          hasFullSpec: false,
+          hasFullSpec: currentDescription.length > 300,
           spec_source: "web_jobs" as const,
         });
       }
@@ -1408,9 +1410,9 @@ function parseBingJobsMarkdown(content: string, defaultLocation?: string): SerpJ
       company_name: cleanText(currentCompany) || "Unknown",
       location: cleanText(currentLocation) || defaultLocation || "",
       description: cleanText(currentDescription).slice(0, 3000),
-      link: "",
+      link: extractBestJobUrl(currentDescription),
       via: currentVia || "bing_jobs",
-      hasFullSpec: false,
+      hasFullSpec: currentDescription.length > 300,
       spec_source: "web_jobs" as const,
     });
   }
@@ -1433,6 +1435,61 @@ function parseBingJobsMarkdown(content: string, defaultLocation?: string): SerpJ
 
 function cleanText(text: string): string {
   return text.replace(/\*\*/g, "").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Extract the best individual job URL from a block of text.
+ * Prioritizes known job board URLs (LinkedIn /jobs/view/, Indeed /viewjob, etc.)
+ * over generic search results or aggregator links.
+ */
+function extractBestJobUrl(text: string): string {
+  const urlRegex = /https?:\/\/[^\s)>\]"]+/g;
+  const allUrls: string[] = [...(text.match(urlRegex) ?? [])];
+
+  // Priority 1: Direct job listing pages (LinkedIn /jobs/view/, Indeed /viewjob, etc.)
+  const directJobPatterns = [
+    /linkedin\.com\/jobs\/view\/\d+/i,
+    /indeed\.com\/viewjob\?/i,
+    /za\.indeed\.com\/viewjob\?/i,
+    /careerjunction\.co\.za\/job-\d+/i,
+    /jobmail\.co\.za\/.*-id-\d+/i,
+    /pnet\.co\.za\/.*--[\w-]+--\d+/i,
+    /glassdoor\.com\/job-listing/i,
+  ];
+
+  for (const url of allUrls) {
+    for (const pattern of directJobPatterns) {
+      if (pattern.test(url)) {
+        return url.split(/[)\s]/)[0]; // Clean trailing chars
+      }
+    }
+  }
+
+  // Priority 2: Known job board domain links (not aggregators)
+  const goodDomains = ['linkedin.com', 'indeed.com', 'za.indeed.com', 'careerjunction.co.za', 'jobmail.co.za', 'pnet.co.za', 'glassdoor.com'];
+  for (const url of allUrls) {
+    try {
+      const host = new URL(url).hostname.replace(/^www\./, '').toLowerCase();
+      if (goodDomains.some(d => host === d || host.endsWith(`.${d}`))) {
+        return url.split(/[)\s]/)[0];
+      }
+    } catch {}
+  }
+
+  // Priority 3: Any URL that looks like an individual job page (not a search/listing page)
+  for (const url of allUrls) {
+    const lower = url.toLowerCase();
+    // Skip obvious non-job URLs
+    if (lower.includes('/jobs/search') || lower.includes('/jobs?') || lower.includes('?q=') && lower.includes('/jobs')) continue;
+    if (lower.includes('google.com/search') || lower.includes('bing.com/search')) continue;
+    if (lower.includes('jobrapido') || lower.includes('careerjet') || lower.includes('neuvoo') || lower.includes('jooble')) continue;
+    // Accept anything that looks like a specific page (has a numeric ID or unique path)
+    if (/\/\d{5,}/.test(url) || /\/[a-z0-9-]{10,}\/?$/i.test(url)) {
+      return url.split(/[)\s]/)[0];
+    }
+  }
+
+  return '';
 }
 
 /**
@@ -1470,7 +1527,7 @@ function cleanQueryForSearch(raw: string, location?: string): string {
  * Detect search/category pages that are NOT actual job listings.
  * Returns true if the result should be filtered out.
  */
-function isCategoryPage(title: string, url: string): boolean {
+export function isCategoryPage(title: string, url: string): boolean {
   const t = title.toLowerCase();
   const u = url.toLowerCase();
 

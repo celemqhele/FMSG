@@ -368,6 +368,9 @@ export default function DashboardPage() {
     setSearching(true);
     setVideoFast(true);
     setResultMessage("");
+    setProgress(0);
+    setStatusCompleted([]);
+    setStatusActive("Continuing search...");
 
     const supabase = createClient();
     const { data: { session } } = await supabase.auth.getSession();
@@ -399,6 +402,9 @@ export default function DashboardPage() {
     setSearching(true);
     setVideoFast(true);
     setResultMessage("");
+    setProgress(0);
+    setStatusCompleted([]);
+    setStatusActive("Loading results...");
 
     const supabase = createClient();
     const { data: { session } } = await supabase.auth.getSession();

@@ -1,7 +1,7 @@
 // BUILD_CACHE_BUST: jun30-1
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { searchGoogleJobs, searchJSearch, searchAdzuna, searchWebJobs, searchJinaGoogleJobs, searchGooglePages, scrapeJobPage, extractJobUrlsFromListingPage, isListingPage, isIndividualJobPage, type SerpJob } from "@/lib/serpapi";
+import { searchGoogleJobs, searchJSearch, searchAdzuna, searchWebJobs, searchJinaGoogleJobs, searchGooglePages, scrapeJobPage, extractJobUrlsFromListingPage, isListingPage, isIndividualJobPage, isCategoryPage, type SerpJob } from "@/lib/serpapi";
 import { extractText } from "@/lib/pdf";
 import { callAIWithFallback, lastAITier } from "@/lib/gemini";
 import { StreamWriter, type SearchEvent } from "@/lib/search-stream";
@@ -87,6 +87,16 @@ const BLACKLISTED_DOMAINS = [
   'cosmoquick.com',
   'cosmoquick.club',
   'naukri.my',
+  // Job aggregator / meta-search sites (redirect to other boards, no real listings)
+  'jobrapido.com',
+  'jobrapido.co.za',
+  'careerjet.co.za',
+  'careerjet.co',
+  'jobsearch101.co.za',
+  'jobsearch101.com',
+  'neuvoo.co.za',
+  'neuvoo.com',
+  'simplyhired.com',
 ];
 
 const BLACKLISTED_COMPANIES = [
@@ -474,6 +484,20 @@ async function fetchAndFilterJobs(
     addJobs(adzunaJobs);
 
     console.log(`[PIPELINE] Dedup complete: ${rawJobs.length} unique jobs from ${googleJobs.length + jsearchJobs.length + adzunaJobs.length + webJobsJobs.length + scrapedGoogleJobs.length} total`);
+
+    // Filter out category/search/listing pages masquerading as individual job listings
+    const beforeCatFilter = rawJobs.length;
+    rawJobs = rawJobs.filter((j) => {
+      const url = buildJobUrl(j);
+      if (isCategoryPage(j.title, url)) {
+        console.log(`[PIPELINE] Filtered category page: "${j.title}" at ${url}`);
+        return false;
+      }
+      return true;
+    });
+    if (beforeCatFilter !== rawJobs.length) {
+      console.log(`[PIPELINE] Category filter removed ${beforeCatFilter - rawJobs.length} non-job pages`);
+    }
 
     // Persist raw found jobs immediately
     const rawRows = rawJobs.map(j => ({
@@ -990,7 +1014,7 @@ ${blacklistInfo}${bannedInfo}${dateConstraintInfo}`;
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       debugLog(`[SEARCH] Job ${i + 1}/${rawJobs.length} AI failed: ${errMsg.slice(0, 100)}`);
-      result = { score: 30, reason: "Screening unavailable", estimated_salary: "", dynamic_requirements: null };
+      result = { score: 0, reason: "Screening unavailable", estimated_salary: "", dynamic_requirements: null };
     }
 
     // Post-scoring sanity check
@@ -1008,7 +1032,7 @@ ${blacklistInfo}${bannedInfo}${dateConstraintInfo}`;
       }
     }
 
-    const score = Math.round(result.score ?? 30);
+    const score = Math.round(result.score ?? 0);
     const ps = result.pillar_scores;
     const taxes = (result.taxes_applied as string[])?.filter((t: string) => t.length > 0) ?? [];
     const rawVerdict = result.recruiter_verdict ?? (score >= 75 ? "HIRE" : score >= 60 ? "INTERVIEW" : "REJECT");
@@ -1121,7 +1145,7 @@ function pinReferralJob(results: any[], referralUrl: string | null): any[] {
 
 export async function POST(request: NextRequest) {
   const supabase = getSupabase();
-  const searchId = crypto.randomUUID();
+  let searchId = crypto.randomUUID();
   try {
     const authHeader = request.headers.get("Authorization")?.replace("Bearer ", "");
     if (!authHeader) {
@@ -1184,6 +1208,10 @@ export async function POST(request: NextRequest) {
         state = verifyAndDecodeContinuationToken(continuation, SUPABASE_SERVICE_KEY);
       } catch (err) {
         return NextResponse.json({ error: "Invalid or tampered continuation token." }, { status: 400 });
+      }
+      // Preserve original searchId from the continuation token
+      if (state.searchId) {
+        searchId = state.searchId;
       }
     } else {
       // Get profile
@@ -1556,11 +1584,11 @@ Return ONLY valid JSON (no markdown, no code fences):
               // All jobs processed
               const allResults = [...(state.allResults || []), ...result.results];
               if (allResults.length > 0) {
-                const withIds = allResults.map((r: JobRow) => ({ ...r, id: crypto.randomUUID() }));
+                const withIds = allResults.map((r: any) => ({ ...r, id: crypto.randomUUID() }));
                 const normalized = withIds.map(normalize);
                 pinReferralJob(normalized, state.referralUrl);
                 sendComplete({ type: "complete", results: normalized, progress: 100, ...(totalFiltered > 0 ? { filtered_summary: result.filteredCounts } : {}) });
-                const rows = withIds.map((r: JobRow) => ({
+                const rows = withIds.map((r: any) => ({
                   id: r.id,
                   user_id: r.user_id, search_id: r.search_id, profile_id: state.profile_id ?? null,
                   job_title: r.job_title, company: r.company, location: r.location,
@@ -1739,9 +1767,9 @@ Return ONLY valid JSON (no markdown, no code fences):
                 type: "pause",
                 message: `Timeout approaching, saving progress at round ${roundNum - 1}.`,
                 progress: Math.min(((roundNum - 1) / MAX_ROUNDS) * 80, 80),
-                continuation: Buffer.from(JSON.stringify({
+                continuation: signContinuationToken({
                   mode: "pf",
-                  nextRoundIndex: i, // Resume from current round
+                  nextRoundIndex: i,
                   allResults,
                   seenUrls: [...seenUrls],
                   pfFilteredCounts,
@@ -1764,7 +1792,7 @@ Return ONLY valid JSON (no markdown, no code fences):
                   },
                   maxAgeDays: state.maxAgeDays,
                   profile_id: state.profile_id,
-                })).toString("base64"),
+                }, SUPABASE_SERVICE_KEY),
               });
               writer.close();
               return;
