@@ -551,8 +551,8 @@ async function fetchAndFilterJobs(
     // Jobs with no location — keep (don't lose potential matches)
     if (!loc || loc.length < 2) return true;
 
-    // Explicitly SA — keep
-    if (SA_CITIES.test(loc) || SA_PROVINCES.test(loc) || /south africa|\bSA\b|\bZA\b/i.test(loc)) return true;
+    // Explicitly SA — keep (check location, title, and company)
+    if (SA_CITIES.test(loc) || SA_PROVINCES.test(loc) || /south africa|\bSA\b|\bZA\b/i.test(combined)) return true;
 
     // Explicitly non-SA — remove
     if (NON_SA_CITIES.test(loc) || NON_SA_STATES.test(loc) || NON_SA_COUNTRY.test(loc)) {
