@@ -583,6 +583,9 @@ async function fetchAndFilterJobs(
     return true;
   });
   if (blacklistRejected.length > 0) {
+    for (const { job: j, reason } of blacklistRejected) {
+      console.log(`[PIPELINE] Blacklisted: "${j.title}" at "${j.company_name}" — ${reason}`);
+    }
     const rows = blacklistRejected.map(({ job: j, reason }) => ({
       user_id: user.id, search_id: searchId, search_query: query,
       profile_id: profile_id,
