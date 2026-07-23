@@ -550,12 +550,9 @@ async function fetchAndFilterJobs(
     (j as any)._postedAtMs = parsePostedAt(postedStr) ?? 0;
   }
 
-  // Location safety net — filter out obviously non-SA jobs
+  // Location safety net — whitelist: only keep jobs in SA, remote, or with no location
   const SA_CITIES = /\b(johannesburg|cape town|durban|pretoria|gqeberha|port elizabeth|bloemfontein|east london|polokwane|nelspruit|kimberley|soweto|centurion|sandton|midrand|stellenbosch|roodepoort|benoni|boksburg|germiston|vereeniging|umhlanga|pinetown|pietermaritzburg|howick|newcastle|barberton|white river|graskop|hoedspruit|phalaborwa|thohoyandou|tzaneen|haenertsburg|rustenburg|klerksdorp|potchefstroom|upington|george|knysna|plettenberg bay|mossel bay|hermanus|paarl|worcester|makhanda|jeffreys bay)\b/i;
   const SA_PROVINCES = /\b(gauteng|western cape|kwazulu-natal|kwa-zulu natal|eastern cape|free state|limpopo|mpumalanga|north west|northern cape|south africa)\b/i;
-  const NON_SA_CITIES = /\b(los angeles|new york|chicago|houston|phoenix|philadelphia|san antonio|san diego|dallas|san jose|austin|jacksonville|fort worth|columbus|charlotte|indianapolis|san francisco|seattle|denver|washington|nashville|oklahoma city|el paso|boston|portland|las vegas|memphis|louisville|baltimore|milwaukee|albuquerque|tucson|fresno|sacramento|mesa|kansas city|atlanta|omaha|colorado springs|raleigh|miami|long beach|virginia beach|oakland|minneapolis|tulsa|tampa|arlington|new orleans|wichita|cleveland|bakersfield|aurora|anaheim|honolulu|santa ana|riverside|corpus christi|lexington|stockton|st paul|cincinnati|pittsburgh|anchorage|greensboro|plano|newark|lincoln|irvine|glendale|jersey city|st louis|chula vista|norfolk|orlando|chandler|madison|lubbock|reno|buffalo|gilbert|glendale|north las vegas|winston|chesapeake|reno|scottsdale|fremont|baton rouge|irvine|spokane|boise|richmond|des moines|tacoma|san bernardino|birmingham|modesto|rochester|fontana|moreno valley|glendale|salt lake city|yakima|huntsville|augusta|columbus|tallahassee|knoxville|lincoln|memphis|jersey|st petersburg|lakewood|madison|worcester|olathe|brownsville|jackson|overland|knoxville|provo|mobile|boise|fayetteville|rochester|auburn|spokane|salem|lakewood)\b/i;
-  const NON_SA_STATES = /\b(california|texas|florida|new york|illinois|pennsylvania|ohio|georgia|north carolina|michigan|new jersey|virginia|washington|arizona|massachusetts|tennessee|indiana|missouri|maryland|wisconsin|colorado|minnesota|south carolina|alabama|louisiana|kentucky|oregon|oklahoma|connecticut|utah|iowa|nevada|arkansas|mississippi|kansas|new mexico|nebraska|west virginia|idaho|hawaii|new hampshire|maine|montana|rhode island|delaware|south dakota|north dakota|alaska|vermont|wyoming|district of columbia)\b/i;
-  const NON_SA_COUNTRY = /\b(united states|usa|u\.s\.a\.|u\.s\.|canada|united kingdom|uk|australia|india|germany|france|netherlands|ireland|singapore|dubai|uae|qatar|saudi arabia|nigeria|kenya|ghana|egypt|morocco)\b/i;
 
   const beforeCount = rawJobs.length;
   rawJobs = rawJobs.filter((j) => {
@@ -565,7 +562,7 @@ async function fetchAndFilterJobs(
     const combined = `${loc} ${title} ${company}`;
 
     // Remote jobs — keep (can be worked from anywhere)
-    if (/\b(remote|work from home|anywhere|worldwide)\b/i.test(combined)) return true;
+    if (/\b(remote|work from home|anywhere|worldwide|global|flexible)\b/i.test(combined)) return true;
 
     // Jobs with no location — keep (don't lose potential matches)
     if (!loc || loc.length < 2) return true;
@@ -573,13 +570,8 @@ async function fetchAndFilterJobs(
     // Explicitly SA — keep (check location, title, and company)
     if (SA_CITIES.test(loc) || SA_PROVINCES.test(loc) || /south africa|\bSA\b|\bZA\b/i.test(combined)) return true;
 
-    // Explicitly non-SA — remove
-    if (NON_SA_CITIES.test(loc) || NON_SA_STATES.test(loc) || NON_SA_COUNTRY.test(loc)) {
-      return false;
-    }
-
-    // Ambiguous — keep (don't over-filter)
-    return true;
+    // Has a specific location but it's not SA — reject (whitelist approach)
+    return false;
   });
 
   if (rawJobs.length < beforeCount) {
@@ -921,6 +913,9 @@ async function screenAndAnalyze(
   const dateConstraintInfo = maxAgeDays
     ? `\nDATE CONSTRAINT: Only consider jobs posted within the last ${maxAgeDays} day(s). Check the job spec text for ANY date indicators: "posted X days/weeks/months ago", "date posted:", "active since", or any date mentioned. If a date is found and the job is older than ${maxAgeDays} days, immediately score 0 with reason "Posted outside date filter". If no date is found anywhere in the spec, assume it passes.`
     : "";
+  const locationConstraintInfo = profileLocation
+    ? `\nLOCATION CONSTRAINT: The candidate is based in "${profileLocation}", South Africa. Check the job's location field in the input JSON AND scan the full job spec for any location indicators. If the job is explicitly located in a city/country OUTSIDE South Africa (e.g. "London", "New York", "Dubai", "Singapore", "Remote - US only", "EU only", "Americas", "EMEA" targeting non-SA), immediately score 0 with reason "Job is not hiring in candidate's location". EXCEPTIONS — do NOT reject if: (a) the job says "Remote", "Work from home", "Anywhere", "Worldwide", "Global", "Flexible location"; (b) the job says "Hybrid" or "On-site" but the location is in South Africa; (c) the location field is empty or missing.`
+    : "";
 
   const dynamicScoringPrompt = `You are a strict Recruitment Auditor acting as a hiring manager. You analyze ONE job spec against the candidate's CV and score the match.
 
@@ -929,12 +924,13 @@ CANDIDATE INDUSTRY: ${profileIndustry || "Unknown"}
 ---
 PROCESS:
 
-PRE-CHECK: DOMAIN, DATE, AND DUPLICATE FILTERS
+PRE-CHECK: DOMAIN, DATE, LOCATION, AND DUPLICATE FILTERS
 A) DOMAIN CHECK: The job URL is provided in the input JSON. Check if the URL contains any domain from the BLACKLISTED_DOMAINS list below. If it matches (exact domain or subdomain of any blacklisted entry), immediately return: { "score": 0, "reason": "Job is from a blacklisted aggregator domain (<domain>)", "knockout_fail": true, "recruiter_verdict": "REJECT", ... } with all other fields filled with defaults. Do NOT continue to Step 0.
 B) DATE CHECK: Scan the full job spec text for any date indicators — "posted X days/weeks/months ago", "date posted:", "active since", "applications close [date]", or any explicit date. If a posting date is found and it is older than the DATE CONSTRAINT below, immediately score 0 with reason "Posted outside date filter". If no date is found, it passes.
-C) DUPLICATE CHECK: Compare this job's title + company against the PREVIOUSLY SCORED JOBS list below. If the same title AND company appear in the list, immediately return: { "score": 0, "reason": "Duplicate of previously processed job: <title> at <company>", "knockout_fail": true, "recruiter_verdict": "REJECT", ... } with all other fields filled with defaults. Do NOT continue to Step 0.
+C) LOCATION CHECK: Check the job's location field in the input JSON AND scan the full spec for any location indicators. If the job is explicitly located outside South Africa (e.g. "London", "New York", "Dubai", "Singapore", "US only", "EU only", "EMEA" not including SA), immediately score 0 with reason "Job is not hiring in candidate's location". EXCEPTIONS — do NOT reject if: (a) the job says "Remote", "Work from home", "Anywhere", "Worldwide", "Global", "Flexible"; (b) location is in South Africa; (c) location field is empty or missing.
+D) DUPLICATE CHECK: Compare this job's title + company against the PREVIOUSLY SCORED JOBS list below. If the same title AND company appear in the list, immediately return: { "score": 0, "reason": "Duplicate of previously processed job: <title> at <company>", "knockout_fail": true, "recruiter_verdict": "REJECT", ... } with all other fields filled with defaults. Do NOT continue to Step 0.
 
-If all three checks pass, proceed to Step 0.
+If all four checks pass, proceed to Step 0.
 
 STEP 0: SUB-VERTICAL IDENTIFICATION & CV SELECTION
 A) Identify the candidate's professional sub-vertical from their EMPLOYERS, not their tools.
@@ -998,7 +994,7 @@ Then adjust based on these rules:
 - Function: Same role type=70-95, Adjacent role=40-65, Different role type=0-30
 - Scale: MORE years than required=positive (≥80), LESS than minimum=negative
 - Tools: Direct match=80-95, Transferable/adjacent=50-75, Missing critical=0-30
-- Location: Same city or remote no restriction=100, Same province=70, Different province=30, Different country=0
+- Location: Same city or remote no restriction=100, Same province=70, Different province=30, Different country=0. CRITICAL: If the candidate is in South Africa and the job is in another country (UK, US, UAE, etc.), Location MUST be 0. "Remote" or "Work from home" with no country restriction = 100. "Remote - US only" or "Remote - EU only" = 0 (not available to SA candidates).
 
 For each pillar, provide a SPECIFIC reason in pillar_reasons referencing CV details.
 Good: "Candidate worked at Superbalist and Takealot — both e-commerce, same sub-vertical."
@@ -1049,7 +1045,7 @@ Return ONLY valid JSON (no markdown, no code fences):
   ]
 }
 
-${blacklistInfo}${bannedInfo}${dateConstraintInfo}`;
+${blacklistInfo}${bannedInfo}${dateConstraintInfo}${locationConstraintInfo}`;
 
   let outputs: JobRow[] = [];
 
@@ -1057,6 +1053,7 @@ ${blacklistInfo}${bannedInfo}${dateConstraintInfo}`;
 
   debugLog(`[SEARCH] Starting one-by-one scoring (${rawJobs.length} jobs, offset ${offset})`);
   onStatus?.({ type: "screening_job", current: 0, total: rawJobs.length, progress: 25 });
+  await sleep(80);
 
   for (let i = offset; i < rawJobs.length; i++) {
     const job = rawJobs[i];
@@ -1067,8 +1064,7 @@ ${blacklistInfo}${bannedInfo}${dateConstraintInfo}`;
 
     const progress = Math.min(25 + ((i + 1) / rawJobs.length) * 55, 80);
     onStatus?.({ type: "analyzing_job", title: job.title, company: job.company_name, current: i + 1, total: rawJobs.length, progress });
-
-    if (i > 0) await sleep(lastAITier === "gemini" ? 4000 : 1000);
+    await sleep(lastAITier === "gemini" ? 4000 : 1000);
 
     const dedupContext = seenSpecs.length > 0
       ? `\nPREVIOUSLY SCORED JOBS: ${JSON.stringify(seenSpecs)}\n`
