@@ -11,7 +11,7 @@ export function DataPrivacy() {
           <p className="mt-6 text-base md:text-lg text-white/90 leading-relaxed">
             We store your CV and profile information only to match you to relevant
             jobs. Your data is encrypted in transit and at rest via Supabase, and
-            we never share or sell your information to third parties.
+            we only share information with third-party services as necessary to provide job matching.
           </p>
           <p className="mt-4 text-base md:text-lg text-white/90 leading-relaxed">
             FMSG operates in full compliance with POPIA (South Africa&#39;s

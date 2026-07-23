@@ -20,6 +20,7 @@ export function SignUpForm({ onSuccess }: { onSuccess: (data: SignUpData) => voi
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [agreeTos, setAgreeTos] = useState(false);
+  const [agreePrivacy, setAgreePrivacy] = useState(false);
   const [agreeAge, setAgreeAge] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -28,6 +29,10 @@ export function SignUpForm({ onSuccess }: { onSuccess: (data: SignUpData) => voi
 
     if (!agreeTos) {
       setError("You must agree to the Terms of Service.");
+      return;
+    }
+    if (!agreePrivacy) {
+      setError("You must agree to the Privacy Policy.");
       return;
     }
     if (!agreeAge) {
@@ -181,6 +186,20 @@ export function SignUpForm({ onSuccess }: { onSuccess: (data: SignUpData) => voi
           I agree to the{" "}
           <Link href="/terms" target="_blank" className="text-[var(--color-accent)] hover:underline">
             Terms of Service
+          </Link>
+        </span>
+      </label>
+      <label className="flex items-start gap-2 text-xs text-gray-600">
+        <input
+          type="checkbox"
+          checked={agreePrivacy}
+          onChange={(e) => setAgreePrivacy(e.target.checked)}
+          className="mt-0.5 accent-[var(--color-accent)]"
+        />
+        <span>
+          I have read and agree to the{" "}
+          <Link href="/privacy" target="_blank" className="text-[var(--color-accent)] hover:underline">
+            Privacy Policy
           </Link>
         </span>
       </label>

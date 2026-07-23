@@ -1,4 +1,6 @@
-﻿import { TransitionLink } from "@/components/ui/transition-link";
+﻿"use client";
+
+import { TransitionLink } from "@/components/ui/transition-link";
 
 export function Footer() {
   return (
@@ -23,6 +25,12 @@ export function Footer() {
           <TransitionLink href="/terms" className="hover:text-white transition-colors">
             Terms
           </TransitionLink>
+          <button
+            onClick={() => window.dispatchEvent(new Event("show-cookie-banner"))}
+            className="hover:text-white transition-colors"
+          >
+            Cookie Settings
+          </button>
           <span className="text-white/20 cursor-not-allowed select-none">
             Articles
           </span>

@@ -48,8 +48,24 @@ function loadGA() {
 
 export function GoogleAnalytics() {
   useEffect(() => {
-    logToServer("[GA4] Component mounted", { consent: localStorage.getItem("cookie_consent") });
-    loadGA();
+    const consent = localStorage.getItem("cookie_consent");
+    logToServer("[GA4] Component mounted", { consent });
+
+    if (consent === "true") {
+      loadGA();
+      return;
+    }
+
+    function onConsentChanged(e: Event) {
+      const detail = (e as CustomEvent<{ consent: string }>).detail;
+      if (detail.consent === "true") {
+        logToServer("[GA4] Consent granted, loading GA4");
+        loadGA();
+      }
+    }
+
+    window.addEventListener("cookie-consent-changed", onConsentChanged);
+    return () => window.removeEventListener("cookie-consent-changed", onConsentChanged);
   }, []);
 
   return null;

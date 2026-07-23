@@ -46,7 +46,7 @@ const sections = [
   {
     title: "7. Payments and Refunds",
     content:
-      "Paid packages and Persistent Finder credits are billed in advance via Paystack. All payments are final and non-refundable, except as required by applicable consumer protection law. By purchasing, you authorize a one-time charge at the listed rate. Paystack processes all payments; we do not store card details.",
+      "Paid packages and Persistent Finder credits are billed in advance via Paystack. All payments are final and non-refundable, except as required by applicable consumer protection law. South Africa's Consumer Protection Act (CPA) may entitle you to a refund within 5 business days of purchase if the service was marketed through direct marketing. By purchasing, you authorize a one-time charge at the listed rate. Paystack processes all payments; we do not store card details.",
   },
   {
     title: "8. Cancellation and Termination",
@@ -86,7 +86,7 @@ const sections = [
   {
     title: "15. Contact",
     content:
-      "For questions about these Terms, please contact us at support@findmesomejobs.co.za. For legal correspondence, address: Find Me Some Jobs, South Africa.",
+      "For questions about these Terms, please contact us at support@findmesomejobs.co.za.",
   },
 ];
 
@@ -130,7 +130,7 @@ export default function TermsPage() {
               Terms of Service
             </h1>
             <p className="mt-4 text-lg text-white/80">
-              Last updated June 2026.
+              Last updated 23 July 2026.
             </p>
           </div>
           <div className="mt-12 max-w-3xl mx-auto space-y-6">

@@ -7,11 +7,18 @@ export function CookieConsentBanner() {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
+    function showBanner() {
+      setVisible(true);
+    }
+
     const consent = localStorage.getItem("cookie_consent");
     if (consent === null) {
-      const timer = setTimeout(() => setVisible(true), 500);
+      const timer = setTimeout(showBanner, 500);
       return () => clearTimeout(timer);
     }
+
+    window.addEventListener("show-cookie-banner", showBanner);
+    return () => window.removeEventListener("show-cookie-banner", showBanner);
   }, []);
 
   const accept = () => {
@@ -22,7 +29,7 @@ export function CookieConsentBanner() {
 
   const decline = () => {
     localStorage.setItem("cookie_consent", "false");
-    localStorage.setItem("keep_signed_in", "false");
+    window.dispatchEvent(new CustomEvent("cookie-consent-changed", { detail: { consent: "false" } }));
     setVisible(false);
   };
 
@@ -32,7 +39,7 @@ export function CookieConsentBanner() {
     <div className="fixed bottom-0 left-0 right-0 z-[70] p-4">
       <div className="max-w-2xl mx-auto bg-white dark:bg-[#1C1C1E] border border-[var(--color-border)] shadow-lg rounded-2xl p-4 flex flex-col sm:flex-row items-center gap-3">
         <p className="flex-1 text-sm text-[var(--color-text-secondary)] text-center sm:text-left">
-          We use cookies to keep you signed in and improve your experience. By accepting you agree to our{" "}
+          We use essential cookies for authentication and optional analytics cookies to improve the experience. By accepting you agree to our{" "}
           <Link href="/privacy" className="underline hover:text-[var(--color-accent)] transition-colors">
             Privacy Policy
           </Link>
