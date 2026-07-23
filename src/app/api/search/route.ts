@@ -560,6 +560,37 @@ async function fetchAndFilterJobs(
     console.log(`[PIPELINE] Location filter removed ${locationFilterRemoved} non-SA jobs (${beforeCount} → ${rawJobs.length})`);
   }
 
+  // Domain blacklist pre-filter — deterministic, blocks aggregator/spam sites before spec scraping
+  const blacklistRejected: { job: any; reason: string }[] = [];
+  rawJobs = rawJobs.filter((j) => {
+    const url = buildJobUrl(j);
+    const domain = extractDomain(url);
+    const viaBlocked = isBlacklistedByVia(j.via);
+    const domainBlocked = domain && BLACKLISTED_DOMAINS.some((d) => domain === d || domain?.endsWith(`.${d}`) || domain?.includes(d));
+    const companyLower = (j.company_name ?? "").toLowerCase();
+    const companyBlocked = BLACKLISTED_COMPANIES.some((c) => companyLower.includes(c));
+    if (domainBlocked || viaBlocked || companyBlocked) {
+      const reason = viaBlocked ? `blacklisted_via: ${j.via}` : companyBlocked ? `blacklisted_company: ${j.company_name}` : `blacklisted_domain: ${domain}`;
+      blacklistRejected.push({ job: j, reason });
+      return false;
+    }
+    return true;
+  });
+  if (blacklistRejected.length > 0) {
+    for (const { job: j, reason } of blacklistRejected) {
+      console.log(`[PIPELINE] Blacklisted: "${j.title}" at "${j.company_name}" — ${reason} — url=${buildJobUrl(j)}`);
+    }
+    const rows = blacklistRejected.map(({ job: j, reason }) => ({
+      user_id: user.id, search_id: searchId, search_query: query,
+      profile_id: profile_id,
+      job_title: j.title, company: j.company_name, location: j.location ?? '',
+      snippet: (j.description ?? '').slice(0, 500), job_url: buildJobUrl(j), reason,
+      rejection_category: 'domain', rejection_reason: reason,
+      passed_domain_filter: false, passed_banned_filter: false,
+    }));
+    dataClient.from("rejected_jobs").insert(rows).then((r: any) => r.error && debugLog('[SEARCH] Failed to log blacklist rejected:', r.error));
+  }
+
   const bannedRejected: any[] = [];
   rawJobs = rawJobs.filter((j) => {
     const url = buildJobUrl(j);
@@ -667,7 +698,7 @@ async function fetchAndFilterJobs(
     console.log(`[PIPELINE] Rejected ${snippetRejected.length} low-quality search snippets`);
   }
 
-  console.log(`[PIPELINE] Filter breakdown: dedup=${dedupCount} → cat=${catFilterRemoved}, loc=${locationFilterRemoved}, banned=${bannedRejected.length}, ats=${atsRejected.length}, noUrl=${noUrlRejected.length}, snippet=${snippetRejected.length} → survived=${rawJobs.length}`);
+  console.log(`[PIPELINE] Filter breakdown: dedup=${dedupCount} → cat=${catFilterRemoved}, loc=${locationFilterRemoved}, blacklist=${blacklistRejected.length}, banned=${bannedRejected.length}, ats=${atsRejected.length}, noUrl=${noUrlRejected.length}, snippet=${snippetRejected.length} → survived=${rawJobs.length}`);
   console.log(`[PIPELINE] Spec assignment: ${rawJobs.length} jobs entering (bing=${rawJobs.filter((j) => j.spec_source === "bing_jobs").length}, fullSpec=${rawJobs.filter((j) => j.hasFullSpec).length})`);
   for (let i = 0; i < rawJobs.length; i++) {
     const job = rawJobs[i];
