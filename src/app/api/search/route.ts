@@ -151,19 +151,6 @@ function decodeBingRedirect(url: string): string {
   return url;
 }
 
-function decodeJobrapidoRedirect(url: string): string {
-  try {
-    const u = new URL(url);
-    if (u.hostname.includes("jobrapido")) {
-      for (const param of ["url", "dest", "redirect", "u", "target", "go"]) {
-        const val = u.searchParams.get(param);
-        if (val && val.startsWith("http")) return val;
-      }
-    }
-  } catch {}
-  return url;
-}
-
 function isBlacklistedByVia(via: string | undefined): boolean {
   if (!via) return false;
   const lower = via.toLowerCase();
@@ -273,7 +260,7 @@ function buildJobUrl(job: {
   title: string;
   company_name: string;
 }): string {
-  const tryDecode = (u: string) => decodeBingRedirect(decodeGoogleRedirect(decodeJobrapidoRedirect(u)));
+  const tryDecode = (u: string) => decodeBingRedirect(decodeGoogleRedirect(u));
   if (job.apply_options?.[0]?.link) return tryDecode(job.apply_options[0].link);
   if (job.job_highlights?.link) return tryDecode(job.job_highlights.link);
   if (job.link) return tryDecode(job.link);
@@ -383,6 +370,9 @@ async function fetchAndFilterJobs(
 
   let rawJobs: SerpJob[];
   let dedupCount = 0;
+  let catFilterRemoved = 0;
+  let dateFilterRemoved = 0;
+  let locationFilterRemoved = 0;
   try {
     // ─── Platform-aware source selection ──────────────────────────────────
     const isAll = !allowedPlatforms || allowedPlatforms.length === 0;
@@ -494,7 +484,8 @@ async function fetchAndFilterJobs(
       return true;
     });
     if (beforeCatFilter !== rawJobs.length) {
-      console.log(`[PIPELINE] Category filter removed ${beforeCatFilter - rawJobs.length} non-job pages`);
+      catFilterRemoved = beforeCatFilter - rawJobs.length;
+      console.log(`[PIPELINE] Category filter removed ${catFilterRemoved} non-job pages`);
     }
 
     // Persist raw found jobs immediately
@@ -542,7 +533,8 @@ async function fetchAndFilterJobs(
       return true;
     });
     if (rawJobs.length < beforeDateFilter) {
-      console.log(`[PIPELINE] Date filter removed ${beforeDateFilter - rawJobs.length} old jobs (${beforeDateFilter} → ${rawJobs.length})`);
+      dateFilterRemoved = beforeDateFilter - rawJobs.length;
+      console.log(`[PIPELINE] Date filter removed ${dateFilterRemoved} old jobs (${beforeDateFilter} → ${rawJobs.length})`);
     }
     if (rawJobs.length === 0) {
       debugLog(`[SEARCH] All jobs filtered out by date filter (${maxAgeDays}d)`);
@@ -583,7 +575,8 @@ async function fetchAndFilterJobs(
   });
 
   if (rawJobs.length < beforeCount) {
-    console.log(`[PIPELINE] Location filter removed ${beforeCount - rawJobs.length} non-SA jobs (${beforeCount} → ${rawJobs.length})`);
+    locationFilterRemoved = beforeCount - rawJobs.length;
+    console.log(`[PIPELINE] Location filter removed ${locationFilterRemoved} non-SA jobs (${beforeCount} → ${rawJobs.length})`);
   }
 
   const blacklistRejected: { job: any; reason: string }[] = [];
@@ -723,7 +716,7 @@ async function fetchAndFilterJobs(
     console.log(`[PIPELINE] Rejected ${snippetRejected.length} low-quality search snippets`);
   }
 
-  console.log(`[PIPELINE] Filter survivors: ${rawJobs.length} jobs (dedup=${dedupCount} → blacklist=${blacklistRejected.length}, banned=${bannedRejected.length}, ats=${atsRejected.length}, noUrl=${noUrlRejected.length}, snippet=${snippetRejected.length})`);
+  console.log(`[PIPELINE] Filter breakdown: dedup=${dedupCount} → cat=${catFilterRemoved}, date=${dateFilterRemoved}, loc=${locationFilterRemoved}, blacklist=${blacklistRejected.length}, banned=${bannedRejected.length}, ats=${atsRejected.length}, noUrl=${noUrlRejected.length}, snippet=${snippetRejected.length} → survived=${rawJobs.length}`);
   console.log(`[PIPELINE] Spec assignment: ${rawJobs.length} jobs entering (bing=${rawJobs.filter((j) => j.spec_source === "bing_jobs").length}, fullSpec=${rawJobs.filter((j) => j.hasFullSpec).length})`);
   for (let i = 0; i < rawJobs.length; i++) {
     const job = rawJobs[i];
