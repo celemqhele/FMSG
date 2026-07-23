@@ -701,6 +701,7 @@ async function fetchAndFilterJobs(
     console.log(`[PIPELINE] Rejected ${snippetRejected.length} low-quality search snippets`);
   }
 
+  console.log(`[PIPELINE] Filter survivors: ${rawJobs.length} jobs (blacklist=${blacklistRejected.length}, banned=${bannedRejected.length}, ats=${atsRejected.length}, noUrl=${noUrlRejected.length}, snippet=${snippetRejected.length})`);
   console.log(`[PIPELINE] Spec assignment: ${rawJobs.length} jobs entering (bing=${rawJobs.filter((j) => j.spec_source === "bing_jobs").length}, fullSpec=${rawJobs.filter((j) => j.hasFullSpec).length})`);
   for (let i = 0; i < rawJobs.length; i++) {
     const job = rawJobs[i];
