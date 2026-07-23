@@ -22,7 +22,9 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   ]);
 }
 
-async function fetchJinaPage(url: string, apiKey: string | null): Promise<string> {
+interface JinaResult { content: string; status: number; }
+
+async function fetchJinaPage(url: string, apiKey: string | null): Promise<JinaResult> {
   const headers: Record<string, string> = {
     "Accept": "application/json",
     "X-Return-Format": "markdown",
@@ -37,18 +39,18 @@ async function fetchJinaPage(url: string, apiKey: string | null): Promise<string
       try {
         const err = await res.json();
         if (err.code?.startsWith("RATE_") || err.code?.startsWith("AUTHZ_")) {
-          return "";
+          return { content: "", status: res.status };
         }
       } catch {}
     }
-    return "";
+    return { content: "", status: res.status };
   }
 
   try {
     const json = await res.json();
-    if (json.code === 200 && json.data?.content) return json.data.content.trim();
+    if (json.code === 200 && json.data?.content) return { content: json.data.content.trim(), status: res.status };
   } catch {}
-  return "";
+  return { content: "", status: res.status };
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -211,11 +213,36 @@ const EXPIRED_PATTERNS = [
   "no longer hiring for this",
   "not currently accepting applications",
   "is no longer accepting new applications",
+  // 404 / not-found / error page indicators
+  "page not found",
+  "job not found",
+  "listing not found",
+  "this job could not be found",
+  "the position you're looking for",
+  "the job you're looking for",
+  "does not exist",
+  "does not appear to exist",
+  "we couldn't find",
+  "we could not find",
+  "no longer exists",
+  "removed from",
+  "this page is no longer",
+  "error 404",
+  "404 not found",
+  "404 error",
 ];
 
 function isExpired(text: string): boolean {
   const lower = text.toLowerCase();
   return EXPIRED_PATTERNS.some((p) => lower.includes(p));
+}
+
+/** Check if Jina returned an HTTP error status (404, 410, 5xx) or the content is an error page */
+function isJinaErrorPage(status: number, content: string): boolean {
+  if (status === 404 || status === 410) return true;
+  if (status >= 500) return true;
+  if (content.length < 200 && isExpired(content)) return true;
+  return false;
 }
 
 function getSupabase() {
@@ -711,11 +738,18 @@ async function fetchAndFilterJobs(
     }
 
     let specText = "";
+    let jinaStatus = 0;
     if (jobUrl) {
       // Cascade: Jina (fast, free) → Bright Data (renders JS) → Apify (markdown)
       try {
-        specText = await fetchJinaPage(jobUrl, JINA_API ?? null);
-        if (!specText && JINA_API) specText = await fetchJinaPage(jobUrl, null);
+        const jina1 = await fetchJinaPage(jobUrl, JINA_API ?? null);
+        jinaStatus = jina1.status;
+        specText = jina1.content;
+        if (!specText && JINA_API) {
+          const jina2 = await fetchJinaPage(jobUrl, null);
+          jinaStatus = jina2.status;
+          specText = jina2.content;
+        }
       } catch {}
       if (!specText) {
         try { specText = await scrapePageBrightData(jobUrl); } catch {}
@@ -729,7 +763,11 @@ async function fetchAndFilterJobs(
       continue;
     }
     (job as any)._spec = specText;
-    if (isExpired(specText)) (job as any)._expired = true;
+    // Check for expired/unavailable jobs: text patterns OR Jina HTTP error page
+    if (isExpired(specText) || isJinaErrorPage(jinaStatus, specText)) {
+      (job as any)._expired = true;
+      console.log(`[PIPELINE] Expired/unavailable: "${job.title}" at "${job.company_name}" — jina=${jinaStatus}, reason=${isJinaErrorPage(jinaStatus, specText) ? 'jina_error_page' : 'expired_pattern'}`);
+    }
   }
 
 
