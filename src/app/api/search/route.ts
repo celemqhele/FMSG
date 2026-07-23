@@ -371,7 +371,6 @@ async function fetchAndFilterJobs(
   let rawJobs: SerpJob[];
   let dedupCount = 0;
   let catFilterRemoved = 0;
-  let dateFilterRemoved = 0;
   let locationFilterRemoved = 0;
   try {
     // ─── Platform-aware source selection ──────────────────────────────────
@@ -524,24 +523,6 @@ async function fetchAndFilterJobs(
     (j as any)._postedAtMs = parsePostedAt(postedStr) ?? 0;
   }
 
-  if (maxAgeDays) {
-    const beforeDateFilter = rawJobs.length;
-    const cutoffMs = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000;
-    rawJobs = rawJobs.filter((j) => {
-      const postedMs = (j as any)._postedAtMs ?? 0;
-      if (postedMs > 0 && postedMs < cutoffMs) return false;
-      return true;
-    });
-    if (rawJobs.length < beforeDateFilter) {
-      dateFilterRemoved = beforeDateFilter - rawJobs.length;
-      console.log(`[PIPELINE] Date filter removed ${dateFilterRemoved} old jobs (${beforeDateFilter} → ${rawJobs.length})`);
-    }
-    if (rawJobs.length === 0) {
-      debugLog(`[SEARCH] All jobs filtered out by date filter (${maxAgeDays}d)`);
-      return { rawJobs: [], jobSpecs: [], jobUrls: [], queryUsed: query };
-    }
-  }
-
   // Location safety net — filter out obviously non-SA jobs
   const SA_CITIES = /\b(johannesburg|cape town|durban|pretoria|gqeberha|port elizabeth|bloemfontein|east london|polokwane|nelspruit|kimberley|soweto|centurion|sandton|midrand|stellenbosch|roodepoort|benoni|boksburg|germiston|vereeniging|umhlanga|pinetown|pietermaritzburg|howick|newcastle|barberton|white river|graskop|hoedspruit|phalaborwa|thohoyandou|tzaneen|haenertsburg|rustenburg|klerksdorp|potchefstroom|upington|george|knysna|plettenberg bay|mossel bay|hermanus|paarl|worcester|makhanda|jeffreys bay)\b/i;
   const SA_PROVINCES = /\b(gauteng|western cape|kwazulu-natal|kwa-zulu natal|eastern cape|free state|limpopo|mpumalanga|north west|northern cape|south africa)\b/i;
@@ -577,36 +558,6 @@ async function fetchAndFilterJobs(
   if (rawJobs.length < beforeCount) {
     locationFilterRemoved = beforeCount - rawJobs.length;
     console.log(`[PIPELINE] Location filter removed ${locationFilterRemoved} non-SA jobs (${beforeCount} → ${rawJobs.length})`);
-  }
-
-  const blacklistRejected: { job: any; reason: string }[] = [];
-  rawJobs = rawJobs.filter((j) => {
-    const url = buildJobUrl(j);
-    const domain = extractDomain(url);
-    const viaBlocked = isBlacklistedByVia(j.via);
-    const domainBlocked = domain && BLACKLISTED_DOMAINS.some((d) => domain === d || domain?.endsWith(`.${d}`) || domain?.includes(d));
-    const companyLower = (j.company_name ?? "").toLowerCase();
-    const companyBlocked = BLACKLISTED_COMPANIES.some((c) => companyLower.includes(c));
-    if (domainBlocked || viaBlocked || companyBlocked) {
-      const reason = viaBlocked ? `blacklisted_via: ${j.via}` : companyBlocked ? `blacklisted_company: ${j.company_name}` : `blacklisted_domain: ${domain}`;
-      blacklistRejected.push({ job: j, reason });
-      return false;
-    }
-    return true;
-  });
-  if (blacklistRejected.length > 0) {
-    for (const { job: j, reason } of blacklistRejected) {
-      console.log(`[PIPELINE] Blacklisted: "${j.title}" at "${j.company_name}" — ${reason} — url=${buildJobUrl(j)}`);
-    }
-    const rows = blacklistRejected.map(({ job: j, reason }) => ({
-      user_id: user.id, search_id: searchId, search_query: query,
-      profile_id: profile_id,
-      job_title: j.title, company: j.company_name, location: j.location ?? '',
-      snippet: (j.description ?? '').slice(0, 500), job_url: buildJobUrl(j), reason,
-      rejection_category: 'domain', rejection_reason: reason,
-      passed_domain_filter: false, passed_banned_filter: false,
-    }));
-    dataClient.from("rejected_jobs").insert(rows).then((r: any) => r.error && debugLog('[SEARCH] Failed to log blacklist rejected:', r.error));
   }
 
   const bannedRejected: any[] = [];
@@ -716,7 +667,7 @@ async function fetchAndFilterJobs(
     console.log(`[PIPELINE] Rejected ${snippetRejected.length} low-quality search snippets`);
   }
 
-  console.log(`[PIPELINE] Filter breakdown: dedup=${dedupCount} → cat=${catFilterRemoved}, date=${dateFilterRemoved}, loc=${locationFilterRemoved}, blacklist=${blacklistRejected.length}, banned=${bannedRejected.length}, ats=${atsRejected.length}, noUrl=${noUrlRejected.length}, snippet=${snippetRejected.length} → survived=${rawJobs.length}`);
+  console.log(`[PIPELINE] Filter breakdown: dedup=${dedupCount} → cat=${catFilterRemoved}, loc=${locationFilterRemoved}, banned=${bannedRejected.length}, ats=${atsRejected.length}, noUrl=${noUrlRejected.length}, snippet=${snippetRejected.length} → survived=${rawJobs.length}`);
   console.log(`[PIPELINE] Spec assignment: ${rawJobs.length} jobs entering (bing=${rawJobs.filter((j) => j.spec_source === "bing_jobs").length}, fullSpec=${rawJobs.filter((j) => j.hasFullSpec).length})`);
   for (let i = 0; i < rawJobs.length; i++) {
     const job = rawJobs[i];
@@ -750,31 +701,6 @@ async function fetchAndFilterJobs(
     if (isExpired(specText)) (job as any)._expired = true;
   }
 
-  // Extract posting dates from spec text for jobs that have no source metadata
-  // Jobs without any date are kept (no date = assume fresh)
-  if (maxAgeDays) {
-    const cutoffMs = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000;
-    const dateRejected: any[] = [];
-    const filtered: any[] = [];
-    for (let i = 0; i < rawJobs.length; i++) {
-      const j = rawJobs[i];
-      if ((j as any)._postedAtMs > 0) { filtered.push(j); continue; }
-      const spec = (j as any)._spec ?? j.description ?? "";
-      const dateStr = extractPostedDateFromSpec(spec);
-      if (!dateStr) { filtered.push(j); continue; }
-      const ms = parsePostedAt(dateStr);
-      if (ms && ms < cutoffMs) {
-        (j as any)._dateRejected = dateStr;
-        dateRejected.push(j);
-      } else {
-        filtered.push(j);
-      }
-    }
-    rawJobs = filtered;
-    if (dateRejected.length > 0) {
-      console.log(`[PIPELINE] Rejected ${dateRejected.length} jobs older than ${maxAgeDays} days (extracted from spec)`);
-    }
-  }
 
   const noSpecRejected = rawJobs.filter((j) => (j as any)._noSpec);
   if (noSpecRejected.length > 0) {
@@ -924,7 +850,7 @@ async function screenAndAnalyze(
   const blacklistInfo = `BLACKLISTED_DOMAINS: ${BLACKLISTED_DOMAINS.join(", ")}`;
   const bannedInfo = bannedCompanies.length > 0 ? `\nUSER-BANNED COMPANIES: ${bannedCompanies.join(", ")}` : "";
   const dateConstraintInfo = maxAgeDays
-    ? `\nDATE CONSTRAINT: Only consider jobs posted within the last ${maxAgeDays} day(s). If no posted date is available, assume it passes. Jobs older than ${maxAgeDays} days are irrelevant — score them 0 with reason "Posted outside date filter".`
+    ? `\nDATE CONSTRAINT: Only consider jobs posted within the last ${maxAgeDays} day(s). Check the job spec text for ANY date indicators: "posted X days/weeks/months ago", "date posted:", "active since", or any date mentioned. If a date is found and the job is older than ${maxAgeDays} days, immediately score 0 with reason "Posted outside date filter". If no date is found anywhere in the spec, assume it passes.`
     : "";
 
   const dynamicScoringPrompt = `You are a strict Recruitment Auditor acting as a hiring manager. You analyze ONE job spec against the candidate's CV and score the match.
@@ -933,6 +859,13 @@ CANDIDATE INDUSTRY: ${profileIndustry || "Unknown"}
 
 ---
 PROCESS:
+
+PRE-CHECK: DOMAIN, DATE, AND DUPLICATE FILTERS
+A) DOMAIN CHECK: The job URL is provided in the input JSON. Check if the URL contains any domain from the BLACKLISTED_DOMAINS list below. If it matches (exact domain or subdomain of any blacklisted entry), immediately return: { "score": 0, "reason": "Job is from a blacklisted aggregator domain (<domain>)", "knockout_fail": true, "recruiter_verdict": "REJECT", ... } with all other fields filled with defaults. Do NOT continue to Step 0.
+B) DATE CHECK: Scan the full job spec text for any date indicators — "posted X days/weeks/months ago", "date posted:", "active since", "applications close [date]", or any explicit date. If a posting date is found and it is older than the DATE CONSTRAINT below, immediately score 0 with reason "Posted outside date filter". If no date is found, it passes.
+C) DUPLICATE CHECK: Compare this job's title + company against the PREVIOUSLY SCORED JOBS list below. If the same title AND company appear in the list, immediately return: { "score": 0, "reason": "Duplicate of previously processed job: <title> at <company>", "knockout_fail": true, "recruiter_verdict": "REJECT", ... } with all other fields filled with defaults. Do NOT continue to Step 0.
+
+If all three checks pass, proceed to Step 0.
 
 STEP 0: SUB-VERTICAL IDENTIFICATION & CV SELECTION
 A) Identify the candidate's professional sub-vertical from their EMPLOYERS, not their tools.
@@ -1051,13 +984,7 @@ ${blacklistInfo}${bannedInfo}${dateConstraintInfo}`;
 
   let outputs: JobRow[] = [];
 
-  // PRE-SCORING DEDUP DISABLED FOR TESTING — was filtering out legitimate jobs
-  // let allExisting: Set<string> | null = null;
-  let preDedupCount = 0;
-  // if (dedupSets) {
-  //   const s = new Set([...dedupSets.history, ...dedupSets.saved, ...dedupSets.blocked, ...(dedupSets.rejected ?? [])]);
-  //   if (s.size > 0) allExisting = s;
-  // }
+  const seenSpecs: { title: string; company: string; url: string }[] = [];
 
   debugLog(`[SEARCH] Starting one-by-one scoring (${rawJobs.length} jobs, offset ${offset})`);
   onStatus?.({ type: "screening_job", current: 0, total: rawJobs.length, progress: 25 });
@@ -1067,16 +994,6 @@ ${blacklistInfo}${bannedInfo}${dateConstraintInfo}`;
     nextOffset = i + 1;
     const jobUrl = jobUrls.get(i) || buildJobUrl(job);
 
-    // Pre-scoring dedup DISABLED FOR TESTING
-    // if (allExisting?.has(jobUrl)) {
-    //   if (dedupSets!.history.has(jobUrl)) filteredCounts.history++;
-    //   else if (dedupSets!.saved.has(jobUrl)) filteredCounts.saved++;
-    //   else if (dedupSets!.rejected?.has(jobUrl)) filteredCounts.rejected++;
-    //   else if (dedupSets!.blocked.has(jobUrl)) filteredCounts.blocked++;
-    //   preDedupCount++;
-    //   continue;
-    // }
-
     const fullSpec = jobSpecs.get(i) || "";
 
     const progress = Math.min(25 + ((i + 1) / rawJobs.length) * 55, 80);
@@ -1084,11 +1001,15 @@ ${blacklistInfo}${bannedInfo}${dateConstraintInfo}`;
 
     if (i > 0) await sleep(lastAITier === "gemini" ? 4000 : 1000);
 
+    const dedupContext = seenSpecs.length > 0
+      ? `\nPREVIOUSLY SCORED JOBS: ${JSON.stringify(seenSpecs)}\n`
+      : "\nPREVIOUSLY SCORED JOBS: (none yet)\n";
+
     let result: any = null;
     try {
       const jobInput = fullSpec.replace(/["\r\t]/g, " ").replace(/\s+/g, " ").trim();
       const raw = await callAIWithFallback(
-        dynamicScoringPrompt,
+        dynamicScoringPrompt + dedupContext,
         `Candidate Profile:\n${profileContext}\n\nJob:\n${JSON.stringify({ job_title: job.title, company: job.company_name, location: job.location, description: jobInput, url: jobUrl }, null, 2)}`,
         `one-by-one scoring ${i + 1}/${rawJobs.length}${pfRound ? ` (PF round ${pfRound})` : ""}`,
         { responseMimeType: "application/json", temperature: 0.1, maxOutputTokens: 16384 }
@@ -1100,6 +1021,9 @@ ${blacklistInfo}${bannedInfo}${dateConstraintInfo}`;
       debugLog(`[SEARCH] Job ${i + 1}/${rawJobs.length} AI failed: ${errMsg.slice(0, 100)}`);
       result = { score: 0, reason: "Screening unavailable", estimated_salary: "", dynamic_requirements: null };
     }
+
+    // Track this job for dedup in subsequent iterations
+    seenSpecs.push({ title: job.title, company: job.company_name, url: jobUrl });
 
     // Post-scoring sanity check
     if (result.score >= 40 && !result.knockout_fail) {
@@ -1208,8 +1132,6 @@ ${blacklistInfo}${bannedInfo}${dateConstraintInfo}`;
     }));
     dataClient.from("rejected_jobs").insert(rows).then((r: any) => r.error && debugLog('[SEARCH] Failed to log AI rejected:', r.error));
   }
-
-  if (preDedupCount > 0) debugLog(`[SEARCH] Pre-scoring dedup skipped ${preDedupCount} already-seen jobs`);
 
   onStatus?.({ type: "almost_done", progress: 90 });
 
