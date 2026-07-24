@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 import { Geist, Geist_Mono } from "next/font/google";
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { TransitionProvider } from "@/components/providers/transition-provider";
@@ -55,6 +56,10 @@ export default function RootLayout({
       <head>
         <script src="/theme-init.js" />
         <link rel="sitemap" type="application/xml" href="/sitemap.xml" />
+        <Script
+          src="https://www.googletagmanager.com/gtag/js?id=G-4QMEHZSCXF"
+          strategy="beforeInteractive"
+        />
       </head>
       <body className="min-h-dvh flex flex-col" data-build-id="jun27-v2">
         <ThemeProvider>
