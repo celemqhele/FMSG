@@ -1006,7 +1006,7 @@ export async function searchDittoJobs(params: SerpParams): Promise<SerpJob[]> {
           finalLink = page.url();
           fullDescription = await page.evaluate(() => {
             const detail = document.querySelector('[class*="Container-sc-1s9qsuq"]');
-            return detail?.innerText ?? document.body.innerText ?? "";
+            return (detail as HTMLElement)?.innerText ?? document.body.innerText ?? "";
           });
         } catch {
           console.warn(`[DITTO] Card ${i}: Read more failed`);
