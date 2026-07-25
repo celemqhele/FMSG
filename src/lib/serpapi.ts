@@ -828,7 +828,7 @@ export async function searchDittoJobs(params: SerpParams): Promise<SerpJob[]> {
     return [];
   }
 
-  const query = params.q || "";
+  const query = cleanQueryForSearch(params.q || "", params.location);
   const searchUrl = buildDittoSearchUrl(query, params.location);
 
   console.log(`[DITTO] Searching: ${searchUrl}`);
