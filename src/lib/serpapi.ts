@@ -874,20 +874,68 @@ export async function searchDittoJobs(params: SerpParams): Promise<SerpJob[]> {
   const rawTitle = titleMatch ? titleMatch[1] : (params.q || "").split(/\s+(?:OR|AND|in\b)/i)[0];
   const query = cleanDittoQuery(rawTitle);
   // Ditto requires city-level location with numeric ID (province → hotspot city)
-  const PROVINCE_TO_CITY: Record<string, { id: string; name: string }> = {
+  const DITTO_CITY_MAP: Record<string, { id: string; name: string }> = {
+    // Gauteng
+    "johannesburg":    { id: "8092", name: "Johannesburg" },
+    "sandton":         { id: "8809", name: "Sandton" },
+    "midrand":         { id: "9529", name: "Midrand" },
+    "pretoria":        { id: "4261", name: "Pretoria" },
+    "centurion":       { id: "5309", name: "Centurion" },
     "gauteng":         { id: "8092", name: "Johannesburg" },
+    // Western Cape
+    "cape town":       { id: "5256", name: "Cape Town" },
+    "bellville":       { id: "4169", name: "Bellville" },
+    "stellenbosch":    { id: "535",  name: "Stellenbosch" },
+    "paarl":           { id: "3155", name: "Paarl" },
+    "george":          { id: "12454", name: "George" },
     "western cape":    { id: "5256", name: "Cape Town" },
+    // KwaZulu-Natal
+    "durban":          { id: "11451", name: "Durban" },
+    "pietermaritzburg": { id: "3361", name: "Pietermaritzburg" },
+    "umhlanga":        { id: "1403", name: "Umhlanga Rocks" },
+    "umhlanga rocks":  { id: "1403", name: "Umhlanga Rocks" },
+    "newcastle":       { id: "10480", name: "Newcastle" },
+    "richards bay":    { id: "4574", name: "Richards Bay" },
     "kwazulu-natal":   { id: "11451", name: "Durban" },
     "kwa-zulu-natal":  { id: "11451", name: "Durban" },
+    // Eastern Cape
+    "port elizabeth":  { id: "4229", name: "Port Elizabeth" },
+    "east london":     { id: "6265", name: "East London" },
+    "mthatha":         { id: "1421", name: "Mthatha" },
+    "uitenhage":       { id: "275",  name: "Uitenhage" },
+    "grahamstown":     { id: "26",   name: "Grahamstown" },
     "eastern cape":    { id: "4229", name: "Port Elizabeth" },
+    // Free State
+    "bloemfontein":    { id: "4737", name: "Bloemfontein" },
+    "welkom":          { id: "2686", name: "Welkom" },
     "free state":      { id: "4737", name: "Bloemfontein" },
+    // Limpopo
+    "polokwane":       { id: "3430", name: "Polokwane" },
+    "tzaneen":         { id: "1334", name: "Tzaneen" },
+    "thohoyandou":     { id: "981",  name: "Thohoyandou" },
+    "mokopane":        { id: "4247", name: "Mokopane" },
     "limpopo":         { id: "3430", name: "Polokwane" },
+    // Mpumalanga
+    "nelspruit":       { id: "10464", name: "Nelspruit" },
+    "secunda":         { id: "8913", name: "Secunda" },
+    "middelburg":      { id: "9488", name: "Middelburg" },
+    "ermelo":          { id: "11819", name: "Ermelo" },
     "mpumalanga":      { id: "10464", name: "Nelspruit" },
+    // North West
+    "rustenburg":      { id: "8672", name: "Rustenburg" },
+    "potchefstroom":   { id: "4242", name: "Potchefstroom" },
+    "klerksdorp":      { id: "2043", name: "Klerksdorp" },
+    "brits":           { id: "5056", name: "Brits" },
     "north west":      { id: "8672", name: "Rustenburg" },
+    // Northern Cape
+    "kimberley":       { id: "1936", name: "Kimberley" },
+    "upington":        { id: "1454", name: "Upington" },
+    "kuruman":         { id: "2542", name: "Kuruman" },
+    "de aar":          { id: "5677", name: "De Aar" },
     "northern cape":   { id: "1936", name: "Kimberley" },
   };
-  const locKey = (params.location ?? "").toLowerCase();
-  const dittoLoc = PROVINCE_TO_CITY[locKey];
+  const locKey = (params.location ?? "").toLowerCase().trim();
+  const dittoLoc = DITTO_CITY_MAP[locKey];
   const searchUrl = buildDittoSearchUrl(query, dittoLoc?.id, dittoLoc?.name);
 
   console.log(`[DITTO] Searching: ${searchUrl}`);
@@ -929,33 +977,15 @@ export async function searchDittoJobs(params: SerpParams): Promise<SerpJob[]> {
         }, i);
         await new Promise(r => setTimeout(r, 2000));
 
-        // Extract preview panel data (title, company, location, brief description)
+        // Extract preview panel data (title, company, location from JobTitle children)
         const preview = await page.evaluate(() => {
-          const titleEl = document.querySelector('[class*="JobTitle-sc-fs7ab"]');
-          const title = titleEl?.textContent?.trim() ?? "";
-
-          // Company + location from preview panel
-          let company = "";
-          let loc = "";
-          const coLocEl = document.querySelector('[class*="CompanyName-sc-"]');
-          if (coLocEl) {
-            const lines = (coLocEl as HTMLElement).innerText?.split("\n").map((s: string) => s.trim()).filter(Boolean);
-            company = lines[0] || "";
-            loc = lines[1] || "";
-          }
-
-          // Find apply link in preview panel (href to full spec page)
-          let applyLink = "";
-          const links = document.querySelectorAll('[class*="JobDetail-sc-"] a[href], [class*="PreviewPanel"] a[href], a[href*="/jobs/"]');
-          for (const link of links) {
-            const href = (link as HTMLAnchorElement).href;
-            if (href.includes("/jobs/") && !href.includes("/search")) {
-              applyLink = href;
-              break;
-            }
-          }
-
-          return { title, company, location: loc, applyLink };
+          const titleBlock = document.querySelector('[class*="JobTitle-sc-fs7ab"]');
+          const children = titleBlock ? Array.from(titleBlock.children) : [];
+          const title = children[0]?.textContent?.trim() ?? titleBlock?.textContent?.trim() ?? "";
+          const company = children[1]?.textContent?.trim() ?? "";
+          const locRaw = children[2]?.textContent?.trim() ?? "";
+          const loc = locRaw.replace(/·\s*\d{1,2}\s+\w+\s+\d{4}$/, "").trim();
+          return { title, company, location: loc };
         });
 
         if (!preview.title) {
@@ -964,37 +994,30 @@ export async function searchDittoJobs(params: SerpParams): Promise<SerpJob[]> {
         }
 
         let fullDescription = "";
-        let finalLink = preview.applyLink;
+        let finalLink = "";
 
-        // Open full spec in a new tab to avoid breaking React search state
-        if (preview.applyLink) {
-          const specPage = await browser!.newPage();
-          try {
-            await specPage.goto(preview.applyLink, { waitUntil: "domcontentloaded", timeout: 30000 });
-            await new Promise(r => setTimeout(r, 3000));
-
-            fullDescription = await specPage.evaluate(() => document.body.innerText ?? "");
-            finalLink = specPage.url();
-          } catch {
-            console.warn(`[DITTO] Card ${i}: failed to load full spec page`);
-          } finally {
-            try { await specPage.close(); } catch {}
-          }
-        } else {
-          // Fallback: try clicking "Read more" in-place
-          try {
-            await page.evaluate(() => {
-              const btn = document.querySelector('button[class*="design-system-button"]');
-              if (btn) (btn as HTMLElement).click();
-            });
-            await new Promise(r => setTimeout(r, 3000));
-            fullDescription = await page.evaluate(() => document.body.innerText ?? "");
-            // Navigate back to search listing
-            await page.goBack({ waitUntil: "domcontentloaded", timeout: 15000 }).catch(() => {});
-            await new Promise(r => setTimeout(r, 2000));
-          } catch {
-            console.warn(`[DITTO] Card ${i}: Read more fallback failed`);
-          }
+        // Click "Read more" to expand full spec — URL changes to /jobs/{id}
+        try {
+          await page.evaluate(() => {
+            const btn = document.querySelector('button[class*="design-system-button"]');
+            if (btn) (btn as HTMLElement).click();
+          });
+          await new Promise(r => setTimeout(r, 3000));
+          finalLink = page.url();
+          fullDescription = await page.evaluate(() => {
+            const detail = document.querySelector('[class*="Container-sc-1s9qsuq"]');
+            return detail?.innerText ?? document.body.innerText ?? "";
+          });
+        } catch {
+          console.warn(`[DITTO] Card ${i}: Read more failed`);
+          finalLink = page.url();
+        }
+        // Navigate back to search listing for next card
+        try {
+          await page.goBack({ waitUntil: "domcontentloaded", timeout: 15000 });
+          await new Promise(r => setTimeout(r, 2000));
+        } catch {
+          console.warn(`[DITTO] Card ${i}: goBack failed`);
         }
 
         if (preview.title && fullDescription.length > 50) {
