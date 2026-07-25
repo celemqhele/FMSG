@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { searchGoogleJobs, searchJSearch, searchAdzuna, searchWebJobs, searchJinaBingJobs, searchDittoJobs, isCategoryPage, scrapePageBrightData, scrapePageApify, type SerpJob } from "@/lib/serpapi";
+import { searchWorkdayJobs, fetchWorkdayDetail, WORKDAY_TENANTS, type WorkdayTenant } from "@/lib/workday";
 import { extractText } from "@/lib/pdf";
 import { mapLocationToProvince } from "@/lib/location";
 import { callAIWithFallback, lastAITier } from "@/lib/gemini";
@@ -273,7 +274,7 @@ interface JobRow {
   yes_answers: number | null;
   recruiter_verdict: string | null;
   dynamic_requirements: { requirement: string; mandatory: boolean; pillar: string; met: boolean; evidence: string }[] | null;
-  spec_source: "google_jobs" | "jsearch" | "adzuna" | "linkedin" | "bing_jobs" | "scrappa" | "ditto" | null;
+  spec_source: "google_jobs" | "jsearch" | "adzuna" | "linkedin" | "bing_jobs" | "scrappa" | "ditto" | "workday" | null;
 }
 
 function normalize(r: any) {
@@ -420,6 +421,7 @@ async function fetchAndFilterJobs(
       webJobs: isAll,               // Scrappa (Google Jobs API)
       jinaBing: isAll,              // Jina Reader scraping Bing Jobs
       ditto: isAll,                 // Ditto Jobs (BrightData browser)
+      workday: isAll,               // Workday CXS API (29 SA tenants, no browser)
     };
 
     const enabledCount = Object.values(sources).filter(Boolean).length;
@@ -440,6 +442,8 @@ async function fetchAndFilterJobs(
           return ["jinaBing", searchJinaBingJobs(serpParams).catch((err) => { console.error(`[PIPELINE] Jina Bing Jobs FAIL: ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}`); return [] as SerpJob[]; })] as const;
         case "ditto":
           return ["ditto", withTimeout(searchDittoJobs(serpParams), 90_000, "Ditto Jobs").catch((err) => { console.error(`[PIPELINE] Ditto Jobs TIMEOUT/FAIL: ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}`); return [] as SerpJob[]; })] as const;
+        case "workday":
+          return ["workday", withTimeout(searchWorkdayJobs(serpParams), 60_000, "Workday").catch((err) => { console.error(`[PIPELINE] Workday TIMEOUT/FAIL: ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}`); return [] as SerpJob[]; })] as const;
         default:
           return [key, Promise.resolve([])] as const;
       }
@@ -464,8 +468,9 @@ async function fetchAndFilterJobs(
     const webJobsJobs = (resultObj["webJobs"] ?? []) as SerpJob[];
     const jinaBingJobs = (resultObj["jinaBing"] ?? []) as SerpJob[];
     const dittoJobs = (resultObj["ditto"] ?? []) as SerpJob[];
+    const workdayJobs = (resultObj["workday"] ?? []) as SerpJob[];
 
-    console.log(`[PIPELINE] Sources returned after ${Date.now() - pipelineStart}ms: GoogleJobs=${googleJobs.length} JSearch=${jsearchJobs.length} Adzuna=${adzunaJobs.length} WebJobs=${webJobsJobs.length} JinaBing=${jinaBingJobs.length} Ditto=${dittoJobs.length}`);
+    console.log(`[PIPELINE] Sources returned after ${Date.now() - pipelineStart}ms: GoogleJobs=${googleJobs.length} JSearch=${jsearchJobs.length} Adzuna=${adzunaJobs.length} WebJobs=${webJobsJobs.length} JinaBing=${jinaBingJobs.length} Ditto=${dittoJobs.length} Workday=${workdayJobs.length}`);
 
     // Merge all sources with dedup (priority: JSearch > Google Jobs > Bing Jobs > Scrappa > Adzuna)
     rawJobs = [];
@@ -501,16 +506,17 @@ async function fetchAndFilterJobs(
       }
     }
 
-    // Priority order: JSearch (best inline) → Google Jobs → Bing Jobs → Ditto → Scrappa → Adzuna
-    console.log("[PIPELINE] Merging sources (priority: JSearch > Google > Bing > Ditto > Scrappa > Adzuna)");
+    // Priority order: JSearch (best inline) → Google Jobs → Bing Jobs → Ditto → Workday → Scrappa → Adzuna
+    console.log("[PIPELINE] Merging sources (priority: JSearch > Google > Bing > Ditto > Workday > Scrappa > Adzuna)");
     addJobs(jsearchJobs);
     addJobs(googleJobs);
     addJobs(jinaBingJobs);
     addJobs(dittoJobs);
+    addJobs(workdayJobs);
     addJobs(webJobsJobs);
     addJobs(adzunaJobs);
 
-    console.log(`[PIPELINE] Dedup complete: ${rawJobs.length} unique jobs from ${googleJobs.length + jsearchJobs.length + adzunaJobs.length + webJobsJobs.length + jinaBingJobs.length + dittoJobs.length} total`);
+    console.log(`[PIPELINE] Dedup complete: ${rawJobs.length} unique jobs from ${googleJobs.length + jsearchJobs.length + adzunaJobs.length + webJobsJobs.length + jinaBingJobs.length + dittoJobs.length + workdayJobs.length} total`);
     dedupCount = rawJobs.length;
 
     // Filter out category/search/listing pages masquerading as individual job listings
@@ -746,22 +752,30 @@ async function fetchAndFilterJobs(
     let specText = "";
     let jinaStatus = 0;
     if (jobUrl) {
-      // Cascade: Jina (fast, free) → Bright Data (renders JS) → Apify (markdown)
-      try {
-        const jina1 = await fetchJinaPage(jobUrl, JINA_API ?? null);
-        jinaStatus = jina1.status;
-        specText = jina1.content;
-        if (!specText && JINA_API) {
-          const jina2 = await fetchJinaPage(jobUrl, null);
-          jinaStatus = jina2.status;
-          specText = jina2.content;
-        }
-      } catch {}
-      if (!specText) {
-        try { specText = await scrapePageBrightData(jobUrl); } catch {}
+      // Fast-path: Workday CXS API (instant JSON, no browser needed)
+      if (job.spec_source === "workday" && (job as any)._workdayTenant && (job as any)._workdayPath) {
+        try {
+          specText = await fetchWorkdayDetail((job as any)._workdayTenant as WorkdayTenant, (job as any)._workdayPath as string);
+        } catch {}
       }
+      // Cascade: Jina (fast, free) → Bright Data (renders JS) → Apify (markdown)
       if (!specText) {
-        try { specText = await scrapePageApify(jobUrl); } catch {}
+        try {
+          const jina1 = await fetchJinaPage(jobUrl, JINA_API ?? null);
+          jinaStatus = jina1.status;
+          specText = jina1.content;
+          if (!specText && JINA_API) {
+            const jina2 = await fetchJinaPage(jobUrl, null);
+            jinaStatus = jina2.status;
+            specText = jina2.content;
+          }
+        } catch {}
+        if (!specText) {
+          try { specText = await scrapePageBrightData(jobUrl); } catch {}
+        }
+        if (!specText) {
+          try { specText = await scrapePageApify(jobUrl); } catch {}
+        }
       }
     }
     if (!specText) {

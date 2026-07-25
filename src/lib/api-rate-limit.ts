@@ -37,6 +37,8 @@ const API_LIMITS: Record<string, { windowMs: number; max: number; label: string 
   ditto:     { windowMs: 30 * 24 * 60 * 60 * 1000, max: 4500, label: "Ditto (4500/5000 monthly)" },
   // Apify: $5 free/month (~3,300 page conversions). Reserve 300.
   apify:     { windowMs: 30 * 24 * 60 * 60 * 1000, max: 3000, label: "Apify (3000/3300 monthly)" },
+  // Workday: free public CXS JSON API (29 SA tenants). 29 calls per search.
+  workday:   { windowMs: 30 * 24 * 60 * 60 * 1000, max: 5000, label: "Workday (5000 monthly)" },
 };
 
 /**

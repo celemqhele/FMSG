@@ -21,7 +21,7 @@ export interface SerpJob {
   apply_options?: ApplyOption[];
   job_highlights?: { link?: string };
   hasFullSpec?: boolean;
-  spec_source?: "google_jobs" | "jsearch" | "adzuna" | "linkedin" | "bing_jobs" | "web_jobs" | "ditto";
+  spec_source?: "google_jobs" | "jsearch" | "adzuna" | "linkedin" | "bing_jobs" | "web_jobs" | "ditto" | "workday";
 }
 
 interface SerpParams {
