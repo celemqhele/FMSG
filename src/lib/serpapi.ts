@@ -828,7 +828,7 @@ export async function searchDittoJobs(params: SerpParams): Promise<SerpJob[]> {
     return [];
   }
 
-  const query = cleanQueryForSearch([params.q, params.location, "South Africa"].filter(Boolean).join(" "), params.location);
+  const query = params.q || "";
   const searchUrl = buildDittoSearchUrl(query, params.location);
 
   console.log(`[DITTO] Searching: ${searchUrl}`);
