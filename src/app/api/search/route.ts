@@ -458,7 +458,7 @@ async function fetchAndFilterJobs(
       }).catch(() => { resultObj[key] = []; });
     });
 
-    const PIPELINE_DEADLINE_MS = 60_000;
+    const PIPELINE_DEADLINE_MS = 270_000;
     const deadline = new Promise<void>((resolve) => setTimeout(resolve, PIPELINE_DEADLINE_MS));
     await Promise.race([Promise.all(sourcePromises), deadline]);
 
