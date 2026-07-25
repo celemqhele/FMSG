@@ -804,13 +804,14 @@ async function tryBrightDataWebJobs(query: string, location: string): Promise<Se
 // Uses the same BrightData Puppeteer connection as Bing Jobs.
 // Flow: search page → click card → click "Read more" → scrape full spec → back → next
 
-function buildDittoSearchUrl(query: string, location?: string): string {
+function buildDittoSearchUrl(query: string, locationId?: string, cityName?: string): string {
   const url = new URL("https://www.ditto.jobs/search-list");
   url.searchParams.set("job_title", query);
-  if (location) {
-    const mapped = mapLocationToProvince(location);
-    url.searchParams.set("location", mapped.province);
-    url.searchParams.set("cityName", mapped.cityName);
+  if (locationId) {
+    url.searchParams.set("location", locationId);
+  }
+  if (cityName) {
+    url.searchParams.set("cityName", cityName);
   }
   return url.toString();
 }
@@ -872,21 +873,22 @@ export async function searchDittoJobs(params: SerpParams): Promise<SerpJob[]> {
   const titleMatch = (params.q || "").match(/"([^"]+)"/);
   const rawTitle = titleMatch ? titleMatch[1] : (params.q || "").split(/\s+(?:OR|AND|in\b)/i)[0];
   const query = cleanDittoQuery(rawTitle);
-  // Ditto requires city-level location — map province to hotspot city
-  const PROVINCE_TO_CITY: Record<string, string> = {
-    "gauteng": "Johannesburg",
-    "western cape": "Cape Town",
-    "kwazulu-natal": "Durban",
-    "kwa-zulu-natal": "Durban",
-    "eastern cape": "Port Elizabeth",
-    "free state": "Bloemfontein",
-    "limpopo": "Polokwane",
-    "mpumalanga": "Nelspruit",
-    "north west": "Rustenburg",
-    "northern cape": "Kimberley",
+  // Ditto requires city-level location with numeric ID (province → hotspot city)
+  const PROVINCE_TO_CITY: Record<string, { id: string; name: string }> = {
+    "gauteng":         { id: "8092", name: "Johannesburg" },
+    "western cape":    { id: "5256", name: "Cape Town" },
+    "kwazulu-natal":   { id: "11451", name: "Durban" },
+    "kwa-zulu-natal":  { id: "11451", name: "Durban" },
+    "eastern cape":    { id: "4229", name: "Port Elizabeth" },
+    "free state":      { id: "4737", name: "Bloemfontein" },
+    "limpopo":         { id: "3430", name: "Polokwane" },
+    "mpumalanga":      { id: "10464", name: "Nelspruit" },
+    "north west":      { id: "8672", name: "Rustenburg" },
+    "northern cape":   { id: "1936", name: "Kimberley" },
   };
-  const dittoLocation = PROVINCE_TO_CITY[(params.location ?? "").toLowerCase()] || params.location;
-  const searchUrl = buildDittoSearchUrl(query, dittoLocation);
+  const locKey = (params.location ?? "").toLowerCase();
+  const dittoLoc = PROVINCE_TO_CITY[locKey];
+  const searchUrl = buildDittoSearchUrl(query, dittoLoc?.id, dittoLoc?.name);
 
   console.log(`[DITTO] Searching: ${searchUrl}`);
 
