@@ -1,8 +1,9 @@
 // BUILD_CACHE_BUST: jun30-1
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { searchGoogleJobs, searchJSearch, searchAdzuna, searchWebJobs, searchJinaBingJobs, isCategoryPage, scrapePageBrightData, scrapePageApify, type SerpJob } from "@/lib/serpapi";
+import { searchGoogleJobs, searchJSearch, searchAdzuna, searchWebJobs, searchJinaBingJobs, searchDittoJobs, isCategoryPage, scrapePageBrightData, scrapePageApify, type SerpJob } from "@/lib/serpapi";
 import { extractText } from "@/lib/pdf";
+import { mapLocationToProvince } from "@/lib/location";
 import { callAIWithFallback, lastAITier } from "@/lib/gemini";
 import { StreamWriter, type SearchEvent } from "@/lib/search-stream";
 import { debugLog } from "@/lib/debug";
@@ -272,7 +273,7 @@ interface JobRow {
   yes_answers: number | null;
   recruiter_verdict: string | null;
   dynamic_requirements: { requirement: string; mandatory: boolean; pillar: string; met: boolean; evidence: string }[] | null;
-  spec_source: "google_jobs" | "jsearch" | "adzuna" | "linkedin" | "bing_jobs" | "scrappa" | null;
+  spec_source: "google_jobs" | "jsearch" | "adzuna" | "linkedin" | "bing_jobs" | "scrappa" | "ditto" | null;
 }
 
 function normalize(r: any) {
@@ -385,6 +386,14 @@ async function fetchAndFilterJobs(
   }
 
   const sanitisedLocation = sanitiseLocation(profileLocation);
+
+  // Province corrector — map suburb/city to province for tighter source queries
+  const locationMapped = mapLocationToProvince(sanitisedLocation ?? "");
+  const tightenedLocation = locationMapped.province || sanitisedLocation;
+  if (sanitisedLocation && tightenedLocation !== sanitisedLocation) {
+    console.log(`[PIPELINE] Location corrected: "${sanitisedLocation}" → "${tightenedLocation}" (province: ${locationMapped.province})`);
+  }
+
   const buildSerpParams = (location?: string) => ({
     q: query,
     location: location,
@@ -392,7 +401,7 @@ async function fetchAndFilterJobs(
     gl: "za" as const,
   });
 
-  const serpParams = buildSerpParams(sanitisedLocation);
+  const serpParams = buildSerpParams(tightenedLocation);
   const pages = maxPages ?? 2;
 
   let rawJobs: SerpJob[];
@@ -410,6 +419,7 @@ async function fetchAndFilterJobs(
       adzuna: isAll,               // only when All
       webJobs: isAll,               // Scrappa (Google Jobs API)
       jinaBing: isAll,              // Jina Reader scraping Bing Jobs
+      ditto: isAll,                 // Ditto Jobs (BrightData browser)
     };
 
     const enabledCount = Object.values(sources).filter(Boolean).length;
@@ -428,6 +438,8 @@ async function fetchAndFilterJobs(
           return ["webJobs", withTimeout(searchWebJobs(serpParams), 60_000, "Web Jobs").catch((err) => { console.error(`[PIPELINE] Web Jobs TIMEOUT/FAIL: ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}`); return [] as SerpJob[]; })] as const;
         case "jinaBing":
           return ["jinaBing", searchJinaBingJobs(serpParams).catch((err) => { console.error(`[PIPELINE] Jina Bing Jobs FAIL: ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}`); return [] as SerpJob[]; })] as const;
+        case "ditto":
+          return ["ditto", withTimeout(searchDittoJobs(serpParams), 90_000, "Ditto Jobs").catch((err) => { console.error(`[PIPELINE] Ditto Jobs TIMEOUT/FAIL: ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}`); return [] as SerpJob[]; })] as const;
         default:
           return [key, Promise.resolve([])] as const;
       }
@@ -451,8 +463,9 @@ async function fetchAndFilterJobs(
     const adzunaJobs = (resultObj["adzuna"] ?? []) as SerpJob[];
     const webJobsJobs = (resultObj["webJobs"] ?? []) as SerpJob[];
     const jinaBingJobs = (resultObj["jinaBing"] ?? []) as SerpJob[];
+    const dittoJobs = (resultObj["ditto"] ?? []) as SerpJob[];
 
-    console.log(`[PIPELINE] Sources returned after ${Date.now() - pipelineStart}ms: GoogleJobs=${googleJobs.length} JSearch=${jsearchJobs.length} Adzuna=${adzunaJobs.length} WebJobs=${webJobsJobs.length} JinaBing=${jinaBingJobs.length}`);
+    console.log(`[PIPELINE] Sources returned after ${Date.now() - pipelineStart}ms: GoogleJobs=${googleJobs.length} JSearch=${jsearchJobs.length} Adzuna=${adzunaJobs.length} WebJobs=${webJobsJobs.length} JinaBing=${jinaBingJobs.length} Ditto=${dittoJobs.length}`);
 
     // Merge all sources with dedup (priority: JSearch > Google Jobs > Bing Jobs > Scrappa > Adzuna)
     rawJobs = [];
@@ -488,15 +501,16 @@ async function fetchAndFilterJobs(
       }
     }
 
-    // Priority order: JSearch (best inline) → Google Jobs → Bing Jobs → Scrappa → Adzuna
-    console.log("[PIPELINE] Merging sources (priority: JSearch > Google > Bing > Scrappa > Adzuna)");
+    // Priority order: JSearch (best inline) → Google Jobs → Bing Jobs → Ditto → Scrappa → Adzuna
+    console.log("[PIPELINE] Merging sources (priority: JSearch > Google > Bing > Ditto > Scrappa > Adzuna)");
     addJobs(jsearchJobs);
     addJobs(googleJobs);
     addJobs(jinaBingJobs);
+    addJobs(dittoJobs);
     addJobs(webJobsJobs);
     addJobs(adzunaJobs);
 
-    console.log(`[PIPELINE] Dedup complete: ${rawJobs.length} unique jobs from ${googleJobs.length + jsearchJobs.length + adzunaJobs.length + webJobsJobs.length + jinaBingJobs.length} total`);
+    console.log(`[PIPELINE] Dedup complete: ${rawJobs.length} unique jobs from ${googleJobs.length + jsearchJobs.length + adzunaJobs.length + webJobsJobs.length + jinaBingJobs.length + dittoJobs.length} total`);
     dedupCount = rawJobs.length;
 
     // Filter out category/search/listing pages masquerading as individual job listings
@@ -914,7 +928,7 @@ async function screenAndAnalyze(
     ? `\nDATE CONSTRAINT: Only consider jobs posted within the last ${maxAgeDays} day(s). Check the job spec text for ANY date indicators: "posted X days/weeks/months ago", "date posted:", "active since", or any date mentioned. If a date is found and the job is older than ${maxAgeDays} days, immediately score 0 with reason "Posted outside date filter". If no date is found anywhere in the spec, assume it passes.`
     : "";
   const locationConstraintInfo = profileLocation
-    ? `\nLOCATION CONSTRAINT: The candidate is based in "${profileLocation}", South Africa. Check the job's location field in the input JSON AND scan the full job spec for any location indicators. If the job is explicitly located in a city/country OUTSIDE South Africa (e.g. "London", "New York", "Dubai", "Singapore", "Remote - US only", "EU only", "Americas", "EMEA" targeting non-SA), immediately score 0 with reason "Job is not hiring in candidate's location". EXCEPTIONS — do NOT reject if: (a) the job says "Remote", "Work from home", "Anywhere", "Worldwide", "Global", "Flexible location"; (b) the job says "Hybrid" or "On-site" but the location is in South Africa; (c) the location field is empty or missing.`
+    ? `\nLOCATION CONSTRAINT: The candidate is based in "${profileLocation}", South Africa. Check the job's location field in the input JSON AND scan the full job spec for any location indicators. If the job is explicitly located in a city/country OUTSIDE South Africa (e.g. "London", "New York", "Dubai", "Singapore", "Remote - US only", "EU only", "Americas", "EMEA" targeting non-SA), immediately score 0 with reason "Job is not hiring in candidate's location". EXCEPTIONS — do NOT reject if: (a) the job says "Remote", "Work from home", "Anywhere", "Worldwide", "Global", "Flexible location"; (b) the job says "Hybrid" or "On-site" but the location is in South Africa; (c) the location field is empty or missing.\nPROXIMITY: If the job is in a DIFFERENT South African province from the candidate's location (${profileLocation}), apply the Location Tax (-30) in STEP 6. If in the SAME province, no penalty. Remote/Work-from-home with no location restriction = no penalty.`
     : "";
 
   const dynamicScoringPrompt = `You are a strict Recruitment Auditor acting as a hiring manager. You analyze ONE job spec against the candidate's CV and score the match.
@@ -1009,6 +1023,7 @@ STEP 6: TAXES
 - Vague Achievement Tax (-10): CV has fewer than 3 specific numbers/percentages.
 - No Degree Tax (-10): ONLY if the JD contains an EXPLICIT degree requirement (e.g. "Bachelor's degree required", "Degree in X", "NQF level 7+", "tertiary qualification required") AND the candidate has no tertiary qualification. If the JD does not contain one of these explicit phrases, this tax is FORBIDDEN. Do NOT assume professional roles require degrees.
 - Salary Mismatch Tax (-10): JD max salary is below 70% of candidate's implied market rate.
+- Location Tax (-30): Job is in a DIFFERENT province from the candidate's location (e.g. candidate in Gauteng, job in Western Cape). EXEMPT if: (a) job says "Remote"/"Work from home"/"Anywhere"/"Worldwide" with no location restriction; (b) job is in the SAME province as the candidate; (c) candidate's location is empty/missing. This is a hard penalty — not discretionary.
 
 STEP 7: FINAL SCORE
 Core = Industry×0.25 + Function×0.30 + Scale×0.20 + Tools×0.15 + Location×0.10
@@ -1020,7 +1035,7 @@ STEP 8: VERDICT
 >= 75: "HIRE" | >= 60: "INTERVIEW" | < 60: "REJECT"
 
 STEP 9: SELF-VERIFY
-A) Compute: (Industry×0.25 + Function×0.30 + Scale×0.20 + Tools×0.15 + Location×0.10) × 0.95 − taxes.
+A) Compute: (Industry×0.25 + Function×0.30 + Scale×0.20 + Tools×0.15 + Location×0.10) × 0.95 − taxes (including Location Tax of -30 if applicable).
    Does this match final score? Fix both if diverge by >5 pts.
 B) Reasons MUST reference CV specifics (employer names, skills, numbers).
 C) Adjust by ±5 (max ±10) if score feels wrong. Set adjustment_note.
@@ -1118,6 +1133,7 @@ ${blacklistInfo}${bannedInfo}${dateConstraintInfo}${locationConstraintInfo}`;
       "Vague Achievement Tax": "CV lacks specific metrics and measurable achievements",
       "No Degree Tax": "Role requires a degree which candidate does not have",
       "Salary Mismatch Tax": "Job salary is below 70% of candidate's market rate",
+      "Location Tax": "Job is in a different province from the candidate's location",
     };
 
     const autoSummary = (() => {

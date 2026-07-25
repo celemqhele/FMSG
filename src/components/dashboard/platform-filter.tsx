@@ -1,6 +1,6 @@
 "use client";
 
-export type PlatformId = "linkedin" | "pnet" | "indeed" | "careerjunction" | "glassdoor" | "offerzen" | "all";
+export type PlatformId = "linkedin" | "pnet" | "indeed" | "careerjunction" | "glassdoor" | "offerzen" | "ditto" | "all";
 
 export interface PlatformDef {
   id: PlatformId;
@@ -15,6 +15,7 @@ export const PLATFORMS: PlatformDef[] = [
   { id: "careerjunction", label: "CareerJunction", viaMatch: ["careerjunction"] },
   { id: "glassdoor", label: "Glassdoor", viaMatch: ["glassdoor"] },
   { id: "offerzen", label: "OfferZen", viaMatch: ["offerzen"] },
+  { id: "ditto", label: "Ditto", viaMatch: ["ditto"] },
   { id: "all", label: "All", viaMatch: [] },
 ];
 

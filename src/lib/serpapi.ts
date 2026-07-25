@@ -1,4 +1,5 @@
 import { checkApiLimit, recordApiCall, recordApiFailure } from "./api-rate-limit";
+import { mapLocationToProvince } from "./location";
 import puppeteer from "puppeteer-core";
 
 const SERPAPI_KEY = process.env.SERPAPI_API_KEY;
@@ -20,7 +21,7 @@ export interface SerpJob {
   apply_options?: ApplyOption[];
   job_highlights?: { link?: string };
   hasFullSpec?: boolean;
-  spec_source?: "google_jobs" | "jsearch" | "adzuna" | "linkedin" | "bing_jobs" | "web_jobs";
+  spec_source?: "google_jobs" | "jsearch" | "adzuna" | "linkedin" | "bing_jobs" | "web_jobs" | "ditto";
 }
 
 interface SerpParams {
@@ -799,6 +800,188 @@ async function tryBrightDataWebJobs(query: string, location: string): Promise<Se
   }
 }
 
+// ─── Source 9: Ditto Jobs — click-to-expand via Bright Data browser ────────
+// Uses the same BrightData Puppeteer connection as Bing Jobs.
+// Flow: search page → click card → click "Read more" → scrape full spec → back → next
+
+function buildDittoSearchUrl(query: string, location?: string): string {
+  const url = new URL("https://www.ditto.jobs/search-list");
+  url.searchParams.set("job_title", query);
+  if (location) {
+    const mapped = mapLocationToProvince(location);
+    url.searchParams.set("location", mapped.province);
+    url.searchParams.set("cityName", mapped.cityName);
+  }
+  return url.toString();
+}
+
+export async function searchDittoJobs(params: SerpParams): Promise<SerpJob[]> {
+  const rl = checkApiLimit("ditto");
+  if (!rl.allowed) {
+    console.warn(`[DITTO] RATE LIMITED — ${rl.label}, ${rl.remaining}/${rl.total} remaining`);
+    return [];
+  }
+
+  const wsEndpoint = process.env.BRIGHTDATA_API;
+  if (!wsEndpoint || !wsEndpoint.startsWith("wss://")) {
+    console.warn(`[DITTO] SKIP — BRIGHTDATA_API is not a valid WebSocket URL`);
+    return [];
+  }
+
+  const query = cleanQueryForSearch([params.q, params.location, "South Africa"].filter(Boolean).join(" "), params.location);
+  const searchUrl = buildDittoSearchUrl(query, params.location);
+
+  console.log(`[DITTO] Searching: ${searchUrl}`);
+
+  let browser;
+  try {
+    browser = await puppeteer.connect({ browserWSEndpoint: wsEndpoint });
+    const page = await browser.newPage();
+
+    await page.goto(searchUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
+
+    // Wait for React SPA to hydrate and render job cards
+    try {
+      await page.waitForSelector('[class*="Container-sc-mu1qsq"]', { timeout: 20000 });
+    } catch {
+      console.warn(`[DITTO] No job cards found — page may be empty or selectors changed`);
+      return [];
+    }
+
+    // Brief extra wait for any remaining hydration
+    await new Promise(r => setTimeout(r, 2000));
+
+    const cardCount = await page.evaluate(() =>
+      document.querySelectorAll('[class*="Container-sc-mu1qsq"]').length
+    );
+    console.log(`[DITTO] Found ${cardCount} job cards`);
+
+    if (cardCount === 0) return [];
+
+    const jobs: SerpJob[] = [];
+    const maxCards = Math.min(cardCount, 20);
+
+    for (let i = 0; i < maxCards; i++) {
+      try {
+        // Click the job card to load the preview panel
+        await page.evaluate((idx) => {
+          const cards = document.querySelectorAll('[class*="Container-sc-mu1qsq"]');
+          if (cards[idx]) (cards[idx] as HTMLElement).click();
+        }, i);
+        await new Promise(r => setTimeout(r, 2000));
+
+        // Extract preview panel data (title, company, location, brief description)
+        const preview = await page.evaluate(() => {
+          const titleEl = document.querySelector('[class*="JobTitle-sc-fs7ab"]');
+          const title = titleEl?.textContent?.trim() ?? "";
+
+          // Company + location from preview panel
+          let company = "";
+          let loc = "";
+          const coLocEl = document.querySelector('[class*="CompanyName-sc-"]');
+          if (coLocEl) {
+            const lines = (coLocEl as HTMLElement).innerText?.split("\n").map((s: string) => s.trim()).filter(Boolean);
+            company = lines[0] || "";
+            loc = lines[1] || "";
+          }
+
+          // Find apply link in preview panel (href to full spec page)
+          let applyLink = "";
+          const links = document.querySelectorAll('[class*="JobDetail-sc-"] a[href], [class*="PreviewPanel"] a[href], a[href*="/jobs/"]');
+          for (const link of links) {
+            const href = (link as HTMLAnchorElement).href;
+            if (href.includes("/jobs/") && !href.includes("/search")) {
+              applyLink = href;
+              break;
+            }
+          }
+
+          return { title, company, location: loc, applyLink };
+        });
+
+        if (!preview.title) {
+          console.warn(`[DITTO] Card ${i}: no title found, skipping`);
+          continue;
+        }
+
+        let fullDescription = "";
+        let finalLink = preview.applyLink;
+
+        // Open full spec in a new tab to avoid breaking React search state
+        if (preview.applyLink) {
+          const specPage = await browser!.newPage();
+          try {
+            await specPage.goto(preview.applyLink, { waitUntil: "domcontentloaded", timeout: 30000 });
+            await new Promise(r => setTimeout(r, 3000));
+
+            fullDescription = await specPage.evaluate(() => document.body.innerText ?? "");
+            finalLink = specPage.url();
+          } catch {
+            console.warn(`[DITTO] Card ${i}: failed to load full spec page`);
+          } finally {
+            try { await specPage.close(); } catch {}
+          }
+        } else {
+          // Fallback: try clicking "Read more" in-place
+          try {
+            await page.evaluate(() => {
+              const btn = document.querySelector('button[class*="design-system-button"]');
+              if (btn) (btn as HTMLElement).click();
+            });
+            await new Promise(r => setTimeout(r, 3000));
+            fullDescription = await page.evaluate(() => document.body.innerText ?? "");
+            // Navigate back to search listing
+            await page.goBack({ waitUntil: "domcontentloaded", timeout: 15000 }).catch(() => {});
+            await new Promise(r => setTimeout(r, 2000));
+          } catch {
+            console.warn(`[DITTO] Card ${i}: Read more fallback failed`);
+          }
+        }
+
+        if (preview.title && fullDescription.length > 50) {
+          jobs.push({
+            title: preview.title,
+            company_name: preview.company || "Unknown",
+            location: preview.location || params.location || "",
+            description: fullDescription.slice(0, 3000),
+            link: finalLink,
+            via: "ditto",
+            hasFullSpec: fullDescription.length > 300,
+            spec_source: "ditto" as const,
+          });
+          console.log(`[DITTO] Card ${i + 1}: "${preview.title}" at "${preview.company}" — ${fullDescription.length} chars`);
+        }
+      } catch (cardErr) {
+        console.warn(`[DITTO] Card ${i} failed: ${cardErr instanceof Error ? cardErr.message.slice(0, 100) : String(cardErr).slice(0, 100)}`);
+        // If we lost the search state, try to recover
+        try {
+          await page.goto(searchUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
+          await page.waitForSelector('[class*="Container-sc-mu1qsq"]', { timeout: 15000 });
+          await new Promise(r => setTimeout(r, 2000));
+        } catch {
+          console.warn(`[DITTO] Failed to recover search listing after card ${i} error`);
+          break;
+        }
+      }
+    }
+
+    recordApiCall("ditto");
+    console.log(`[DITTO] SUCCESS — ${jobs.length} jobs with full specs`);
+    if (jobs.length > 0) {
+      console.log(`[DITTO] First: "${jobs[0].title}" at "${jobs[0].company_name}" — desc=${jobs[0].description?.length ?? 0} chars`);
+    }
+    return jobs;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[DITTO] EXCEPTION: ${msg.slice(0, 200)}`);
+    return [];
+  } finally {
+    if (browser) {
+      try { await browser.close(); } catch {}
+    }
+  }
+}
+
 // ─── Reader 3: Apify URL-to-Markdown ($5 free credits/month) ───────────────
 
 async function tryApifyWebJobs(query: string, location: string): Promise<SerpJob[]> {
@@ -886,6 +1069,7 @@ function extractCompanyFromUrl(url: string): string {
     if (hostname.includes("careerjunction")) return "CareerJunction";
     if (hostname.includes("pnet")) return "PNet";
     if (hostname.includes("jobmail")) return "JobMail";
+    if (hostname.includes("ditto")) return "Ditto";
     return hostname.split(".")[0];
   } catch {
     return "Unknown";
