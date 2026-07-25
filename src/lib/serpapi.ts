@@ -815,6 +815,46 @@ function buildDittoSearchUrl(query: string, location?: string): string {
   return url.toString();
 }
 
+/**
+ * Strip ALL SA city/suburb/province names + noise words from a query string.
+ * Ditto's job_title param is a keyword search — must contain ONLY role keywords,
+ * never location. Location goes through the URL params.
+ */
+function cleanDittoQuery(raw: string): string {
+  let q = raw;
+  // Strip Google operators
+  q = q.replace(/["*]/g, "");
+  q = q.replace(/\bOR\b/gi, " ");
+  q = q.replace(/\bAND\b/gi, " ");
+  q = q.replace(/\bNOT\b/gi, " ");
+  // Strip noise words
+  const noise = ["in", "jobs", "job", "hiring", "now", "near", "the", "a", "for", "of", "south", "africa", "cape", "town"];
+  for (const w of noise) {
+    q = q.replace(new RegExp(`\\b${w}\\b`, "gi"), " ");
+  }
+  // Strip ALL SA city/suburb/province names (from the location module's map)
+  const SA_LOCATIONS = [
+    "johannesburg","sandton","fourways","midrand","centurion","pretoria","soweto","roodepoort",
+    "benoni","boksburg","germiston","vereeniging","randburg","brakpan","kempton park","springs",
+    "alberton","bryanston","woodmead","waterfall","randpark","rosebank","melrose arch",
+    "cape town","stellenbosch","paarl","george","somerset west","bellville","durbanville",
+    "claremont","worcester","knysna","mossel bay","hermanus","strand","goodwood","milnerton",
+    "table view","plattekloof",
+    "durban","umhlanga","pinetown","pietermaritzburg","richards bay","newcastle","howick",
+    "westville","ballito",
+    "port elizabeth","gqeberha","east london","makhanda","jeffreys bay",
+    "bloemfontein","polokwane","tzaneen","thohoyandou","haenertsburg","mokopane",
+    "nelspruit","mbombela","witbank","emalahleni","barberton","white river","graskop","hoedspruit",
+    "rustenburg","klerksdorp","potchefstroom","kimberley","upington",
+    "gauteng","western cape","kwazulu-natal","kwa-zulu natal","eastern cape",
+    "free state","limpopo","mpumalanga","north west","northern cape",
+  ];
+  for (const city of SA_LOCATIONS) {
+    q = q.replace(new RegExp(`\\b${city}\\b`, "gi"), " ");
+  }
+  return q.replace(/\s+/g, " ").trim();
+}
+
 export async function searchDittoJobs(params: SerpParams): Promise<SerpJob[]> {
   const rl = checkApiLimit("ditto");
   if (!rl.allowed) {
@@ -828,7 +868,10 @@ export async function searchDittoJobs(params: SerpParams): Promise<SerpJob[]> {
     return [];
   }
 
-  const query = cleanQueryForSearch(params.q || "", params.location);
+  // Extract just the first job title — params.q may contain multiple OR-quoted titles
+  const titleMatch = (params.q || "").match(/"([^"]+)"/);
+  const rawTitle = titleMatch ? titleMatch[1] : (params.q || "").split(/\s+(?:OR|AND|in\b)/i)[0];
+  const query = cleanDittoQuery(rawTitle);
   const searchUrl = buildDittoSearchUrl(query, params.location);
 
   console.log(`[DITTO] Searching: ${searchUrl}`);
