@@ -967,31 +967,27 @@ B) Identify the job's sub-vertical — what does the hiring company sell?
 C) Select the CV variation whose day-to-day responsibilities most closely match the role.
 D) Set suggested_cv_name to the exact CV filename.
 
-STEP 1: EXTRACT REQUIREMENTS FROM THE JOB SPEC
-Read the FULL job description. Extract EVERY requirement INDIVIDUALLY — do NOT group, summarize, or combine requirements.
+STEP 1: RECRUITER QUESTIONS
+Think like a hiring manager reviewing this CV for this role. Read the FULL job spec. For EACH requirement, generate ONE interview question you would ask the candidate.
 
-BAD (grouped): "Experience with digital marketing platforms"
-GOOD (individual): "Experience with Google Ads", "Experience with Facebook Ads", "Experience with SEO"
+Classify each requirement as MANDATORY or PREFERRED:
+- MANDATORY: stated with "required", "must have", "essential", "mandatory", "necessary", "minimum"
+- PREFERRED: stated with "preferred", "advantageous", "nice to have", "desirable", "ideal", "bonus"
+If neither label is explicit, treat as MANDATORY unless context clearly implies optional.
 
-Each bullet point, each tool name, each skill mentioned in the requirements section is a SEPARATE requirement.
+MANDATORY requirements become direct questions:
+- "Do you have experience with Python 3.9 and Pytest?" (if spec says "Python 3.9, Pytest required")
+- "Have you managed a month-end close process?"
 
-For each, classify as:
-- MANDATORY: stated with words like "required", "must have", "essential", "mandatory", "necessary", "minimum"
-- PREFERRED: stated with words like "preferred", "advantageous", "nice to have", "desirable", "ideal", "bonus"
-If neither label is explicitly used, treat as MANDATORY unless the context clearly implies optional (e.g. "a bonus", "would be nice").
+PREFERRED requirements become softer questions:
+- "Have you worked with Terraform or similar IaC tools?"
 
 Include: certifications, licenses, tools, platforms, languages, experience thresholds (years, team size, deal size, revenue), industry background, specific responsibilities, soft skills if stated as requirements.
 
 CRITICAL RULE — DEGREES: NEVER create a degree requirement unless the JD contains an EXPLICIT phrase like:
   "Bachelor's degree required", "Degree in X", "NQF level 7+", "tertiary qualification required"
-If the JD lists skills, experience, tools, and responsibilities WITHOUT explicitly stating a degree is needed, NO degree requirement may be created. A professional job listing does NOT imply a degree requirement.
 
-STEP 2: GENERATE YES/NO QUESTIONS
-For EACH extracted requirement, generate ONE specific yes/no question.
-The question must reference the EXACT tool/skill/requirement from the spec.
-
-BAD: "Does the candidate have marketing tool experience?"
-GOOD: "Does the candidate have experience with Google Ads?"
+Each requirement = one question. Do not combine. 15 requirements = 15 questions.
 
 Categorize each into the correct pillar:
 - "industry": sub-vertical match, sector experience, employer background
@@ -1000,20 +996,25 @@ Categorize each into the correct pillar:
 - "tools": specific tools, certifications, platforms, methodologies, licenses
 - "location": geography, relocation, remote/hybrid/wfh
 
-If the spec lists 15 requirements, you MUST generate 15 questions. Do not reduce.
+STEP 2: ANSWER FROM CV
+For each question, answer YES or NO based ONLY on what the CV explicitly states.
 
-STEP 3: ANSWER FROM CV
-For each question, check the CV text and answer:
-- "met": true if the CV provides evidence of meeting the requirement
-- "met": false if the CV has no evidence or contradicts the requirement
-- "evidence": specific quote/detail from the CV (employer names, skills, dates, numbers)
+YES rules — answer YES only if:
+- The tool/skill/experience is literally mentioned in the CV (skills list OR work experience)
+- The CV shows direct, specific evidence of the requirement
+- Include the specific quote/detail from the CV as evidence
 
-RULES FOR ANSWERING:
-- If the CV doesn't mention it at all → met: false
-- If the role says "bilingual Afrikaans/English" and CV shows no Afrikaans → met: false
-- Transferable skills count: Salesforce→HubSpot CRM = met, Python→Java backend = met
-- MORE years than required = met (overqualification is positive)
-- Equivalent qualifications count: BA Economics meets BCom, BEng meets BSc, LLB satisfies any "degree"
+NO rules — answer NO if ANY of these apply:
+- The CV doesn't mention it at all → NO
+- The CV mentions a DIFFERENT tool, language, or category → NO
+  - "Python 3.9 required", CV has TypeScript → NO (different language)
+  - "Pytest required", CV has Jest → NO (different testing framework)
+  - "Terraform required", CV has Docker → NO (different tool category)
+- "Industry standard" or "common practice" is NOT evidence → NO
+- Inference or assumption is NOT evidence → NO
+- Transferable ONLY within the EXACT same tool category: Salesforce→HubSpot CRM (both CRMs) = YES, React→Angular (both React-ecosystem frameworks) = YES. Cross-language or cross-category = NO
+
+It is NORMAL and EXPECTED for 30-60% of answers to be NO. Marking everything as YES is a scoring failure. A candidate cannot match every single requirement — that is fine and honest.
 
 STEP 4: SCORE PILLARS (each 0-100)
 For each pillar, calculate: (questions answered met:true / total questions in that pillar) × 100
@@ -1021,7 +1022,7 @@ Then adjust based on these rules:
 - Industry: SAME sub-vertical=70-95, ADJACENT=40-65, DIFFERENT=0-30
 - Function: Same role type=70-95, Adjacent role=40-65, Different role type=0-30
 - Scale: MORE years than required=positive (≥80), LESS than minimum=negative
-- Tools: Direct match=80-95, Transferable/adjacent=50-75, Missing critical=0-30
+- Tools: All requirements met=80-95, Most met (≥70%)=50-75, Half met (40-69%)=30-50, Few met (<40%)=0-30. "Met" means the tool appears literally in the CV. Inferred/transferable tools do NOT count as met.
 - Location: Same city or remote no restriction=100, Same province=70, Different province=30, Different country=0. CRITICAL: If the candidate is in South Africa and the job is in another country (UK, US, UAE, etc.), Location MUST be 0. "Remote" or "Work from home" with no country restriction = 100. "Remote - US only" or "Remote - EU only" = 0 (not available to SA candidates).
 
 For each pillar, provide a SPECIFIC reason in pillar_reasons referencing CV details.
@@ -1054,6 +1055,7 @@ A) Compute: (Industry×0.25 + Function×0.30 + Scale×0.20 + Tools×0.15 + Locat
 B) Reasons MUST reference CV specifics (employer names, skills, numbers).
 C) Adjust by ±5 (max ±10) if score feels wrong. Set adjustment_note.
 D) pillar_scores MUST reflect the final math.
+E) Fabrication check: Count YES answers across all dynamic_requirements. If ≥90% are YES, you have likely fabricated justifications. Revisit Step 2 with strict CV-evidence-only rules. Marking nearly everything as YES is a scoring failure, not a strong candidate.
 
 Return ONLY valid JSON (no markdown, no code fences):
 {
