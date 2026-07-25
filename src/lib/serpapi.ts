@@ -872,7 +872,21 @@ export async function searchDittoJobs(params: SerpParams): Promise<SerpJob[]> {
   const titleMatch = (params.q || "").match(/"([^"]+)"/);
   const rawTitle = titleMatch ? titleMatch[1] : (params.q || "").split(/\s+(?:OR|AND|in\b)/i)[0];
   const query = cleanDittoQuery(rawTitle);
-  const searchUrl = buildDittoSearchUrl(query, params.location);
+  // Ditto requires city-level location — map province to hotspot city
+  const PROVINCE_TO_CITY: Record<string, string> = {
+    "gauteng": "Johannesburg",
+    "western cape": "Cape Town",
+    "kwazulu-natal": "Durban",
+    "kwa-zulu-natal": "Durban",
+    "eastern cape": "Port Elizabeth",
+    "free state": "Bloemfontein",
+    "limpopo": "Polokwane",
+    "mpumalanga": "Nelspruit",
+    "north west": "Rustenburg",
+    "northern cape": "Kimberley",
+  };
+  const dittoLocation = PROVINCE_TO_CITY[(params.location ?? "").toLowerCase()] || params.location;
+  const searchUrl = buildDittoSearchUrl(query, dittoLocation);
 
   console.log(`[DITTO] Searching: ${searchUrl}`);
 
