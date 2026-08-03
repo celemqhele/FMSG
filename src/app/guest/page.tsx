@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, useRef, Suspense } from "react";
+import { useState, useEffect, useRef, useCallback, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { Search, Loader2, X } from "lucide-react";
+import { Search, MapPin, Loader2, X } from "lucide-react";
 import { SpaceVideoBackground } from "@/components/landing/space-video-background";
 import { FloatingNavbar } from "@/components/layout/floating-navbar";
 import dynamic from "next/dynamic";
@@ -13,7 +13,7 @@ import { useTransition } from "@/components/providers/transition-provider";
 import { createClient } from "@/lib/supabase/client";
 import { JobResultCard } from "@/components/dashboard/job-result-card";
 import { MobileJobCard } from "@/components/dashboard/mobile/mobile-job-card";
-import { getJobPostByKey, type JobPost } from "@/lib/job-posts";
+import { getJobPostByKey } from "@/lib/job-posts";
 import "@/components/landing/liquid-glass.css";
 
 interface GuestJob {
@@ -35,52 +35,20 @@ function GuestContent() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   const [query, setQuery] = useState("");
+  const [location, setLocation] = useState("");
   const [results, setResults] = useState<GuestJob[]>([]);
-  const [goldPost, setGoldPost] = useState<JobPost | null>(null);
   const [status, setStatus] = useState<"idle" | "searching" | "done" | "limit" | "error">("idle");
   const [error, setError] = useState("");
   const [showComplete, setShowComplete] = useState(false);
   const [completeMounted, setCompleteMounted] = useState(false);
   const autoSearched = useRef(false);
 
-  useEffect(() => { endTransition(); }, [endTransition]);
-
-  useEffect(() => {
+  const goldPost = (() => {
     const k = searchParams.get("k");
-    if (k) {
-      const post = getJobPostByKey(k);
-      if (post) setGoldPost(post);
-    }
-  }, [searchParams]);
+    return k ? getJobPostByKey(k) : null;
+  })();
 
-  useEffect(() => {
-    const supabase = createClient();
-    supabase.auth.getSession().then(({ data: { session } }: { data: { session: any } }) => {
-      setIsLoggedIn(!!session);
-    });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: string, session: any) => {
-      setIsLoggedIn(!!session);
-    });
-    return () => { subscription.unsubscribe(); };
-  }, []);
-
-  useEffect(() => {
-    if (goldPost && !autoSearched.current && status === "idle") {
-      autoSearched.current = true;
-      setQuery(goldPost.title);
-      runSearch(goldPost.title);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [goldPost]);
-
-  useEffect(() => {
-    if (showComplete) {
-      const timer = setTimeout(() => setCompleteMounted(true), 10);
-      return () => clearTimeout(timer);
-    }
-  }, [showComplete]);
-
-  const runSearch = async (q: string) => {
+  const runSearch = useCallback(async (q: string) => {
     if (!q.trim() || status === "searching") return;
     setStatus("searching");
     setError("");
@@ -91,7 +59,11 @@ function GuestContent() {
       const res = await fetch("/api/guest-search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: q.trim() }),
+        body: JSON.stringify({
+          query: q.trim(),
+          location: location.trim() || undefined,
+          mode: goldPost ? "job-post" : "landing",
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.status === 403 && data.code === "GUEST_LIMIT") {
@@ -111,7 +83,35 @@ function GuestContent() {
       setStatus("error");
       setError("Network error. Please try again.");
     }
-  };
+  }, [status, location, goldPost]);
+
+  useEffect(() => { endTransition(); }, [endTransition]);
+
+  useEffect(() => {
+    const supabase = createClient();
+    supabase.auth.getSession().then(({ data: { session } }: { data: { session: any } }) => {
+      setIsLoggedIn(!!session);
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: string, session: any) => {
+      setIsLoggedIn(!!session);
+    });
+    return () => { subscription.unsubscribe(); };
+  }, []);
+
+  useEffect(() => {
+    if (goldPost && !autoSearched.current && status === "idle") {
+      autoSearched.current = true;
+      setQuery(goldPost.title);
+      runSearch(goldPost.title);
+    }
+  }, [goldPost, runSearch, status]);
+
+  useEffect(() => {
+    if (showComplete) {
+      const timer = setTimeout(() => setCompleteMounted(true), 10);
+      return () => clearTimeout(timer);
+    }
+  }, [showComplete]);
 
   const openAuth = (tab: "login" | "signup") => {
     setAuthTab(tab);
@@ -165,29 +165,51 @@ function GuestContent() {
 
           <form
             onSubmit={(e) => { e.preventDefault(); runSearch(query); }}
-            className="liquid-glass rounded-2xl flex items-center gap-2 px-3 py-2 mb-6"
+            className="liquid-glass rounded-2xl px-3 py-2 mb-6"
           >
-            <Search size={18} className="text-white/50 shrink-0" />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="e.g. Software developer, accountant, nurse..."
-              className="flex-1 bg-transparent text-sm md:text-base text-white placeholder-white/40 outline-none min-w-0"
-            />
-            {query && (
-              <button
-                type="button"
-                onClick={() => setQuery("")}
-                className="text-white/50 hover:text-white transition-colors"
-                aria-label="Clear search"
-              >
-                <X size={16} />
-              </button>
-            )}
+            <div className="flex items-center gap-2">
+              <Search size={18} className="text-white/50 shrink-0" />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="e.g. Software developer, accountant, nurse..."
+                className="flex-1 bg-transparent text-sm md:text-base text-white placeholder-white/40 outline-none min-w-0"
+              />
+              {query && (
+                <button
+                  type="button"
+                  onClick={() => setQuery("")}
+                  className="text-white/50 hover:text-white transition-colors"
+                  aria-label="Clear search"
+                >
+                  <X size={16} />
+                </button>
+              )}
+            </div>
+            <div className="my-2 border-t border-white/10" />
+            <div className="flex items-center gap-2">
+              <MapPin size={18} className="text-white/50 shrink-0" />
+              <input
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+                placeholder="Location (optional) — e.g. Johannesburg, Cape Town"
+                className="flex-1 bg-transparent text-sm md:text-base text-white placeholder-white/40 outline-none min-w-0"
+              />
+              {location && (
+                <button
+                  type="button"
+                  onClick={() => setLocation("")}
+                  className="text-white/50 hover:text-white transition-colors"
+                  aria-label="Clear location"
+                >
+                  <X size={16} />
+                </button>
+              )}
+            </div>
             <button
               type="submit"
               disabled={status === "searching" || !query.trim()}
-              className="px-5 py-2.5 text-sm font-medium text-white bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] rounded-full transition-colors disabled:opacity-50 flex items-center gap-1.5"
+              className="mt-3 w-full px-5 py-2.5 text-sm font-medium text-white bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] rounded-full transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5"
             >
               {status === "searching" ? (
                 <><Loader2 size={14} className="animate-spin" /> Searching...</>
@@ -202,11 +224,10 @@ function GuestContent() {
               <p className="text-sm text-white/70">Type a job role above and hit Search. You get one free search — no account needed.</p>
             </div>
           )}
-
           {(status === "searching") && (
             <div className="liquid-glass rounded-xl p-6 flex flex-col items-center gap-3">
               <Loader2 size={20} className="animate-spin text-[var(--color-accent)]" />
-              <p className="text-sm text-white/70">Searching live job boards... this can take up to 25 seconds.</p>
+              <p className="text-sm text-white/70">Searching live job boards... this can take up to {goldPost ? "25" : "60"} seconds.</p>
             </div>
           )}
 

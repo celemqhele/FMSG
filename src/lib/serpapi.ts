@@ -22,6 +22,8 @@ export interface SerpJob {
   job_highlights?: { link?: string };
   hasFullSpec?: boolean;
   spec_source?: "google_jobs" | "jsearch" | "adzuna" | "linkedin" | "bing_jobs" | "web_jobs" | "ditto" | "workday";
+  salary_min?: number;
+  salary_max?: number;
 }
 
 interface SerpParams {
@@ -222,6 +224,8 @@ export async function searchAdzuna(params: SerpParams): Promise<SerpJob[]> {
         posted_at: j.created || "",
         hasFullSpec: false,
         spec_source: "adzuna" as const,
+        salary_min: typeof j.salary_min === "number" ? j.salary_min : undefined,
+        salary_max: typeof j.salary_max === "number" ? j.salary_max : undefined,
       };
     });
   } catch (err) {
