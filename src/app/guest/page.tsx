@@ -22,6 +22,7 @@ interface GuestJob {
   company: string;
   location: string;
   salary: string;
+  description: string;
   applyUrl: string;
   source: string;
 }
@@ -173,6 +174,7 @@ function GuestContent() {
         company: goldPost.company,
         location: goldPost.location,
         salary: goldPost.salary,
+        description: "",
         jobUrl: goldPost.applyUrl,
       }
     : null;
@@ -183,21 +185,22 @@ function GuestContent() {
     company: r.company,
     location: r.location,
     salary: r.salary,
+    description: r.description,
     jobUrl: r.applyUrl,
   }));
 
   const renderGoldCard = goldCard && (
     isMobile ? (
-      <MobileJobCard {...goldCard} matchScore={0} fullDescription="" onDelete={() => {}} guest gold />
+      <MobileJobCard {...goldCard} matchScore={0} fullDescription="" onDelete={() => {}} onGenerateCv={() => openAuth("signup")} guest gold />
     ) : (
-      <JobResultCard {...goldCard} matchScore={0} fullDescription="" onDelete={() => {}} guest gold />
+      <JobResultCard {...goldCard} matchScore={0} fullDescription="" onDelete={() => {}} onGenerateCv={() => openAuth("signup")} guest gold />
     )
   );
 
   return (
     <>
-      <DashboardLayout>
-        <div className={isMobile ? "space-y-3 pt-1" : "space-y-4 pt-6"}>
+      <DashboardLayout guest onGuestSignUp={() => openAuth("signup")}>
+        <div className={`max-w-4xl mx-auto space-y-6 ${isMobile ? "pt-2" : "pt-8"}`}>
           {!isMobile && (
             <div className="text-center mb-1">
               <p className="text-sm text-white/70">
@@ -272,9 +275,9 @@ function GuestContent() {
 
           {status === "done" && resultCards.map((card) => (
             isMobile ? (
-              <MobileJobCard key={card.id} {...card} matchScore={0} fullDescription="" onDelete={() => {}} guest />
+              <MobileJobCard key={card.id} {...card} matchScore={0} fullDescription="" onDelete={() => {}} onGenerateCv={() => openAuth("signup")} guest />
             ) : (
-              <JobResultCard key={card.id} {...card} matchScore={0} fullDescription="" onDelete={() => {}} guest />
+              <JobResultCard key={card.id} {...card} matchScore={0} fullDescription="" onDelete={() => {}} onGenerateCv={() => openAuth("signup")} guest />
             )
           ))}
 

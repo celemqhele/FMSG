@@ -29,6 +29,8 @@ interface MobileJobCardProps {
   onDelete: (id: string) => void;
   guest?: boolean;
   gold?: boolean;
+  description?: string;
+  onGenerateCv?: () => void;
 }
 
 export function MobileJobCard({
@@ -54,6 +56,8 @@ export function MobileJobCard({
   onDelete,
   guest,
   gold,
+  description,
+  onGenerateCv,
 }: MobileJobCardProps) {
   const [deleting, setDeleting] = useState(false);
   const [cvLoading, setCvLoading] = useState(false);
@@ -62,6 +66,7 @@ export function MobileJobCard({
   const [showVerdict, setShowVerdict] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteConfirmMounted, setDeleteConfirmMounted] = useState(false);
+  const [descExpanded, setDescExpanded] = useState(false);
   const { activeProfileId } = useActiveProfile();
 
   useEffect(() => {
@@ -105,17 +110,41 @@ export function MobileJobCard({
         ) : (
           <div className="mb-2.5" />
         )}
-        {jobUrl && (
-          <a
-            href={jobUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center justify-center gap-1.5 h-9 px-2.5 text-[11px] font-medium text-[var(--color-text-primary)] border border-[var(--color-border)] rounded-[7px] active:scale-95 transition-all"
-          >
-            Apply
-            <ExternalLink size={9} />
-          </a>
+        {description && (
+          <div className="mb-2.5">
+            <p className={`text-[10px] text-[var(--color-text-secondary)]/80 whitespace-pre-line leading-snug ${descExpanded ? "" : "line-clamp-2"}`}>
+              {description}
+            </p>
+            {description.length > 200 && (
+              <button
+                onClick={() => setDescExpanded(!descExpanded)}
+                className="mt-1 text-[10px] text-[var(--color-accent)]"
+              >
+                {descExpanded ? "Show less" : "Read more"}
+              </button>
+            )}
+          </div>
         )}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => onGenerateCv?.()}
+            className="flex items-center justify-center gap-1.5 h-9 px-2.5 text-[11px] font-medium text-white bg-[var(--color-accent)] rounded-[7px] active:scale-95 transition-all"
+          >
+            <FileText size={10} />
+            CV
+          </button>
+          {jobUrl && (
+            <a
+              href={jobUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-center gap-1.5 h-9 px-2.5 text-[11px] font-medium text-[var(--color-text-primary)] border border-[var(--color-border)] rounded-[7px] active:scale-95 transition-all"
+            >
+              Apply
+              <ExternalLink size={9} />
+            </a>
+          )}
+        </div>
       </div>
     );
   }

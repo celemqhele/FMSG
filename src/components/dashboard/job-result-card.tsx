@@ -29,6 +29,8 @@ interface JobResultCardProps {
   onDelete: (id: string) => void;
   guest?: boolean;
   gold?: boolean;
+  description?: string;
+  onGenerateCv?: () => void;
 }
 
 export function JobResultCard({
@@ -54,6 +56,8 @@ export function JobResultCard({
   onDelete,
   guest,
   gold,
+  description,
+  onGenerateCv,
 }: JobResultCardProps) {
   const [showDeleteMenu, setShowDeleteMenu] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -64,6 +68,7 @@ export function JobResultCard({
   const [cvError, setCvError] = useState("");
   const [showVerdict, setShowVerdict] = useState(false);
   const [verdictMounted, setVerdictMounted] = useState(false);
+  const [descExpanded, setDescExpanded] = useState(false);
   const { activeProfileId } = useActiveProfile();
 
   useEffect(() => {
@@ -118,17 +123,41 @@ export function JobResultCard({
         ) : (
           <div className="mb-4" />
         )}
-        {jobUrl && (
-          <a
-            href={jobUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 text-sm font-medium text-[var(--color-text-primary)] border border-[var(--color-border)] rounded-lg hover:bg-white/5 transition-colors"
-          >
-            Apply
-            <ExternalLink size={14} />
-          </a>
+        {description && (
+          <div className="mb-4">
+            <p className={`text-sm text-[var(--color-text-secondary)] whitespace-pre-line ${descExpanded ? "" : "line-clamp-3"}`}>
+              {description}
+            </p>
+            {description.length > 200 && (
+              <button
+                onClick={() => setDescExpanded(!descExpanded)}
+                className="mt-1 text-xs text-[var(--color-accent)] hover:underline"
+              >
+                {descExpanded ? "Show less" : "Read more"}
+              </button>
+            )}
+          </div>
         )}
+        <div className="flex gap-2">
+          <button
+            onClick={() => onGenerateCv?.()}
+            className="flex-[2] flex items-center justify-center gap-1.5 px-4 py-2.5 text-sm font-medium text-white bg-[var(--color-accent)] rounded-lg hover:bg-[var(--color-accent-hover)] transition-colors"
+          >
+            <FileText size={16} />
+            Generate CV
+          </button>
+          {jobUrl && (
+            <a
+              href={jobUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex-[1.4] flex items-center justify-center gap-1.5 px-4 py-2.5 text-sm font-medium text-[var(--color-text-primary)] border border-[var(--color-border)] rounded-lg hover:bg-white/5 transition-colors"
+            >
+              Apply
+              <ExternalLink size={14} />
+            </a>
+          )}
+        </div>
       </div>
     );
   }

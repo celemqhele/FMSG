@@ -6,9 +6,11 @@ import Image from "next/image";
 
 interface MobileHeaderProps {
   onAvatarTap: () => void;
+  guest?: boolean;
+  onSignUp?: () => void;
 }
 
-export function MobileHeader({ onAvatarTap }: MobileHeaderProps) {
+export function MobileHeader({ onAvatarTap, guest, onSignUp }: MobileHeaderProps) {
   const [initials, setInitials] = useState("");
 
   useEffect(() => {
@@ -36,12 +38,21 @@ export function MobileHeader({ onAvatarTap }: MobileHeaderProps) {
         <span className="text-[11px] font-semibold text-white select-none">FMSG</span>
       </div>
       <div className="flex items-center gap-1.5">
-        <button
-          onClick={onAvatarTap}
-          className="w-9 h-9 rounded-full bg-white/15 border border-white/20 flex items-center justify-center text-[10px] font-semibold text-white"
-        >
-          {initials || "?"}
-        </button>
+        {guest ? (
+          <button
+            onClick={onSignUp}
+            className="px-3 h-8 rounded-full bg-[var(--color-accent)] text-white text-[10px] font-semibold active:scale-95 transition-transform"
+          >
+            Sign up
+          </button>
+        ) : (
+          <button
+            onClick={onAvatarTap}
+            className="w-9 h-9 rounded-full bg-white/15 border border-white/20 flex items-center justify-center text-[10px] font-semibold text-white"
+          >
+            {initials || "?"}
+          </button>
+        )}
       </div>
     </header>
   );

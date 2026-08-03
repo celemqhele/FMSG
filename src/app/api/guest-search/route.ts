@@ -57,6 +57,7 @@ interface GuestJob {
   company: string;
   location: string;
   salary: string;
+  description: string;
   applyUrl: string;
   source: string;
 }
@@ -67,6 +68,7 @@ function toGuestJob(job: SerpJob, source: string): GuestJob {
     company: job.company_name || "Unknown",
     location: job.location || "",
     salary: translateAdzunaSalary(job),
+    description: job.description || "",
     applyUrl: buildJobUrl(job) || job.link || "",
     source,
   };

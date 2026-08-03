@@ -32,7 +32,7 @@ const ProfileContext = createContext<{
 
 export const useActiveProfile = () => useContext(ProfileContext);
 
-export function DashboardLayout({ children }: { children: ReactNode }) {
+export function DashboardLayout({ children, guest, onGuestSignUp }: { children: ReactNode; guest?: boolean; onGuestSignUp?: () => void }) {
   const { startTransition, endTransition } = useTransition();
   const isMobile = useIsMobile();
   const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
@@ -42,7 +42,7 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
   const [mobileProfileSheetOpen, setMobileProfileSheetOpen] = useState(false);
 
   useEffect(() => {
-    if (activeProfileId) return;
+    if (guest || activeProfileId) return;
     const supabase = createClient();
     const loadProfile = (userId: string) => {
       supabase
@@ -63,7 +63,7 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
         if (session?.user) { loadProfile(session.user.id); subscription.unsubscribe(); }
       });
     });
-  }, [activeProfileId]);
+  }, [guest, activeProfileId]);
 
   const handleProfileCreated = useCallback((id: string) => {
     setEditProfileId(id);
@@ -104,6 +104,8 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
 
       {isMobile === null ? null : isMobile ? (
         <MobileLayout
+          guest={guest}
+          onSignUp={onGuestSignUp}
           profileSheetOpen={mobileProfileSheetOpen}
           onProfileSheetOpen={() => setMobileProfileSheetOpen(true)}
           onProfileSheetClose={() => setMobileProfileSheetOpen(false)}
@@ -127,13 +129,15 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
                 <span className="text-base font-semibold text-white select-none">
                   FMSG
                 </span>
-                <ProfileSwitcher
-                  activeProfileId={activeProfileId}
-                  onSelect={setActiveProfileId}
-                  onProfileCreated={handleProfileCreated}
-                  refreshKey={profileRefreshKey}
-                />
-                {activeProfileId && (
+                {!guest && (
+                  <ProfileSwitcher
+                    activeProfileId={activeProfileId}
+                    onSelect={setActiveProfileId}
+                    onProfileCreated={handleProfileCreated}
+                    refreshKey={profileRefreshKey}
+                  />
+                )}
+                {!guest && activeProfileId && (
                   <button
                     onClick={() => handleOpenEdit(activeProfileId)}
                     className="w-7 h-7 rounded-full bg-white/10 border border-white/20 flex items-center justify-center text-white/80 hover:text-white hover:bg-white/20 transition-colors"
@@ -145,7 +149,16 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
               </div>
             </div>
             <div className="absolute right-0 top-0 bottom-0 flex items-center z-[60] pr-1">
-              <ProfileDropdown />
+              {guest ? (
+                <button
+                  onClick={onGuestSignUp}
+                  className="flex items-center gap-2 px-4 h-10 rounded-full bg-[var(--color-accent)] text-white text-xs font-semibold hover:bg-[var(--color-accent-hover)] transition-colors"
+                >
+                  Sign up
+                </button>
+              ) : (
+                <ProfileDropdown />
+              )}
             </div>
           </header>
           <main className="relative z-10 flex-1 px-6 pb-12 pt-24">
