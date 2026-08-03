@@ -28,7 +28,14 @@ interface BoardJob {
   source: string;
 }
 
-const MORE_LINES = ["Searching Adzuna", "Searching Ditto", "Compiling results"];
+const MORE_LINES = [
+  "Searching JSearch",
+  "Searching Google Jobs",
+  "Searching Bing Jobs",
+  "Searching Ditto",
+  "Searching Workday",
+  "Compiling results",
+];
 const PROMPT_DELAY_MS = 3000;
 const PROMPT_SEEN_KEY = "fmsg-board-prompt-seen";
 const COMPLETE_SEEN_KEY = "fmsg-board-complete-seen";
@@ -121,7 +128,7 @@ export function JobsBoard({ board }: { board: JobBoard }) {
       const res = await fetch("/api/guest-search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: q.trim(), location: loc, mode: "job-post" }),
+        body: JSON.stringify({ query: q.trim(), location: loc, mode: "landing" }),
         signal: ctrl.signal,
       });
       const data = await res.json().catch(() => ({}));
@@ -166,7 +173,7 @@ export function JobsBoard({ board }: { board: JobBoard }) {
 
   useEffect(() => {
     if (status !== "searching") return;
-    const totalMs = 25000;
+    const totalMs = 60000;
     const start = Date.now();
     const timer = setInterval(() => {
       const t = Math.min(1, (Date.now() - start) / totalMs);
@@ -321,7 +328,7 @@ export function JobsBoard({ board }: { board: JobBoard }) {
       <BoardPrompt
         open={promptOpen}
         title="Would you like to see more jobs like this?"
-        subtitle="We'll search live openings near these roles. It takes about 30 seconds."
+        subtitle="We'll search live openings near these roles across all job boards. It takes about a minute."
         primaryLabel="Yes"
         secondaryLabel="Later"
         onPrimary={() => {

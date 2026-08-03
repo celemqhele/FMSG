@@ -16,7 +16,7 @@ const FAST_SOURCE_TIMEOUT_MS = 25_000;
 const DITTO_TIMEOUT_MS = 60_000;
 const DITTO_MAX_CARDS = 6;
 const JOB_POST_MAX_RESULTS = 3;
-const LANDING_MAX_RESULTS = 4;
+const LANDING_MAX_RESULTS = 8;
 
 function getIP(request: NextRequest): string {
   return request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
