@@ -72,13 +72,13 @@ function toGuestJob(job: SerpJob, source: string): GuestJob {
   };
 }
 
-/** Adzuna returns numeric annual ZAR salary bounds — render as readable text. */
+/** Adzuna returns numeric annual ZAR salary bounds, render as readable text. */
 function translateAdzunaSalary(job: SerpJob): string {
   const min = job.salary_min;
   const max = job.salary_max;
   if (typeof min !== "number" || typeof max !== "number" || min <= 0 || max <= 0) return "";
   const fmt = (n: number) => `R${Math.round(n / 1000)}k`;
-  const range = min === max ? fmt(min) : `${fmt(min)} – ${fmt(max)}`;
+  const range = min === max ? fmt(min) : `${fmt(min)} - ${fmt(max)}`;
   return `${range} per year`;
 }
 
@@ -118,7 +118,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // ─── Source selection ───────────────────────────────────────────────────
+    // Source selection
     // Job-post funnel (came from a shared job post): 2 sources (Adzuna + Ditto).
     // Landing funnel (arrived at /guest directly): all sources.
     let allJobs: { job: SerpJob; source: string }[];

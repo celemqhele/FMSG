@@ -2,19 +2,20 @@
 
 import { useState, useEffect, useRef, useCallback, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { Search, MapPin, Loader2, X } from "lucide-react";
-import { SpaceVideoBackground } from "@/components/landing/space-video-background";
-import { FloatingNavbar } from "@/components/layout/floating-navbar";
-import dynamic from "next/dynamic";
-const AuthModal = dynamic(() => import("@/components/auth/auth-modal").then((mod) => mod.AuthModal), { ssr: false });
-const MobileAuthSheet = dynamic(() => import("@/components/auth/mobile-auth-sheet").then((mod) => mod.MobileAuthSheet), { ssr: false });
-import { useIsMobile } from "@/hooks/use-mobile";
-import { useTransition } from "@/components/providers/transition-provider";
-import { createClient } from "@/lib/supabase/client";
+import { Loader2 } from "lucide-react";
+import { DashboardLayout } from "@/components/dashboard/dashboard-layout";
+import { SearchPill } from "@/components/dashboard/search-pill";
+import { MobileSearchPill } from "@/components/dashboard/mobile/mobile-search-pill";
+import { SearchProgress } from "@/components/dashboard/search-progress";
+import { MobileSearchProgress } from "@/components/dashboard/mobile/mobile-search-progress";
 import { JobResultCard } from "@/components/dashboard/job-result-card";
 import { MobileJobCard } from "@/components/dashboard/mobile/mobile-job-card";
 import { getJobPostByKey } from "@/lib/job-posts";
-import "@/components/landing/liquid-glass.css";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { useTransition } from "@/components/providers/transition-provider";
+import dynamic from "next/dynamic";
+const AuthModal = dynamic(() => import("@/components/auth/auth-modal").then((mod) => mod.AuthModal), { ssr: false });
+const MobileAuthSheet = dynamic(() => import("@/components/auth/mobile-auth-sheet").then((mod) => mod.MobileAuthSheet), { ssr: false });
 
 interface GuestJob {
   title: string;
@@ -25,6 +26,16 @@ interface GuestJob {
   source: string;
 }
 
+const JOB_POST_LINES = ["Searching Adzuna", "Searching Ditto", "Compiling results"];
+const LANDING_LINES = [
+  "Searching JSearch",
+  "Searching Google Jobs",
+  "Searching Bing Jobs",
+  "Searching Ditto",
+  "Searching Workday",
+  "Compiling results",
+];
+
 function GuestContent() {
   const searchParams = useSearchParams();
   const { endTransition } = useTransition();
@@ -32,30 +43,42 @@ function GuestContent() {
 
   const [authOpen, setAuthOpen] = useState(false);
   const [authTab, setAuthTab] = useState<"login" | "signup">("signup");
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   const goldPost = (() => {
     const k = searchParams.get("k");
     return k ? getJobPostByKey(k) : null;
   })();
 
-  const [query, setQuery] = useState("");
-  const [location, setLocation] = useState(() => goldPost?.location ?? "");
   const [results, setResults] = useState<GuestJob[]>([]);
   const [status, setStatus] = useState<"idle" | "searching" | "done" | "limit" | "error">("idle");
   const [error, setError] = useState("");
   const [showComplete, setShowComplete] = useState(false);
   const [completeMounted, setCompleteMounted] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [lineIndex, setLineIndex] = useState(0);
   const autoSearched = useRef(false);
+  const abortRef = useRef<AbortController | null>(null);
+  const lastQueryRef = useRef("");
+  const lastLocationRef = useRef("");
+
+  const activeLines = goldPost ? JOB_POST_LINES : LANDING_LINES;
+  const completedLines = status === "done" ? activeLines : activeLines.slice(0, lineIndex);
+  const activeLine = status === "done" ? "" : activeLines[lineIndex];
 
   const runSearch = useCallback(async (q: string, overrideLocation?: string) => {
     if (!q.trim() || status === "searching") return;
-    const loc = (overrideLocation ?? location).trim() || undefined;
+    const loc = (overrideLocation ?? "").trim() || undefined;
+    lastQueryRef.current = q.trim();
+    lastLocationRef.current = loc ?? "";
     setStatus("searching");
     setError("");
     setResults([]);
     setShowComplete(false);
     setCompleteMounted(false);
+    setProgress(0);
+    setLineIndex(0);
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
     try {
       const res = await fetch("/api/guest-search", {
         method: "POST",
@@ -65,8 +88,10 @@ function GuestContent() {
           location: loc,
           mode: goldPost ? "job-post" : "landing",
         }),
+        signal: ctrl.signal,
       });
       const data = await res.json().catch(() => ({}));
+      if (ctrl.signal.aborted) return;
       if (res.status === 403 && data.code === "GUEST_LIMIT") {
         setStatus("limit");
         setError(data.message || "You've already used your free search.");
@@ -78,34 +103,51 @@ function GuestContent() {
         return;
       }
       setResults(data.results ?? []);
+      setProgress(100);
       setStatus("done");
       setShowComplete(true);
-    } catch {
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
       setStatus("error");
       setError("Network error. Please try again.");
+    } finally {
+      if (abortRef.current === ctrl) abortRef.current = null;
     }
-  }, [status, location, goldPost]);
+  }, [status, goldPost]);
+
+  const handleSearch = useCallback((q: string, _profileId?: string | null, _pf?: boolean, _date?: number | null, loc?: string) => {
+    runSearch(q, loc);
+  }, [runSearch]);
+
+  const handleAbort = useCallback(() => {
+    abortRef.current?.abort();
+    setStatus("idle");
+    setResults([]);
+    setProgress(0);
+    setLineIndex(0);
+  }, []);
 
   useEffect(() => { endTransition(); }, [endTransition]);
 
   useEffect(() => {
-    const supabase = createClient();
-    supabase.auth.getSession().then(({ data: { session } }: { data: { session: any } }) => {
-      setIsLoggedIn(!!session);
-    });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: string, session: any) => {
-      setIsLoggedIn(!!session);
-    });
-    return () => { subscription.unsubscribe(); };
-  }, []);
-
-  useEffect(() => {
     if (goldPost && !autoSearched.current && status === "idle") {
       autoSearched.current = true;
-      setQuery(goldPost.title);
       runSearch(goldPost.title, goldPost.location);
     }
   }, [goldPost, runSearch, status]);
+
+  useEffect(() => {
+    if (status !== "searching") return;
+    const totalMs = goldPost ? 25000 : 60000;
+    const lines = goldPost ? JOB_POST_LINES : LANDING_LINES;
+    const start = Date.now();
+    const timer = setInterval(() => {
+      const t = Math.min(1, (Date.now() - start) / totalMs);
+      setProgress(Math.round(t * 92));
+      setLineIndex(Math.min(lines.length - 1, Math.floor(t * lines.length)));
+    }, 350);
+    return () => clearInterval(timer);
+  }, [status, goldPost]);
 
   useEffect(() => {
     if (showComplete) {
@@ -144,96 +186,66 @@ function GuestContent() {
     jobUrl: r.applyUrl,
   }));
 
+  const renderGoldCard = goldCard && (
+    isMobile ? (
+      <MobileJobCard {...goldCard} matchScore={0} fullDescription="" onDelete={() => {}} guest gold />
+    ) : (
+      <JobResultCard {...goldCard} matchScore={0} fullDescription="" onDelete={() => {}} guest gold />
+    )
+  );
+
   return (
     <>
-      <SpaceVideoBackground src="/videos/space.mp4" />
-      <FloatingNavbar
-        onLoginClick={() => openAuth("login")}
-        onSignUpClick={() => openAuth("signup")}
-        isLoggedIn={isLoggedIn}
-      />
-
-      <main className="relative z-10 flex-1 px-4 pt-24 md:pt-28 pb-28">
-        <div className="max-w-3xl mx-auto">
-          <div className="text-center mb-6">
-            <h1 className="text-2xl md:text-4xl font-semibold tracking-tight text-white leading-tight">
-              Search jobs — free, no sign-up
-            </h1>
-            <p className="mt-2 text-sm md:text-base text-white/70">
-              One free search. {goldPost ? "We're also showing the job that brought you here." : "Enter a role to find live openings in South Africa."}
-            </p>
-          </div>
-
-          <form
-            onSubmit={(e) => { e.preventDefault(); runSearch(query); }}
-            className="liquid-glass rounded-2xl px-3 py-2 mb-6"
-          >
-            <div className="flex items-center gap-2">
-              <Search size={18} className="text-white/50 shrink-0" />
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="e.g. Software developer, accountant, nurse..."
-                className="flex-1 bg-transparent text-sm md:text-base text-white placeholder-white/40 outline-none min-w-0"
-              />
-              {query && (
-                <button
-                  type="button"
-                  onClick={() => setQuery("")}
-                  className="text-white/50 hover:text-white transition-colors"
-                  aria-label="Clear search"
-                >
-                  <X size={16} />
-                </button>
-              )}
-            </div>
-            <div className="my-2 border-t border-white/10" />
-            <div className="flex items-center gap-2">
-              <MapPin size={18} className="text-white/50 shrink-0" />
-              <input
-                value={location}
-                onChange={(e) => setLocation(e.target.value)}
-                placeholder="Location (optional) — e.g. Johannesburg, Cape Town"
-                className="flex-1 bg-transparent text-sm md:text-base text-white placeholder-white/40 outline-none min-w-0"
-              />
-              {location && (
-                <button
-                  type="button"
-                  onClick={() => setLocation("")}
-                  className="text-white/50 hover:text-white transition-colors"
-                  aria-label="Clear location"
-                >
-                  <X size={16} />
-                </button>
-              )}
-            </div>
-            <button
-              type="submit"
-              disabled={status === "searching" || !query.trim()}
-              className="mt-3 w-full px-5 py-2.5 text-sm font-medium text-white bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] rounded-full transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5"
-            >
-              {status === "searching" ? (
-                <><Loader2 size={14} className="animate-spin" /> Searching...</>
-              ) : (
-                "Search"
-              )}
-            </button>
-          </form>
-
-          {status === "idle" && !goldPost && (
-            <div className="liquid-glass rounded-xl p-5 text-center">
-              <p className="text-sm text-white/70">Type a job role above and hit Search. You get one free search — no account needed.</p>
+      <DashboardLayout>
+        <div className={isMobile ? "space-y-3 pt-1" : "space-y-4 pt-6"}>
+          {!isMobile && (
+            <div className="text-center mb-1">
+              <p className="text-sm text-white/70">
+                {goldPost
+                  ? "We're also finding similar live openings near this featured role."
+                  : "Try a live search. One search per device, no sign-up."}
+              </p>
             </div>
           )}
-          {(status === "searching") && (
-            <div className="liquid-glass rounded-xl p-6 flex flex-col items-center gap-3">
-              <Loader2 size={20} className="animate-spin text-[var(--color-accent)]" />
-              <p className="text-sm text-white/70">Searching live job boards... this can take up to {goldPost ? "25" : "60"} seconds.</p>
-            </div>
+
+          {isMobile ? (
+            <MobileSearchPill
+              onSearch={handleSearch}
+              onAbort={handleAbort}
+              searching={status === "searching"}
+              pfMode={false}
+              onPfModeChange={() => {}}
+              sortMode="date_newest"
+              onSortChange={() => {}}
+              platforms={[]}
+              onPlatformsChange={() => {}}
+              guest
+              initialQuery={goldPost?.title}
+              initialLocation={goldPost?.location}
+            />
+          ) : (
+            <SearchPill
+              onSearch={handleSearch}
+              onAbort={handleAbort}
+              searching={status === "searching"}
+              pfMode={false}
+              onPfModeChange={() => {}}
+              guest
+              initialQuery={goldPost?.title}
+              initialLocation={goldPost?.location}
+            />
+          )}
+
+          {status === "searching" && (
+            isMobile ? (
+              <MobileSearchProgress completedLines={completedLines} activeLine={activeLine} progress={progress} />
+            ) : (
+              <SearchProgress completedLines={completedLines} activeLine={activeLine} progress={progress} />
+            )
           )}
 
           {status === "limit" && (
-            <div className="liquid-glass rounded-xl p-5 text-center mb-6">
+            <div className="liquid-glass rounded-xl p-5 text-center">
               <p className="text-sm text-amber-300 font-medium mb-2">{error}</p>
               <button
                 onClick={() => openAuth("signup")}
@@ -245,10 +257,10 @@ function GuestContent() {
           )}
 
           {status === "error" && (
-            <div className="liquid-glass rounded-xl p-5 text-center mb-6">
+            <div className="liquid-glass rounded-xl p-5 text-center">
               <p className="text-sm text-red-400 font-medium mb-3">{error}</p>
               <button
-                onClick={() => runSearch(query)}
+                onClick={() => runSearch(lastQueryRef.current, lastLocationRef.current)}
                 className="px-5 py-2.5 text-sm font-medium text-white bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] rounded-full transition-colors"
               >
                 Try Again
@@ -256,32 +268,23 @@ function GuestContent() {
             </div>
           )}
 
-          {(status === "done" || status === "limit") && (goldCard || resultCards.length > 0) && (
-            <div className="space-y-3">
-              <p className="text-xs text-white/50 uppercase tracking-wider">Results</p>
-              {goldCard && (
-                isMobile ? (
-                  <MobileJobCard {...goldCard} matchScore={0} fullDescription="" onDelete={() => {}} guest gold />
-                ) : (
-                  <JobResultCard {...goldCard} matchScore={0} fullDescription="" onDelete={() => {}} guest gold />
-                )
-              )}
-              {resultCards.map((card) => (
-                isMobile ? (
-                  <MobileJobCard key={card.id} {...card} matchScore={0} fullDescription="" onDelete={() => {}} guest />
-                ) : (
-                  <JobResultCard key={card.id} {...card} matchScore={0} fullDescription="" onDelete={() => {}} guest />
-                )
-              ))}
-              {status === "done" && resultCards.length === 0 && !goldCard && (
-                <div className="liquid-glass rounded-xl p-5 text-center">
-                  <p className="text-sm text-white/70">No jobs found for that search. Try a different role.</p>
-                </div>
-              )}
+          {status === "done" && renderGoldCard}
+
+          {status === "done" && resultCards.map((card) => (
+            isMobile ? (
+              <MobileJobCard key={card.id} {...card} matchScore={0} fullDescription="" onDelete={() => {}} guest />
+            ) : (
+              <JobResultCard key={card.id} {...card} matchScore={0} fullDescription="" onDelete={() => {}} guest />
+            )
+          ))}
+
+          {status === "done" && resultCards.length === 0 && !goldCard && (
+            <div className="liquid-glass rounded-xl p-5 text-center">
+              <p className="text-sm text-white/70">No jobs found for that search. Try a different role.</p>
             </div>
           )}
         </div>
-      </main>
+      </DashboardLayout>
 
       {showComplete && (
         <div className="fixed inset-0 z-[300] flex items-end md:items-center justify-center">

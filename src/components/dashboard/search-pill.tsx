@@ -1,19 +1,22 @@
 ﻿"use client";
 
 import { useState } from "react";
-import { Search, Crosshair, Square, X, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search, Crosshair, Square, X, MapPin, ChevronLeft, ChevronRight } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useActiveProfile } from "@/components/dashboard/dashboard-layout";
 
 interface SearchPillProps {
-  onSearch: (query: string, profileId?: string | null, pfMode?: boolean, dateFilterDays?: number | null) => void;
+  onSearch: (query: string, profileId?: string | null, pfMode?: boolean, dateFilterDays?: number | null, location?: string) => void;
   onAbort: () => void;
   searching: boolean;
   pfMode: boolean;
   onPfModeChange: (v: boolean) => void;
+  guest?: boolean;
+  initialQuery?: string;
+  initialLocation?: string;
 }
 
-export function SearchPill({ onSearch, onAbort, searching, pfMode, onPfModeChange }: SearchPillProps) {
+export function SearchPill({ onSearch, onAbort, searching, pfMode, onPfModeChange, guest, initialQuery, initialLocation }: SearchPillProps) {
   const { activeProfileId } = useActiveProfile();
   const [displayTitle, setDisplayTitle] = useState("Search for jobs");
   const [bouncing, setBouncing] = useState(false);
@@ -21,7 +24,8 @@ export function SearchPill({ onSearch, onAbort, searching, pfMode, onPfModeChang
   const [abortMounted, setAbortMounted] = useState(false);
   const [dateFilterDays, setDateFilterDays] = useState<number | null>(null);
   const [dateFilterIndex, setDateFilterIndex] = useState(0);
-  const [typedQuery, setTypedQuery] = useState("");
+  const [typedQuery, setTypedQuery] = useState(initialQuery ?? "");
+  const [guestLocation, setGuestLocation] = useState(initialLocation ?? "");
 
   const DATE_OPTIONS = [
     { label: "Any time", value: null },
@@ -34,6 +38,14 @@ export function SearchPill({ onSearch, onAbort, searching, pfMode, onPfModeChang
     if (searching) return;
     setBouncing(true);
     setTimeout(() => setBouncing(false), 400);
+
+    if (guest) {
+      const query = (overrideQuery || typedQuery).trim();
+      if (!query) return;
+      setDisplayTitle(query);
+      onSearch(query, null, undefined, undefined, guestLocation.trim());
+      return;
+    }
 
     const supabase = createClient();
     const { data: { user } } = await supabase.auth.getUser();
@@ -124,6 +136,66 @@ export function SearchPill({ onSearch, onAbort, searching, pfMode, onPfModeChang
   };
 
   const activeDateLabel = DATE_OPTIONS[dateFilterIndex].label;
+
+  if (guest) {
+    return (
+      <>
+        <div
+          className={`w-full max-w-2xl mx-auto flex items-center h-14 rounded-full bg-white/10 border border-white/20 backdrop-blur-xl overflow-hidden transition-transform duration-200 ${bouncing ? "scale-[1.02]" : "scale-100"}`}
+        >
+          <Search size={16} className="ml-4 text-white/50 shrink-0" />
+          <input
+            value={typedQuery}
+            onChange={(e) => setTypedQuery(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") handleSearch(); }}
+            placeholder="e.g. Software developer, accountant, nurse"
+            className="flex-1 bg-transparent text-white/80 text-sm px-3 outline-none placeholder-white/50 min-w-0"
+          />
+          {searching ? (
+            <button
+              onClick={onAbort}
+              className="flex items-center gap-2 px-4 h-10 rounded-full bg-white/10 border border-white/20 hover:bg-white/20 transition-colors mr-1"
+              title="Stop search"
+            >
+              <Square size={16} className="text-[var(--color-error)]" />
+            </button>
+          ) : (
+            <button
+              onClick={() => handleSearch()}
+              className="flex items-center gap-2 px-6 h-10 mr-2 rounded-full bg-[var(--color-accent)] text-white text-sm font-medium hover:bg-[var(--color-accent-hover)] transition-colors"
+            >
+              <Search size={16} />
+              Search
+            </button>
+          )}
+        </div>
+        <div className="w-full max-w-2xl mx-auto mt-2 flex items-center h-10 rounded-full bg-white/10 border border-white/20 backdrop-blur-xl overflow-hidden">
+          <MapPin size={14} className="ml-3 text-white/50 shrink-0" />
+          <input
+            value={guestLocation}
+            onChange={(e) => setGuestLocation(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") handleSearch(); }}
+            placeholder="Location (optional)"
+            className="flex-1 bg-transparent text-white/80 text-xs px-2 outline-none placeholder-white/50 min-w-0"
+          />
+          {guestLocation && (
+            <button
+              onClick={() => setGuestLocation("")}
+              className="flex items-center justify-center w-9 h-full shrink-0 text-white/50 hover:text-white/90 transition-colors"
+              aria-label="Clear location"
+            >
+              <X size={13} />
+            </button>
+          )}
+        </div>
+        {searching && (
+          <p className="text-xs text-green-400 text-center mt-2">
+            Search can take up to a minute, hang tight
+          </p>
+        )}
+      </>
+    );
+  }
 
   return (
     <>

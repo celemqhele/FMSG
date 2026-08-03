@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Square, X, SlidersHorizontal } from "lucide-react";
+import { Square, X, SlidersHorizontal, Search, MapPin } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useActiveProfile } from "@/components/dashboard/dashboard-layout";
 import { MobileFilterSheet } from "./mobile-filter-sheet";
@@ -9,7 +9,7 @@ import type { SortMode } from "@/components/dashboard/filter-sort-bar";
 import type { PlatformId } from "@/components/dashboard/platform-filter";
 
 interface MobileSearchPillProps {
-  onSearch: (query: string, profileId?: string | null, pfMode?: boolean, dateFilterDays?: number | null) => void;
+  onSearch: (query: string, profileId?: string | null, pfMode?: boolean, dateFilterDays?: number | null, location?: string) => void;
   onAbort: () => void;
   searching: boolean;
   pfMode: boolean;
@@ -18,9 +18,12 @@ interface MobileSearchPillProps {
   onSortChange: (sort: SortMode) => void;
   platforms: PlatformId[];
   onPlatformsChange: (platforms: PlatformId[]) => void;
+  guest?: boolean;
+  initialQuery?: string;
+  initialLocation?: string;
 }
 
-export function MobileSearchPill({ onSearch, onAbort, searching, pfMode, onPfModeChange, sortMode, onSortChange, platforms, onPlatformsChange }: MobileSearchPillProps) {
+export function MobileSearchPill({ onSearch, onAbort, searching, pfMode, onPfModeChange, sortMode, onSortChange, platforms, onPlatformsChange, guest, initialQuery, initialLocation }: MobileSearchPillProps) {
   const { activeProfileId } = useActiveProfile();
   const [displayTitle, setDisplayTitle] = useState("Search for jobs");
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
@@ -28,10 +31,20 @@ export function MobileSearchPill({ onSearch, onAbort, searching, pfMode, onPfMod
   const [abortMounted, setAbortMounted] = useState(false);
   const [dateFilterDays, setDateFilterDays] = useState<number | null>(null);
   const [activeDateLabel, setActiveDateLabel] = useState("Any time");
-  const [typedQuery, setTypedQuery] = useState("");
+  const [typedQuery, setTypedQuery] = useState(initialQuery ?? "");
+  const [guestLocation, setGuestLocation] = useState(initialLocation ?? "");
 
   const handleSearch = async () => {
     if (searching) return;
+
+    if (guest) {
+      const query = typedQuery.trim();
+      if (!query) return;
+      setDisplayTitle(query);
+      onSearch(query, null, undefined, undefined, guestLocation.trim());
+      return;
+    }
+
     const supabase = createClient();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
@@ -96,6 +109,62 @@ export function MobileSearchPill({ onSearch, onAbort, searching, pfMode, onPfMod
     setDateFilterDays(days);
     setActiveDateLabel(label);
   };
+
+  if (guest) {
+    return (
+      <div className="space-y-1.5">
+        <div className="flex items-center h-10 rounded-full bg-white/10 border border-white/20 backdrop-blur-xl overflow-hidden">
+          <Search size={13} className="ml-3 text-white/50 shrink-0" />
+          <input
+            value={typedQuery}
+            onChange={(e) => setTypedQuery(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") handleSearch(); }}
+            placeholder="e.g. Software developer, accountant"
+            className="flex-1 bg-transparent text-white/80 text-[11px] px-2 outline-none placeholder-white/50 min-w-0"
+          />
+          {searching ? (
+            <button
+              onClick={onAbort}
+              className="flex items-center justify-center w-9 h-full shrink-0 text-[var(--color-error)]"
+            >
+              <Square size={14} />
+            </button>
+          ) : (
+            <button
+              onClick={handleSearch}
+              className="shrink-0 px-3 h-7 mr-1 text-[11px] font-semibold text-black bg-[var(--color-accent)] rounded-full active:scale-95 transition-transform"
+            >
+              Start Search
+            </button>
+          )}
+        </div>
+        <div className="flex items-center h-9 rounded-full bg-white/10 border border-white/20 backdrop-blur-xl overflow-hidden">
+          <MapPin size={12} className="ml-3 text-white/50 shrink-0" />
+          <input
+            value={guestLocation}
+            onChange={(e) => setGuestLocation(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") handleSearch(); }}
+            placeholder="Location (optional)"
+            className="flex-1 bg-transparent text-white/80 text-[11px] px-2 outline-none placeholder-white/50 min-w-0"
+          />
+          {guestLocation && (
+            <button
+              onClick={() => setGuestLocation("")}
+              className="flex items-center justify-center w-8 h-full shrink-0 text-white/50 hover:text-white/90 transition-colors"
+              aria-label="Clear location"
+            >
+              <X size={12} />
+            </button>
+          )}
+        </div>
+        {searching && (
+          <p className="text-[11px] text-green-400 text-center">
+            Search can take up to a minute
+          </p>
+        )}
+      </div>
+    );
+  }
 
   return (
     <>
