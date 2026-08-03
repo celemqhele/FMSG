@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Settings, LogOut, User, Sparkles, Plus, Check, CirclePlus, Pencil } from "lucide-react";
+import { Settings, LogOut, User, Sparkles, Plus, Check, Pencil } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useTransition } from "@/components/providers/transition-provider";
 
@@ -20,11 +20,9 @@ interface MobileProfileSheetProps {
   onProfileCreated?: (id: string) => void;
   onEditProfile?: (id: string) => void;
   refreshKey?: number;
-  isAdmin?: boolean;
-  onOpenAdminModal?: () => void;
 }
 
-export function MobileProfileSheet({ isOpen, onClose, activeProfileId, onSelectProfile, onProfileCreated, onEditProfile, refreshKey, isAdmin, onOpenAdminModal }: MobileProfileSheetProps) {
+export function MobileProfileSheet({ isOpen, onClose, activeProfileId, onSelectProfile, onProfileCreated, onEditProfile, refreshKey }: MobileProfileSheetProps) {
   const { startTransition } = useTransition();
   const router = useRouter();
   const [name, setName] = useState("");
@@ -179,15 +177,6 @@ export function MobileProfileSheet({ isOpen, onClose, activeProfileId, onSelectP
           )}
 
           <div className="space-y-0.5">
-            {isAdmin && onOpenAdminModal && (
-              <button
-                onClick={() => { onClose(); onOpenAdminModal(); }}
-                className="w-full flex items-center gap-2.5 px-3 py-2.5 text-[11px] text-amber-400 rounded-[10px] hover:bg-amber-400/10 active:bg-amber-400/15 transition-colors"
-              >
-                <CirclePlus size={14} className="opacity-80" />
-                Create Job Post
-              </button>
-            )}
             <button
               onClick={() => handleNav("/profile")}
               className="w-full flex items-center gap-2.5 px-3 py-2.5 text-[11px] text-white rounded-[10px] hover:bg-white/5 active:bg-white/10 transition-colors"

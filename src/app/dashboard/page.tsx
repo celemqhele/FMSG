@@ -146,10 +146,8 @@ export default function DashboardPage() {
   const { activeProfileId } = useActiveProfile();
   const [showGuidance, setShowGuidance] = useState(false);
   const [showPfPromo, setShowPfPromo] = useState(false);
-  const [referralJob, setReferralJob] = useState<{ slug: string; company: string; job_title: string; apply_url: string } | null>(null);
   const [pfMode, setPfMode] = useState(false);
   const [currentSearchId, setCurrentSearchId] = useState<string | null>(null);
-  const referralAutoSearchDone = useRef(false);
 
   useEffect(() => { endTransition(); }, [endTransition]);
 
@@ -224,33 +222,6 @@ export default function DashboardPage() {
     return () => window.removeEventListener("show-limit-modal", handler);
   }, [router]);
 
-  // Check for referral job from localStorage (set by /jobs/[slug] page)
-  useEffect(() => {
-    const stored = localStorage.getItem("fmsg_referral");
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored);
-        setReferralJob(parsed);
-        localStorage.removeItem("fmsg_referral");
-      } catch {}
-    }
-  }, []);
-
-  // Auto-trigger referral search after profile is loaded and user is onboarded
-  useEffect(() => {
-    if (!profileChecked || needsOnboarding || referralAutoSearchDone.current || searching) return;
-    const stored = localStorage.getItem("fmsg_referral");
-    if (!stored) return;
-    let parsed: { slug?: string; company?: string; job_title?: string; apply_url?: string } | null = null;
-    try { parsed = JSON.parse(stored); } catch {}
-    if (parsed?.job_title) {
-      referralAutoSearchDone.current = true;
-      localStorage.removeItem("fmsg_referral");
-      setReferralJob(parsed as any);
-      handleSearch(parsed.job_title, activeProfileId, undefined, undefined, parsed.apply_url);
-    }
-  }, [profileChecked, needsOnboarding, searching, activeProfileId]);
-
   // Show search guidance popup for first-time users after onboarding
   useEffect(() => {
     if (!profileChecked) return;
@@ -321,8 +292,8 @@ export default function DashboardPage() {
     return sorted;
   }, [results, sortMode]);
 
-  const handleSearch = useCallback(async (query: string, profileId?: string | null, pfMode?: boolean, dateFilterDays?: number | null, referralUrl?: string) => {
-    console.log("[DASHBOARD] Search clicked:", { query, profileId, pfMode, dateFilterDays, referralUrl, time: new Date().toISOString() });
+  const handleSearch = useCallback(async (query: string, profileId?: string | null, pfMode?: boolean, dateFilterDays?: number | null) => {
+    console.log("[DASHBOARD] Search clicked:", { query, profileId, pfMode, dateFilterDays, time: new Date().toISOString() });
     setSearching(true);
     setCurrentSearchId(null);
     setProgress(0);
@@ -352,7 +323,7 @@ export default function DashboardPage() {
           Authorization: `Bearer ${session.access_token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ query, profile_id: profileId, pf_mode: pfMode, date_filter_days: dateFilterDays ?? null, platforms: selectedPlatforms.includes("all") ? null : selectedPlatforms, referral_url: referralUrl ?? null }),
+        body: JSON.stringify({ query, profile_id: profileId, pf_mode: pfMode, date_filter_days: dateFilterDays ?? null, platforms: selectedPlatforms.includes("all") ? null : selectedPlatforms }),
         signal: abortRef.current.signal,
       });
 
@@ -783,9 +754,9 @@ export default function DashboardPage() {
         {activeTab === "search" && (
           <>
             {isMobile ? (
-              <MobileSearchPill onSearch={handleSearch} onAbort={handleAbort} searching={searching} pfMode={pfMode} onPfModeChange={setPfMode} referralQuery={referralJob?.job_title} sortMode={sortMode} onSortChange={setSortMode} platforms={selectedPlatforms} onPlatformsChange={setSelectedPlatforms} />
+              <MobileSearchPill onSearch={handleSearch} onAbort={handleAbort} searching={searching} pfMode={pfMode} onPfModeChange={setPfMode} sortMode={sortMode} onSortChange={setSortMode} platforms={selectedPlatforms} onPlatformsChange={setSelectedPlatforms} />
             ) : (
-              <SearchPill onSearch={handleSearch} onAbort={handleAbort} searching={searching} pfMode={pfMode} onPfModeChange={setPfMode} referralQuery={referralJob?.job_title} />
+              <SearchPill onSearch={handleSearch} onAbort={handleAbort} searching={searching} pfMode={pfMode} onPfModeChange={setPfMode} />
             )}
 
             {isMobile ? (
@@ -1232,9 +1203,7 @@ export default function DashboardPage() {
           onDismiss={() => {
             localStorage.setItem("fmsg_guided_search_shown", "true");
             setShowGuidance(false);
-            if (referralJob) {
-              handleSearch(referralJob.job_title, activeProfileId, undefined, undefined, referralJob.apply_url);
-            } else if (activeProfileId) {
+            if (activeProfileId) {
               const supabase = createClient();
               supabase.from("search_profiles").select("job_titles").eq("id", activeProfileId).maybeSingle()
                 .then(({ data }: { data: any }) => {
@@ -1252,9 +1221,7 @@ export default function DashboardPage() {
           onDismiss={() => {
             localStorage.setItem("fmsg_guided_search_shown", "true");
             setShowGuidance(false);
-            if (referralJob) {
-              handleSearch(referralJob.job_title, activeProfileId, undefined, undefined, referralJob.apply_url);
-            } else if (activeProfileId) {
+            if (activeProfileId) {
               const supabase = createClient();
               supabase.from("search_profiles").select("job_titles").eq("id", activeProfileId).maybeSingle()
                 .then(({ data }: { data: any }) => {

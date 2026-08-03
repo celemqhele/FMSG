@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import Link from "next/link";
+import { TransitionLink } from "@/components/ui/transition-link";
 
 interface HeroProps {
   onCtaClick: () => void;
@@ -27,12 +28,20 @@ export function Hero({ onCtaClick, isLoggedIn }: HeroProps) {
           Go to Dashboard
         </Link>
       ) : (
-        <button
-          onClick={onCtaClick}
-          className="mt-8 md:mt-10 w-full sm:w-auto px-8 py-3.5 text-base font-medium text-white bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] rounded-full transition-colors shadow-[var(--shadow-md)]"
-        >
-          Get Started Free
-        </button>
+        <div className="mt-8 md:mt-10 flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
+          <button
+            onClick={onCtaClick}
+            className="w-full sm:w-auto px-8 py-3.5 text-base font-medium text-white bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] rounded-full transition-colors shadow-[var(--shadow-md)]"
+          >
+            Get Started Free
+          </button>
+          <TransitionLink
+            href="/guest"
+            className="w-full sm:w-auto px-8 py-3.5 text-base font-medium text-white/80 border border-white/25 hover:border-white/50 rounded-full transition-colors"
+          >
+            Start Searching
+          </TransitionLink>
+        </div>
       )}
     </section>
   );

@@ -27,6 +27,8 @@ interface JobResultCardProps {
   dynamicRequirements?: { requirement: string; mandatory: boolean; pillar: string; met: boolean; evidence: string }[] | null;
   specSource?: "google_jobs" | "jsearch" | "adzuna" | "linkedin" | "bing_jobs" | "scrappa" | null;
   onDelete: (id: string) => void;
+  guest?: boolean;
+  gold?: boolean;
 }
 
 export function JobResultCard({
@@ -50,6 +52,8 @@ export function JobResultCard({
   dynamicRequirements,
   specSource,
   onDelete,
+  guest,
+  gold,
 }: JobResultCardProps) {
   const [showDeleteMenu, setShowDeleteMenu] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -91,6 +95,43 @@ export function JobResultCard({
         .catch(() => {});
     }).catch(() => {});
   }, [jobUrl]);
+
+  if (guest) {
+    return (
+      <div
+        className={`liquid-glass rounded-xl p-5 transition-all duration-300 ${
+          gold ? "border border-yellow-400/50" : ""
+        }`}
+      >
+        {gold && (
+          <span className="inline-block mb-3 text-xs font-semibold px-3 py-1 rounded-full bg-amber-500/15 text-amber-300 border border-amber-400/40">
+            Featured
+          </span>
+        )}
+        <p className="text-base font-medium text-[var(--color-text-primary)] mb-1">{jobTitle}</p>
+        <p className="text-sm text-[var(--color-text-secondary)] mb-0.5">
+          {company}
+          {location && <> <span className="mx-1">&bull;</span> {location}</>}
+        </p>
+        {salary ? (
+          <p className="text-sm text-[var(--color-text-secondary)] opacity-60 mb-4">{salary}</p>
+        ) : (
+          <div className="mb-4" />
+        )}
+        {jobUrl && (
+          <a
+            href={jobUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 text-sm font-medium text-[var(--color-text-primary)] border border-[var(--color-border)] rounded-lg hover:bg-white/5 transition-colors"
+          >
+            Apply
+            <ExternalLink size={14} />
+          </a>
+        )}
+      </div>
+    );
+  }
 
   const scoreLabel =
     matchScore >= 80 ? "Strong Match" :

@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import { useState, useCallback, useEffect, createContext, useContext, type ReactNode } from "react";
-import { Pencil, Plus } from "lucide-react";
+import { Pencil } from "lucide-react";
 import Image from "next/image";
 import { SpaceVideoBackground } from "@/components/landing/space-video-background";
 import { ProfileSwitcher } from "./profile-switcher";
@@ -14,14 +14,6 @@ const ProfileOnboardingModal = dynamic(
 );
 const MobileProfileOnboardingSheet = dynamic(
   () => import("./mobile/mobile-profile-onboarding-sheet").then((mod) => mod.MobileProfileOnboardingSheet),
-  { ssr: false }
-);
-const AdminCreateJobModal = dynamic(
-  () => import("./admin-create-job-modal").then((mod) => mod.AdminCreateJobModal),
-  { ssr: false }
-);
-const MobileAdminCreateJobSheet = dynamic(
-  () => import("./mobile/mobile-admin-create-job-sheet").then((mod) => mod.MobileAdminCreateJobSheet),
   { ssr: false }
 );
 import { useTransition } from "@/components/providers/transition-provider";
@@ -47,24 +39,7 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
   const [editProfileId, setEditProfileId] = useState<string | null>(null);
   const [isNewProfile, setIsNewProfile] = useState(false);
   const [profileRefreshKey, setProfileRefreshKey] = useState(0);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [adminModalOpen, setAdminModalOpen] = useState(false);
   const [mobileProfileSheetOpen, setMobileProfileSheetOpen] = useState(false);
-
-  useEffect(() => {
-    const supabase = createClient();
-    supabase.auth.getSession().then(({ data: { session } }: { data: { session: any } }) => {
-      if (!session?.user) return;
-      supabase
-        .from("profiles")
-        .select("is_admin")
-        .eq("id", session.user.id)
-        .maybeSingle()
-        .then(({ data }: { data: any }) => {
-          if (data?.is_admin) setIsAdmin(true);
-        });
-    });
-  }, []);
 
   useEffect(() => {
     if (activeProfileId) return;
@@ -137,8 +112,6 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
           onProfileCreated={handleProfileCreated}
           profileRefreshKey={profileRefreshKey}
           onEditProfile={(id) => handleOpenEdit(id)}
-          isAdmin={isAdmin}
-          onOpenAdminModal={() => setAdminModalOpen(true)}
         >
           <div className="max-w-4xl mx-auto mb-4">
             <EmailConfirmationBanner />
@@ -167,15 +140,6 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
                     title="Edit profile"
                   >
                     <Pencil size={12} />
-                  </button>
-                )}
-                {isAdmin && (
-                  <button
-                    onClick={() => setAdminModalOpen(true)}
-                    className="w-7 h-7 rounded-full bg-white/10 border border-white/20 flex items-center justify-center text-white/80 hover:text-white hover:bg-white/20 transition-colors"
-                    title="Create job post"
-                  >
-                    <Plus size={12} />
                   </button>
                 )}
               </div>
@@ -212,13 +176,6 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
             onDelete={handleDeleteProfile}
             onClose={handleCloseModal}
           />
-        )
-      )}
-      {isAdmin && (
-        isMobile ? (
-          <MobileAdminCreateJobSheet isOpen={adminModalOpen} onClose={() => setAdminModalOpen(false)} />
-        ) : (
-          <AdminCreateJobModal isOpen={adminModalOpen} onClose={() => setAdminModalOpen(false)} />
         )
       )}
     </ProfileContext.Provider>

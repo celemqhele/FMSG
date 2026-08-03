@@ -27,6 +27,8 @@ interface MobileJobCardProps {
   dynamicRequirements?: { requirement: string; mandatory: boolean; pillar: string; met: boolean; evidence: string }[] | null;
   specSource?: "google_jobs" | "jsearch" | "adzuna" | "linkedin" | "bing_jobs" | "scrappa" | null;
   onDelete: (id: string) => void;
+  guest?: boolean;
+  gold?: boolean;
 }
 
 export function MobileJobCard({
@@ -50,6 +52,8 @@ export function MobileJobCard({
   dynamicRequirements,
   specSource,
   onDelete,
+  guest,
+  gold,
 }: MobileJobCardProps) {
   const [deleting, setDeleting] = useState(false);
   const [cvLoading, setCvLoading] = useState(false);
@@ -79,6 +83,42 @@ export function MobileJobCard({
         .catch(() => {});
     }).catch(() => {});
   }, [jobUrl]);
+
+  if (guest) {
+    return (
+      <div
+        className={`liquid-glass rounded-[10px] p-2.5 transition-all duration-300 ${
+          gold ? "border border-yellow-400/50" : ""
+        }`}
+      >
+        {gold && (
+          <span className="inline-block mb-1.5 text-[10px] font-semibold px-2.5 py-1 rounded-full bg-amber-500/15 text-amber-300 border border-amber-400/40">
+            Featured
+          </span>
+        )}
+        <p className="text-[11px] font-medium text-[var(--color-text-primary)] mb-0.5 leading-snug line-clamp-2">{jobTitle}</p>
+        <p className="text-[10px] text-[var(--color-text-secondary)] mb-0.5 truncate">
+          {company}{location ? <> &bull; {location}</> : ""}
+        </p>
+        {salary ? (
+          <p className="text-[11px] text-[var(--color-text-secondary)]/60 mb-2.5">{salary}</p>
+        ) : (
+          <div className="mb-2.5" />
+        )}
+        {jobUrl && (
+          <a
+            href={jobUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center justify-center gap-1.5 h-9 px-2.5 text-[11px] font-medium text-[var(--color-text-primary)] border border-[var(--color-border)] rounded-[7px] active:scale-95 transition-all"
+          >
+            Apply
+            <ExternalLink size={9} />
+          </a>
+        )}
+      </div>
+    );
+  }
 
   const scoreBg =
     matchScore >= 80 ? "bg-green-500/20 text-green-400 border-green-500/30" :

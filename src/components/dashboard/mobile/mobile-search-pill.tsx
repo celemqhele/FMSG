@@ -14,14 +14,13 @@ interface MobileSearchPillProps {
   searching: boolean;
   pfMode: boolean;
   onPfModeChange: (v: boolean) => void;
-  referralQuery?: string | null;
   sortMode: SortMode;
   onSortChange: (sort: SortMode) => void;
   platforms: PlatformId[];
   onPlatformsChange: (platforms: PlatformId[]) => void;
 }
 
-export function MobileSearchPill({ onSearch, onAbort, searching, pfMode, onPfModeChange, referralQuery, sortMode, onSortChange, platforms, onPlatformsChange }: MobileSearchPillProps) {
+export function MobileSearchPill({ onSearch, onAbort, searching, pfMode, onPfModeChange, sortMode, onSortChange, platforms, onPlatformsChange }: MobileSearchPillProps) {
   const { activeProfileId } = useActiveProfile();
   const [displayTitle, setDisplayTitle] = useState("Search for jobs");
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
@@ -29,6 +28,7 @@ export function MobileSearchPill({ onSearch, onAbort, searching, pfMode, onPfMod
   const [abortMounted, setAbortMounted] = useState(false);
   const [dateFilterDays, setDateFilterDays] = useState<number | null>(null);
   const [activeDateLabel, setActiveDateLabel] = useState("Any time");
+  const [typedQuery, setTypedQuery] = useState("");
 
   const handleSearch = async () => {
     if (searching) return;
@@ -68,8 +68,9 @@ export function MobileSearchPill({ onSearch, onAbort, searching, pfMode, onPfMod
       }
     }
 
+    const typed = typedQuery.trim();
     const pick = titles[Math.floor(Math.random() * titles.length)] ?? "";
-    const query = [pick, ind, loc].filter(Boolean).join(" ");
+    const query = typed || [pick, ind, loc].filter(Boolean).join(" ");
     if (!query) return;
 
     setDisplayTitle(query);
@@ -148,13 +149,17 @@ export function MobileSearchPill({ onSearch, onAbort, searching, pfMode, onPfMod
             <SlidersHorizontal size={14} />
           </button>
 
-          <span className="flex-1 text-white/60 text-[11px] truncate select-none pr-2">
-            {pfMode
+          <input
+            value={typedQuery}
+            onChange={(e) => setTypedQuery(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") handleSearch(); }}
+            placeholder={pfMode
               ? `Persistent Finder · ${activeDateLabel}`
               : dateFilterDays != null
               ? `${activeDateLabel} · ${displayTitle}`
               : displayTitle}
-          </span>
+            className="flex-1 bg-transparent text-white/80 text-[11px] px-2 outline-none placeholder-white/50 min-w-0"
+          />
 
           {searching ? (
             <button

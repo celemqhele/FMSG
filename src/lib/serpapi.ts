@@ -30,6 +30,7 @@ interface SerpParams {
   hl?: string;
   gl?: string;
   start?: number;
+  maxCards?: number;
 }
 
 export async function searchGoogleJobs(params: SerpParams): Promise<SerpJob[]> {
@@ -354,7 +355,7 @@ export async function searchLinkedInJobs(params: SerpParams): Promise<SerpJob[]>
 // Step 3: Jina reads each individual URL → full spec
 
 
-// ─── Scrape a single job page via Jina (used by admin create-job-post) ──────
+// ─── Scrape a single job page via Jina ───────────────────────────────────────
 
 export async function scrapeJobPage(
   url: string,
@@ -966,7 +967,7 @@ export async function searchDittoJobs(params: SerpParams): Promise<SerpJob[]> {
     if (cardCount === 0) return [];
 
     const jobs: SerpJob[] = [];
-    const maxCards = Math.min(cardCount, 20);
+    const maxCards = Math.min(cardCount, params.maxCards ?? 20);
 
     for (let i = 0; i < maxCards; i++) {
       try {

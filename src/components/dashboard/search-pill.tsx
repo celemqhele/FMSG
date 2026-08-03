@@ -11,10 +11,9 @@ interface SearchPillProps {
   searching: boolean;
   pfMode: boolean;
   onPfModeChange: (v: boolean) => void;
-  referralQuery?: string | null;
 }
 
-export function SearchPill({ onSearch, onAbort, searching, pfMode, onPfModeChange, referralQuery }: SearchPillProps) {
+export function SearchPill({ onSearch, onAbort, searching, pfMode, onPfModeChange }: SearchPillProps) {
   const { activeProfileId } = useActiveProfile();
   const [displayTitle, setDisplayTitle] = useState("Search for jobs");
   const [bouncing, setBouncing] = useState(false);
@@ -22,6 +21,7 @@ export function SearchPill({ onSearch, onAbort, searching, pfMode, onPfModeChang
   const [abortMounted, setAbortMounted] = useState(false);
   const [dateFilterDays, setDateFilterDays] = useState<number | null>(null);
   const [dateFilterIndex, setDateFilterIndex] = useState(0);
+  const [typedQuery, setTypedQuery] = useState("");
 
   const DATE_OPTIONS = [
     { label: "Any time", value: null },
@@ -73,7 +73,7 @@ export function SearchPill({ onSearch, onAbort, searching, pfMode, onPfModeChang
       }
     }
 
-    const query = overrideQuery || (() => {
+    const query = (typedQuery.trim() || overrideQuery || "").trim() || (() => {
       const pick = titles[Math.floor(Math.random() * titles.length)] ?? "";
       if (!pick) return "";
       return [pick, ind, loc].filter(Boolean).join(" ");
@@ -199,9 +199,13 @@ export function SearchPill({ onSearch, onAbort, searching, pfMode, onPfModeChang
         </button>
       </div>
 
-      <span className="flex-1 text-white/60 text-sm px-3 truncate select-none">
-        {pfMode ? `Persistent Finder · ${activeDateLabel}` : dateFilterDays != null ? `${activeDateLabel} · ${displayTitle}` : displayTitle}
-      </span>
+      <input
+        value={typedQuery}
+        onChange={(e) => setTypedQuery(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter") handleSearch(); }}
+        placeholder={pfMode ? `Persistent Finder · ${activeDateLabel}` : dateFilterDays != null ? `${activeDateLabel} · ${displayTitle}` : displayTitle}
+        className="flex-1 bg-transparent text-white/80 text-sm px-3 outline-none placeholder-white/50 min-w-0"
+      />
 
       {searching && (
         <button

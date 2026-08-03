@@ -10,6 +10,7 @@ import { StreamWriter, type SearchEvent } from "@/lib/search-stream";
 import { debugLog } from "@/lib/debug";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { signContinuationToken, verifyAndDecodeContinuationToken } from "@/lib/continuation-token";
+import { BLACKLISTED_DOMAINS, BLACKLISTED_COMPANIES, extractDomain, buildJobUrl, isBlacklistedByVia, decodeGoogleRedirect, decodeBingRedirect } from "@/lib/job-filter";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -64,105 +65,6 @@ const BLOCKED_ATS_TRACKERS = [
   'jobleads',
   'getwork',
 ];
-
-const BLACKLISTED_DOMAINS = [
-  'bebee.com',
-  'jobleads.com',
-  'jobleads.co.za',
-  'jobleads.co.uk',
-  'jobleads.sg',
-  'jobleads.ae',
-  'jobleads.fr',
-  'jobleads.it',
-  'talent.com',
-  'talent.co.za',
-  'talent.co.uk',
-  'talent.ca',
-  'talent.au',
-  'joub.co.za',
-  'jooble.org',
-  'jooble.com',
-  'jooble.co.za',
-  'executiveplacements.com',
-  'executiveplacements.co.za',
-  'whatjobs.com',
-  'en-za.whatjobs.com',
-  'cosmoquick.com',
-  'cosmoquick.club',
-  'naukri.my',
-  // Job aggregator / meta-search sites (redirect to other boards, no real listings)
-  'jobrapido.com',
-  'jobrapido.co.za',
-  'jobrapido.co.uk',
-  'jobrapido.com.au',
-  'jobrapido.de',
-  'jobrapido.fr',
-  'jobrapido.it',
-  'jobrapido.es',
-  'careerjet.co.za',
-  'careerjet.co',
-  'jobsearch101.co.za',
-  'jobsearch101.com',
-  'neuvoo.co.za',
-  'neuvoo.com',
-  'simplyhired.com',
-];
-
-const BLACKLISTED_COMPANIES = [
-  'joub.co.za',
-  'jooble',
-  'executiveplacements',
-  'cosmoquick',
-];
-
-function extractDomain(url: string): string | null {
-  try {
-    const u = new URL(url);
-    return u.hostname.replace(/^www\./, "").toLowerCase();
-  } catch {
-    return null;
-  }
-}
-
-function decodeGoogleRedirect(url: string): string {
-  try {
-    const u = new URL(url);
-    if (u.hostname.includes('google')) {
-      for (const param of ['q', 'url', 'adurl', 'dest', 'continue', 'redirect']) {
-        const val = u.searchParams.get(param);
-        if (val && (val.startsWith('http://') || val.startsWith('https://'))) return val;
-      }
-    }
-  } catch {}
-  return url;
-}
-
-function decodeBingRedirect(url: string): string {
-  try {
-    const u = new URL(url);
-    if (u.hostname.includes("bing.com") && u.pathname.includes("/ck/a")) {
-      const raw = u.searchParams.get("u");
-      if (raw) {
-        for (let offset = 1; offset <= 3; offset++) {
-          if (raw.length > offset) {
-            const decoded = Buffer.from(raw.slice(offset), "base64").toString("utf-8");
-            if (decoded.startsWith("http")) return decoded;
-          }
-        }
-      }
-    }
-  } catch {}
-  return url;
-}
-
-function isBlacklistedByVia(via: string | undefined): boolean {
-  if (!via) return false;
-  const lower = via.toLowerCase();
-  return BLACKLISTED_DOMAINS.some(d => {
-    const name = d.replace(/\..+$/, "");
-    return lower.includes(name);
-  });
-}
 
 function parsePostedAt(posted?: string): number | null {
   if (!posted) return null;
@@ -279,21 +181,6 @@ interface JobRow {
 
 function normalize(r: any) {
   return { id: r.id ?? crypto.randomUUID(), ...r, full_description: r.full_spec ?? "" };
-}
-
-function buildJobUrl(job: {
-  apply_options?: { link: string; title: string }[];
-  job_highlights?: { link?: string };
-  link?: string;
-  via?: string;
-  title: string;
-  company_name: string;
-}): string {
-  const tryDecode = (u: string) => decodeBingRedirect(decodeGoogleRedirect(u));
-  if (job.apply_options?.[0]?.link) return tryDecode(job.apply_options[0].link);
-  if (job.job_highlights?.link) return tryDecode(job.job_highlights.link);
-  if (job.link) return tryDecode(job.link);
-  return '';
 }
 
 /** JSON response_format wraps arrays in objects. Unwrap by finding the first array value. */
@@ -1235,16 +1122,6 @@ ${blacklistInfo}${bannedInfo}${dateConstraintInfo}${locationConstraintInfo}`;
   return { results: outputs, queryUsed: query, filteredCounts, nextOffset };
 }
 
-function pinReferralJob(results: any[], referralUrl: string | null): any[] {
-  if (!referralUrl || results.length === 0) return results;
-  const idx = results.findIndex((r) => r.job_url === referralUrl);
-  if (idx > 0) {
-    const [pinned] = results.splice(idx, 1);
-    results.unshift(pinned);
-  }
-  return results;
-}
-
 
 export async function POST(request: NextRequest) {
   const supabase = getSupabase();
@@ -1269,7 +1146,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { query, profile_id, pf_mode, continuation, date_filter_days, platforms, referral_url, finish_now } = body;
+    const { query, profile_id, pf_mode, continuation, date_filter_days, platforms, finish_now } = body;
     const maxAgeDays = date_filter_days ? parseInt(String(date_filter_days), 10) : undefined;
     const isContinuation = !!continuation;
 
@@ -1594,7 +1471,6 @@ Return ONLY valid JSON (no markdown, no code fences):
         balances: liveBalances,
         plan: livePlan,
         maxAgeDays,
-        referralUrl: referral_url ?? null,
       };
     }
 
@@ -1657,7 +1533,6 @@ Return ONLY valid JSON (no markdown, no code fences):
               if (allResults.length > 0) {
                 const withIds = allResults.map((r: any) => ({ ...r, id: crypto.randomUUID() }));
                 const normalized = withIds.map(normalize);
-                pinReferralJob(normalized, state.referralUrl);
                 sendComplete({ type: "complete", results: normalized, progress: 100, ...(totalFiltered > 0 ? { filtered_summary: result.filteredCounts } : {}) });
                 const rows = withIds.map((r: any) => ({
                   id: r.id,
@@ -1739,7 +1614,6 @@ Return ONLY valid JSON (no markdown, no code fences):
                   dedupSets: { history: [...state.dedupSets.history], saved: [...state.dedupSets.saved], blocked: [...state.dedupSets.blocked], rejected: [...state.dedupSets.rejected] },
                   maxAgeDays: state.maxAgeDays,
                   profile_id: state.profile_id,
-                  referralUrl: state.referralUrl,
                   allResults: [],
                   nextOffset: 0,
                 }, SUPABASE_SERVICE_KEY),
@@ -2001,7 +1875,6 @@ Return ONLY valid JSON (no markdown, no code fences):
           if (allResults.length > 0) {
             const withIds = allResults.map((r) => ({ ...r, id: crypto.randomUUID() }));
             const normalized = withIds.map(normalize);
-            pinReferralJob(normalized, state.referralUrl);
 
             const pfMessage = pfAborted
               ? `Search stopped early, showing ${allResults.length} results found so far`
