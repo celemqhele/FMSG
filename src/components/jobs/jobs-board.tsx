@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard/dashboard-layout";
 import { SearchPill } from "@/components/dashboard/search-pill";
 import { MobileSearchPill } from "@/components/dashboard/mobile/mobile-search-pill";
@@ -12,8 +13,10 @@ import { BoardPrompt } from "./board-prompt";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useTransition } from "@/components/providers/transition-provider";
 import { createClient } from "@/lib/supabase/client";
+import { readGuestResults, writeGuestResults } from "@/lib/guest-results-cache";
 import dynamic from "next/dynamic";
 import type { JobBoard, JobCard } from "@/data/jobs/types";
+import type { AuthChangeEvent, Session } from "@supabase/supabase-js";
 
 const AuthModal = dynamic(() => import("@/components/auth/auth-modal").then((mod) => mod.AuthModal), { ssr: false });
 const MobileAuthSheet = dynamic(() => import("@/components/auth/mobile-auth-sheet").then((mod) => mod.MobileAuthSheet), { ssr: false });
@@ -71,6 +74,7 @@ function toCardProps(job: JobCard) {
 export function JobsBoard({ board }: { board: JobBoard }) {
   const { endTransition } = useTransition();
   const isMobile = useIsMobile();
+  const router = useRouter();
 
   const [authOpen, setAuthOpen] = useState(false);
   const [authTab, setAuthTab] = useState<"login" | "signup">("signup");
@@ -80,6 +84,7 @@ export function JobsBoard({ board }: { board: JobBoard }) {
   const [error, setError] = useState("");
   const [promptOpen, setPromptOpen] = useState(false);
   const [completionOpen, setCompletionOpen] = useState(false);
+  const [cvPromptOpen, setCvPromptOpen] = useState(false);
   const [progress, setProgress] = useState(0);
   const [lineIndex, setLineIndex] = useState(0);
 
@@ -111,6 +116,18 @@ export function JobsBoard({ board }: { board: JobBoard }) {
       if (timer) clearTimeout(timer);
     };
   }, []);
+
+  useEffect(() => {
+    const supabase = createClient();
+    const { data: sub } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
+      if (session && readGuestResults().length > 0) {
+        router.replace("/dashboard?tab=saved");
+      }
+    });
+    return () => {
+      sub.subscription.unsubscribe();
+    };
+  }, [router]);
 
   const runSearch = useCallback(async (q: string, overrideLocation?: string) => {
     if (!q.trim() || status === "searching") return;
@@ -146,6 +163,18 @@ export function JobsBoard({ board }: { board: JobBoard }) {
       setResults(data.results ?? []);
       setProgress(100);
       setStatus("done");
+      if (Array.isArray(data.results) && data.results.length > 0) {
+        writeGuestResults(
+          (data.results as BoardJob[]).map((r) => ({
+            title: r.title,
+            company: r.company,
+            location: r.location,
+            salary: r.salary,
+            description: r.description,
+            applyUrl: r.applyUrl,
+          }))
+        );
+      }
       if (!storageGet(COMPLETE_SEEN_KEY)) {
         setCompletionOpen(true);
         storageSet(COMPLETE_SEEN_KEY);
@@ -193,7 +222,7 @@ export function JobsBoard({ board }: { board: JobBoard }) {
         matchScore={0}
         fullDescription=""
         onDelete={() => {}}
-        onGenerateCv={() => openAuth("signup")}
+        onGenerateCv={() => setCvPromptOpen(true)}
         guest
         gold={extra?.gold}
       />
@@ -203,7 +232,7 @@ export function JobsBoard({ board }: { board: JobBoard }) {
         matchScore={0}
         fullDescription=""
         onDelete={() => {}}
-        onGenerateCv={() => openAuth("signup")}
+        onGenerateCv={() => setCvPromptOpen(true)}
         guest
         gold={extra?.gold}
       />
@@ -322,6 +351,29 @@ export function JobsBoard({ board }: { board: JobBoard }) {
               )}
             </div>
           )}
+
+          {status !== "searching" && (
+            <div className="liquid-glass rounded-xl p-5">
+              <p className="text-sm font-medium text-white mb-1">You&apos;re viewing a preview.</p>
+              <p className="text-sm text-white/70 mb-4">
+                Sign in to unlock all matching jobs, unlimited searches, AI matching, and CV generation.
+              </p>
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  onClick={() => openAuth("signup")}
+                  className="px-5 py-2.5 text-sm font-medium text-white bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] rounded-full transition-colors"
+                >
+                  Sign Up
+                </button>
+                <button
+                  onClick={() => openAuth("login")}
+                  className="px-5 py-2.5 text-sm font-medium text-white/90 hover:text-white hover:bg-white/10 rounded-full transition-colors"
+                >
+                  Log In
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </DashboardLayout>
 
@@ -349,6 +401,22 @@ export function JobsBoard({ board }: { board: JobBoard }) {
           openAuth("signup");
         }}
         onSecondary={() => setCompletionOpen(false)}
+      />
+
+      <BoardPrompt
+        open={cvPromptOpen}
+        title="Generate your CV"
+        subtitle="Generating a CV requires you to log in or sign up."
+        primaryLabel="Sign Up"
+        secondaryLabel="Log In"
+        onPrimary={() => {
+          setCvPromptOpen(false);
+          openAuth("signup");
+        }}
+        onSecondary={() => {
+          setCvPromptOpen(false);
+          openAuth("login");
+        }}
       />
 
       {isMobile ? (

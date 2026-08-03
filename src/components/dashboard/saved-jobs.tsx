@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { JobResultCard } from "./job-result-card";
 import { Bookmark } from "lucide-react";
 import { useActiveProfile } from "./dashboard-layout";
+import { readGuestResults, clearGuestResults } from "@/lib/guest-results-cache";
 
 interface SavedJob {
   id: string;
@@ -36,9 +37,37 @@ export function SavedJobs() {
   useEffect(() => {
     if (!activeProfileId) { setJobs([]); setLoading(false); return; }
     const supabase = createClient();
-    supabase.auth.getSession().then(({ data }: { data: any }) => {
+    supabase.auth.getSession().then(async ({ data }: { data: any }) => {
       const session = data?.session;
       if (!session) { setLoading(false); return; }
+
+      const cached = readGuestResults();
+      if (cached.length > 0) {
+        await Promise.all(
+          cached.map((job) =>
+            fetch("/api/job-results/save", {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${session.access_token}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                job_title: job.title,
+                company: job.company,
+                location: job.location,
+                estimated_salary: job.salary || null,
+                match_score: 0,
+                match_summary: "",
+                job_url: job.applyUrl,
+                full_spec: job.description,
+                profile_id: activeProfileId,
+              }),
+            }).catch(() => null)
+          )
+        );
+        clearGuestResults();
+      }
+
       supabase
         .from("saved_jobs")
         .select("*")

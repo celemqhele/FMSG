@@ -16,7 +16,7 @@ const FAST_SOURCE_TIMEOUT_MS = 25_000;
 const DITTO_TIMEOUT_MS = 60_000;
 const DITTO_MAX_CARDS = 6;
 const JOB_POST_MAX_RESULTS = 3;
-const LANDING_MAX_RESULTS = 8;
+const LANDING_MAX_RESULTS = 3;
 
 function getIP(request: NextRequest): string {
   return request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
@@ -186,9 +186,26 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    await supabase.from("guest_searches").insert({ ip_hash: ipHash, query: q, location: location || null }).then(({ error }) => {
-      if (error) console.error("[GUEST] Failed to record guest search:", error);
-    });
+    const { data: claimed, error: claimError } = await supabase
+      .from("guest_searches")
+      .upsert(
+        { ip_hash: ipHash, query: q, location: location || null },
+        { onConflict: "ip_hash", ignoreDuplicates: true }
+      )
+      .select("id")
+      .maybeSingle();
+
+    if (claimError) {
+      console.error("[GUEST] Failed to record guest search:", claimError.message);
+      return NextResponse.json({ error: "Internal error" }, { status: 500 });
+    }
+
+    if (!claimed) {
+      return NextResponse.json(
+        { code: "GUEST_LIMIT", message: "You've already used your free search. Sign up to keep searching.", used: true, remaining: 0 },
+        { status: 403 }
+      );
+    }
 
     return NextResponse.json({ results, used: true, remaining: 0, queryUsed: q });
   } catch (err) {

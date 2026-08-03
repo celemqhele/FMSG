@@ -196,6 +196,10 @@ export default function DashboardPage() {
         router.push("/");
         return;
       }
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("tab") === "saved") {
+        setActiveTab("saved");
+      }
       setAuthChecked(true);
       setUserEmail(data.session.user?.email ?? "");
       supabase
