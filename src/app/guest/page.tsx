@@ -34,8 +34,13 @@ function GuestContent() {
   const [authTab, setAuthTab] = useState<"login" | "signup">("signup");
   const [isLoggedIn, setIsLoggedIn] = useState(false);
 
+  const goldPost = (() => {
+    const k = searchParams.get("k");
+    return k ? getJobPostByKey(k) : null;
+  })();
+
   const [query, setQuery] = useState("");
-  const [location, setLocation] = useState("");
+  const [location, setLocation] = useState(() => goldPost?.location ?? "");
   const [results, setResults] = useState<GuestJob[]>([]);
   const [status, setStatus] = useState<"idle" | "searching" | "done" | "limit" | "error">("idle");
   const [error, setError] = useState("");
@@ -43,13 +48,9 @@ function GuestContent() {
   const [completeMounted, setCompleteMounted] = useState(false);
   const autoSearched = useRef(false);
 
-  const goldPost = (() => {
-    const k = searchParams.get("k");
-    return k ? getJobPostByKey(k) : null;
-  })();
-
-  const runSearch = useCallback(async (q: string) => {
+  const runSearch = useCallback(async (q: string, overrideLocation?: string) => {
     if (!q.trim() || status === "searching") return;
+    const loc = (overrideLocation ?? location).trim() || undefined;
     setStatus("searching");
     setError("");
     setResults([]);
@@ -61,7 +62,7 @@ function GuestContent() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           query: q.trim(),
-          location: location.trim() || undefined,
+          location: loc,
           mode: goldPost ? "job-post" : "landing",
         }),
       });
@@ -102,7 +103,7 @@ function GuestContent() {
     if (goldPost && !autoSearched.current && status === "idle") {
       autoSearched.current = true;
       setQuery(goldPost.title);
-      runSearch(goldPost.title);
+      runSearch(goldPost.title, goldPost.location);
     }
   }, [goldPost, runSearch, status]);
 

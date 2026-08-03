@@ -939,8 +939,9 @@ export async function searchDittoJobs(params: SerpParams): Promise<SerpJob[]> {
     "de aar":          { id: "5677", name: "De Aar" },
     "northern cape":   { id: "1936", name: "Kimberley" },
   };
-  const locKey = (params.location ?? "").toLowerCase().trim();
-  const dittoLoc = DITTO_CITY_MAP[locKey];
+  const locRaw = (params.location ?? "").toLowerCase().trim();
+  const locKey = locRaw.split(",")[0].trim();
+  const dittoLoc = DITTO_CITY_MAP[locRaw] ?? DITTO_CITY_MAP[locKey];
   const searchUrl = buildDittoSearchUrl(query, dittoLoc?.id, dittoLoc?.name);
 
   console.log(`[DITTO] Searching: ${searchUrl}`);
