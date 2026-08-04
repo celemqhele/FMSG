@@ -15,7 +15,7 @@ const sections = [
   {
     title: "1. Information We Collect",
     content:
-      "We collect personal information you provide directly: your name, surname, email address, phone number, CV file, job preferences, and salary expectations. We also collect usage data such as search queries, saved jobs, and tailored CV generations.",
+      "We collect personal information you provide directly: your name, surname, email address, phone number, CV file, job preferences, and salary expectations. We also collect usage data such as search queries, saved jobs, and tailored CV generations. When you use our guest search feature without creating an account, we collect your IP address, which we process in hashed form to enforce the one-free-search-per-month limit and to prevent abuse.",
   },
   {
     title: "2. How We Use Your Information",
@@ -30,7 +30,7 @@ const sections = [
   {
     title: "4. Data Storage and Security",
     content:
-      "Your data is stored on Supabase servers, which may be located outside South Africa. We implement industry-standard security measures including encryption in transit (TLS) and at rest, row-level security, and access controls. CV files are stored in encrypted private storage buckets. Your CV and personal data are never shared with other users or made publicly accessible. Where your data is transferred outside South Africa, we ensure the recipient is subject to law, binding corporate rules, or a contract that provides an adequate level of protection as required by POPIA section 72.",
+      "Your data is stored on Supabase servers, which may be located outside South Africa. We implement industry-standard security measures including encryption in transit (TLS) and at rest, row-level security, and access controls. CV files are stored in encrypted private storage buckets. Your CV and personal data are never shared with other users or made publicly accessible. IP addresses collected for guest search limiting are stored only as salted, one-way hashes (SHA-256); the original address is never stored or retrievable from the hash. Where your data is transferred outside South Africa, we ensure the recipient is subject to law, binding corporate rules, or a contract that provides an adequate level of protection as required by POPIA section 72.",
   },
   {
     title: "5. Data Retention",
@@ -104,7 +104,7 @@ export default function PrivacyPage() {
               Privacy Policy
             </h1>
             <p className="mt-4 text-lg text-white/80">
-              How we handle your data. Last updated 23 July 2026.
+              How we handle your data. Last updated 4 August 2026.
             </p>
           </div>
 
