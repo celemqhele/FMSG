@@ -17,6 +17,7 @@ const DITTO_TIMEOUT_MS = 60_000;
 const DITTO_MAX_CARDS = 6;
 const JOB_POST_MAX_RESULTS = 3;
 const LANDING_MAX_RESULTS = 3;
+const GUEST_SEARCH_WINDOW_MS = 30 * 86_400_000;
 
 function getIP(request: NextRequest): string {
   return request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
@@ -100,7 +101,7 @@ export async function POST(request: NextRequest) {
     const rl = checkRateLimit(`guest:${ipHash}`, "guest_search");
     if (!rl.allowed) {
       return NextResponse.json(
-        { code: "GUEST_LIMIT", message: "You've used your free search for today. Sign up to keep searching.", used: true, remaining: 0 },
+        { code: "GUEST_LIMIT", message: "You've used your free search. Sign up to keep searching.", used: true, remaining: 0 },
         { status: 403 }
       );
     }
@@ -109,15 +110,18 @@ export async function POST(request: NextRequest) {
 
     const { data: existing } = await supabase
       .from("guest_searches")
-      .select("id")
+      .select("created_at")
       .eq("ip_hash", ipHash)
       .maybeSingle();
 
-    if (existing) {
-      return NextResponse.json(
-        { code: "GUEST_LIMIT", message: "You've already used your free search. Sign up to keep searching.", used: true, remaining: 0 },
-        { status: 403 }
-      );
+    if (existing?.created_at) {
+      const created = new Date(existing.created_at).getTime();
+      if (!Number.isNaN(created) && Date.now() - created < GUEST_SEARCH_WINDOW_MS) {
+        return NextResponse.json(
+          { code: "GUEST_LIMIT", message: "You've used your free search for this month. Sign up to keep searching.", used: true, remaining: 0 },
+          { status: 403 }
+        );
+      }
     }
 
     // Source selection
@@ -186,14 +190,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { data: claimed, error: claimError } = await supabase
-      .from("guest_searches")
-      .upsert(
-        { ip_hash: ipHash, query: q, location: location || null },
-        { onConflict: "ip_hash", ignoreDuplicates: true }
-      )
-      .select("id")
-      .maybeSingle();
+    const { data: claimed, error: claimError } = await supabase.rpc("try_claim_guest_search", {
+      p_ip_hash: ipHash,
+      p_query: q,
+      p_location: location || null,
+      p_window: "30 days",
+    });
 
     if (claimError) {
       console.error("[GUEST] Failed to record guest search:", claimError.message);
@@ -202,7 +204,7 @@ export async function POST(request: NextRequest) {
 
     if (!claimed) {
       return NextResponse.json(
-        { code: "GUEST_LIMIT", message: "You've already used your free search. Sign up to keep searching.", used: true, remaining: 0 },
+        { code: "GUEST_LIMIT", message: "You've used your free search for this month. Sign up to keep searching.", used: true, remaining: 0 },
         { status: 403 }
       );
     }
