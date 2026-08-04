@@ -1,6 +1,7 @@
 import type { JobBoard, JobCard } from "./types";
 import { financeJobs } from "./finance";
 import { lifeSciencesJobs } from "./life-sciences";
+import { logisticsJobs } from "./logistics";
 
 export const jobBoards: JobBoard[] = [
   {
@@ -16,6 +17,13 @@ export const jobBoards: JobBoard[] = [
     tagline: "Pre-vetted life-science roles at leading global manufacturers.",
     search: { title: "Country Manager", location: "Johannesburg, South Africa" },
     jobs: lifeSciencesJobs,
+  },
+  {
+    slug: "logistics",
+    name: "Logistics",
+    tagline: "Transport, freight and heavy-lift project roles from leading global logistics operators.",
+    search: { title: "Projects Engineer", location: "Kempton Park, South Africa" },
+    jobs: logisticsJobs,
   },
 ];
 
