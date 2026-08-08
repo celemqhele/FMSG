@@ -433,6 +433,42 @@ export default function DashboardPage() {
     }
   }, [continuationToken, setVideoFast]);
 
+  const handleContinueSearch = useCallback(async () => {
+    if (!continuationToken) return;
+
+    setShowConnectionInterrupted(false);
+    setConnectionInterruptedMounted(false);
+    setSearching(true);
+    setVideoFast(true);
+    setResultMessage("");
+    setProgress(0);
+    setStatusCompleted([]);
+    setStatusActive("Resuming search...");
+
+    const supabase = createClient();
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+
+    abortRef.current = new AbortController();
+
+    try {
+      const res = await fetch("/api/search", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ continuation: continuationToken }),
+        signal: abortRef.current.signal,
+      });
+
+      // Don't clear continuation token here - let the stream response handle it
+      await handleStreamResponse(res);
+    } catch (err) {
+      if ((err as DOMException)?.name !== "AbortError") throw err;
+    }
+  }, [continuationToken, setVideoFast]);
+
   const handleAbort = useCallback(() => {
     if (abortRef.current) {
       abortRef.current.abort();
@@ -1139,12 +1175,20 @@ export default function DashboardPage() {
                   ✓ {results.length} results recovered from this search
                 </div>
               )}
-              <button
-                onClick={() => { setShowConnectionInterrupted(false); setConnectionInterruptedMounted(false); }}
-                className="w-full py-2.5 px-4 rounded-xl bg-[var(--color-accent)] text-white font-medium hover:bg-[var(--color-accent-hover)] transition-colors"
-              >
-                OK
-              </button>
+              <div className="flex flex-col gap-2.5">
+                <button
+                  onClick={handleContinue}
+                  className="w-full py-2.5 px-4 rounded-xl bg-[var(--color-accent)] text-white font-medium hover:bg-[var(--color-accent-hover)] transition-colors"
+                >
+                  Continue Search
+                </button>
+                <button
+                  onClick={() => { setShowConnectionInterrupted(false); setConnectionInterruptedMounted(false); }}
+                  className="w-full py-2.5 px-4 rounded-xl bg-gray-100 text-gray-700 font-medium hover:bg-gray-200 transition-colors"
+                >
+                  Show Results
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -773,6 +773,7 @@ async function screenAndAnalyze(
   dedupSets?: { history: Set<string>; saved: Set<string>; blocked: Set<string>; rejected?: Set<string> },
   maxAgeDays?: number,
   offset: number = 0,
+  deadline?: number,
 ): Promise<{ results: JobRow[]; queryUsed: string; filteredCounts: { history: number; saved: number; rejected: number; blocked: number }; nextOffset: number }> {
   const filteredCounts = { history: 0, saved: 0, rejected: 0, blocked: 0 };
   let nextOffset = offset;
@@ -976,6 +977,12 @@ ${blacklistInfo}${bannedInfo}${dateConstraintInfo}${locationConstraintInfo}`;
   await sleep(80);
 
   for (let i = offset; i < rawJobs.length; i++) {
+    // Check deadline before processing each job (allows early exit before Vercel 300s timeout)
+    if (deadline && Date.now() > deadline) {
+      debugLog(`[SEARCH] Deadline reached at job ${i + 1}/${rawJobs.length}, pausing with ${rawJobs.length - i} jobs remaining`);
+      return { results: outputs, queryUsed: query, filteredCounts, nextOffset: i };
+    }
+
     const job = rawJobs[i];
     nextOffset = i + 1;
     const jobUrl = jobUrls.get(i) || buildJobUrl(job);
@@ -1546,6 +1553,7 @@ Return ONLY valid JSON (no markdown, no code fences):
 
              if (isContinuation) {
               const offset = state.nextOffset ?? 0;
+              const continuationDeadline = Date.now() + 240_000;
               const result = await screenAndAnalyze(
                 state.rawJobs, state.jobSpecs, state.jobUrls, state.queryUsed,
                 state.profileLocation, state.profileIndustry, state.titles, state.cvTexts,
@@ -1553,7 +1561,8 @@ Return ONLY valid JSON (no markdown, no code fences):
                 sendStatus, undefined,
                 { history: new Set(state.dedupSets.history), saved: new Set(state.dedupSets.saved), blocked: new Set(state.dedupSets.blocked), rejected: new Set(state.dedupSets.rejected ?? []) },
                 state.maxAgeDays,
-                offset
+                offset,
+                continuationDeadline
               );
 
               const totalFiltered = result.filteredCounts.history + result.filteredCounts.saved + result.filteredCounts.rejected + result.filteredCounts.blocked;
@@ -1755,8 +1764,8 @@ Return ONLY valid JSON (no markdown, no code fences):
           for (let i = startRoundIndex; i < MAX_ROUNDS && !finish_now; i++) {
             const roundNum = i + 1;
 
-            if (Date.now() - pfStartTime > 270_000) {
-              debugLog(`[PF] Time limit reached (270s), pausing after round ${roundNum - 1}`);
+            if (Date.now() - pfStartTime > 240_000) {
+              debugLog(`[PF] Time limit reached (240s), pausing after round ${roundNum - 1}`);
               pfAborted = true;
               
               // Immediate checkpoint and pause
@@ -1833,13 +1842,16 @@ Return ONLY valid JSON (no markdown, no code fences):
               let roundFilteredCounts = { history: 0, saved: 0, rejected: 0, blocked: 0 };
 
               if (filtered.rawJobs.length > 0) {
+                const roundDeadline = Date.now() + 240_000;
                 const result = await screenAndAnalyze(
                   filtered.rawJobs, filtered.jobSpecs, filtered.jobUrls, filtered.queryUsed,
                   pfLocation, pfIndustry, pfTitles, pfCvTexts,
                   user, searchId, dataClient, pfBannedJobs, pfBannedCompanies, state.profile_id,
                   sendStatus, roundNum,
                   { history: new Set(pfDedupSets.history || []), saved: new Set(pfDedupSets.saved || []), blocked: new Set(pfDedupSets.blocked || []), rejected: new Set(pfDedupSets.rejected || []) },
-                  state.maxAgeDays
+                  state.maxAgeDays,
+                  0,
+                  roundDeadline
                 );
                 roundResults = result.results;
                 roundFilteredCounts = result.filteredCounts;

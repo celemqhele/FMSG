@@ -10,6 +10,16 @@
       "tags": ["search", "profile", "bug-fix", "persistence"],
       "summary": "Fixed search profile changes not persisting + progress bar incremental count",
       "embedding": null
+    },
+    {
+      "id": "search-profile-pf-fixes_2026-08-08_14-30-00",
+      "file": "sessions/search-profile-pf-fixes_2026-08-08_14-30-00_COMPLETE.json",
+      "status": "COMPLETE",
+      "created": "2026-08-08T14:30:00.000Z",
+      "updated": "2026-08-08T18:30:00.000Z",
+      "tags": ["search", "profile", "pf", "bug-fix", "persistence", "ats", "connection-timeout", "blocklist"],
+      "summary": "Fixed 13 issues: search profile persistence, progress bar, PF resume with fresh profile, CV extraction, PF title ladder, connection timeout modal, PF show results now, ATS URL tracking, filtered summary pauses, bebee blocklist",
+      "embedding": null
     }
   ]
 }

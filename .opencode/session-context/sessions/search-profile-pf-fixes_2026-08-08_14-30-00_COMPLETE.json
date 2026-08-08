@@ -1,0 +1,137 @@
+{
+  "id": "search-profile-pf-fixes_2026-08-08_14-30-00",
+  "status": "COMPLETE",
+  "created": "2026-08-08T14:30:00.000Z",
+  "updated": "2026-08-08T18:30:00.000Z",
+  "objective": "Fix multiple bugs: (1) search profile title/industry changes not reflecting in searches, (2) progress bar showing '14 of 14' instead of incremental count, (3) PF searches using stale profile data, (4) CV extraction overwriting user-entered fields, (5) PF deduplicating job titles, (6) connection timeout losing results, (7) PF 'Show results now' running extra round, (8) ATS trackers in URLs not blocked, (9) filtered summary not showing during PF, (10) bebee.com related domains not blocked",
+  "plan": [
+    "Fix progress bar: change event.total to event.current in analyzing_job case",
+    "Add cache-busting headers to search-pill profile fetches",
+    "Clear continuation token when search profile is saved",
+    "Add visual confirmation in profile editors that changes apply to next search",
+    "Re-fetch search profile on resume (both regular and PF)",
+    "Rebuild PF title/industry chains from refreshed profile on resume",
+    "Only auto-fill empty fields during CV extraction",
+    "Skip deduplication for PF mode to preserve title ladder",
+    "Add connection interrupted modal with recovered results",
+    "PF loop exits immediately when finish_now=true",
+    "Check job URLs for ATS trackers (not just description/spec)",
+    "Show filtered summary at PF pauses and regular search pause",
+    "Add bebee.com related domains to blocklist"
+  ],
+  "actions": [
+    {
+      "step": 1,
+      "description": "Fixed progress bar in dashboard/page.tsx:544 - changed event.total to event.current",
+      "files": ["src/app/dashboard/page.tsx"],
+      "done": true,
+      "key_decision": "Used event.current from API response instead of event.total for incremental display"
+    },
+    {
+      "step": 2,
+      "description": "Added cache-busting headers to search-pill.tsx and mobile-search-pill.tsx",
+      "files": ["src/components/dashboard/search-pill.tsx", "src/components/dashboard/mobile/mobile-search-pill.tsx"],
+      "done": true,
+      "key_decision": "Added Cache-Control: no-cache, no-store, must-revalidate headers to Supabase queries"
+    },
+    {
+      "step": 3,
+      "description": "Clear continuation token on profile save via fmsg-profile-saved event + localStorage",
+      "files": ["src/components/dashboard/dashboard-layout.tsx", "src/app/dashboard/page.tsx"],
+      "done": true,
+      "key_decision": "Custom event + localStorage to clear stale continuation token when profile data changes"
+    },
+    {
+      "step": 4,
+      "description": "Add visual confirmation 'Saved — changes apply to your next search' in profile editors",
+      "files": ["src/components/dashboard/profile-onboarding-modal.tsx", "src/components/dashboard/mobile/mobile-profile-onboarding-sheet.tsx", "src/components/landing/liquid-glass.css"],
+      "done": true,
+      "key_decision": "Added animate-fade-in CSS and success message state in both desktop and mobile editors"
+    },
+    {
+      "step": 5,
+      "description": "Re-fetch search profile on resume (both regular and PF searches)",
+      "files": ["src/app/api/search/route.ts"],
+      "done": true,
+      "key_decision": "After decoding continuation token, re-fetch search_profiles to get latest job_titles, industry steps, cv_variations"
+    },
+    {
+      "step": 6,
+      "description": "Rebuild PF title/industry chains from refreshed profile on resume",
+      "files": ["src/app/api/search/route.ts"],
+      "done": true,
+      "key_decision": "When resuming PF, rebuild titleChainSteps and industryChain from refreshed state.titles and state.industryStep1-5 instead of using stale token data"
+    },
+    {
+      "step": 7,
+      "description": "CV extraction only auto-fills empty fields (job titles, location, industry, industry ladder steps)",
+      "files": ["src/components/dashboard/profile-onboarding-modal.tsx", "src/components/dashboard/mobile/mobile-profile-onboarding-sheet.tsx"],
+      "done": true,
+      "key_decision": "Check if field is empty/default before overwriting with extracted data"
+    },
+    {
+      "step": 8,
+      "description": "Skip deduplication for PF mode to preserve title ladder (each round gets one title)",
+      "files": ["src/app/api/search/route.ts"],
+      "done": true,
+      "key_decision": "Only deduplicate for regular search rotation; PF uses all 5 titles for 5-round broadening"
+    },
+    {
+      "step": 9,
+      "description": "Add connection interrupted modal with recovered results for Vercel 300s timeout",
+      "files": ["src/app/dashboard/page.tsx"],
+      "done": true,
+      "key_decision": "Fetch partial results from DB on stream end, show modal with recovered count and OK button"
+    },
+    {
+      "step": 10,
+      "description": "PF loop exits immediately when finish_now=true (Show results now)",
+      "files": ["src/app/api/search/route.ts"],
+      "done": true,
+      "key_decision": "Added && !finish_now to for loop condition"
+    },
+    {
+      "step": 11,
+      "description": "ATS tracker detection now checks job URLs (not just description/spec)",
+      "files": ["src/app/api/search/route.ts"],
+      "done": true,
+      "key_decision": "Added URL checking to both pre-filter and post-scrape filter using buildJobUrl()"
+    },
+    {
+      "step": 12,
+      "description": "Show filtered summary at actionable pauses (regular search pause, PF round pauses, timeout, finish_now)",
+      "files": ["src/app/api/search/route.ts"],
+      "done": true,
+      "key_decision": "Send filtered_summary at pause points only, not during active rounds"
+    },
+    {
+      "step": 13,
+      "description": "Add bebee.com related domains to blocklist",
+      "files": ["src/lib/job-filter.ts"],
+      "done": true,
+      "key_decision": "Added 8 regional bebee subdomains (co.za, co.uk, fr, it, es, de, com.au, ca)"
+    }
+  ],
+  "key_decisions": [
+    "Root cause for profile persistence: continuation token cached stale profile state when user paused search → edited profile → continued",
+    "Fix strategy for profile: clear continuation token on profile save via custom event + localStorage, re-fetch on resume",
+    "Progress bar bug: dashboard/page.tsx:544 used event.total for both current and total",
+    "PF title ladder broken by deduplicateTitles collapsing 5 distinct titles into 1 broad title",
+    "ATS tracker #J-18808-Ljbffr was in job URL, not description/spec",
+    "Filtered summary should only show at pause points where user can act, not during active rounds"
+  ],
+  "files_modified": [
+    "src/app/dashboard/page.tsx",
+    "src/components/dashboard/search-pill.tsx",
+    "src/components/dashboard/mobile/mobile-search-pill.tsx",
+    "src/components/dashboard/dashboard-layout.tsx",
+    "src/components/dashboard/profile-onboarding-modal.tsx",
+    "src/components/dashboard/mobile/mobile-profile-onboarding-sheet.tsx",
+    "src/components/landing/liquid-glass.css",
+    "src/app/api/search/route.ts",
+    "src/lib/job-filter.ts"
+  ],
+  "done": true,
+  "user_confirmed": true,
+  "confirmation_timestamp": "2026-08-08T18:30:00.000Z"
+}
