@@ -1367,7 +1367,9 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      titles = await deduplicateTitles(titles);
+      if (!pf_mode) {
+        titles = await deduplicateTitles(titles);
+      }
 
       if (titles.length === 0) {
         return NextResponse.json({ results: [], code: "NO_TITLES", message: "Add job titles to your search profile first." });
