@@ -1815,8 +1815,7 @@ Return ONLY valid JSON (no markdown, no code fences):
             usedQueries.add(fullQuery.toLowerCase());
 
             debugLog(`[PF] Round ${roundNum}/${MAX_ROUNDS}: "${fullQuery}"`);
-            const currentTotalFiltered = pfFilteredCounts.history + pfFilteredCounts.saved + pfFilteredCounts.rejected + pfFilteredCounts.blocked;
-            sendStatus({ type: "pf_round", round: roundNum, max: MAX_ROUNDS, query: fullQuery, progress: Math.min((roundNum / MAX_ROUNDS) * 80, 80), ...(currentTotalFiltered > 0 ? { filtered_summary: pfFilteredCounts } : {}) });
+            sendStatus({ type: "pf_round", round: roundNum, max: MAX_ROUNDS, query: fullQuery, progress: Math.min((roundNum / MAX_ROUNDS) * 80, 80) });
 
             if (pfRoundsExecuted > 0 && lastAITier === "openrouter") {
               await sleep(3000);
