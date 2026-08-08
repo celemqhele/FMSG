@@ -1625,10 +1625,12 @@ Return ONLY valid JSON (no markdown, no code fences):
             }
 
             // Pause after finding results — user clicks Continue to start AI scoring
+            const totalFiltered = state.dedupSets.history.size + state.dedupSets.saved.size + state.dedupSets.rejected.size + state.dedupSets.blocked.size;
             sendComplete({
               type: "pause",
               message: `Found ${rawJobs.length} matching results. Ready to score?`,
               progress: 20,
+              ...(totalFiltered > 0 ? { filtered_summary: { history: state.dedupSets.history.size, saved: state.dedupSets.saved.size, rejected: state.dedupSets.rejected.size, blocked: state.dedupSets.blocked.size } } : {}),
                 continuation: signContinuationToken({
                   mode: "normal",
                   rawJobs,
@@ -1758,10 +1760,12 @@ Return ONLY valid JSON (no markdown, no code fences):
               pfAborted = true;
               
               // Immediate checkpoint and pause
+              const timeoutTotalFiltered = pfFilteredCounts.history + pfFilteredCounts.saved + pfFilteredCounts.rejected + pfFilteredCounts.blocked;
               sendComplete({
                 type: "pause",
                 message: `Timeout approaching, saving progress at round ${roundNum - 1}.`,
                 progress: Math.min(((roundNum - 1) / MAX_ROUNDS) * 80, 80),
+                ...(timeoutTotalFiltered > 0 ? { filtered_summary: pfFilteredCounts } : {}),
                 continuation: signContinuationToken({
                   mode: "pf",
                   nextRoundIndex: i,
@@ -1811,7 +1815,8 @@ Return ONLY valid JSON (no markdown, no code fences):
             usedQueries.add(fullQuery.toLowerCase());
 
             debugLog(`[PF] Round ${roundNum}/${MAX_ROUNDS}: "${fullQuery}"`);
-            sendStatus({ type: "pf_round", round: roundNum, max: MAX_ROUNDS, query: fullQuery, progress: Math.min((roundNum / MAX_ROUNDS) * 80, 80) });
+            const currentTotalFiltered = pfFilteredCounts.history + pfFilteredCounts.saved + pfFilteredCounts.rejected + pfFilteredCounts.blocked;
+            sendStatus({ type: "pf_round", round: roundNum, max: MAX_ROUNDS, query: fullQuery, progress: Math.min((roundNum / MAX_ROUNDS) * 80, 80), ...(currentTotalFiltered > 0 ? { filtered_summary: pfFilteredCounts } : {}) });
 
             if (pfRoundsExecuted > 0 && lastAITier === "openrouter") {
               await sleep(3000);
@@ -1865,10 +1870,12 @@ Return ONLY valid JSON (no markdown, no code fences):
 
               const isLastRound = i >= MAX_ROUNDS - 1;
               if (!isLastRound && !hardStop) {
+                const roundTotalFiltered = pfFilteredCounts.history + pfFilteredCounts.saved + pfFilteredCounts.rejected + pfFilteredCounts.blocked;
                 sendComplete({
                   type: "pause",
                   message: `Round ${roundNum} of ${MAX_ROUNDS} complete, ${allResults.length} results so far. Continue to round ${roundNum + 1}?`,
                   progress: Math.min((roundNum / MAX_ROUNDS) * 80, 80),
+                  ...(roundTotalFiltered > 0 ? { filtered_summary: pfFilteredCounts } : {}),
                   continuation: signContinuationToken({
                     mode: "pf",
                     nextRoundIndex: i + 1,
