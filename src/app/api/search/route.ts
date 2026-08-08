@@ -1725,28 +1725,36 @@ Return ONLY valid JSON (no markdown, no code fences):
             pfBannedCompanies = state.bannedCompanies || [];
             pfDedupSets = state.dedupSets;
 
-            // Rebuild title ladder and industry chain from refreshed profile data
-            // (in case profile was edited while search was paused)
-            titleChainSteps = Array.from({ length: MAX_ROUNDS }, (_, i) => {
-              const title = pfTitles[i]?.trim();
-              return title ? [title] : [];
-            });
-            for (let s = 0; s < MAX_ROUNDS; s++) {
-              if (titleChainSteps[s].length === 0) titleChainSteps[s] = [...pfTitles];
-            }
-            industryChain = [
-              state.industryStep1 || pfIndustry || "",
-              state.industryStep2 || pfIndustry || "",
-              state.industryStep3 || pfIndustry || "",
-              state.industryStep4 || pfIndustry || "",
-              state.industryStep5 || pfIndustry || "",
-            ];
-            debugLog(`[PF] Resuming at round ${startRoundIndex + 1}/${MAX_ROUNDS}, ${allResults.length} results so far`);
-            debugLog(`[PF] Rebuilt title ladder: ${pfTitles.join(" > ")}`);
-            debugLog(`[PF] Rebuilt industry ladder: ${industryChain.join(" > ")}`);
-            if (finish_now) {
-              hardStop = true;
-              debugLog("[PF] finish_now flag set, will finalize after current round");
+            // Check if we're resuming at the scoring phase of a round (after search phase pause)
+            if (state.pfScoringPhase) {
+              debugLog(`[PF] Resuming at scoring phase of round ${state.pfRoundNum}`);
+              // Use the already fetched filtered results
+              const filtered = state.pfFiltered;
+              // Continue to scoring below...
+            } else {
+              // Rebuild title ladder and industry chain from refreshed profile data
+              // (in case profile was edited while search was paused)
+              titleChainSteps = Array.from({ length: MAX_ROUNDS }, (_, i) => {
+                const title = pfTitles[i]?.trim();
+                return title ? [title] : [];
+              });
+              for (let s = 0; s < MAX_ROUNDS; s++) {
+                if (titleChainSteps[s].length === 0) titleChainSteps[s] = [...pfTitles];
+              }
+              industryChain = [
+                state.industryStep1 || pfIndustry || "",
+                state.industryStep2 || pfIndustry || "",
+                state.industryStep3 || pfIndustry || "",
+                state.industryStep4 || pfIndustry || "",
+                state.industryStep5 || pfIndustry || "",
+              ];
+              debugLog(`[PF] Resuming at round ${startRoundIndex + 1}/${MAX_ROUNDS}, ${allResults.length} results so far`);
+              debugLog(`[PF] Rebuilt title ladder: ${pfTitles.join(" > ")}`);
+              debugLog(`[PF] Rebuilt industry ladder: ${industryChain.join(" > ")}`);
+              if (finish_now) {
+                hardStop = true;
+                debugLog("[PF] finish_now flag set, will finalize after current round");
+              }
             }
           } else {
             pfTitles = state.titles;
@@ -1855,12 +1863,63 @@ Return ONLY valid JSON (no markdown, no code fences):
             }
 
             try {
-              const pfHiddenKeys = state.hiddenJobKeys ? new Set<string>(state.hiddenJobKeys as string[]) : undefined;
-              const filtered = await fetchAndFilterJobs(
-                fullQuery, pfLocation, user, searchId,
-                pfBannedJobs, pfBannedCompanies, dataClient, state.profile_id, sendStatus, roundNum,
-                pfHiddenKeys, state.maxAgeDays, 5, platforms
-              );
+              // Check if we're resuming at scoring phase (pfScoringPhase = true)
+              let filtered;
+              if (state.pfScoringPhase) {
+                debugLog(`[PF] Round ${roundNum}: Resuming at scoring phase with ${state.pfFiltered?.rawJobs?.length || 0} pre-fetched jobs`);
+                filtered = state.pfFiltered;
+                // Clear the scoring phase flag so next iteration runs normally
+              } else {
+                const pfHiddenKeys = state.hiddenJobKeys ? new Set<string>(state.hiddenJobKeys as string[]) : undefined;
+                filtered = await fetchAndFilterJobs(
+                  fullQuery, pfLocation, user, searchId,
+                  pfBannedJobs, pfBannedCompanies, dataClient, state.profile_id, sendStatus, roundNum,
+                  pfHiddenKeys, state.maxAgeDays, 5, platforms
+                );
+              }
+
+              // Pause after search phase - similar to regular search "Found X matching results. Ready to score?"
+              if (filtered.rawJobs.length > 0) {
+                const searchPhaseFiltered = filtered.rawJobs.length;
+                sendComplete({
+                  type: "pause",
+                  message: `Found ${searchPhaseFiltered} matching results for round ${roundNum}. Ready to score?`,
+                  progress: Math.min(((roundNum - 1) / MAX_ROUNDS) * 80 + 5, 80),
+                  continuation: signContinuationToken({
+                    mode: "pf",
+                    nextRoundIndex: i,
+                    allResults,
+                    seenUrls: [...seenUrls],
+                    pfFilteredCounts,
+                    pfRoundsExecuted,
+                    pfAborted,
+                    searchId,
+                    titles: pfTitles,
+                    titleChainSteps,
+                    industryChain,
+                    profileLocation: pfLocation,
+                    profileIndustry: pfIndustry,
+                    cvTexts: pfCvTexts,
+                    bannedJobs: pfBannedJobs,
+                    bannedCompanies: pfBannedCompanies,
+                    dedupSets: {
+                      history: pfDedupSets.history ? [...pfDedupSets.history] : [],
+                      saved: pfDedupSets.saved ? [...pfDedupSets.saved] : [],
+                      blocked: pfDedupSets.blocked ? [...pfDedupSets.blocked] : [],
+                      rejected: pfDedupSets.rejected ? [...pfDedupSets.rejected] : [],
+                    },
+                    maxAgeDays: state.maxAgeDays,
+                    profile_id: state.profile_id,
+                    // Mark that we're at the scoring phase of this round
+                    pfScoringPhase: true,
+                    pfRoundNum: roundNum,
+                    pfQuery: fullQuery,
+                    pfFiltered: filtered,
+                  }, SUPABASE_SERVICE_KEY),
+                });
+                writer.close();
+                return;
+              }
 
               let roundResults: JobRow[] = [];
               let roundFilteredCounts = { history: 0, saved: 0, rejected: 0, blocked: 0 };
