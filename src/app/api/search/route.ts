@@ -1748,7 +1748,7 @@ Return ONLY valid JSON (no markdown, no code fences):
           const usedQueries = new Set<string>();
           const pfStartTime = Date.now();
 
-          for (let i = startRoundIndex; i < MAX_ROUNDS; i++) {
+          for (let i = startRoundIndex; i < MAX_ROUNDS && !finish_now; i++) {
             const roundNum = i + 1;
 
             if (Date.now() - pfStartTime > 270_000) {
