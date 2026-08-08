@@ -1,5 +1,13 @@
 export const BLACKLISTED_DOMAINS = [
   'bebee.com',
+  'bebee.co.za',
+  'bebee.co.uk',
+  'bebee.fr',
+  'bebee.it',
+  'bebee.es',
+  'bebee.de',
+  'bebee.com.au',
+  'bebee.ca',
   'jobleads.com',
   'jobleads.co.za',
   'jobleads.co.uk',
