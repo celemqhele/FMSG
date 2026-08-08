@@ -1193,6 +1193,29 @@ export async function POST(request: NextRequest) {
       if (state.searchId) {
         searchId = state.searchId;
       }
+
+      // Re-fetch search profile to get latest job_titles, industry steps, cv_variations
+      // This ensures profile edits are reflected when resuming a paused search
+      if (state.profile_id) {
+        const { data: searchProfile } = await dataClient
+          .from("search_profiles")
+          .select("job_titles, location, industry, industry_step_1, industry_step_2, industry_step_3, industry_step_4, industry_step_5, cv_variations")
+          .eq("id", state.profile_id)
+          .eq("user_id", user.id)
+          .maybeSingle();
+        if (searchProfile?.job_titles?.length) {
+          state.titles = searchProfile.job_titles;
+          state.profileLocation = searchProfile.location ?? "";
+          state.profileIndustry = searchProfile.industry ?? "";
+          state.cvVariations = searchProfile.cv_variations ?? [];
+          state.industryStep1 = (searchProfile as any).industry_step_1 ?? "";
+          state.industryStep2 = (searchProfile as any).industry_step_2 ?? "";
+          state.industryStep3 = (searchProfile as any).industry_step_3 ?? "";
+          state.industryStep4 = (searchProfile as any).industry_step_4 ?? "";
+          state.industryStep5 = (searchProfile as any).industry_step_5 ?? "";
+          debugLog(`[SEARCH] Refreshed search profile on resume: ${state.titles.length} titles, industry steps updated`);
+        }
+      }
     } else {
       // Get profile
       const { data: profile, error: profileErr } = await dataClient
