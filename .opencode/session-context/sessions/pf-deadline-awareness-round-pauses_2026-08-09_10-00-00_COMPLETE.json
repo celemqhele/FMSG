@@ -1,0 +1,95 @@
+{
+  "id": "pf-deadline-awareness-round-pauses_2026-08-09_10-00-00",
+  "status": "COMPLETE",
+  "created": "2026-08-09T10:00:00.000Z",
+  "updated": "2026-08-09T14:30:00.000Z",
+  "objective": "Fix Vercel 300s timeout handling for PF searches by adding deadline awareness throughout entire pipeline and add search phase pauses between PF rounds",
+  "plan": [
+    "Reduce PF timeout threshold from 270s to 240s (4 min) to ensure pause fires before Vercel 300s limit",
+    "Add deadline parameter to fetchAndFilterJobs and propagate through entire pipeline",
+    "Add deadline checks at pipeline phase boundaries: after parallel search, during spec scraping, in scraping loops",
+    "Propagate deadline to all source functions: BrightData, Ditto, Workday, Jina Bing",
+    "Add search phase pause between PF rounds: 'Found X matching results for round N. Ready to score?'",
+    "On resume, skip fetchAndFilterJobs and use pre-fetched results (pfScoringPhase flag)",
+    "Run typecheck and build",
+    "Commit and push to production"
+  ],
+  "actions": [
+    {
+      "step": 1,
+      "description": "Reduced PF timeout threshold from 270s to 240s in route.ts",
+      "files": ["src/app/api/search/route.ts"],
+      "done": true,
+      "key_decision": "4 min threshold gives 60s buffer before Vercel 300s limit"
+    },
+    {
+      "step": 2,
+      "description": "Added deadline parameter to fetchAndFilterJobs with checks at pipeline phase boundaries",
+      "files": ["src/app/api/search/route.ts"],
+      "done": true,
+      "key_decision": "Checks after parallel search, during spec scraping loop, before Workday detail fetch"
+    },
+    {
+      "step": 3,
+      "description": "Added deadline checks inside AI scoring loop (screenAndAnalyze)",
+      "files": ["src/app/api/search/route.ts"],
+      "done": true,
+      "key_decision": "Returns early with nextOffset if deadline exceeded mid-job"
+    },
+    {
+      "step": 4,
+      "description": "Added timeout check in regular search continuation path",
+      "files": ["src/app/api/search/route.ts"],
+      "done": true,
+      "key_decision": "240s deadline passed to continuation calls"
+    },
+    {
+      "step": 5,
+      "description": "Propagated deadline to all source functions with card-loop checks",
+      "files": ["src/lib/serpapi.ts", "src/lib/workday.ts"],
+      "done": true,
+      "key_decision": "BrightData, Ditto, Workday, Jina Bing all calculate source-specific deadlines and check in card loops"
+    },
+    {
+      "step": 6,
+      "description": "Added search phase pause between PF rounds",
+      "files": ["src/app/api/search/route.ts"],
+      "done": true,
+      "key_decision": "Pause after fetchAndFilterJobs with 'Found X matching results for round N. Ready to score?' - user controls transition to scoring"
+    },
+    {
+      "step": 7,
+      "description": "Added pfScoringPhase flag to skip fetchAndFilterJobs on resume",
+      "files": ["src/app/api/search/route.ts"],
+      "done": true,
+      "key_decision": "Stores pre-fetched results in continuation token, skips search phase on resume"
+    },
+    {
+      "step": 8,
+      "description": "Ran npx tsc --noEmit and npm run build - both passed",
+      "files": [],
+      "done": true
+    },
+    {
+      "step": 9,
+      "description": "Committed and pushed to production branch",
+      "files": [],
+      "done": true
+    }
+  ],
+  "key_decisions": [
+    "Pipeline takes ~210s/round (search 30s + Ditto 87s + BrightData 30s + Workday 3s + AI 120s) - deadline checks only covered AI phase before",
+    "240s threshold gives 60s buffer before Vercel 300s limit, ensures pause event fires",
+    "Deadline checks at phase boundaries: after parallel search, during spec scraping, in BrightData/Ditto card loops, after Workday tenant search",
+    "Search phase pause adds user control between fetchAndFilterJobs and screenAndAnalyze for each round",
+    "pfScoringPhase flag in continuation token enables skipping fetchAndFilterJobs on resume"
+  ],
+  "files_modified": [
+    "src/app/api/search/route.ts",
+    "src/lib/serpapi.ts",
+    "src/lib/workday.ts"
+  ],
+  "done": true,
+  "user_confirmed": true,
+  "confirmation_timestamp": "2026-08-09T14:30:00.000Z"
+}

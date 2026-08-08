@@ -1000,11 +1000,24 @@ ${blacklistInfo}${bannedInfo}${dateConstraintInfo}${locationConstraintInfo}`;
   onStatus?.({ type: "screening_job", current: 0, total: rawJobs.length, progress: 25 });
   await sleep(80);
 
-  for (let i = offset; i < rawJobs.length; i++) {
+for (let i = offset; i < rawJobs.length; i++) {
     // Check deadline before processing each job (allows early exit before Vercel 300s timeout)
     if (deadline && Date.now() > deadline) {
       debugLog(`[SEARCH] Deadline reached at job ${i + 1}/${rawJobs.length}, pausing with ${rawJobs.length - i} jobs remaining`);
       return { results: outputs, queryUsed: query, filteredCounts, nextOffset: i };
+    }
+
+    // Screening checkpoint every 30 jobs to show progress and prevent timeout
+    if (i > 0 && i % 30 === 0 && i < rawJobs.length) {
+      debugLog(`[SEARCH] 30-screening checkpoint at job ${i}/${rawJobs.length}, sending progress update`);
+      onStatus?.({
+        type: "screening_checkpoint",
+        current: i,
+        total: rawJobs.length,
+        progress: Math.min(25 + (i / rawJobs.length) * 55, 80),
+        message: `Still screening... ${i} of ${rawJobs.length} jobs analyzed. Hold tight.`,
+      });
+      debugLog(`[SEARCH] 30-screening checkpoint sent at job ${i}`);
     }
 
     const job = rawJobs[i];
@@ -1725,12 +1738,18 @@ Return ONLY valid JSON (no markdown, no code fences):
             pfBannedCompanies = state.bannedCompanies || [];
             pfDedupSets = state.dedupSets;
 
+            debugLog(`[PF] Resuming continuation: mode=pf, startRoundIndex=${startRoundIndex}, pfRoundsExecuted=${pfRoundsExecuted}, allResults.length=${allResults.length}, pfScoringPhase=${state.pfScoringPhase}, pfRoundNum=${state.pfRoundNum}`);
+
             // Check if we're resuming at the scoring phase of a round (after search phase pause)
             if (state.pfScoringPhase) {
-              debugLog(`[PF] Resuming at scoring phase of round ${state.pfRoundNum}`);
-              // Use the already fetched filtered results
-              const filtered = state.pfFiltered;
-              // Continue to scoring below...
+              debugLog(`[PF] Resuming at SCORING phase of round ${state.pfRoundNum} (pfScoringPhase=true)`);
+              if (!state.pfFiltered || !state.pfFiltered.rawJobs || state.pfFiltered.rawJobs.length === 0) {
+                debugLog(`[PF] ERROR: pfScoringPhase=true but pfFiltered is missing or empty! state.pfFiltered=${JSON.stringify(state.pfFiltered)}`);
+                // Fall through to normal flow
+              } else {
+                debugLog(`[PF] Using pre-fetched filtered results: ${state.pfFiltered.rawJobs.length} raw jobs`);
+                // Continue to scoring below with the pre-fetched results
+              }
             } else {
               // Rebuild title ladder and industry chain from refreshed profile data
               // (in case profile was edited while search was paused)
@@ -1866,21 +1885,32 @@ Return ONLY valid JSON (no markdown, no code fences):
               // Check if we're resuming at scoring phase (pfScoringPhase = true)
               let filtered;
               if (state.pfScoringPhase) {
-                debugLog(`[PF] Round ${roundNum}: Resuming at scoring phase with ${state.pfFiltered?.rawJobs?.length || 0} pre-fetched jobs`);
+                debugLog(`[PF] Round ${roundNum}: Resuming at SCORING phase - pfScoringPhase=${state.pfScoringPhase}, pfRoundNum=${state.pfRoundNum}, pfFiltered exists=${!!state.pfFiltered}, rawJobs=${state.pfFiltered?.rawJobs?.length || 0}`);
+                if (!state.pfFiltered || !state.pfFiltered.rawJobs || state.pfFiltered.rawJobs.length === 0) {
+                  debugLog(`[PF] ERROR: pfScoringPhase=true but pfFiltered is missing/empty! Sending error to client.`);
+                  writer.send({ type: "error", code: "PF_STATE_ERROR", message: "Invalid search state: missing pre-fetched results. Please start a new search.", progress: 0 });
+                  writer.close();
+                  return;
+                }
                 filtered = state.pfFiltered;
+                debugLog(`[PF] Using pre-fetched filtered results: ${filtered.rawJobs.length} raw jobs, ${filtered.jobSpecs?.length || 0} specs, ${filtered.jobUrls?.length || 0} urls`);
                 // Clear the scoring phase flag so next iteration runs normally
+                state.pfScoringPhase = false;
               } else {
+                debugLog(`[PF] Round ${roundNum}: Starting SEARCH phase (pfScoringPhase=false)`);
                 const pfHiddenKeys = state.hiddenJobKeys ? new Set<string>(state.hiddenJobKeys as string[]) : undefined;
                 filtered = await fetchAndFilterJobs(
                   fullQuery, pfLocation, user, searchId,
                   pfBannedJobs, pfBannedCompanies, dataClient, state.profile_id, sendStatus, roundNum,
                   pfHiddenKeys, state.maxAgeDays, 5, platforms
                 );
+                debugLog(`[PF] Round ${roundNum}: fetchAndFilterJobs returned ${filtered.rawJobs?.length || 0} raw jobs`);
               }
 
               // Pause after search phase - similar to regular search "Found X matching results. Ready to score?"
               if (filtered.rawJobs.length > 0) {
                 const searchPhaseFiltered = filtered.rawJobs.length;
+                debugLog(`[PF] Round ${roundNum}: Sending SEARCH PHASE PAUSE - ${searchPhaseFiltered} jobs found, waiting for user to click Continue`);
                 sendComplete({
                   type: "pause",
                   message: `Found ${searchPhaseFiltered} matching results for round ${roundNum}. Ready to score?`,
@@ -1926,6 +1956,7 @@ Return ONLY valid JSON (no markdown, no code fences):
 
               if (filtered.rawJobs.length > 0) {
                 const roundDeadline = Date.now() + 240_000;
+                debugLog(`[PF] Round ${roundNum}: Starting SCORING phase with ${filtered.rawJobs.length} jobs, deadline in ${Math.round((roundDeadline - Date.now()) / 1000)}s`);
                 const result = await screenAndAnalyze(
                   filtered.rawJobs, filtered.jobSpecs, filtered.jobUrls, filtered.queryUsed,
                   pfLocation, pfIndustry, pfTitles, pfCvTexts,
@@ -1938,6 +1969,7 @@ Return ONLY valid JSON (no markdown, no code fences):
                 );
                 roundResults = result.results;
                 roundFilteredCounts = result.filteredCounts;
+                debugLog(`[PF] Round ${roundNum}: screenAndAnalyze completed - ${roundResults.length} scored, filtered: H=${roundFilteredCounts.history} S=${roundFilteredCounts.saved} R=${roundFilteredCounts.rejected} B=${roundFilteredCounts.blocked}`);
               }
 
               pfFilteredCounts.history += roundFilteredCounts.history;

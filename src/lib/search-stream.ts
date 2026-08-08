@@ -6,6 +6,7 @@ export type SearchEvent =
   | { type: "analyzing_job"; title: string; company: string; current: number; total: number; progress: number }
   | { type: "almost_done"; progress: number }
   | { type: "pf_round"; round: number; max: number; query: string; progress: number }
+  | { type: "screening_checkpoint"; current: number; total: number; progress: number; message: string }
   | { type: "complete"; results: unknown[]; progress: number; pf_mode?: boolean; pf_rounds?: number; message?: string; filtered_summary?: FilteredSummary; balances?: { search: number; cv: number; pf: number; has_searched: boolean }; plan?: string; pf_tiers?: { hire: number; interview: number; reject: number }; pf_summary?: { totalFound: number; highCount: number; midCount: number; lowCount: number; roundsExecuted: number } }
   | { type: "error"; code: string; message: string; progress: number }
   | { type: "filtered_summary"; history: number; saved: number; rejected: number; blocked: number; progress: number }

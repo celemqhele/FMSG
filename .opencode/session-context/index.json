@@ -20,6 +20,16 @@
       "tags": ["search", "profile", "pf", "bug-fix", "persistence", "ats", "connection-timeout", "blocklist"],
       "summary": "Fixed 13 issues: search profile persistence, progress bar, PF resume with fresh profile, CV extraction, PF title ladder, connection timeout modal, PF show results now, ATS URL tracking, filtered summary pauses, bebee blocklist",
       "embedding": null
+    },
+    {
+      "id": "pf-deadline-awareness-round-pauses_2026-08-09_10-00-00",
+      "file": "sessions/pf-deadline-awareness-round-pauses_2026-08-09_10-00-00_COMPLETE.json",
+      "status": "COMPLETE",
+      "created": "2026-08-09T10:00:00.000Z",
+      "updated": "2026-08-09T14:30:00.000Z",
+      "tags": ["pf", "deadline", "timeout", "pipeline", "vercel", "scraping", "ai-scoring"],
+      "summary": "Added deadline awareness throughout entire pipeline (240s threshold), added search phase pauses between PF rounds with user confirmation",
+      "embedding": null
     }
   ]
 }

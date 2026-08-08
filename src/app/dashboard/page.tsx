@@ -127,6 +127,7 @@ export default function DashboardPage() {
   const [pfModalOpen, setPfModalOpen] = useState(false);
   const [showConnectionInterrupted, setShowConnectionInterrupted] = useState(false);
   const [connectionInterruptedMounted, setConnectionInterruptedMounted] = useState(false);
+  const [screeningCheckpoint, setScreeningCheckpoint] = useState<{ current: number; total: number; message: string } | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [resultMessage, setResultMessage] = useState("");
   const [statusCompleted, setStatusCompleted] = useState<string[]>([]);
@@ -609,6 +610,17 @@ export default function DashboardPage() {
               });
               currentStatusActive = `Analysing fit for: ${event.title} at ${event.company}`;
               setStatusActive(currentStatusActive);
+              setProgress(event.progress ?? 70);
+              break;
+
+            case "screening_checkpoint":
+              // Show a temporary checkpoint notification without pausing the search
+              setScreeningCheckpoint({
+                current: event.current,
+                total: event.total,
+                message: event.message,
+              });
+              // Update progress but don't stop searching
               setProgress(event.progress ?? 70);
               break;
 
@@ -1190,6 +1202,36 @@ export default function DashboardPage() {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Screening Checkpoint Notification */}
+      {screeningCheckpoint && (
+        <div className="fixed bottom-6 right-6 z-[80] transition-opacity duration-300">
+          <div className="bg-white border border-gray-200 rounded-xl p-4 max-w-sm shadow-xl animate-slide-in">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-full bg-blue-500/10 flex items-center justify-center flex-shrink-0">
+                <span className="text-blue-500 text-xl">⏳</span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <h4 className="text-sm font-semibold text-gray-900">Still Screening...</h4>
+                <p className="text-sm text-gray-500 mt-1">{screeningCheckpoint.message}</p>
+                <div className="mt-2 text-xs text-gray-400">
+                  {screeningCheckpoint.current} of {screeningCheckpoint.total} jobs analyzed
+                </div>
+              </div>
+              <button
+                onClick={() => setScreeningCheckpoint(null)}
+                className="text-gray-400 hover:text-gray-600 transition-colors p-1"
+                aria-label="Dismiss"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="mt-2 h-0.5 bg-blue-500 animate-progress-bar" />
           </div>
         </div>
       )}
