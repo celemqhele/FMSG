@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "sessions": [
+    {
+      "id": "search-profile-fix_2026-08-08_14-30-00",
+      "file": "sessions/search-profile-fix_2026-08-08_14-30-00_COMPLETE.json",
+      "status": "COMPLETE",
+      "created": "2026-08-08T14:30:00.000Z",
+      "updated": "2026-08-08T15:45:00.000Z",
+      "tags": ["search", "profile", "bug-fix", "persistence"],
+      "summary": "Fixed search profile changes not persisting + progress bar incremental count",
+      "embedding": null
+    }
+  ]
+}

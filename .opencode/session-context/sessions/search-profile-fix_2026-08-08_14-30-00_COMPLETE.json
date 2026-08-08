@@ -1,0 +1,74 @@
+{
+  "id": "search-profile-fix_2026-08-08_14-30-00",
+  "status": "COMPLETE",
+  "created": "2026-08-08T14:30:00.000Z",
+  "updated": "2026-08-08T15:45:00.000Z",
+  "objective": "Fix two bugs: (1) search profile title/industry changes not reflecting in searches, (2) progress bar showing '14 of 14' instead of incremental count",
+  "plan": [
+    "Fix progress bar: change event.total to event.current in analyzing_job case",
+    "Add cache-busting headers to search-pill profile fetches",
+    "Clear continuation token when search profile is saved",
+    "Add visual confirmation in profile editors",
+    "Run typecheck and build",
+    "Commit and push to production"
+  ],
+  "actions": [
+    {
+      "step": 1,
+      "description": "Fixed progress bar in dashboard/page.tsx:544",
+      "files": ["src/app/dashboard/page.tsx"],
+      "done": true,
+      "key_decision": "Used event.current from API response instead of event.total"
+    },
+    {
+      "step": 2,
+      "description": "Added cache-busting headers to search-pill.tsx and mobile-search-pill.tsx",
+      "files": ["src/components/dashboard/search-pill.tsx", "src/components/dashboard/mobile/mobile-search-pill.tsx"],
+      "done": true,
+      "key_decision": "Added Cache-Control: no-cache, no-store, must-revalidate headers to Supabase queries"
+    },
+    {
+      "step": 3,
+      "description": "Clear continuation token on profile save via fmsg-profile-saved event",
+      "files": ["src/components/dashboard/dashboard-layout.tsx", "src/app/dashboard/page.tsx"],
+      "done": true,
+      "key_decision": "Custom event + localStorage to clear stale continuation token when profile data changes"
+    },
+    {
+      "step": 4,
+      "description": "Add visual confirmation 'Saved — changes apply to your next search' in profile editors",
+      "files": ["src/components/dashboard/profile-onboarding-modal.tsx", "src/components/dashboard/mobile/mobile-profile-onboarding-sheet.tsx", "src/components/landing/liquid-glass.css"],
+      "done": true,
+      "key_decision": "Added animate-fade-in CSS and success message state in both desktop and mobile editors"
+    },
+    {
+      "step": 5,
+      "description": "Ran npx tsc --noEmit and npm run build - both passed",
+      "files": [],
+      "done": true
+    },
+    {
+      "step": 6,
+      "description": "Committed and pushed to production branch",
+      "files": [],
+      "done": true
+    }
+  ],
+  "key_decisions": [
+    "Root cause: continuation token cached stale profile state when user paused search → edited profile → continued",
+    "Fix strategy: clear continuation token on profile save via custom event + localStorage",
+    "Progress bar bug: dashboard/page.tsx:544 used event.total for both current and total"
+  ],
+  "files_modified": [
+    "src/app/dashboard/page.tsx",
+    "src/components/dashboard/search-pill.tsx",
+    "src/components/dashboard/mobile/mobile-search-pill.tsx",
+    "src/components/dashboard/dashboard-layout.tsx",
+    "src/components/dashboard/profile-onboarding-modal.tsx",
+    "src/components/dashboard/mobile/mobile-profile-onboarding-sheet.tsx",
+    "src/components/landing/liquid-glass.css"
+  ],
+  "done": true,
+  "user_confirmed": true,
+  "confirmation_timestamp": "2026-08-08T15:45:00.000Z"
+}

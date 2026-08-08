@@ -28,3 +28,12 @@ When the user asks to "create a job post", "post a job", "add a job", or "write 
 4. **New board?** Add it to `jobBoards` in `src/data/jobs/categories.ts` (`slug`, `name`, `tagline`, `search: { title, location }`, `jobs`). `search.title`/`search.location` pre-fill the search pill and drive the opt-in live "More jobs like this" search. The route `/jobs/[category]` SSG's any board in `categories.ts`.
 5. **Verify:** `npx tsc --noEmit`, eslint on changed files, `npm run build` (confirms the new card/board is SSG'd).
 6. **Commit + push to `production`** (Vercel auto-deploys), then share the link: `https://findmesomejobs.co.za/jobs/<board>`.
+
+# Session Context Protocol (via session-context skill)
+
+- **On session start**: Skill reads `.opencode/session-context/index.json`, flags any `INCOMPLETE` sessions, loads recent context (last 5).
+- **During session**: New session file created at first user interaction. Key decisions (confirmations, architectural choices, root causes) appended automatically.
+- **On task completion**: When you confirm a fix works, run `session-context:complete <id>` or tell the agent "mark session complete". Skill sets `done: true`, `user_confirmed: true`, updates registry.
+- **Rule 1**: If any prior session is `INCOMPLETE`, skill MUST surface it at session start with summary.
+- **Rule 2**: Skill handles all file I/O for session logging automatically.
+- **Secrets**: API keys, tokens, passwords, emails are auto-redacted before write.
