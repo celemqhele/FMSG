@@ -264,6 +264,7 @@ async function fetchAndFilterJobs(
   maxAgeDays?: number,
   maxPages?: number,
   allowedPlatforms?: string[] | null,
+  deadline?: number,
 ): Promise<{ rawJobs: any[]; jobSpecs: [number, string][]; jobUrls: [number, string][]; queryUsed: string }> {
   function sanitiseLocation(raw: string): string | undefined {
     if (!raw) return undefined;
@@ -326,11 +327,14 @@ async function fetchAndFilterJobs(
         case "webJobs":
           return ["webJobs", withTimeout(searchWebJobs(serpParams), 60_000, "Web Jobs").catch((err) => { console.error(`[PIPELINE] Web Jobs TIMEOUT/FAIL: ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}`); return [] as SerpJob[]; })] as const;
         case "jinaBing":
-          return ["jinaBing", searchJinaBingJobs(serpParams).catch((err) => { console.error(`[PIPELINE] Jina Bing Jobs FAIL: ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}`); return [] as SerpJob[]; })] as const;
+          const jinaBingDeadline = deadline ? deadline - Date.now() : 60_000;
+          return ["jinaBing", searchJinaBingJobs(serpParams, jinaBingDeadline).catch((err) => { console.error(`[PIPELINE] Jina Bing Jobs FAIL: ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}`); return [] as SerpJob[]; })] as const;
         case "ditto":
-          return ["ditto", withTimeout(searchDittoJobs(serpParams), 90_000, "Ditto Jobs").catch((err) => { console.error(`[PIPELINE] Ditto Jobs TIMEOUT/FAIL: ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}`); return [] as SerpJob[]; })] as const;
+          const dittoDeadline = deadline ? deadline - Date.now() : 90_000;
+          return ["ditto", withTimeout(searchDittoJobs(serpParams, dittoDeadline), 90_000, "Ditto Jobs").catch((err) => { console.error(`[PIPELINE] Ditto Jobs TIMEOUT/FAIL: ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}`); return [] as SerpJob[]; })] as const;
         case "workday":
-          return ["workday", withTimeout(searchWorkdayJobs(serpParams), 60_000, "Workday").catch((err) => { console.error(`[PIPELINE] Workday TIMEOUT/FAIL: ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}`); return [] as SerpJob[]; })] as const;
+          const workdayDeadline = deadline ? deadline - Date.now() : 60_000;
+          return ["workday", withTimeout(searchWorkdayJobs(serpParams, workdayDeadline), 60_000, "Workday").catch((err) => { console.error(`[PIPELINE] Workday TIMEOUT/FAIL: ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}`); return [] as SerpJob[]; })] as const;
         default:
           return [key, Promise.resolve([])] as const;
       }
@@ -345,9 +349,16 @@ async function fetchAndFilterJobs(
       }).catch(() => { resultObj[key] = []; });
     });
 
-    const PIPELINE_DEADLINE_MS = 270_000;
-    const deadline = new Promise<void>((resolve) => setTimeout(resolve, PIPELINE_DEADLINE_MS));
-    await Promise.race([Promise.all(sourcePromises), deadline]);
+    // Use passed deadline or default to 270s for backward compatibility
+    const pipelineDeadlineMs = deadline ? (deadline - Date.now()) : 270_000;
+    const pipelineTimeout = new Promise<void>((resolve) => setTimeout(resolve, Math.max(1000, pipelineDeadlineMs)));
+    await Promise.race([Promise.all(sourcePromises), pipelineTimeout]);
+
+    // Check deadline after parallel search phase
+    if (deadline && Date.now() >= deadline) {
+      debugLog(`[PIPELINE] Deadline reached after parallel search, returning early`);
+      return { rawJobs: [], jobSpecs: [], jobUrls: [], queryUsed: query };
+    }
 
     const googleJobs = (resultObj["googleJobs"] ?? []) as SerpJob[];
     const jsearchJobs = (resultObj["jSearch"] ?? []) as SerpJob[];
@@ -628,6 +639,12 @@ async function fetchAndFilterJobs(
   console.log(`[PIPELINE] Filter breakdown: dedup=${dedupCount} → cat=${catFilterRemoved}, loc=${locationFilterRemoved}, blacklist=${blacklistRejected.length}, banned=${bannedRejected.length}, ats=${atsRejected.length}, noUrl=${noUrlRejected.length}, snippet=${snippetRejected.length} → survived=${rawJobs.length}`);
   console.log(`[PIPELINE] Spec assignment: ${rawJobs.length} jobs entering (bing=${rawJobs.filter((j) => j.spec_source === "bing_jobs").length}, fullSpec=${rawJobs.filter((j) => j.hasFullSpec).length})`);
   for (let i = 0; i < rawJobs.length; i++) {
+    // Check deadline before each job's spec scraping
+    if (deadline && Date.now() >= deadline) {
+      debugLog(`[PIPELINE] Deadline reached during spec scraping at job ${i}/${rawJobs.length}, returning early`);
+      return { rawJobs: [], jobSpecs: [], jobUrls: [], queryUsed: query };
+    }
+
     const job = rawJobs[i];
     const jobUrl = buildJobUrl(job);
 
@@ -642,6 +659,10 @@ async function fetchAndFilterJobs(
     if (jobUrl) {
       // Fast-path: Workday CXS API (instant JSON, no browser needed)
       if (job.spec_source === "workday" && (job as any)._workdayTenant && (job as any)._workdayPath) {
+        if (deadline && Date.now() >= deadline) {
+          debugLog(`[PIPELINE] Deadline reached before Workday detail fetch`);
+          break;
+        }
         try {
           specText = await fetchWorkdayDetail((job as any)._workdayTenant as WorkdayTenant, (job as any)._workdayPath as string);
         } catch {}
@@ -653,15 +674,18 @@ async function fetchAndFilterJobs(
           jinaStatus = jina1.status;
           specText = jina1.content;
           if (!specText && JINA_API) {
+            if (deadline && Date.now() >= deadline) break;
             const jina2 = await fetchJinaPage(jobUrl, null);
             jinaStatus = jina2.status;
             specText = jina2.content;
           }
         } catch {}
         if (!specText) {
+          if (deadline && Date.now() >= deadline) break;
           try { specText = await scrapePageBrightData(jobUrl); } catch {}
         }
         if (!specText) {
+          if (deadline && Date.now() >= deadline) break;
           try { specText = await scrapePageApify(jobUrl); } catch {}
         }
       }

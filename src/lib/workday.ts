@@ -210,7 +210,7 @@ async function searchSingleTenant(
   }
 }
 
-export async function searchWorkdayJobs(params: { q: string; location?: string }): Promise<SerpJob[]> {
+export async function searchWorkdayJobs(params: { q: string; location?: string }, deadline?: number): Promise<SerpJob[]> {
   const rl = checkApiLimit("workday");
   if (!rl.allowed) {
     console.warn(`[WORKDAY] RATE LIMITED — ${rl.label}, ${rl.remaining}/${rl.total} remaining`);
@@ -231,6 +231,12 @@ export async function searchWorkdayJobs(params: { q: string; location?: string }
   const results = await Promise.all(
     WORKDAY_TENANTS.map((t) => searchSingleTenant(t, query).catch(() => [] as SerpJob[])),
   );
+
+  // Check deadline after parallel tenant search
+  if (deadline && Date.now() >= deadline) {
+    console.log(`[WORKDAY] Deadline reached after tenant search, returning early`);
+    return results.flat();
+  }
 
   const allJobs = results.flat();
   const elapsed = Date.now() - startTime;

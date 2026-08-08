@@ -485,7 +485,7 @@ const JINA_READER_BASE = "https://r.jina.ai";
 // Uses Jina Reader to scrape Google's Jobs tab directly.
 // Same token pool as Bing scraping — both fail when tokens are exhausted.
 
-export async function searchJinaBingJobs(params: SerpParams): Promise<SerpJob[]> {
+export async function searchJinaBingJobs(params: SerpParams, deadline?: number): Promise<SerpJob[]> {
   const rl = checkApiLimit("bing-jina");
   if (!rl.allowed) {
     console.warn(`[SRC8-JINA-BING] RATE LIMITED — ${rl.label}, ${rl.remaining}/${rl.total} remaining`);
@@ -496,7 +496,7 @@ export async function searchJinaBingJobs(params: SerpParams): Promise<SerpJob[]>
   const location = params.location || "South Africa";
 
   recordApiCall("bing-jina");
-  return tryBrightDataWebJobs(query, location);
+  return tryBrightDataWebJobs(query, location, deadline);
 }
 
 
@@ -677,7 +677,7 @@ function decodeBingRedirect(url: string): string {
   return url;
 }
 
-async function tryBrightDataWebJobs(query: string, location: string): Promise<SerpJob[]> {
+async function tryBrightDataWebJobs(query: string, location: string, deadline?: number): Promise<SerpJob[]> {
   const wsEndpoint = process.env.BRIGHTDATA_API;
   if (!wsEndpoint || !wsEndpoint.startsWith("wss://")) {
     console.warn(`[BRIGHTDATA] SKIP — BRIGHTDATA_API is not a valid WebSocket URL`);
@@ -723,6 +723,11 @@ async function tryBrightDataWebJobs(query: string, location: string): Promise<Se
     const maxCards = Math.min(cardCount, 20);
 
     for (let i = 0; i < maxCards; i++) {
+      // Check deadline before each card
+      if (deadline && Date.now() >= deadline) {
+        console.log(`[BRIGHTDATA] Deadline reached at card ${i + 1}/${maxCards}, stopping early`);
+        break;
+      }
       try {
         await page.evaluate((idx) => {
           const cards = document.querySelectorAll(".jb_jlc");
@@ -861,7 +866,7 @@ function cleanDittoQuery(raw: string): string {
   return q.replace(/\s+/g, " ").trim();
 }
 
-export async function searchDittoJobs(params: SerpParams): Promise<SerpJob[]> {
+export async function searchDittoJobs(params: SerpParams, deadline?: number): Promise<SerpJob[]> {
   const rl = checkApiLimit("ditto");
   if (!rl.allowed) {
     console.warn(`[DITTO] RATE LIMITED — ${rl.label}, ${rl.remaining}/${rl.total} remaining`);
@@ -975,6 +980,11 @@ export async function searchDittoJobs(params: SerpParams): Promise<SerpJob[]> {
     const maxCards = Math.min(cardCount, params.maxCards ?? 20);
 
     for (let i = 0; i < maxCards; i++) {
+      // Check deadline before each card
+      if (deadline && Date.now() >= deadline) {
+        console.log(`[DITTO] Deadline reached at card ${i + 1}/${maxCards}, stopping early`);
+        break;
+      }
       try {
         // Click the job card to load the preview panel
         await page.evaluate((idx) => {
