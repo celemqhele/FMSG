@@ -122,7 +122,16 @@ export function MobileProfileOnboardingSheet({ profileId, onClose, onDelete, edi
         if (!res.ok || data.error) { setError(data.error || "Failed to extract CV"); setStep("upload"); return; }
 
         const titles = Array.isArray(data.job_titles) && data.job_titles.length > 0 ? data.job_titles : [""];
-        setJobTitles(titles); setLocation(data.preferred_location ?? ""); setIndustry(data.industry ?? "");
+        // Only auto-fill if user hasn't entered anything yet
+        if (jobTitles.length === 1 && jobTitles[0] === "") {
+          setJobTitles(titles);
+        }
+        if (location === "") {
+          setLocation(data.preferred_location ?? "");
+        }
+        if (industry === "") {
+          setIndustry(data.industry ?? "");
+        }
         suggestedIndustryRef.current = true;
 
         const variations: CvVariation[] = allPaths.map((p) => ({ name: "", file_path: p }));
@@ -145,7 +154,13 @@ export function MobileProfileOnboardingSheet({ profileId, onClose, onDelete, edi
             headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" },
             body: JSON.stringify({ industry: data.industry, job_titles: titles }),
           }).then(async (r) => {
-            if (r.ok) { const ladder = await r.json(); if (ladder.steps) { setIndustryStep1(ladder.steps[0]?.value ?? ""); setIndustryStep2(ladder.steps[1]?.value ?? ""); setIndustryStep3(ladder.steps[2]?.value ?? ""); setIndustryStep4(ladder.steps[3]?.value ?? ""); setIndustryStep5(ladder.steps[4]?.value ?? ""); } }
+            if (r.ok) { const ladder = await r.json(); if (ladder.steps) {
+              if (industryStep1 === "") setIndustryStep1(ladder.steps[0]?.value ?? "");
+              if (industryStep2 === "") setIndustryStep2(ladder.steps[1]?.value ?? "");
+              if (industryStep3 === "") setIndustryStep3(ladder.steps[2]?.value ?? "");
+              if (industryStep4 === "") setIndustryStep4(ladder.steps[3]?.value ?? "");
+              if (industryStep5 === "") setIndustryStep5(ladder.steps[4]?.value ?? "");
+            } }
           }).catch(() => {});
         }
         setStep("form");

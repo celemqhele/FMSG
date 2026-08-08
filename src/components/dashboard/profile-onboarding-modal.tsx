@@ -160,9 +160,16 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
         const titles = Array.isArray(data.job_titles) && data.job_titles.length > 0
           ? data.job_titles
           : [""];
-        setJobTitles(titles);
-        setLocation(data.preferred_location ?? "");
-        setIndustry(data.industry ?? "");
+        // Only auto-fill if user hasn't entered anything yet
+        if (jobTitles.length === 1 && jobTitles[0] === "") {
+          setJobTitles(titles);
+        }
+        if (location === "") {
+          setLocation(data.preferred_location ?? "");
+        }
+        if (industry === "") {
+          setIndustry(data.industry ?? "");
+        }
         suggestedIndustryRef.current = true;
 
         // Build variations with empty names, then label each via AI
@@ -209,11 +216,11 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
             if (r.ok) {
               const ladder = await r.json();
               if (ladder.steps) {
-                setIndustryStep1(ladder.steps[0]?.value ?? "");
-                setIndustryStep2(ladder.steps[1]?.value ?? "");
-                setIndustryStep3(ladder.steps[2]?.value ?? "");
-                setIndustryStep4(ladder.steps[3]?.value ?? "");
-                setIndustryStep5(ladder.steps[4]?.value ?? "");
+                if (industryStep1 === "") setIndustryStep1(ladder.steps[0]?.value ?? "");
+                if (industryStep2 === "") setIndustryStep2(ladder.steps[1]?.value ?? "");
+                if (industryStep3 === "") setIndustryStep3(ladder.steps[2]?.value ?? "");
+                if (industryStep4 === "") setIndustryStep4(ladder.steps[3]?.value ?? "");
+                if (industryStep5 === "") setIndustryStep5(ladder.steps[4]?.value ?? "");
               }
             }
           }).catch(() => {});
