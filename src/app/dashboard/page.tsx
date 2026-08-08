@@ -125,6 +125,8 @@ export default function DashboardPage() {
   const [showLimitModal, setShowLimitModal] = useState<string | null>(null);
   const [limitModalMounted, setLimitModalMounted] = useState(false);
   const [pfModalOpen, setPfModalOpen] = useState(false);
+  const [showConnectionInterrupted, setShowConnectionInterrupted] = useState(false);
+  const [connectionInterruptedMounted, setConnectionInterruptedMounted] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
   const [resultMessage, setResultMessage] = useState("");
   const [statusCompleted, setStatusCompleted] = useState<string[]>([]);
@@ -711,6 +713,9 @@ export default function DashboardPage() {
           if (!error && data && data.length > 0) {
             setResults(data as JobResult[]);
             setResultMessage("Connection lost, but partial results recovered.");
+            // Show connection interrupted modal with recovered results
+            setShowConnectionInterrupted(true);
+            requestAnimationFrame(() => setConnectionInterruptedMounted(true));
           } else {
             setResultMessage("Connection lost. Please try again.");
           }
@@ -735,7 +740,13 @@ export default function DashboardPage() {
         setContinuationToken(null);
         setStatusCompleted([]);
         setStatusActive("");
-        setResultMessage("Something went wrong. Please try again.");
+        // If we have results from the interrupted search, show the modal
+        if (results.length > 0) {
+          setShowConnectionInterrupted(true);
+          requestAnimationFrame(() => setConnectionInterruptedMounted(true));
+        } else {
+          setResultMessage("Something went wrong. Please try again.");
+        }
       }
     }
   };
@@ -1104,6 +1115,39 @@ export default function DashboardPage() {
           onClose={() => setShowVerifyModal(false)}
           onVerified={() => { setEmailVerified(true); window.dispatchEvent(new Event("refresh-balances")); }}
         />
+      )}
+
+      {/* Connection Interrupted Modal */}
+      {showConnectionInterrupted && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center transition-opacity duration-300" style={{ opacity: connectionInterruptedMounted ? 1 : 0 }}>
+          <div className="absolute inset-0 bg-black/60" onClick={() => { setShowConnectionInterrupted(false); setConnectionInterruptedMounted(false); }} />
+          <div className="relative">
+            <div className="bg-white border border-gray-200 rounded-2xl p-6 max-w-md mx-4 text-center transition-all duration-300 ease-out shadow-xl"
+              style={{ opacity: connectionInterruptedMounted ? 1 : 0, transform: connectionInterruptedMounted ? "translateY(0) scale(1)" : "translateY(8px) scale(0.97)" }}>
+              <div className="flex items-center justify-center gap-2 mb-3">
+                <div className="w-10 h-10 rounded-full bg-yellow-500/10 flex items-center justify-center">
+                  <span className="text-yellow-500 text-xl">⚠</span>
+                </div>
+                <h3 className="text-lg font-semibold text-gray-900">Connection Interrupted</h3>
+              </div>
+              <p className="text-sm text-gray-500 mb-5">
+                The search took longer than the server allows (5 min limit). 
+                {results.length > 0 && `Showing ${results.length} jobs that were already analyzed.`}
+              </p>
+              {results.length > 0 && (
+                <div className="mb-4 p-3 bg-green-500/10 border border-green-500/20 rounded-xl text-green-400 text-sm">
+                  ✓ {results.length} results recovered from this search
+                </div>
+              )}
+              <button
+                onClick={() => { setShowConnectionInterrupted(false); setConnectionInterruptedMounted(false); }}
+                className="w-full py-2.5 px-4 rounded-xl bg-[var(--color-accent)] text-white font-medium hover:bg-[var(--color-accent-hover)] transition-colors"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {needsOnboarding && onboardingMounted && (
