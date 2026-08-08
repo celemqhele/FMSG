@@ -557,7 +557,8 @@ async function fetchAndFilterJobs(
   const atsRejected: any[] = [];
   rawJobs = rawJobs.filter((j) => {
     const desc = j.description ?? "";
-    if (BLOCKED_ATS_TRACKERS.some(t => desc.includes(t))) {
+    const url = buildJobUrl(j) ?? "";
+    if (BLOCKED_ATS_TRACKERS.some(t => desc.includes(t) || url.includes(t))) {
       atsRejected.push(j);
       return false;
     }
@@ -707,7 +708,8 @@ async function fetchAndFilterJobs(
     const droppedAts: any[] = [];
     rawJobs.forEach((j) => {
       const spec = (j as any)._spec ?? "";
-      if (BLOCKED_ATS_TRACKERS.some(t => spec.includes(t))) { droppedAts.push(j); return; }
+      const url = buildJobUrl(j) ?? "";
+      if (BLOCKED_ATS_TRACKERS.some(t => spec.includes(t) || url.includes(t))) { droppedAts.push(j); return; }
       if (spec.length >= SHORT_SPEC_THRESHOLD || j.spec_source === "bing_jobs") {
         const newIdx = filtered.length;
         filtered.push(j); filteredSpecs.set(newIdx, spec); filteredUrls.set(newIdx, buildJobUrl(j));
