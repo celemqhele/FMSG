@@ -1494,6 +1494,12 @@ Return ONLY valid JSON (no markdown, no code fences):
         balances: liveBalances,
         plan: livePlan,
         maxAgeDays,
+        // Industry ladder steps (for PF mode)
+        industryStep1: state.industryStep1 || "",
+        industryStep2: state.industryStep2 || "",
+        industryStep3: state.industryStep3 || "",
+        industryStep4: state.industryStep4 || "",
+        industryStep5: state.industryStep5 || "",
       };
     }
 
@@ -1679,9 +1685,26 @@ Return ONLY valid JSON (no markdown, no code fences):
             pfBannedJobs = state.bannedJobs || [];
             pfBannedCompanies = state.bannedCompanies || [];
             pfDedupSets = state.dedupSets;
-            titleChainSteps = state.titleChainSteps;
-            industryChain = state.industryChain;
+
+            // Rebuild title ladder and industry chain from refreshed profile data
+            // (in case profile was edited while search was paused)
+            titleChainSteps = Array.from({ length: MAX_ROUNDS }, (_, i) => {
+              const title = pfTitles[i]?.trim();
+              return title ? [title] : [];
+            });
+            for (let s = 0; s < MAX_ROUNDS; s++) {
+              if (titleChainSteps[s].length === 0) titleChainSteps[s] = [...pfTitles];
+            }
+            industryChain = [
+              state.industryStep1 || pfIndustry || "",
+              state.industryStep2 || pfIndustry || "",
+              state.industryStep3 || pfIndustry || "",
+              state.industryStep4 || pfIndustry || "",
+              state.industryStep5 || pfIndustry || "",
+            ];
             debugLog(`[PF] Resuming at round ${startRoundIndex + 1}/${MAX_ROUNDS}, ${allResults.length} results so far`);
+            debugLog(`[PF] Rebuilt title ladder: ${pfTitles.join(" > ")}`);
+            debugLog(`[PF] Rebuilt industry ladder: ${industryChain.join(" > ")}`);
             if (finish_now) {
               hardStop = true;
               debugLog("[PF] finish_now flag set, will finalize after current round");
