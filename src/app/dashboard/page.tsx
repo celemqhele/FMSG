@@ -131,6 +131,32 @@ export default function DashboardPage() {
   const [statusActive, setStatusActive] = useState("");
   const [filteredSummary, setFilteredSummary] = useState<FilteredSummary | null>(null);
   const [continuationToken, setContinuationToken] = useState<string | null>(null);
+
+  // Load continuation token from localStorage on mount
+  useEffect(() => {
+    const stored = localStorage.getItem("fmsg_continuation_token");
+    if (stored) {
+      setContinuationToken(stored);
+    }
+  }, []);
+
+  // Persist continuation token to localStorage
+  useEffect(() => {
+    if (continuationToken) {
+      localStorage.setItem("fmsg_continuation_token", continuationToken);
+    } else {
+      localStorage.removeItem("fmsg_continuation_token");
+    }
+  }, [continuationToken]);
+
+  // Listen for profile saved event to clear continuation token
+  useEffect(() => {
+    const handler = () => {
+      setContinuationToken(null);
+    };
+    window.addEventListener("fmsg-profile-saved", handler);
+    return () => window.removeEventListener("fmsg-profile-saved", handler);
+  }, []);
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
   const [profileChecked, setProfileChecked] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState<"prompt" | "form" | "done">("prompt");
@@ -541,7 +567,7 @@ export default function DashboardPage() {
             case "analyzing_job":
               setStatusCompleted((prev) => {
                 const filtered = prev.filter((s) => !s.startsWith("Screening job"));
-                return [...filtered, `Screening ${event.total} of ${event.total} complete`];
+                return [...filtered, `Screening ${event.current} of ${event.total} complete`];
               });
               currentStatusActive = `Analysing fit for: ${event.title} at ${event.company}`;
               setStatusActive(currentStatusActive);

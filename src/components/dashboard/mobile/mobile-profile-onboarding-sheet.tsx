@@ -34,6 +34,7 @@ export function MobileProfileOnboardingSheet({ profileId, onClose, onDelete, edi
   const [cvVariations, setCvVariations] = useState<CvVariation[]>([]);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [uploadingCv, setUploadingCv] = useState(false);
@@ -210,7 +211,15 @@ export function MobileProfileOnboardingSheet({ profileId, onClose, onDelete, edi
     if (name.trim()) updateData.name = name.trim();
     const { error: updateErr } = await supabase.from("search_profiles").update(updateData).eq("id", profileId);
     if (updateErr) { setError(updateErr.message); setSaving(false); return; }
-    onSaved?.(); onClose();
+
+    setSaved(true);
+    setSaving(false);
+    onSaved?.();
+    // Close after showing success message briefly
+    setTimeout(() => {
+      setSaved(false);
+      onClose();
+    }, 1200);
   };
 
   const handleDelete = async () => {
@@ -364,13 +373,19 @@ export function MobileProfileOnboardingSheet({ profileId, onClose, onDelete, edi
                 )}
               </div>
 
-              <button onClick={handleSave} disabled={saving}
+<button onClick={handleSave} disabled={saving}
                 className="w-full h-10 flex items-center justify-center gap-1.5 rounded-[10px] bg-[var(--color-accent)] text-white text-[11px] font-medium disabled:opacity-50">
-                {saving && <Loader2 size={12} className="animate-spin" />}
-                {editMode ? "Save Changes" : "Save & Start Searching"}
-              </button>
+              {saving && <Loader2 size={12} className="animate-spin" />}
+              {editMode ? "Save Changes" : "Save & Start Searching"}
+            </button>
 
-              {editMode && (
+            {saved && (
+              <p className="mt-2 text-center text-[11px] text-green-400 animate-fade-in">
+                ✓ Saved — changes apply to your next search
+              </p>
+            )}
+
+            {editMode && (
                 <div className="pt-2.5 border-t border-white/[0.06]">
                   {confirmDelete ? (
                     <div className="flex items-center gap-1.5">

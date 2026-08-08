@@ -36,6 +36,7 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
   const [cvVariations, setCvVariations] = useState<CvVariation[]>([]);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -445,8 +446,14 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
       return;
     }
 
+    setSaved(true);
+    setSaving(false);
     onSaved?.();
-    onClose();
+    // Close after showing success message briefly
+    setTimeout(() => {
+      setSaved(false);
+      onClose();
+    }, 1200);
   };
 
   const handleDelete = async () => {
@@ -702,6 +709,12 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
                 {saving && <Loader2 size={15} className="animate-spin" />}
                 {editMode ? "Save Changes" : "Save & Start Searching"}
               </button>
+
+              {saved && (
+                <p className="mt-2 text-center text-xs text-green-400 animate-fade-in">
+                  ✓ Saved — changes apply to your next search
+                </p>
+              )}
 
               {editMode && (
                 <div className="pt-2 border-t border-white/[0.06]">

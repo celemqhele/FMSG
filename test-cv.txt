@@ -1,66 +1,50 @@
-THABO MOKOENA
-Cape Town, South Africa | +27 82 456 7890 | thabo.mokoena@gmail.com | linkedin.com/in/thabomokoena
+NOMVULA DLAMINI
+Johannesburg, Gauteng
+nomvula.dlamini@gmail.com | 083 567 8901 | LinkedIn: linkedin.com/in/nomvuladlamini
 
 PROFESSIONAL SUMMARY
-Results-driven Full Stack Developer with 6+ years building scalable SaaS applications. Led a team of 5 developers to deliver a fintech platform that processed R120M in transactions within its first year. Reduced API response times by 73% through database optimization and caching architecture. Seeking a Senior Software Engineer role in Cape Town.
+Senior Financial Accountant with 8+ years of experience in the banking and financial services industry. Previously at Standard Bank and Capitec, managing month-end close processes for business units with R2B+ in assets. Expert in IFRS reporting, SOX compliance, and reconciliations. Looking for a Financial Controller or Finance Manager role in Gauteng.
 
-TECHNICAL SKILLS
-Languages: JavaScript, TypeScript, Python, SQL, HTML5/CSS3
-Frontend: React 18, Next.js 14, Tailwind CSS, Redux Toolkit, React Query
-Backend: Node.js, Express.js, NestJS, FastAPI, REST APIs, GraphQL
-Databases: PostgreSQL, MongoDB, Redis, Supabase
-Cloud & DevOps: AWS (EC2, S3, Lambda, RDS), Vercel, Docker, GitHub Actions, Terraform
-Tools: Git, Jira, Figma, Postman, Datadog, Sentry
+WORK EXPERIENCE
 
-PROFESSIONAL EXPERIENCE
+Senior Financial Accountant | Standard Bank | Johannesburg | Mar 2021 – Present
+- Lead month-end close for the Corporate Banking division, managing 150+ GL accounts across 4 legal entities
+- Prepared quarterly IFRS financial statements reviewed by external auditors (PwC), zero material misstatements in 3 years
+- Managed a team of 5 accountants and 2 clerks, reducing close cycle from 12 business days to 8 days (-33%)
+- Reconciled intercompany transactions totaling R800M+ monthly, identifying and resolving R14M in discrepancies
+- Implemented automated reconciliation tool using Power BI and Excel VBA, saving 40 hours/month in manual work
+- Presented financial results to the CFO and audit committee on a monthly basis
+- Ensured SOX compliance across 12 key controls, achieving clean audit opinion for 3 consecutive years
 
-Senior Full Stack Developer | PayFast (Pty) Ltd | Cape Town | Jan 2023 – Present
-- Architected and deployed a microservices payment gateway handling 45,000+ daily transactions with 99.97% uptime
-- Reduced average API response time from 1.2s to 320ms by implementing Redis caching layer and PostgreSQL query optimization (73% improvement)
-- Led migration of monolithic application to Next.js 14 App Router, decreasing initial page load from 4.8s to 1.1s (77% reduction)
-- Built real-time webhook notification system processing 2.3M events/month, reducing customer support tickets by 34%
-- Mentored 3 junior developers, conducting 120+ code review sessions; team velocity increased by 28% over 6 months
-- Implemented automated CI/CD pipeline with GitHub Actions, reducing deployment time from 45 minutes to 8 minutes
-- Designed and shipped a merchant dashboard used by 8,500+ active merchants, generating R4.2M in upsell revenue
+Financial Accountant | Capitec Bank | Stellenbosch | Jan 2019 – Feb 2021
+- Managed general ledger postings and reconciliations for the Digital Banking division
+- Prepared monthly management accounts for 2 business units with combined revenue of R1.2B
+- Assisted external auditors (Deloitte) during annual audit, resolving 85+ audit queries within 2 weeks
+- Built automated journal entry templates in SAP reducing posting errors by 60%
+- Trained 3 junior accountants on SAP FICO modules and month-end processes
+- Participated in the migration from legacy core banking system to SAP S/4HANA
 
-Full Stack Developer | Yoco | Cape Town | Mar 2021 – Dec 2022
-- Developed POS tablet application using React Native, deployed across 12,000+ merchant devices nationwide
-- Built REST API serving 1.8M requests/day with 99.9% availability using Node.js and PostgreSQL
-- Created automated reconciliation system that reduced monthly financial close from 5 days to 1.5 days
-- Implemented fraud detection module flagging R2.1M in suspicious transactions within first quarter of launch
-- Optimized database queries reducing average query time from 850ms to 120ms across 3 critical endpoints
-- Collaborated with UX team to redesign checkout flow, increasing conversion rate from 2.3% to 3.8% (+65%)
-
-Junior Developer | Cognite | Johannesburg | Jun 2019 – Feb 2021
-- Developed internal CRM system using React and Node.js, replacing legacy Salesforce instance and saving R180K/year in licensing
-- Built automated report generation pipeline processing 50,000+ records daily using Python and PostgreSQL
-- Created Slack bot integration handling 3,200+ weekly interactions for sales team lead routing
-- Wrote 847 unit and integration tests achieving 92% code coverage across 12 microservices
-- Participated in 3 sprint planning ceremonies per week; consistently delivered 95%+ of committed story points
+Articled Accountant | Deloitte | Johannesburg | Feb 2017 – Dec 2018
+- Completed SAICA training contract across audit, tax, and advisory rotations
+- Audited financial statements for 8 clients in financial services, retail, and manufacturing sectors
+- Prepared individual and corporate income tax returns for 15+ clients
+- Identified R6.2M in potential tax savings for a retail client through R&D incentive analysis
+- Passed Board Exam 1 (Unaudited) and Board Exam 2 (Audited) on first attempt
 
 EDUCATION
 
-Bachelor of Science in Computer Science | University of Cape Town | 2015 – 2018
-- Final year project: Real-time traffic prediction system using machine learning (92% accuracy on test dataset)
-- Dean's List: 2017, 2018 (top 10% of class)
-- Relevant coursework: Data Structures & Algorithms, Database Systems, Software Engineering, Distributed Systems
+Bachelor of Accounting Science (BAccSci) | University of the Witwatersrand | 2016
+- SAICA Category I and II compliant
+- Dean's List 2015, 2016
 
-CERTIFICATIONS
-- AWS Certified Solutions Architect – Associate (2023)
-- MongoDB Certified Developer Associate (2022)
-- Meta Front-End Developer Professional Certificate (2021)
+PROFESSIONAL QUALIFICATIONS
+- CA(SA) — South African Institute of Chartered Accountants (2019)
+- Registered Auditor (IRBA) — Register of Auditors (2019)
+- CFA Level 1 Candidate (expected 2025)
 
-PROJECTS
-
-Open Source: SA Load Shedding API (1,200+ GitHub stars)
-- Built and maintained REST API providing real-time Eskom load shedding data for 15,000+ daily active users
-- Implemented Redis caching reducing average response time from 800ms to 45ms
-- Featured on Hacker News front page; acquired 400+ GitHub stars in first 48 hours
-
-Hackathon: InsureTech Claims Bot (Best Fintech Solution – Cape Town Tech Hack 2023)
-- Developed AI-powered claims processing chatbot handling 80% of routine insurance claims without human intervention
-- Reduced average claims processing time from 72 hours to 4.5 hours
-- Built with GPT-4 API, Next.js, and Supabase in 48-hour sprint
-
-LANGUAGES
-English (Native) | Afrikaans (Fluent) | Zulu (Conversational)
+TECHNICAL SKILLS
+ERP: SAP FICO, SAP S/4HANA, Oracle Financials
+Reporting: Power BI, Hyperion Financial Management, SAP BPC
+Tools: Advanced Excel (VBA, Power Query, Pivot Tables), Google Sheets, SQL (basic)
+Compliance: IFRS, SOX, King IV, Companies Act
+Languages: English (native), Afrikaans (fluent), Zulu (conversational)

@@ -72,6 +72,11 @@ export function DashboardLayout({ children, guest, onGuestSignUp }: { children: 
 
   const handleProfileSaved = useCallback(() => {
     setProfileRefreshKey((k) => k + 1);
+    // Clear any paused search continuation token since profile data changed
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("fmsg_continuation_token");
+      window.dispatchEvent(new Event("fmsg-profile-saved"));
+    }
   }, []);
 
   const handleDeleteProfile = useCallback(

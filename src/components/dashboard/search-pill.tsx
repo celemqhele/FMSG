@@ -64,7 +64,7 @@ export function SearchPill({ onSearch, onAbort, searching, pfMode, onPfModeChang
         .eq("user_id", user.id)
         .order("created_at")
         .limit(1)
-        .maybeSingle();
+        .maybeSingle({ headers: { "Cache-Control": "no-cache, no-store, must-revalidate" } });
       if (firstSp) {
         usedProfileId = firstSp.id;
         titles = firstSp.job_titles ?? [];
@@ -76,7 +76,7 @@ export function SearchPill({ onSearch, onAbort, searching, pfMode, onPfModeChang
         .from("search_profiles")
         .select("job_titles, location, industry")
         .eq("id", usedProfileId)
-        .maybeSingle();
+        .maybeSingle({ headers: { "Cache-Control": "no-cache, no-store, must-revalidate" } });
       if (spErr) console.log("[SEARCH-PILL] search_profiles error:", spErr.message);
       if (sp) {
         titles = sp.job_titles ?? [];
