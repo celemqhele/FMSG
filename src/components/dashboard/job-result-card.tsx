@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { ExternalLink, X, FileText, Bookmark, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useActiveProfile } from "./dashboard-layout";
+import { normalizeVerdict, verdictBadgeColor } from "@/lib/verdict";
 
 interface JobResultCardProps {
   id: string;
@@ -408,12 +409,8 @@ export function JobResultCard({
                   {scoreLabel} {matchScore}%
                 </span>
                 {recruiterVerdict && (
-                  <span className={`text-xs font-semibold px-3 py-1 rounded-full ${
-                    recruiterVerdict === "HIRE" ? "bg-green-500/20 text-green-400" :
-                    recruiterVerdict === "INTERVIEW" ? "bg-amber-500/20 text-amber-400" :
-                    "bg-red-500/20 text-red-400"
-                  }`}>
-                    {recruiterVerdict}
+                  <span className={`text-xs font-semibold px-3 py-1 rounded-full ${verdictBadgeColor(recruiterVerdict)}`}>
+                    {normalizeVerdict(recruiterVerdict)}
                   </span>
                 )}
               </div>

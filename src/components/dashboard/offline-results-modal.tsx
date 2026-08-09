@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { X, Briefcase, Building2, MapPin, DollarSign, Star, Filter, XCircle } from "lucide-react";
+import { normalizeVerdict, verdictLightColor } from "@/lib/verdict";
 
 interface OfflineResultsModalProps {
   isOpen: boolean;
@@ -98,14 +99,7 @@ export function OfflineResultsModal({ isOpen, onClose, onViewResults, searchId }
     onClose();
   };
 
-  const getVerdictColor = (verdict: string | null) => {
-    switch (verdict) {
-      case "HIRE": return "text-green-400 bg-green-500/10";
-      case "INTERVIEW": return "text-yellow-400 bg-yellow-500/10";
-      case "REJECT": return "text-red-400 bg-red-500/10";
-      default: return "text-gray-400 bg-gray-500/10";
-    }
-  };
+  const getVerdictColor = (verdict: string | null) => verdictLightColor(verdict);
 
   const formatSalary = (salary: string) => {
     if (!salary) return "Not specified";
@@ -166,7 +160,7 @@ export function OfflineResultsModal({ isOpen, onClose, onViewResults, searchId }
                       <div className="flex items-center gap-2 flex-wrap">
                         <h4 className="text-sm font-semibold text-gray-900 truncate">{job.job_title}</h4>
                         <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getVerdictColor(job.recruiter_verdict)}`}>
-                          {job.recruiter_verdict || "UNSCREENED"}
+                          {normalizeVerdict(job.recruiter_verdict) || "UNSCREENED"}
                         </span>
                         {job.match_score !== -1 && job.match_score !== 0 && (
                           <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/10 text-blue-500">
@@ -232,12 +226,7 @@ export function OfflineResultsModal({ isOpen, onClose, onViewResults, searchId }
 }
 
 function getVerdictColor(verdict: string | null) {
-  switch (verdict) {
-    case "HIRE": return "text-green-400 bg-green-500/10";
-    case "INTERVIEW": return "text-yellow-400 bg-yellow-500/10";
-    case "REJECT": return "text-red-400 bg-red-500/10";
-    default: return "text-gray-400 bg-gray-500/10";
-  }
+  return verdictLightColor(verdict);
 }
 
 function formatSalary(salary: string) {

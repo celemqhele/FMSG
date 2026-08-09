@@ -6,6 +6,7 @@ import { searchWorkdayJobs, fetchWorkdayDetail, WORKDAY_TENANTS, type WorkdayTen
 import { extractText } from "@/lib/pdf";
 import { mapLocationToProvince } from "@/lib/location";
 import { callAIWithFallback, lastAITier } from "@/lib/gemini";
+import { scoreMatch } from "@/lib/ats-scoring";
 import { StreamWriter, type SearchEvent } from "@/lib/search-stream";
 import { debugLog } from "@/lib/debug";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -786,30 +787,6 @@ async function fetchAndFilterJobs(
   }
 }
 
-function extractMandatoryMissing(specLower: string, cvLower: string): string | null {
-  const patterns = [
-    // "Dispensing license - MUST HAVE", "X is required", "X is mandatory"
-    /(?:^|\n|[.;!\-])\s*([\w\s\-/]+?(?:license|licence|certificate|certification|registration|permit))\s*[-:]\s*(must have|required|essential|mandatory|a must)\b/gi,
-    // "MUST HAVE a valid X", "must hold X license"
-    /\b(must have|must hold|must possess)\s+(?:a\s+|an\s+)?(?:valid\s+|current\s+|active\s+)?([\w\s\-/]+?(?:license|licence|certificate|certification|registration|permit))\b/gi,
-    // "X is required/essential/mandatory"
-    /([\w\s\-/]+?(?:license|licence|certificate|certification|registration|permit))\s+(?:is\s+)?(?:required|essential|mandatory)\b/gi,
-  ];
-
-  for (const pattern of patterns) {
-    let match;
-    while ((match = pattern.exec(specLower)) !== null) {
-      const requirement = (pattern === patterns[0] ? match[1] : match[2] || match[1] || "").trim().toLowerCase();
-      if (!requirement || requirement.length < 3) continue;
-      const cleaned = requirement.replace(/^(valid|current|active|relevant)\s+/i, "").trim();
-      if (!cvLower.includes(cleaned)) {
-        return `"${cleaned}" is mandatory but missing from CV`;
-      }
-    }
-  }
-  return null;
-}
-
 async function screenAndAnalyze(
   rawJobs: any[],
   jobSpecsEntries: [number, string][],
@@ -874,230 +851,42 @@ async function screenAndAnalyze(
     return { results, queryUsed: query, filteredCounts, nextOffset };
   }
 
-  const aiRejectedJobs: { job: any; reason: string; stage: string }[] = [];
   const jobSpecs = new Map(jobSpecsEntries);
   const jobUrls = new Map(jobUrlsEntries);
-
-  const profileContext = JSON.stringify({
-    job_titles: titles,
-    location: profileLocation || null,
-    industry: profileIndustry || null,
-    cv_texts: cvTexts.length > 0
-      ? cvTexts.map(cv => ({ name: cv.name, text: cv.text }))
-      : [{ name: "No CV", text: "No CV provided" }],
-  });
-
-  const blacklistInfo = `BLACKLISTED_DOMAINS: ${BLACKLISTED_DOMAINS.join(", ")}`;
-  const bannedInfo = bannedCompanies.length > 0 ? `\nUSER-BANNED COMPANIES: ${bannedCompanies.join(", ")}` : "";
-  const dateConstraintInfo = maxAgeDays
-    ? `\nDATE CONSTRAINT: Only consider jobs posted within the last ${maxAgeDays} day(s). Check the job spec text for ANY date indicators: "posted X days/weeks/months ago", "date posted:", "active since", or any date mentioned. If a date is found and the job is older than ${maxAgeDays} days, immediately score 0 with reason "Posted outside date filter". If no date is found anywhere in the spec, assume it passes.`
-    : "";
-  const locationConstraintInfo = profileLocation
-    ? `\nLOCATION CONSTRAINT: The candidate is based in "${profileLocation}", South Africa. Check the job's location field in the input JSON AND scan the full job spec for any location indicators. If the job is explicitly located in a city/country OUTSIDE South Africa (e.g. "London", "New York", "Dubai", "Singapore", "Remote - US only", "EU only", "Americas", "EMEA" targeting non-SA), immediately score 0 with reason "Job is not hiring in candidate's location". EXCEPTIONS — do NOT reject if: (a) the job says "Remote", "Work from home", "Anywhere", "Worldwide", "Global", "Flexible location"; (b) the job says "Hybrid" or "On-site" but the location is in South Africa; (c) the location field is empty or missing.\nPROXIMITY: If the job is in a DIFFERENT South African province from the candidate's location (${profileLocation}), apply the Location Tax (-30) in STEP 6. If in the SAME province, no penalty. Remote/Work-from-home with no location restriction = no penalty.`
-    : "";
-
-  const dynamicScoringPrompt = `You are a strict Recruitment Auditor acting as a hiring manager. You analyze ONE job spec against the candidate's CV and score the match.
-
-CANDIDATE INDUSTRY: ${profileIndustry || "Unknown"}
-
----
-PROCESS:
-
-PRE-CHECK: DOMAIN, DATE, LOCATION, AND DUPLICATE FILTERS
-A) DOMAIN CHECK: The job URL is provided in the input JSON. Check if the URL contains any domain from the BLACKLISTED_DOMAINS list below. If it matches (exact domain or subdomain of any blacklisted entry), immediately return: { "score": 0, "reason": "Job is from a blacklisted aggregator domain (<domain>)", "knockout_fail": true, "recruiter_verdict": "REJECT", ... } with all other fields filled with defaults. Do NOT continue to Step 0.
-B) DATE CHECK: Scan the full job spec text for any date indicators — "posted X days/weeks/months ago", "date posted:", "active since", "applications close [date]", or any explicit date. If a posting date is found and it is older than the DATE CONSTRAINT below, immediately score 0 with reason "Posted outside date filter". If no date is found, it passes.
-C) LOCATION CHECK: Check the job's location field in the input JSON AND scan the full spec for any location indicators. If the job is explicitly located outside South Africa (e.g. "London", "New York", "Dubai", "Singapore", "US only", "EU only", "EMEA" not including SA), immediately score 0 with reason "Job is not hiring in candidate's location". EXCEPTIONS — do NOT reject if: (a) the job says "Remote", "Work from home", "Anywhere", "Worldwide", "Global", "Flexible"; (b) location is in South Africa; (c) location field is empty or missing.
-D) DUPLICATE CHECK: Compare this job's title + company against the PREVIOUSLY SCORED JOBS list below. If the same title AND company appear in the list, immediately return: { "score": 0, "reason": "Duplicate of previously processed job: <title> at <company>", "knockout_fail": true, "recruiter_verdict": "REJECT", ... } with all other fields filled with defaults. Do NOT continue to Step 0.
-
-If all four checks pass, proceed to Step 0.
-
-STEP 0: SUB-VERTICAL IDENTIFICATION & CV SELECTION
-A) Identify the candidate's professional sub-vertical from their EMPLOYERS, not their tools.
-   Industry is where the COMPANIES operate. Digital marketer at Superbalist = E-commerce, NOT SaaS.
-B) Identify the job's sub-vertical — what does the hiring company sell?
-C) Select the CV variation whose day-to-day responsibilities most closely match the role.
-D) Set suggested_cv_name to the exact CV filename.
-
-STEP 1: RECRUITER QUESTIONS
-Think like a hiring manager reviewing this CV for this role. Read the FULL job spec. For EACH requirement, generate ONE interview question you would ask the candidate.
-
-Classify each requirement as MANDATORY or PREFERRED:
-- MANDATORY: stated with "required", "must have", "essential", "mandatory", "necessary", "minimum"
-- PREFERRED: stated with "preferred", "advantageous", "nice to have", "desirable", "ideal", "bonus"
-If neither label is explicit, treat as MANDATORY unless context clearly implies optional.
-
-MANDATORY requirements become direct questions:
-- "Do you have experience with Python 3.9 and Pytest?" (if spec says "Python 3.9, Pytest required")
-- "Have you managed a month-end close process?"
-
-PREFERRED requirements become softer questions:
-- "Have you worked with Terraform or similar IaC tools?"
-
-Include: certifications, licenses, tools, platforms, languages, experience thresholds (years, team size, deal size, revenue), industry background, specific responsibilities, soft skills if stated as requirements.
-
-CRITICAL RULE — DEGREES: NEVER create a degree requirement unless the JD contains an EXPLICIT phrase like:
-  "Bachelor's degree required", "Degree in X", "NQF level 7+", "tertiary qualification required"
-
-Each requirement = one question. Do not combine. 15 requirements = 15 questions.
-
-Categorize each into the correct pillar:
-- "industry": sub-vertical match, sector experience, employer background
-- "function": role type, daily responsibilities, task experience
-- "scale": years of experience, team size, revenue managed, stakeholder level
-- "tools": specific tools, certifications, platforms, methodologies, licenses
-- "location": geography, relocation, remote/hybrid/wfh
-
-STEP 2: ANSWER FROM CV
-For each question, answer YES or NO based ONLY on what the CV explicitly states.
-
-YES rules — answer YES only if:
-- The tool/skill/experience is literally mentioned in the CV (skills list OR work experience)
-- The CV shows direct, specific evidence of the requirement
-- Include the specific quote/detail from the CV as evidence
-
-NO rules — answer NO if ANY of these apply:
-- The CV doesn't mention it at all → NO
-- The CV mentions a DIFFERENT tool, language, or category → NO
-  - "Python 3.9 required", CV has TypeScript → NO (different language)
-  - "Pytest required", CV has Jest → NO (different testing framework)
-  - "Terraform required", CV has Docker → NO (different tool category)
-- "Industry standard" or "common practice" is NOT evidence → NO
-- Inference or assumption is NOT evidence → NO
-- Transferable ONLY within the EXACT same tool category: Salesforce→HubSpot CRM (both CRMs) = YES, React→Angular (both React-ecosystem frameworks) = YES. Cross-language or cross-category = NO
-
-It is NORMAL and EXPECTED for 30-60% of answers to be NO. Marking everything as YES is a scoring failure. A candidate cannot match every single requirement — that is fine and honest.
-
-STEP 4: SCORE PILLARS (each 0-100)
-For each pillar, calculate: (questions answered met:true / total questions in that pillar) × 100
-Then adjust based on these rules:
-- Industry: SAME sub-vertical=70-95, ADJACENT=40-65, DIFFERENT=0-30
-- Function: Same role type=70-95, Adjacent role=40-65, Different role type=0-30
-- Scale: MORE years than required=positive (≥80), LESS than minimum=negative
-- Tools: All requirements met=80-95, Most met (≥70%)=50-75, Half met (40-69%)=30-50, Few met (<40%)=0-30. "Met" means the tool appears literally in the CV. Inferred/transferable tools do NOT count as met.
-- Location: Same city or remote no restriction=100, Same province=70, Different province=30, Different country=0. CRITICAL: If the candidate is in South Africa and the job is in another country (UK, US, UAE, etc.), Location MUST be 0. "Remote" or "Work from home" with no country restriction = 100. "Remote - US only" or "Remote - EU only" = 0 (not available to SA candidates).
-
-For each pillar, provide a SPECIFIC reason in pillar_reasons referencing CV details.
-Good: "Candidate worked at Superbalist and Takealot — both e-commerce, same sub-vertical."
-Bad: "Company operates in e-commerce."
-
-STEP 5: KNOCKOUT
-If ANY MANDATORY requirement question is met:false → knockout_fail = true → score = 25.
-
-STEP 6: TAXES
-- Hopper Tax (-15): 3+ jobs in last 5 years AND avg tenure < 18 months. EXEMPT: self-employed, freelance, founder periods count as one continuous block.
-- Overqualified Tax (-10): Current title is significantly MORE senior than JD title.
-- Vague Achievement Tax (-10): CV has fewer than 3 specific numbers/percentages.
-- No Degree Tax (-10): ONLY if the JD contains an EXPLICIT degree requirement (e.g. "Bachelor's degree required", "Degree in X", "NQF level 7+", "tertiary qualification required") AND the candidate has no tertiary qualification. If the JD does not contain one of these explicit phrases, this tax is FORBIDDEN. Do NOT assume professional roles require degrees.
-- Salary Mismatch Tax (-10): JD max salary is below 70% of candidate's implied market rate.
-- Location Tax (-30): Job is in a DIFFERENT province from the candidate's location (e.g. candidate in Gauteng, job in Western Cape). EXEMPT if: (a) job says "Remote"/"Work from home"/"Anywhere"/"Worldwide" with no location restriction; (b) job is in the SAME province as the candidate; (c) candidate's location is empty/missing. This is a hard penalty — not discretionary.
-
-STEP 7: FINAL SCORE
-Core = Industry×0.25 + Function×0.30 + Scale×0.20 + Tools×0.15 + Location×0.10
-Core = Core × 0.95 (competition penalty)
-Final = Core − total taxes. Cap 0-95.
-If knockout → score = 25.
-
-STEP 8: VERDICT
->= 75: "HIRE" | >= 60: "INTERVIEW" | < 60: "REJECT"
-
-STEP 9: SELF-VERIFY
-A) Compute: (Industry×0.25 + Function×0.30 + Scale×0.20 + Tools×0.15 + Location×0.10) × 0.95 − taxes (including Location Tax of -30 if applicable).
-   Does this match final score? Fix both if diverge by >5 pts.
-B) Reasons MUST reference CV specifics (employer names, skills, numbers).
-C) Adjust by ±5 (max ±10) if score feels wrong. Set adjustment_note.
-D) pillar_scores MUST reflect the final math.
-E) Fabrication check: Count YES answers across all dynamic_requirements. If ≥90% are YES, you have likely fabricated justifications. Revisit Step 2 with strict CV-evidence-only rules. Marking nearly everything as YES is a scoring failure, not a strong candidate.
-
-Return ONLY valid JSON (no markdown, no code fences):
-{
-  "score": number (integer 0-95),
-  "adjustment_note": string | null,
-  "reason": string (2-3 sentence match explanation),
-  "estimated_salary": string,
-  "knockout_fail": boolean,
-  "suggested_cv_name": string,
-  "pillar_scores": { "industry": number, "function": number, "scale": number, "tools": number, "location": number },
-  "pillar_reasons": { "industry": "...", "function": "...", "scale": "...", "tools": "...", "location": "..." },
-  "taxes_applied": [string],
-  "total_questions_asked": number,
-  "yes_answers": number,
-  "recruiter_verdict": "HIRE" | "INTERVIEW" | "REJECT",
-  "dynamic_requirements": [
-    { "requirement": "...", "mandatory": boolean, "pillar": "industry|function|scale|tools|location", "met": boolean, "evidence": "..." }
-  ]
-}
-
-${blacklistInfo}${bannedInfo}${dateConstraintInfo}${locationConstraintInfo}`;
 
   const localOutputs = outputs ?? [];
   const priorCount = localOutputs.length;
 
   const seenSpecs: { title: string; company: string; url: string }[] = [];
 
-  // Parallel batching scaled by job count (5→1, 10→2, 20→4, 40→8, 80→16).
-  // Speed matters: quota failures fail fast to unscored cards instead of stalling.
+  // Deterministic ATS scoring — synchronous, zero external calls, no quota concerns.
   const batchSize = Math.min(16, Math.max(1, Math.floor(rawJobs.length / 5)));
-  const staggerMs = 200;
-  const interBatchDelayMs = 500;
-  const MAX_RETRIES = 3;
-  const CHECKPOINT_EVERY = 30;
+  const interBatchDelayMs = 50;
+  const CHECKPOINT_EVERY = 100;
 
-  // Quota circuit: once AI providers keep 429ing, stop calling them and emit
-  // remaining jobs as unscored cards (match_score: -1) so the search never dies.
-  let aiQuotaExhausted = false;
-  let consecutiveQuotaHits = 0;
-
-  debugLog(`[SCREENING] Starting parallel scoring: ${rawJobs.length} jobs, offset ${offset}, batchSize=${batchSize}, prior results=${priorCount}`);
+  debugLog(`[SCREENING] Starting deterministic ATS scoring: ${rawJobs.length} jobs, offset ${offset}, batchSize=${batchSize}, prior results=${priorCount}`);
   onStatus?.({ type: "screening_job", current: offset, total: rawJobs.length, progress: 25 });
-  await sleep(80);
+  await sleep(40);
 
-  // Process one job with retries — closes over prompt/profile/maps so it runs in parallel safely
-  const processSingleJob = async (job: any, index: number): Promise<{ result: any; fullSpec: string; jobUrl: string }> => {
+  // Process one job synchronously — pure function, safe to run in parallel
+  const processSingleJob = (job: any, index: number): { result: any; fullSpec: string; jobUrl: string } => {
     const jobUrl = jobUrls.get(index) || buildJobUrl(job);
     const fullSpec = jobSpecs.get(index) || "";
-    const dedupContext = seenSpecs.length > 0
-      ? `\nPREVIOUSLY SCORED JOBS: ${JSON.stringify(seenSpecs)}\n`
-      : "\nPREVIOUSLY SCORED JOBS: (none yet)\n";
-
-    // Quota exhausted — skip AI entirely, emit unscored card immediately
-    if (aiQuotaExhausted) {
-      return { result: { unscored: true }, fullSpec, jobUrl };
-    }
-
-    let lastErr: any = null;
-    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-      try {
-        const jobInput = fullSpec.replace(/["\r\t]/g, " ").replace(/\s+/g, " ").trim();
-        const raw = await callAIWithFallback(
-          dynamicScoringPrompt + dedupContext,
-          `Candidate Profile:\n${profileContext}\n\nJob:\n${JSON.stringify({ job_title: job.title, company: job.company_name, location: job.location, description: jobInput, url: jobUrl }, null, 2)}`,
-          `one-by-one scoring ${index + 1}/${rawJobs.length}${pfRound ? ` (PF round ${pfRound})` : ""}${attempt > 1 ? ` (retry ${attempt}/${MAX_RETRIES})` : ""}`,
-          { responseMimeType: "application/json", temperature: 0.1, maxOutputTokens: 16384 }
-        );
-        const result = JSON.parse(raw);
-        debugLog(`[SCREENING] Job ${index + 1}/${rawJobs.length}: "${job.title}" @ "${job.company_name}" scored ${result.score} (${result.recruiter_verdict})`);
-        return { result, fullSpec, jobUrl };
-      } catch (err) {
-        lastErr = err;
-        const errMsg = err instanceof Error ? err.message : String(err);
-        console.warn(`[SCREENING] Job ${index + 1}/${rawJobs.length} attempt ${attempt}/${MAX_RETRIES} failed: ${errMsg.slice(0, 150)}`);
-        const isQuota = /429|quota|rate\s*limit|RESOURCE_EXHAUSTED|quotaexceeded/i.test(errMsg);
-        if (isQuota) {
-          consecutiveQuotaHits++;
-          console.warn(`[SCREENING] Quota hit ${consecutiveQuotaHits}x — ${consecutiveQuotaHits >= 3 ? "switching remaining jobs to unscored cards" : "continuing"}`);
-          if (consecutiveQuotaHits >= 3) aiQuotaExhausted = true;
-          break; // fail fast — retrying just re-hammers the rate limit
-        }
-        if (/413|too large|Request too large/i.test(errMsg)) {
-          break; // payload too large — will fail identically on retry
-        }
-        if (attempt < MAX_RETRIES) {
-          await sleep(1000 * attempt + Math.random() * 500);
-        }
-      }
-    }
-    console.error(`[SCREENING] Job ${index + 1}/${rawJobs.length} failed after ${MAX_RETRIES} retries, emitting unscored card`);
-    return { result: { unscored: true }, fullSpec, jobUrl };
+    const result = scoreMatch({
+      jobTitle: job.title ?? "",
+      company: job.company_name ?? "",
+      location: job.location ?? "",
+      jobDescription: fullSpec || job.description || "",
+      jobUrl,
+      candidateLocation: profileLocation ?? "",
+      candidateIndustry: profileIndustry ?? "",
+      candidateTitles: titles ?? [],
+      cvTexts,
+      maxAgeDays,
+      bannedCompanies,
+    });
+    debugLog(`[SCREENING] Job ${index + 1}/${rawJobs.length}: "${job.title}" @ "${job.company_name}" scored ${result.score} (${result.recruiter_verdict})`);
+    return { result, fullSpec, jobUrl };
   };
 
   let processedCount = offset;
@@ -1117,13 +906,9 @@ ${blacklistInfo}${bannedInfo}${dateConstraintInfo}${locationConstraintInfo}`;
     console.log(`[SCREENING] Batch ${batchNum}/${totalBatches}: jobs ${batchStart + 1}-${batchEnd}/${rawJobs.length}`);
     onStatus?.({ type: "screening_job", current: batchStart, total: rawJobs.length, progress: Math.min(25 + (batchStart / rawJobs.length) * 55, 80) });
 
-    // Run batch in parallel with stagger to smooth rate limits
-    const batchResults = await Promise.all(
-      batchIndices.map((globalIdx, k) =>
-        new Promise<{ result: any; fullSpec: string; jobUrl: string }>((resolve) =>
-          setTimeout(() => processSingleJob(rawJobs[globalIdx], globalIdx).then(resolve), k * staggerMs)
-        )
-      )
+    // Run batch synchronously — ATS scoring is a pure function, no rate limits
+    const batchResults = batchIndices.map((globalIdx) =>
+      processSingleJob(rawJobs[globalIdx], globalIdx)
     );
 
     // Process batch results sequentially to keep ordering + seenSpecs dedup consistent
@@ -1137,68 +922,11 @@ ${blacklistInfo}${bannedInfo}${dateConstraintInfo}${locationConstraintInfo}`;
       // Track this job for dedup in subsequent batches
       seenSpecs.push({ title: job.title, company: job.company_name, url: jobUrl });
 
-      // AI scoring unavailable (quota/limits) → emit card with match_score: -1
-      // so it renders without a score and sinks to the bottom of the sort.
-      if (result.unscored) {
-        const unscoredRow: JobRow = {
-          id: crypto.randomUUID(),
-          user_id: user.id,
-          search_id: searchId,
-          profile_id: profile_id,
-          job_title: job.title,
-          company: job.company_name,
-          location: job.location,
-          estimated_salary: "",
-          match_score: -1,
-          match_summary: "AI scoring was unavailable for this job — showing it without a match score.",
-          verdict_bullets: null,
-          job_url: jobUrl,
-          full_spec: fullSpec,
-          search_query: query,
-          posted_at: (job as any)._postedAt ?? "",
-          posted_at_ms: (job as any)._postedAtMs ?? 0,
-          suggested_cv: "",
-          knockout_fail: null,
-          pillar_scores: null,
-          taxes_applied: null,
-          total_questions_asked: null,
-          yes_answers: null,
-          recruiter_verdict: null,
-          dynamic_requirements: null,
-          spec_source: job.spec_source ?? null,
-        };
-        localOutputs.push(unscoredRow);
-        onStatus?.({
-          type: "job_scored",
-          search_id: searchId,
-          job: unscoredRow,
-          current: localOutputs.length,
-          total: rawJobs.length,
-          progress: Math.min(25 + (localOutputs.length / rawJobs.length) * 55, 80),
-        });
-        continue;
-      }
-
-      // Post-scoring sanity check
-      if (result.score >= 40 && !result.knockout_fail) {
-        const cvTextLower = cvTexts.map(cv => cv.text).join(" ").toLowerCase();
-        const specLower = fullSpec.toLowerCase();
-        const mandatory = extractMandatoryMissing(specLower, cvTextLower);
-        if (mandatory) {
-          result.score = 25;
-          result.knockout_fail = true;
-          result.taxes_applied = [];
-          result.adjustment_note = `Auto-corrected: ${mandatory} is required but absent from CV`;
-          result.recruiter_verdict = "REJECT";
-          debugLog(`[SCREENING] Post-scoring knockout on job ${globalIdx + 1}: ${mandatory}`);
-        }
-      }
-
       const score = Math.round(result.score ?? 0);
       const ps = result.pillar_scores;
       const taxes = (result.taxes_applied as string[])?.filter((t: string) => t.length > 0) ?? [];
-      const rawVerdict = result.recruiter_verdict ?? (score >= 75 ? "HIRE" : score >= 60 ? "INTERVIEW" : "REJECT");
-      const verdict = (rawVerdict === "HIRE" && taxes.includes("Overqualified")) ? "INTERVIEW" : rawVerdict;
+      const rawVerdict = result.recruiter_verdict ?? (score >= 75 ? "Apply" : score >= 60 ? "Consider" : "Don't apply");
+      const verdict = (rawVerdict === "Apply" && taxes.includes("Overqualified")) ? "Consider" : rawVerdict;
       const dr = result.dynamic_requirements ?? null;
 
       const deductionLabels: Record<string, string> = {
@@ -1294,20 +1022,6 @@ ${blacklistInfo}${bannedInfo}${dateConstraintInfo}${locationConstraintInfo}`;
     }
 
     if (batchEnd < rawJobs.length) await sleep(interBatchDelayMs);
-  }
-
-  if (aiRejectedJobs.length > 0) {
-    const rows = aiRejectedJobs.map(({ job, reason, stage }) => ({
-      user_id: user.id, search_id: searchId, search_query: query,
-      profile_id: profile_id,
-      job_title: job.title, company: job.company_name, location: job.location ?? '',
-      snippet: (job.description ?? '').slice(0, 500), job_url: buildJobUrl(job),
-      reason: `ai_${stage}: ${reason}`,
-      rejection_category: 'ai', rejection_reason: `${stage}: ${reason}`,
-      passed_domain_filter: true, passed_banned_filter: true,
-      passed_pass1: stage !== "pass1", passed_pass2: stage === "pass2",
-    }));
-    dataClient.from("rejected_jobs").insert(rows).then((r: any) => r.error && debugLog('[SEARCH] Failed to log AI rejected:', r.error));
   }
 
   onStatus?.({ type: "almost_done", progress: 90 });

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import { normalizeVerdict, verdictBadgeColor } from "@/lib/verdict";
 
 interface MobileVerdictSheetProps {
   isOpen: boolean;
@@ -94,12 +95,8 @@ export function MobileVerdictSheet({
               {scoreLabel} {matchScore}%
             </span>
             {recruiterVerdict && (
-              <span className={`text-[10px] font-semibold px-2.5 py-1 rounded-full ${
-                recruiterVerdict === "HIRE" ? "bg-green-500/20 text-green-400" :
-                recruiterVerdict === "INTERVIEW" ? "bg-amber-500/20 text-amber-400" :
-                "bg-red-500/20 text-red-400"
-              }`}>
-                {recruiterVerdict}
+              <span className={`text-[10px] font-semibold px-2.5 py-1 rounded-full ${verdictBadgeColor(recruiterVerdict)}`}>
+                {normalizeVerdict(recruiterVerdict)}
               </span>
             )}
           </div>
