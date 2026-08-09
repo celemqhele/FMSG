@@ -2,7 +2,9 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 
 const GROQ_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions";
-const GROQ_MODEL = "openai/gpt-oss-120b";
+// gpt-oss-120b rejects ~15k char prompts (HTTP 413). llama-3.1-70b-versatile
+// has 128k context and generous free-tier limits — handles full scoring prompts.
+const GROQ_MODEL = "llama-3.1-70b-versatile";
 
 interface AIConfig {
   maxOutputTokens?: number;
@@ -11,6 +13,52 @@ interface AIConfig {
 }
 
 export let lastAITier: "gemini" | "groq" | "openrouter" = "gemini";
+
+// ─── Global AI concurrency semaphore ─────────────────────────────────────────
+// Caps in-flight AI calls to AI_MAX_CONCURRENCY. On Vercel each request runs on
+// its own instance, so this only throttles calls *within* one request. We keep a
+// modest cap so 16-way batches flow in ~2 waves instead of hammering free-tier
+// quotas with a full 16-way burst. If quota still trips, jobs fail fast to
+// unscored cards rather than stalling the search.
+const AI_MAX_CONCURRENCY = 8;
+let activeAICalls = 0;
+const aiWaiters: (() => void)[] = [];
+
+async function acquireAISlot(): Promise<void> {
+  if (activeAICalls < AI_MAX_CONCURRENCY) {
+    activeAICalls++;
+    return;
+  }
+  await new Promise<void>((resolve) => aiWaiters.push(resolve));
+  activeAICalls++;
+}
+
+function releaseAISlot(): void {
+  activeAICalls--;
+  const next = aiWaiters.shift();
+  if (next) next();
+}
+
+// ─── Gemini circuit breaker ──────────────────────────────────────────────────
+// Once Gemini starts 429ing (free tier burns out mid-run), stop calling it and
+// go straight to Groq/OpenRouter so remaining jobs finish instead of wasting
+// time on doomed attempts.
+export let geminiExhausted = false;
+let gemini429Streak = 0;
+
+function markGeminiFailure(errMsg: string): void {
+  if (errMsg.includes("429") || errMsg.includes("quota") || errMsg.includes("RESOURCE_EXHAUSTED")) {
+    gemini429Streak++;
+    if (gemini429Streak >= 2) {
+      geminiExhausted = true;
+      console.warn("[AI-GEMINI] Exhausted (2+ consecutive 429s) — bypassing Gemini for this request");
+    }
+  }
+}
+
+function markGeminiSuccess(): void {
+  gemini429Streak = 0;
+}
 
 async function callGemini(systemPrompt: string, userText: string, config?: AIConfig): Promise<string> {
   const generationConfig: Record<string, unknown> = {
@@ -61,6 +109,19 @@ interface GeminiSearchResult {
 }
 
 export async function callGeminiWithSearch(
+  systemPrompt: string,
+  userText: string,
+  config?: AIConfig
+): Promise<GeminiSearchResult> {
+  await acquireAISlot();
+  try {
+    return await callGeminiWithSearchInner(systemPrompt, userText, config);
+  } finally {
+    releaseAISlot();
+  }
+}
+
+async function callGeminiWithSearchInner(
   systemPrompt: string,
   userText: string,
   config?: AIConfig
@@ -212,19 +273,39 @@ export async function callAIWithFallback(
   stepName: string,
   config?: AIConfig
 ): Promise<string> {
+  await acquireAISlot();
+  try {
+    return await callAIWithFallbackInner(systemPrompt, userText, stepName, config);
+  } finally {
+    releaseAISlot();
+  }
+}
+
+async function callAIWithFallbackInner(
+  systemPrompt: string,
+  userText: string,
+  stepName: string,
+  config?: AIConfig
+): Promise<string> {
   const t0 = Date.now();
 
-  // Tier 1: Gemini
-  try {
-    const result = await callGemini(systemPrompt, userText, config);
-    lastAITier = "gemini";
-    console.log(`[AI-TIER] step="${stepName}" tier=gemini total=${Date.now() - t0}ms`);
-    return result;
-  } catch (err: any) {
-    const msg = err?.message ?? String(err);
-    console.warn(`[AI-TIER] step="${stepName}" gemini FAILED: ${msg.slice(0, 100)}`);
-    const isRetryable = msg.includes("429") || msg.includes("quota") || msg.includes("401") || msg.includes("403") || /5\d{2}/.test(msg) || /UNAVAILABLE/i.test(msg);
-    if (!isRetryable) throw err;
+  // Tier 1: Gemini (skipped once circuit breaker trips — quota burned out)
+  if (!geminiExhausted) {
+    try {
+      const result = await callGemini(systemPrompt, userText, config);
+      lastAITier = "gemini";
+      markGeminiSuccess();
+      console.log(`[AI-TIER] step="${stepName}" tier=gemini total=${Date.now() - t0}ms`);
+      return result;
+    } catch (err: any) {
+      const msg = err?.message ?? String(err);
+      markGeminiFailure(msg);
+      console.warn(`[AI-TIER] step="${stepName}" gemini FAILED: ${msg.slice(0, 100)}`);
+      const isRetryable = msg.includes("429") || msg.includes("quota") || msg.includes("401") || msg.includes("403") || /5\d{2}/.test(msg) || /UNAVAILABLE/i.test(msg);
+      if (!isRetryable) throw err;
+    }
+  } else {
+    console.log(`[AI-TIER] step="${stepName}" skipping gemini (exhausted)`);
   }
 
   const MAX_INPUT_CHARS = 15000;

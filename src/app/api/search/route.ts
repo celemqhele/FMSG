@@ -1034,13 +1034,18 @@ ${blacklistInfo}${bannedInfo}${dateConstraintInfo}${locationConstraintInfo}`;
 
   const seenSpecs: { title: string; company: string; url: string }[] = [];
 
-  // Dynamic parallel batching: scale concurrency with job count
-  // 5 jobs → 1, 10 → 2, 20 → 4, 40 → 8, 80+ → 16 (capped buffer up to 10000 jobs)
+  // Parallel batching scaled by job count (5→1, 10→2, 20→4, 40→8, 80→16).
+  // Speed matters: quota failures fail fast to unscored cards instead of stalling.
   const batchSize = Math.min(16, Math.max(1, Math.floor(rawJobs.length / 5)));
   const staggerMs = 200;
   const interBatchDelayMs = 500;
   const MAX_RETRIES = 3;
   const CHECKPOINT_EVERY = 30;
+
+  // Quota circuit: once AI providers keep 429ing, stop calling them and emit
+  // remaining jobs as unscored cards (match_score: -1) so the search never dies.
+  let aiQuotaExhausted = false;
+  let consecutiveQuotaHits = 0;
 
   debugLog(`[SCREENING] Starting parallel scoring: ${rawJobs.length} jobs, offset ${offset}, batchSize=${batchSize}, prior results=${priorCount}`);
   onStatus?.({ type: "screening_job", current: offset, total: rawJobs.length, progress: 25 });
@@ -1053,6 +1058,11 @@ ${blacklistInfo}${bannedInfo}${dateConstraintInfo}${locationConstraintInfo}`;
     const dedupContext = seenSpecs.length > 0
       ? `\nPREVIOUSLY SCORED JOBS: ${JSON.stringify(seenSpecs)}\n`
       : "\nPREVIOUSLY SCORED JOBS: (none yet)\n";
+
+    // Quota exhausted — skip AI entirely, emit unscored card immediately
+    if (aiQuotaExhausted) {
+      return { result: { unscored: true }, fullSpec, jobUrl };
+    }
 
     let lastErr: any = null;
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
@@ -1071,11 +1081,23 @@ ${blacklistInfo}${bannedInfo}${dateConstraintInfo}${locationConstraintInfo}`;
         lastErr = err;
         const errMsg = err instanceof Error ? err.message : String(err);
         console.warn(`[SCREENING] Job ${index + 1}/${rawJobs.length} attempt ${attempt}/${MAX_RETRIES} failed: ${errMsg.slice(0, 150)}`);
-        if (attempt < MAX_RETRIES) await sleep(1000 * attempt); // 1s, 2s backoff
+        const isQuota = /429|quota|rate\s*limit|RESOURCE_EXHAUSTED|quotaexceeded/i.test(errMsg);
+        if (isQuota) {
+          consecutiveQuotaHits++;
+          console.warn(`[SCREENING] Quota hit ${consecutiveQuotaHits}x — ${consecutiveQuotaHits >= 3 ? "switching remaining jobs to unscored cards" : "continuing"}`);
+          if (consecutiveQuotaHits >= 3) aiQuotaExhausted = true;
+          break; // fail fast — retrying just re-hammers the rate limit
+        }
+        if (/413|too large|Request too large/i.test(errMsg)) {
+          break; // payload too large — will fail identically on retry
+        }
+        if (attempt < MAX_RETRIES) {
+          await sleep(1000 * attempt + Math.random() * 500);
+        }
       }
     }
-    console.error(`[SCREENING] Job ${index + 1}/${rawJobs.length} failed after ${MAX_RETRIES} retries, scoring as unavailable`);
-    return { result: { score: 0, reason: "Screening unavailable", estimated_salary: "", dynamic_requirements: null }, fullSpec, jobUrl };
+    console.error(`[SCREENING] Job ${index + 1}/${rawJobs.length} failed after ${MAX_RETRIES} retries, emitting unscored card`);
+    return { result: { unscored: true }, fullSpec, jobUrl };
   };
 
   let processedCount = offset;
@@ -1114,6 +1136,48 @@ ${blacklistInfo}${bannedInfo}${dateConstraintInfo}${locationConstraintInfo}`;
 
       // Track this job for dedup in subsequent batches
       seenSpecs.push({ title: job.title, company: job.company_name, url: jobUrl });
+
+      // AI scoring unavailable (quota/limits) → emit card with match_score: -1
+      // so it renders without a score and sinks to the bottom of the sort.
+      if (result.unscored) {
+        const unscoredRow: JobRow = {
+          id: crypto.randomUUID(),
+          user_id: user.id,
+          search_id: searchId,
+          profile_id: profile_id,
+          job_title: job.title,
+          company: job.company_name,
+          location: job.location,
+          estimated_salary: "",
+          match_score: -1,
+          match_summary: "AI scoring was unavailable for this job — showing it without a match score.",
+          verdict_bullets: null,
+          job_url: jobUrl,
+          full_spec: fullSpec,
+          search_query: query,
+          posted_at: (job as any)._postedAt ?? "",
+          posted_at_ms: (job as any)._postedAtMs ?? 0,
+          suggested_cv: "",
+          knockout_fail: null,
+          pillar_scores: null,
+          taxes_applied: null,
+          total_questions_asked: null,
+          yes_answers: null,
+          recruiter_verdict: null,
+          dynamic_requirements: null,
+          spec_source: job.spec_source ?? null,
+        };
+        localOutputs.push(unscoredRow);
+        onStatus?.({
+          type: "job_scored",
+          search_id: searchId,
+          job: unscoredRow,
+          current: localOutputs.length,
+          total: rawJobs.length,
+          progress: Math.min(25 + (localOutputs.length / rawJobs.length) * 55, 80),
+        });
+        continue;
+      }
 
       // Post-scoring sanity check
       if (result.score >= 40 && !result.knockout_fail) {
@@ -1775,6 +1839,13 @@ Return ONLY valid JSON (no markdown, no code fences):
 
               // All jobs processed (result.results already includes prior results seeded into outputs)
               const allResults = result.results;
+              // Scored jobs first (best match on top), unscored cards (-1) at the bottom
+              allResults.sort((a: JobRow, b: JobRow) => {
+                const aScored = a.match_score !== -1;
+                const bScored = b.match_score !== -1;
+                if (aScored !== bScored) return aScored ? -1 : 1;
+                return b.match_score - a.match_score;
+              });
               if (allResults.length > 0) {
                 const withIds = allResults.map((r: any) => ({ ...r, id: crypto.randomUUID() }));
                 const normalized = withIds.map(normalize);
