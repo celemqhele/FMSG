@@ -153,6 +153,37 @@ function getSupabase() {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 }
 
+async function saveCheckpoint(token: string, searchId: string, userId: string): Promise<string> {
+  const supabase = getSupabase();
+  const { data, error } = await supabase
+    .from("search_checkpoints")
+    .insert({ search_id: searchId, user_id: userId, continuation_token: token })
+    .select("id")
+    .single();
+  if (error) throw error;
+  console.log(`[CHECKPOINT] Saved checkpoint ${data.id} for search ${searchId}`);
+  return data.id;
+}
+
+async function loadCheckpoint(checkpointId: string, userId: string): Promise<string> {
+  const supabase = getSupabase();
+  const { data, error } = await supabase
+    .from("search_checkpoints")
+    .select("continuation_token")
+    .eq("id", checkpointId)
+    .eq("user_id", userId)
+    .single();
+  if (error || !data) throw new Error("Checkpoint not found");
+  console.log(`[CHECKPOINT] Loaded checkpoint ${checkpointId}`);
+  return data.continuation_token;
+}
+
+async function deleteCheckpoint(checkpointId: string, userId: string): Promise<void> {
+  const supabase = getSupabase();
+  await supabase.from("search_checkpoints").delete().eq("id", checkpointId).eq("user_id", userId);
+  console.log(`[CHECKPOINT] Deleted checkpoint ${checkpointId}`);
+}
+
 interface JobRow {
   id: string;
   user_id: string;
@@ -801,6 +832,7 @@ async function screenAndAnalyze(
   offset: number = 0,
   deadline?: number,
   outputs?: JobRow[],
+  onCheckpoint?: (processed: number, total: number, accumulated: JobRow[], seenSpecs: { title: string; company: string; url: string }[]) => Promise<void>,
 ): Promise<{ results: JobRow[]; queryUsed: string; filteredCounts: { history: number; saved: number; rejected: number; blocked: number }; nextOffset: number }> {
   const filteredCounts = { history: 0, saved: 0, rejected: 0, blocked: 0 };
   let nextOffset = offset;
@@ -998,172 +1030,206 @@ Return ONLY valid JSON (no markdown, no code fences):
 ${blacklistInfo}${bannedInfo}${dateConstraintInfo}${locationConstraintInfo}`;
 
   const localOutputs = outputs ?? [];
+  const priorCount = localOutputs.length;
 
   const seenSpecs: { title: string; company: string; url: string }[] = [];
 
-  debugLog(`[SEARCH] Starting one-by-one scoring (${rawJobs.length} jobs, offset ${offset})`);
-  onStatus?.({ type: "screening_job", current: 0, total: rawJobs.length, progress: 25 });
+  // Dynamic parallel batching: scale concurrency with job count
+  // 5 jobs → 1, 10 → 2, 20 → 4, 40 → 8, 80+ → 16 (capped buffer up to 10000 jobs)
+  const batchSize = Math.min(16, Math.max(1, Math.floor(rawJobs.length / 5)));
+  const staggerMs = 200;
+  const interBatchDelayMs = 500;
+  const MAX_RETRIES = 3;
+  const CHECKPOINT_EVERY = 30;
+
+  debugLog(`[SCREENING] Starting parallel scoring: ${rawJobs.length} jobs, offset ${offset}, batchSize=${batchSize}, prior results=${priorCount}`);
+  onStatus?.({ type: "screening_job", current: offset, total: rawJobs.length, progress: 25 });
   await sleep(80);
 
-for (let i = offset; i < rawJobs.length; i++) {
-    // Check deadline before processing each job (allows early exit before Vercel 300s timeout)
-    if (deadline && Date.now() > deadline) {
-      debugLog(`[SEARCH] Deadline reached at job ${i + 1}/${rawJobs.length}, pausing with ${rawJobs.length - i} jobs remaining`);
-      return { results: localOutputs, queryUsed: query, filteredCounts, nextOffset: i };
-    }
-
-    // Screening checkpoint every 30 jobs to show progress and prevent timeout
-    if (i > 0 && i % 30 === 0 && i < rawJobs.length) {
-      debugLog(`[SEARCH] 30-screening checkpoint at job ${i}/${rawJobs.length}, sending progress update`);
-      onStatus?.({
-        type: "screening_checkpoint",
-        current: i,
-        total: rawJobs.length,
-        progress: Math.min(25 + (i / rawJobs.length) * 55, 80),
-        message: `Still screening... ${i} of ${rawJobs.length} jobs analyzed. Hold tight.`,
-      });
-      debugLog(`[SEARCH] 30-screening checkpoint sent at job ${i}`);
-    }
-
-    const job = rawJobs[i];
-    nextOffset = i + 1;
-    const jobUrl = jobUrls.get(i) || buildJobUrl(job);
-
-    const fullSpec = jobSpecs.get(i) || "";
-
-    const progress = Math.min(25 + ((i + 1) / rawJobs.length) * 55, 80);
-    onStatus?.({ type: "analyzing_job", title: job.title, company: job.company_name, current: i + 1, total: rawJobs.length, progress });
-    await sleep(lastAITier === "gemini" ? 4000 : 1000);
-
+  // Process one job with retries — closes over prompt/profile/maps so it runs in parallel safely
+  const processSingleJob = async (job: any, index: number): Promise<{ result: any; fullSpec: string; jobUrl: string }> => {
+    const jobUrl = jobUrls.get(index) || buildJobUrl(job);
+    const fullSpec = jobSpecs.get(index) || "";
     const dedupContext = seenSpecs.length > 0
       ? `\nPREVIOUSLY SCORED JOBS: ${JSON.stringify(seenSpecs)}\n`
       : "\nPREVIOUSLY SCORED JOBS: (none yet)\n";
 
-    let result: any = null;
-    try {
-      const jobInput = fullSpec.replace(/["\r\t]/g, " ").replace(/\s+/g, " ").trim();
-      const raw = await callAIWithFallback(
-        dynamicScoringPrompt + dedupContext,
-        `Candidate Profile:\n${profileContext}\n\nJob:\n${JSON.stringify({ job_title: job.title, company: job.company_name, location: job.location, description: jobInput, url: jobUrl }, null, 2)}`,
-        `one-by-one scoring ${i + 1}/${rawJobs.length}${pfRound ? ` (PF round ${pfRound})` : ""}`,
-        { responseMimeType: "application/json", temperature: 0.1, maxOutputTokens: 16384 }
-      );
-      result = JSON.parse(raw);
-      debugLog(`[SEARCH] Job ${i + 1}/${rawJobs.length}: "${job.title}" scored ${result.score} (${result.recruiter_verdict})`);
-    } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      debugLog(`[SEARCH] Job ${i + 1}/${rawJobs.length} AI failed: ${errMsg.slice(0, 100)}`);
-      result = { score: 0, reason: "Screening unavailable", estimated_salary: "", dynamic_requirements: null };
-    }
-
-    // Track this job for dedup in subsequent iterations
-    seenSpecs.push({ title: job.title, company: job.company_name, url: jobUrl });
-
-    // Post-scoring sanity check
-    if (result.score >= 40 && !result.knockout_fail) {
-      const cvTextLower = cvTexts.map(cv => cv.text).join(" ").toLowerCase();
-      const specLower = fullSpec.toLowerCase();
-      const mandatory = extractMandatoryMissing(specLower, cvTextLower);
-      if (mandatory) {
-        result.score = 25;
-        result.knockout_fail = true;
-        result.taxes_applied = [];
-        result.adjustment_note = `Auto-corrected: ${mandatory} is required but absent from CV`;
-        result.recruiter_verdict = "REJECT";
-        debugLog(`[SEARCH] Post-scoring knockout on job ${i + 1}: ${mandatory}`);
+    let lastErr: any = null;
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        const jobInput = fullSpec.replace(/["\r\t]/g, " ").replace(/\s+/g, " ").trim();
+        const raw = await callAIWithFallback(
+          dynamicScoringPrompt + dedupContext,
+          `Candidate Profile:\n${profileContext}\n\nJob:\n${JSON.stringify({ job_title: job.title, company: job.company_name, location: job.location, description: jobInput, url: jobUrl }, null, 2)}`,
+          `one-by-one scoring ${index + 1}/${rawJobs.length}${pfRound ? ` (PF round ${pfRound})` : ""}${attempt > 1 ? ` (retry ${attempt}/${MAX_RETRIES})` : ""}`,
+          { responseMimeType: "application/json", temperature: 0.1, maxOutputTokens: 16384 }
+        );
+        const result = JSON.parse(raw);
+        debugLog(`[SCREENING] Job ${index + 1}/${rawJobs.length}: "${job.title}" @ "${job.company_name}" scored ${result.score} (${result.recruiter_verdict})`);
+        return { result, fullSpec, jobUrl };
+      } catch (err) {
+        lastErr = err;
+        const errMsg = err instanceof Error ? err.message : String(err);
+        console.warn(`[SCREENING] Job ${index + 1}/${rawJobs.length} attempt ${attempt}/${MAX_RETRIES} failed: ${errMsg.slice(0, 150)}`);
+        if (attempt < MAX_RETRIES) await sleep(1000 * attempt); // 1s, 2s backoff
       }
     }
+    console.error(`[SCREENING] Job ${index + 1}/${rawJobs.length} failed after ${MAX_RETRIES} retries, scoring as unavailable`);
+    return { result: { score: 0, reason: "Screening unavailable", estimated_salary: "", dynamic_requirements: null }, fullSpec, jobUrl };
+  };
 
-    const score = Math.round(result.score ?? 0);
-    const ps = result.pillar_scores;
-    const taxes = (result.taxes_applied as string[])?.filter((t: string) => t.length > 0) ?? [];
-    const rawVerdict = result.recruiter_verdict ?? (score >= 75 ? "HIRE" : score >= 60 ? "INTERVIEW" : "REJECT");
-    const verdict = (rawVerdict === "HIRE" && taxes.includes("Overqualified")) ? "INTERVIEW" : rawVerdict;
-    const dr = result.dynamic_requirements ?? null;
+  let processedCount = offset;
+  const totalBatches = Math.ceil((rawJobs.length - offset) / batchSize);
 
-    const deductionLabels: Record<string, string> = {
-      "Hopper Tax": "Short tenure history — 3+ jobs in 5 years with average under 18 months",
-      "Overqualified": "Current role is more senior — may be screened out as overqualified",
-      "Vague Achievement Tax": "CV lacks specific metrics and measurable achievements",
-      "No Degree Tax": "Role requires a degree which candidate does not have",
-      "Salary Mismatch Tax": "Job salary is below 70% of candidate's market rate",
-      "Location Tax": "Job is in a different province from the candidate's location",
-    };
+  for (let batchStart = offset; batchStart < rawJobs.length; batchStart += batchSize) {
+    const batchEnd = Math.min(batchStart + batchSize, rawJobs.length);
+    const batchIndices = Array.from({ length: batchEnd - batchStart }, (_, k) => batchStart + k);
+    const batchNum = Math.floor((batchStart - offset) / batchSize) + 1;
 
-    const autoSummary = (() => {
-      const lines: string[] = [];
-      if (dr && dr.length > 0) {
-        const met = dr.filter((r: any) => r.met).length;
-        lines.push(`Requirements: ${met} of ${dr.length} met`);
-      }
-      if (ps) {
-        const pillarLabels: Record<string, string> = { industry: "Industry", function: "Function", scale: "Experience", tools: "Tools", location: "Location" };
-        const psEntries = Object.entries(ps as Record<string, number>);
-        const sorted = psEntries.sort((a, b) => (b[1] ?? 0) - (a[1] ?? 0));
-        const good = sorted.filter(([, v]) => (v ?? 0) >= 60).slice(0, 2);
-        const bad = sorted.filter(([, v]) => (v ?? 0) < 60).slice(0, 2);
-        if (good.length > 0) {
-          for (const [k] of good) {
-            const reason = (result.pillar_reasons as Record<string, string>)?.[k] ?? "";
-            if (reason) lines.push(`• ${pillarLabels[k] || k}: ${reason}`);
-          }
+    // Check deadline before each batch (allows early exit before Vercel 300s timeout)
+    if (deadline && Date.now() > deadline) {
+      debugLog(`[SCREENING] Deadline reached at job ${batchStart}/${rawJobs.length}, pausing with ${rawJobs.length - batchStart} jobs remaining`);
+      return { results: localOutputs, queryUsed: query, filteredCounts, nextOffset: batchStart };
+    }
+
+    console.log(`[SCREENING] Batch ${batchNum}/${totalBatches}: jobs ${batchStart + 1}-${batchEnd}/${rawJobs.length}`);
+    onStatus?.({ type: "screening_job", current: batchStart, total: rawJobs.length, progress: Math.min(25 + (batchStart / rawJobs.length) * 55, 80) });
+
+    // Run batch in parallel with stagger to smooth rate limits
+    const batchResults = await Promise.all(
+      batchIndices.map((globalIdx, k) =>
+        new Promise<{ result: any; fullSpec: string; jobUrl: string }>((resolve) =>
+          setTimeout(() => processSingleJob(rawJobs[globalIdx], globalIdx).then(resolve), k * staggerMs)
+        )
+      )
+    );
+
+    // Process batch results sequentially to keep ordering + seenSpecs dedup consistent
+    for (let k = 0; k < batchResults.length; k++) {
+      const globalIdx = batchIndices[k];
+      const job = rawJobs[globalIdx];
+      const { result, fullSpec, jobUrl } = batchResults[k];
+      processedCount = globalIdx + 1;
+      nextOffset = processedCount;
+
+      // Track this job for dedup in subsequent batches
+      seenSpecs.push({ title: job.title, company: job.company_name, url: jobUrl });
+
+      // Post-scoring sanity check
+      if (result.score >= 40 && !result.knockout_fail) {
+        const cvTextLower = cvTexts.map(cv => cv.text).join(" ").toLowerCase();
+        const specLower = fullSpec.toLowerCase();
+        const mandatory = extractMandatoryMissing(specLower, cvTextLower);
+        if (mandatory) {
+          result.score = 25;
+          result.knockout_fail = true;
+          result.taxes_applied = [];
+          result.adjustment_note = `Auto-corrected: ${mandatory} is required but absent from CV`;
+          result.recruiter_verdict = "REJECT";
+          debugLog(`[SCREENING] Post-scoring knockout on job ${globalIdx + 1}: ${mandatory}`);
         }
-        if (bad.length > 0) {
-          for (const [k] of bad) {
-            const reason = (result.pillar_reasons as Record<string, string>)?.[k] ?? "";
-            if (reason) lines.push(`• ${pillarLabels[k] || k}: ${reason}`);
-          }
+      }
+
+      const score = Math.round(result.score ?? 0);
+      const ps = result.pillar_scores;
+      const taxes = (result.taxes_applied as string[])?.filter((t: string) => t.length > 0) ?? [];
+      const rawVerdict = result.recruiter_verdict ?? (score >= 75 ? "HIRE" : score >= 60 ? "INTERVIEW" : "REJECT");
+      const verdict = (rawVerdict === "HIRE" && taxes.includes("Overqualified")) ? "INTERVIEW" : rawVerdict;
+      const dr = result.dynamic_requirements ?? null;
+
+      const deductionLabels: Record<string, string> = {
+        "Hopper Tax": "Short tenure history — 3+ jobs in 5 years with average under 18 months",
+        "Overqualified": "Current role is more senior — may be screened out as overqualified",
+        "Vague Achievement Tax": "CV lacks specific metrics and measurable achievements",
+        "No Degree Tax": "Role requires a degree which candidate does not have",
+        "Salary Mismatch Tax": "Job salary is below 70% of candidate's market rate",
+        "Location Tax": "Job is in a different province from the candidate's location",
+      };
+
+      const autoSummary = (() => {
+        const lines: string[] = [];
+        if (dr && dr.length > 0) {
+          const met = dr.filter((r: any) => r.met).length;
+          lines.push(`Requirements: ${met} of ${dr.length} met`);
         }
-      } else {
-        const reasonText = result.reason?.trim() || "";
-        if (reasonText) lines.push(reasonText);
-      }
-      for (const t of taxes) {
-        const human = deductionLabels[t] || t;
-        lines.push(`• ${human}`);
-      }
-      if (result.adjustment_note) lines.push(`Score adjusted: ${result.adjustment_note}`);
-      lines.push(`Verdict: ${verdict}`);
-      return lines.join("\n");
-    })();
+        if (ps) {
+          const pillarLabels: Record<string, string> = { industry: "Industry", function: "Function", scale: "Experience", tools: "Tools", location: "Location" };
+          const psEntries = Object.entries(ps as Record<string, number>);
+          const sorted = psEntries.sort((a, b) => (b[1] ?? 0) - (a[1] ?? 0));
+          const good = sorted.filter(([, v]) => (v ?? 0) >= 60).slice(0, 2);
+          const bad = sorted.filter(([, v]) => (v ?? 0) < 60).slice(0, 2);
+          if (good.length > 0) {
+            for (const [k] of good) {
+              const reason = (result.pillar_reasons as Record<string, string>)?.[k] ?? "";
+              if (reason) lines.push(`• ${pillarLabels[k] || k}: ${reason}`);
+            }
+          }
+          if (bad.length > 0) {
+            for (const [k] of bad) {
+              const reason = (result.pillar_reasons as Record<string, string>)?.[k] ?? "";
+              if (reason) lines.push(`• ${pillarLabels[k] || k}: ${reason}`);
+            }
+          }
+        } else {
+          const reasonText = result.reason?.trim() || "";
+          if (reasonText) lines.push(reasonText);
+        }
+        for (const t of taxes) {
+          const human = deductionLabels[t] || t;
+          lines.push(`• ${human}`);
+        }
+        if (result.adjustment_note) lines.push(`Score adjusted: ${result.adjustment_note}`);
+        lines.push(`Verdict: ${verdict}`);
+        return lines.join("\n");
+      })();
 
-    localOutputs.push({
-      id: crypto.randomUUID(),
-      user_id: user.id,
-      search_id: searchId,
-      profile_id: profile_id,
-      job_title: job.title,
-      company: job.company_name,
-      location: job.location,
-      estimated_salary: result.estimated_salary || "",
-      match_score: score,
-      match_summary: autoSummary,
-      verdict_bullets: null,
-      job_url: jobUrl,
-      full_spec: fullSpec,
-      search_query: query,
-      posted_at: (job as any)._postedAt ?? "",
-      posted_at_ms: (job as any)._postedAtMs ?? 0,
-      suggested_cv: result.suggested_cv_name || "",
-      knockout_fail: result.knockout_fail ?? null,
-      pillar_scores: ps as { industry: number; function: number; scale: number; tools: number; location: number } | null,
-      taxes_applied: taxes as string[] | null,
-      total_questions_asked: result.total_questions_asked ?? null,
-      yes_answers: result.yes_answers ?? null,
-      recruiter_verdict: verdict,
-      dynamic_requirements: dr,
-      spec_source: job.spec_source ?? null,
-    });
-
-    // Emit job_scored event for localStorage backup
-    onStatus?.({
-        type: "job_scored",
+      localOutputs.push({
+        id: crypto.randomUUID(),
+        user_id: user.id,
         search_id: searchId,
-        job: localOutputs[localOutputs.length - 1],
-        current: localOutputs.length,
-        total: rawJobs.length,
-        progress: Math.min(25 + (localOutputs.length / rawJobs.length) * 55, 80),
+        profile_id: profile_id,
+        job_title: job.title,
+        company: job.company_name,
+        location: job.location,
+        estimated_salary: result.estimated_salary || "",
+        match_score: score,
+        match_summary: autoSummary,
+        verdict_bullets: null,
+        job_url: jobUrl,
+        full_spec: fullSpec,
+        search_query: query,
+        posted_at: (job as any)._postedAt ?? "",
+        posted_at_ms: (job as any)._postedAtMs ?? 0,
+        suggested_cv: result.suggested_cv_name || "",
+        knockout_fail: result.knockout_fail ?? null,
+        pillar_scores: ps as { industry: number; function: number; scale: number; tools: number; location: number } | null,
+        taxes_applied: taxes as string[] | null,
+        total_questions_asked: result.total_questions_asked ?? null,
+        yes_answers: result.yes_answers ?? null,
+        recruiter_verdict: verdict,
+        dynamic_requirements: dr,
+        spec_source: job.spec_source ?? null,
       });
+
+      // Emit job_scored event for localStorage backup
+      onStatus?.({
+          type: "job_scored",
+          search_id: searchId,
+          job: localOutputs[localOutputs.length - 1],
+          current: localOutputs.length,
+          total: rawJobs.length,
+          progress: Math.min(25 + (localOutputs.length / rawJobs.length) * 55, 80),
+        });
+    }
+
+    // Blocking screening checkpoint every 30 jobs (absolute across resumes) to reset Vercel runtime
+    if ((priorCount + processedCount) % CHECKPOINT_EVERY === 0 && processedCount < rawJobs.length && onCheckpoint) {
+      console.log(`[SCREENING] CHECKPOINT at ${processedCount}/${rawJobs.length} - saving state, sending pause`);
+      await onCheckpoint(processedCount, rawJobs.length, localOutputs, seenSpecs);
+      return { results: localOutputs, queryUsed: query, filteredCounts, nextOffset: processedCount };
+    }
+
+    if (batchEnd < rawJobs.length) await sleep(interBatchDelayMs);
   }
 
   if (aiRejectedJobs.length > 0) {
@@ -1246,9 +1312,18 @@ export async function POST(request: NextRequest) {
     let profileIndustry = "";
 
     if (isContinuation) {
-      // Decode continuation state securely
+      // Decode continuation state securely — support both full signed tokens and minimal { checkpoint_id } refs
+      let rawToken = continuation;
       try {
-        state = verifyAndDecodeContinuationToken(continuation, SUPABASE_SERVICE_KEY);
+        const parsed = JSON.parse(continuation);
+        if (parsed && typeof parsed === "object" && parsed.checkpoint_id) {
+          console.log(`[CHECKPOINT] Resuming via checkpoint ${parsed.checkpoint_id}`);
+          rawToken = await loadCheckpoint(parsed.checkpoint_id, user.id);
+          // Keep checkpoint on resume so user can retry if this attempt fails
+        }
+      } catch {}
+      try {
+        state = verifyAndDecodeContinuationToken(rawToken, SUPABASE_SERVICE_KEY);
       } catch (err) {
         return NextResponse.json({ error: "Invalid or tampered continuation token." }, { status: 400 });
       }
@@ -1628,8 +1703,57 @@ Return ONLY valid JSON (no markdown, no code fences):
             sendStatus({ type: "searching", query: searchQuery, progress: 10 });
 
              if (isContinuation) {
-              const offset = state.nextOffset ?? 0;
+              const offset = state.screeningOffset ?? state.nextOffset ?? 0;
               const continuationDeadline = Date.now() + 240_000;
+
+              // Seed outputs with prior results so screenAndAnalyze accumulates over them
+              const priorResults: JobRow[] = state.allResults || [];
+              for (const r of priorResults) outputs.push(r);
+
+              let screeningPaused = false;
+              const onCheckpoint = async (
+                processed: number,
+                total: number,
+                accumulated: JobRow[],
+                seenSpecs: { title: string; company: string; url: string }[]
+              ) => {
+                screeningPaused = true;
+                const checkpointToken = signContinuationToken({
+                  mode: "normal",
+                  rawJobs: state.rawJobs,
+                  jobSpecs: state.jobSpecs,
+                  jobUrls: state.jobUrls,
+                  queryUsed: state.queryUsed,
+                  searchId,
+                  titles: state.titles,
+                  profileLocation: state.profileLocation,
+                  profileIndustry: state.profileIndustry,
+                  cvTexts: state.cvTexts,
+                  bannedJobs: state.bannedJobs,
+                  bannedCompanies: state.bannedCompanies,
+                  hiddenJobKeys: state.hiddenJobKeys,
+                  query: state.query,
+                  dedupSets: state.dedupSets,
+                  maxAgeDays: state.maxAgeDays,
+                  profile_id: state.profile_id,
+                  allResults: accumulated,
+                  nextOffset: processed,
+                  screeningOffset: processed,
+                  screeningTotal: total,
+                }, SUPABASE_SERVICE_KEY);
+                const checkpointId = await saveCheckpoint(checkpointToken, searchId, user.id);
+                console.log(`[SCREENING] Checkpoint saved ${checkpointId}, pausing at ${processed}/${total}`);
+                sendComplete({
+                  type: "screening_pause",
+                  message: `Still screening... ${processed} of ${total} jobs analyzed. Hold tight.`,
+                  progress: Math.min(25 + (processed / total) * 55, 80),
+                  continuation: JSON.stringify({ checkpoint_id: checkpointId }),
+                  screening_offset: processed,
+                  screening_total: total,
+                });
+                closeWriter();
+              };
+
               const result = await screenAndAnalyze(
                 state.rawJobs, state.jobSpecs, state.jobUrls, state.queryUsed,
                 state.profileLocation, state.profileIndustry, state.titles, state.cvTexts,
@@ -1639,16 +1763,18 @@ Return ONLY valid JSON (no markdown, no code fences):
                 state.maxAgeDays,
                 offset,
                 continuationDeadline,
-                outputs
+                outputs,
+                onCheckpoint
               );
+              if (screeningPaused) return;
 
               const totalFiltered = result.filteredCounts.history + result.filteredCounts.saved + result.filteredCounts.rejected + result.filteredCounts.blocked;
               if (totalFiltered > 0) {
                 writer.send({ type: "filtered_summary", ...result.filteredCounts, progress: 50 });
               }
 
-              // All jobs processed
-              const allResults = [...(state.allResults || []), ...result.results];
+              // All jobs processed (result.results already includes prior results seeded into outputs)
+              const allResults = result.results;
               if (allResults.length > 0) {
                 const withIds = allResults.map((r: any) => ({ ...r, id: crypto.randomUUID() }));
                 const normalized = withIds.map(normalize);
@@ -1947,19 +2073,84 @@ Return ONLY valid JSON (no markdown, no code fences):
                 debugLog(`[PF] Round ${roundNum}: fetchAndFilterJobs returned ${filtered.rawJobs?.length || 0} raw jobs`);
               }
 
+              // Track whether we just resumed from a scoring-phase checkpoint (skip re-pausing)
+              const resumingScoring = state.pfScoringPhase && state.pfRoundNum === roundNum;
+
               // Pause after search phase - similar to regular search "Found X matching results. Ready to score?"
-              if (filtered.rawJobs.length > 0) {
+              // Uses checkpoint storage so the continuation token stays tiny regardless of job count.
+              if (filtered.rawJobs.length > 0 && !resumingScoring) {
                 const searchPhaseFiltered = filtered.rawJobs.length;
                 debugLog(`[PF] Round ${roundNum}: Sending SEARCH PHASE PAUSE - ${searchPhaseFiltered} jobs found, waiting for user to click Continue`);
+                const pauseToken = signContinuationToken({
+                  mode: "pf",
+                  nextRoundIndex: i,
+                  allResults,
+                  seenUrls: [...seenUrls],
+                  pfFilteredCounts,
+                  pfRoundsExecuted,
+                  pfAborted,
+                  searchId,
+                  titles: pfTitles,
+                  titleChainSteps,
+                  industryChain,
+                  profileLocation: pfLocation,
+                  profileIndustry: pfIndustry,
+                  cvTexts: pfCvTexts,
+                  bannedJobs: pfBannedJobs,
+                  bannedCompanies: pfBannedCompanies,
+                  dedupSets: {
+                    history: pfDedupSets.history ? [...pfDedupSets.history] : [],
+                    saved: pfDedupSets.saved ? [...pfDedupSets.saved] : [],
+                    blocked: pfDedupSets.blocked ? [...pfDedupSets.blocked] : [],
+                    rejected: pfDedupSets.rejected ? [...pfDedupSets.rejected] : [],
+                  },
+                  maxAgeDays: state.maxAgeDays,
+                  profile_id: state.profile_id,
+                  // Mark that we're at the scoring phase of this round
+                  pfScoringPhase: true,
+                  pfRoundNum: roundNum,
+                  pfQuery: fullQuery,
+                  pfFiltered: filtered,
+                }, SUPABASE_SERVICE_KEY);
+                const pauseCheckpointId = await saveCheckpoint(pauseToken, searchId, user.id);
+                console.log(`[CHECKPOINT] PF round ${roundNum} search-phase checkpoint saved ${pauseCheckpointId}`);
                 sendComplete({
                   type: "pause",
                   message: `Found ${searchPhaseFiltered} matching results for round ${roundNum}. Ready to score?`,
                   progress: Math.min(((roundNum - 1) / MAX_ROUNDS) * 80 + 5, 80),
-                  continuation: signContinuationToken({
+                  continuation: JSON.stringify({ checkpoint_id: pauseCheckpointId }),
+                });
+                closeWriter();
+                return;
+              }
+
+              let roundResults: JobRow[] = [];
+              let roundFilteredCounts = { history: 0, saved: 0, rejected: 0, blocked: 0 };
+
+              if (filtered.rawJobs.length > 0) {
+                const roundDeadline = Date.now() + 240_000;
+                const roundOffset = resumingScoring ? (state.screeningOffset ?? 0) : 0;
+                debugLog(`[PF] Round ${roundNum}: Starting SCORING phase with ${filtered.rawJobs.length} jobs${roundOffset > 0 ? `, resuming from offset ${roundOffset}` : ""}, deadline in ${Math.round((roundDeadline - Date.now()) / 1000)}s`);
+
+                // Seed outputs with prior PF results so screenAndAnalyze accumulates + checkpoint math stays correct
+                const roundPrior: JobRow[] = roundOffset > 0 ? (state.allResults || []) : [];
+                for (const r of roundPrior) outputs.push(r);
+
+                let screeningPaused = false;
+                const onCheckpoint = async (
+                  processed: number,
+                  total: number,
+                  accumulated: JobRow[],
+                  seenSpecs: { title: string; company: string; url: string }[]
+                ) => {
+                  screeningPaused = true;
+                  const mergedSeenUrls = new Set(seenUrls);
+                  for (const r of accumulated) mergedSeenUrls.add(r.job_url);
+                  const checkpointToken = signContinuationToken({
                     mode: "pf",
                     nextRoundIndex: i,
-                    allResults,
-                    seenUrls: [...seenUrls],
+                    allResults: accumulated,
+                    seenUrls: [...mergedSeenUrls],
                     pfFilteredCounts,
                     pfRoundsExecuted,
                     pfAborted,
@@ -1980,23 +2171,26 @@ Return ONLY valid JSON (no markdown, no code fences):
                     },
                     maxAgeDays: state.maxAgeDays,
                     profile_id: state.profile_id,
-                    // Mark that we're at the scoring phase of this round
                     pfScoringPhase: true,
                     pfRoundNum: roundNum,
                     pfQuery: fullQuery,
                     pfFiltered: filtered,
-                  }, SUPABASE_SERVICE_KEY),
-                });
-                closeWriter();
-                return;
-              }
+                    screeningOffset: processed,
+                    screeningTotal: total,
+                  }, SUPABASE_SERVICE_KEY);
+                  const checkpointId = await saveCheckpoint(checkpointToken, searchId, user.id);
+                  console.log(`[SCREENING] PF round ${roundNum} checkpoint saved ${checkpointId}, pausing at ${processed}/${total}`);
+                  sendComplete({
+                    type: "screening_pause",
+                    message: `Still screening... ${processed} of ${total} jobs analyzed. Hold tight.`,
+                    progress: Math.min(25 + (processed / total) * 55, 80),
+                    continuation: JSON.stringify({ checkpoint_id: checkpointId }),
+                    screening_offset: processed,
+                    screening_total: total,
+                  });
+                  closeWriter();
+                };
 
-              let roundResults: JobRow[] = [];
-              let roundFilteredCounts = { history: 0, saved: 0, rejected: 0, blocked: 0 };
-
-              if (filtered.rawJobs.length > 0) {
-                const roundDeadline = Date.now() + 240_000;
-                debugLog(`[PF] Round ${roundNum}: Starting SCORING phase with ${filtered.rawJobs.length} jobs, deadline in ${Math.round((roundDeadline - Date.now()) / 1000)}s`);
                 const result = await screenAndAnalyze(
                   filtered.rawJobs, filtered.jobSpecs, filtered.jobUrls, filtered.queryUsed,
                   pfLocation, pfIndustry, pfTitles, pfCvTexts,
@@ -2004,10 +2198,12 @@ Return ONLY valid JSON (no markdown, no code fences):
                   sendStatus, roundNum,
                   { history: new Set(pfDedupSets.history || []), saved: new Set(pfDedupSets.saved || []), blocked: new Set(pfDedupSets.blocked || []), rejected: new Set(pfDedupSets.rejected || []) },
                   state.maxAgeDays,
-                  0,
+                  roundOffset,
                   roundDeadline,
-                  outputs
+                  outputs,
+                  onCheckpoint
                 );
+                if (screeningPaused) return;
                 roundResults = result.results;
                 roundFilteredCounts = result.filteredCounts;
                 debugLog(`[PF] Round ${roundNum}: screenAndAnalyze completed - ${roundResults.length} scored, filtered: H=${roundFilteredCounts.history} S=${roundFilteredCounts.saved} R=${roundFilteredCounts.rejected} B=${roundFilteredCounts.blocked}`);
