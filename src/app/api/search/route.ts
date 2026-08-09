@@ -7,6 +7,7 @@ import { extractText } from "@/lib/pdf";
 import { mapLocationToProvince } from "@/lib/location";
 import { callAIWithFallback, lastAITier } from "@/lib/gemini";
 import { scoreMatch } from "@/lib/ats-scoring";
+import { embedTexts, cosineSimilarity, reciprocalRankFusion, buildCandidateText, buildJobText, EMBEDDING_MODEL } from "@/lib/ats-embeddings";
 import { StreamWriter, type SearchEvent } from "@/lib/search-stream";
 import { debugLog } from "@/lib/debug";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -868,6 +869,92 @@ async function screenAndAnalyze(
   onStatus?.({ type: "screening_job", current: offset, total: rawJobs.length, progress: 25 });
   await sleep(40);
 
+  // ---- Phase 2: semantic embeddings + RRF fusion (optional, degrades to lexical-only) ----
+  // Embed candidate profile + each job spec once per run, then fuse dense similarity
+  // with the deterministic score via Reciprocal Rank Fusion.
+  let semanticSims: (number | null)[] | null = null;
+  const embeddingBudgetOk = !deadline || Date.now() < deadline - 35_000;
+  if (embeddingBudgetOk) {
+    try {
+      const candidateText = buildCandidateText({
+        titles: titles ?? [],
+        industry: profileIndustry ?? "",
+        cvText: cvTexts.map((c) => c.text).join("\n"),
+      });
+      const candidateVecs = await embedTexts([candidateText], { timeoutMs: 25_000 });
+      const candidateVec = candidateVecs?.[0];
+      if (candidateVec) {
+        const jobTexts = rawJobs.map((job: any, i: number) =>
+          buildJobText({
+            title: job.title,
+            company: job.company_name,
+            location: job.location,
+            spec: jobSpecs.get(i) || job.description || "",
+          })
+        );
+        const jobVecs = await embedTexts(jobTexts, { timeoutMs: 25_000, maxBatch: 64 });
+        if (jobVecs && jobVecs.length > 0) {
+          semanticSims = rawJobs.map((_: any, i: number) =>
+            jobVecs[i] ? cosineSimilarity(candidateVec, jobVecs[i]) : null
+          );
+          const withSim = semanticSims.filter((s) => s != null).length;
+          console.log(`[SEMANTIC] Embeddings ready: candidate + ${withSim}/${rawJobs.length} jobs (${EMBEDDING_MODEL}) — RRF fusion enabled`);
+        }
+      }
+    } catch (err) {
+      console.warn(`[SEMANTIC] Skipped, falling back to lexical-only: ${(err as Error).message?.slice(0, 150)}`);
+    }
+  }
+
+  // Map job_url -> cosine similarity for RRF fusion across results
+  const simByUrl = new Map<string, number>();
+  if (semanticSims) {
+    for (let i = 0; i < rawJobs.length; i++) {
+      const url = jobUrls.get(i) || buildJobUrl(rawJobs[i]);
+      const s = semanticSims[i];
+      if (url && s != null) simByUrl.set(url, s);
+    }
+  }
+
+  const applySemanticFusion = () => {
+    if (simByUrl.size === 0) return;
+    const scored = localOutputs.filter((r: JobRow) => r.match_score !== -1 && r.match_score != null);
+    if (scored.length < 3) return;
+    const lexRankMap = new Map<string, number>();
+    [...scored]
+      .sort((a, b) => (b.match_score ?? 0) - (a.match_score ?? 0))
+      .forEach((r, i) => lexRankMap.set(r.job_url, i + 1));
+    const withSim = scored.filter((r) => simByUrl.has(r.job_url));
+    const denseRankMap = new Map<string, number>();
+    [...withSim]
+      .sort((a, b) => (simByUrl.get(b.job_url) ?? 0) - (simByUrl.get(a.job_url) ?? 0))
+      .forEach((r, i) => denseRankMap.set(r.job_url, i + 1));
+    let maxRrf = 0;
+    const rrfOf = new Map<string, number>();
+    for (const r of withSim) {
+      const lexRank = lexRankMap.get(r.job_url) ?? scored.length;
+      const denseRank = denseRankMap.get(r.job_url) ?? withSim.length;
+      const rrf = 1 / (60 + lexRank) + 1 / (60 + denseRank);
+      rrfOf.set(r.job_url, rrf);
+      if (rrf > maxRrf) maxRrf = rrf;
+    }
+    let fusedCount = 0;
+    for (const r of withSim) {
+      const rrf = rrfOf.get(r.job_url)!;
+      const rrfNorm = maxRrf > 0 ? (rrf / maxRrf) * 95 : 0;
+      const lex = r.match_score ?? 0;
+      const fused = Math.max(0, Math.min(95, Math.round(0.85 * lex + 0.15 * rrfNorm)));
+      r.match_score = fused;
+      const overq = (r.taxes_applied ?? []).includes("Overqualified");
+      r.recruiter_verdict = fused >= 75 && !overq ? "Apply" : fused >= 60 ? "Consider" : "Don't apply";
+      if (r.match_summary) {
+        r.match_summary = r.match_summary.replace(/Verdict: [^\n]*/, `Verdict: ${r.recruiter_verdict}`);
+      }
+      fusedCount++;
+    }
+    console.log(`[SEMANTIC] RRF fused ${fusedCount}/${scored.length} scored results`);
+  };
+
   // Process one job synchronously — pure function, safe to run in parallel
   const processSingleJob = (job: any, index: number): { result: any; fullSpec: string; jobUrl: string } => {
     const jobUrl = jobUrls.get(index) || buildJobUrl(job);
@@ -885,7 +972,7 @@ async function screenAndAnalyze(
       maxAgeDays,
       bannedCompanies,
     });
-    console.log(`[SCREENING] Job ${index + 1}/${rawJobs.length}: "${job.title}" @ "${job.company_name}" scored ${result.score} (${result.recruiter_verdict})`);
+    console.log(`[SCREENING] Job ${index + 1}/${rawJobs.length}: "${job.title}" @ "${job.company_name}" scored ${result.score} (${result.recruiter_verdict})${semanticSims?.[index] != null ? ` sim=${semanticSims[index].toFixed(2)}` : ""}`);
     return { result, fullSpec, jobUrl };
   };
 
@@ -900,6 +987,7 @@ async function screenAndAnalyze(
     // Check deadline before each batch (allows early exit before Vercel 300s timeout)
     if (deadline && Date.now() > deadline) {
       debugLog(`[SCREENING] Deadline reached at job ${batchStart}/${rawJobs.length}, pausing with ${rawJobs.length - batchStart} jobs remaining`);
+      applySemanticFusion();
       return { results: localOutputs, queryUsed: query, filteredCounts, nextOffset: batchStart };
     }
 
@@ -1018,6 +1106,7 @@ async function screenAndAnalyze(
     if ((priorCount + processedCount) % CHECKPOINT_EVERY === 0 && processedCount < rawJobs.length && onCheckpoint) {
       console.log(`[SCREENING] CHECKPOINT at ${processedCount}/${rawJobs.length} - saving state, sending pause`);
       await onCheckpoint(processedCount, rawJobs.length, localOutputs, seenSpecs);
+      applySemanticFusion();
       return { results: localOutputs, queryUsed: query, filteredCounts, nextOffset: processedCount };
     }
 
@@ -1025,6 +1114,8 @@ async function screenAndAnalyze(
   }
 
   onStatus?.({ type: "almost_done", progress: 90 });
+
+  applySemanticFusion();
 
   const verdictCounts = localOutputs.reduce<Record<string, number>>((acc, r) => {
     const v = (r as any).recruiter_verdict ?? "Unknown";

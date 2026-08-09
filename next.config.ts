@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
-  serverExternalPackages: ["tesseract.js", "@napi-rs/canvas", "pdfjs-dist"],
+  serverExternalPackages: ["tesseract.js", "@napi-rs/canvas", "pdfjs-dist", "@xenova/transformers"],
   async headers() {
     return [
       {
