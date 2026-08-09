@@ -885,7 +885,7 @@ async function screenAndAnalyze(
       maxAgeDays,
       bannedCompanies,
     });
-    debugLog(`[SCREENING] Job ${index + 1}/${rawJobs.length}: "${job.title}" @ "${job.company_name}" scored ${result.score} (${result.recruiter_verdict})`);
+    console.log(`[SCREENING] Job ${index + 1}/${rawJobs.length}: "${job.title}" @ "${job.company_name}" scored ${result.score} (${result.recruiter_verdict})`);
     return { result, fullSpec, jobUrl };
   };
 
@@ -1025,6 +1025,13 @@ async function screenAndAnalyze(
   }
 
   onStatus?.({ type: "almost_done", progress: 90 });
+
+  const verdictCounts = localOutputs.reduce<Record<string, number>>((acc, r) => {
+    const v = (r as any).recruiter_verdict ?? "Unknown";
+    acc[v] = (acc[v] ?? 0) + 1;
+    return acc;
+  }, {});
+  console.log(`[SCREENING] ATS scoring complete: ${localOutputs.length} scored, verdicts=${JSON.stringify(verdictCounts)}`);
 
   return { results: localOutputs, queryUsed: query, filteredCounts, nextOffset };
 }
