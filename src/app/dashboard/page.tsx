@@ -40,6 +40,7 @@ import { BlockedAccountPage } from "@/components/dashboard/blocked-account";
 import { VerifyEmailBanner } from "@/components/dashboard/verify-email-banner";
 import { VerifyCodeModal } from "@/components/dashboard/verify-code-modal";
 import { ContinuePopup } from "@/components/dashboard/continue-popup";
+import { OfflineResultsModal } from "@/components/dashboard/offline-results-modal";
 
 interface JobResult {
   id: string;
@@ -128,6 +129,9 @@ export default function DashboardPage() {
   const [showConnectionInterrupted, setShowConnectionInterrupted] = useState(false);
   const [connectionInterruptedMounted, setConnectionInterruptedMounted] = useState(false);
   const [screeningCheckpoint, setScreeningCheckpoint] = useState<{ current: number; total: number; message: string } | null>(null);
+  const [showOfflineResults, setShowOfflineResults] = useState(false);
+  const [offlineResultsMounted, setOfflineResultsMounted] = useState(false);
+  const [offlineSearchId, setOfflineSearchId] = useState<string | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [resultMessage, setResultMessage] = useState("");
   const [statusCompleted, setStatusCompleted] = useState<string[]>([]);
@@ -622,6 +626,40 @@ export default function DashboardPage() {
               });
               // Update progress but don't stop searching
               setProgress(event.progress ?? 70);
+              break;
+
+            case "job_scored":
+              // Store each scored job in localStorage for offline recovery
+              if (currentSearchId) {
+                const key = `fmsg_search_${currentSearchId}`;
+                try {
+                  const stored = localStorage.getItem(`fmsg_search_${currentSearchId}`);
+                  let data: { search_id: string; jobs: any[]; timestamp: string; completed: boolean; search_metadata: any } = { 
+                    search_id: currentSearchId, 
+                    jobs: [], 
+                    timestamp: new Date().toISOString(), 
+                    completed: false, 
+                    search_metadata: {} 
+                  };
+                  if (stored) {
+                    data = JSON.parse(stored);
+                  }
+                  data.jobs.push(event.job);
+                  data.timestamp = new Date().toISOString();
+                  localStorage.setItem(`fmsg_search_${currentSearchId}`, JSON.stringify(data));
+                } catch (err) {
+                  console.error("[Dashboard] Failed to store job_scored:", err);
+                }
+              }
+              break;
+
+            case "search_timeout":
+              // Search timed out - show offline results modal with localStorage data
+              if (event.search_id) {
+                setOfflineSearchId(event.search_id);
+                setShowOfflineResults(true);
+                requestAnimationFrame(() => setOfflineResultsMounted(true));
+              }
               break;
 
             case "almost_done":
@@ -1204,6 +1242,16 @@ export default function DashboardPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Offline Results Modal */}
+      {showOfflineResults && (
+        <OfflineResultsModal
+          isOpen={showOfflineResults}
+          onClose={() => { setShowOfflineResults(false); setOfflineResultsMounted(false); setOfflineSearchId(null); }}
+          onViewResults={() => { setShowOfflineResults(false); setOfflineResultsMounted(false); }}
+          searchId={offlineSearchId || ""}
+        />
       )}
 
       {/* Screening Checkpoint Notification */}

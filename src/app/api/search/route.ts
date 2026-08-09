@@ -154,8 +154,10 @@ function getSupabase() {
 }
 
 interface JobRow {
+  id: string;
   user_id: string;
   search_id: string;
+  profile_id: string | null;
   job_title: string;
   company: string;
   location: string;
@@ -798,6 +800,7 @@ async function screenAndAnalyze(
   maxAgeDays?: number,
   offset: number = 0,
   deadline?: number,
+  outputs?: JobRow[],
 ): Promise<{ results: JobRow[]; queryUsed: string; filteredCounts: { history: number; saved: number; rejected: number; blocked: number }; nextOffset: number }> {
   const filteredCounts = { history: 0, saved: 0, rejected: 0, blocked: 0 };
   let nextOffset = offset;
@@ -809,8 +812,10 @@ async function screenAndAnalyze(
     const jobSpecs = new Map(jobSpecsEntries);
     const jobUrls = new Map(jobUrlsEntries);
     const results: JobRow[] = rawJobs.map((job: any, i: number) => ({
+      id: crypto.randomUUID(),
       user_id: user.id,
       search_id: searchId,
+      profile_id: profile_id,
       job_title: job.title,
       company: job.company_name,
       location: job.location,
@@ -992,7 +997,7 @@ Return ONLY valid JSON (no markdown, no code fences):
 
 ${blacklistInfo}${bannedInfo}${dateConstraintInfo}${locationConstraintInfo}`;
 
-  let outputs: JobRow[] = [];
+  const localOutputs = outputs ?? [];
 
   const seenSpecs: { title: string; company: string; url: string }[] = [];
 
@@ -1004,7 +1009,7 @@ for (let i = offset; i < rawJobs.length; i++) {
     // Check deadline before processing each job (allows early exit before Vercel 300s timeout)
     if (deadline && Date.now() > deadline) {
       debugLog(`[SEARCH] Deadline reached at job ${i + 1}/${rawJobs.length}, pausing with ${rawJobs.length - i} jobs remaining`);
-      return { results: outputs, queryUsed: query, filteredCounts, nextOffset: i };
+      return { results: localOutputs, queryUsed: query, filteredCounts, nextOffset: i };
     }
 
     // Screening checkpoint every 30 jobs to show progress and prevent timeout
@@ -1122,9 +1127,11 @@ for (let i = offset; i < rawJobs.length; i++) {
       return lines.join("\n");
     })();
 
-    outputs.push({
+    localOutputs.push({
+      id: crypto.randomUUID(),
       user_id: user.id,
       search_id: searchId,
+      profile_id: profile_id,
       job_title: job.title,
       company: job.company_name,
       location: job.location,
@@ -1147,6 +1154,16 @@ for (let i = offset; i < rawJobs.length; i++) {
       dynamic_requirements: dr,
       spec_source: job.spec_source ?? null,
     });
+
+    // Emit job_scored event for localStorage backup
+    onStatus?.({
+        type: "job_scored",
+        search_id: searchId,
+        job: localOutputs[localOutputs.length - 1],
+        current: localOutputs.length,
+        total: rawJobs.length,
+        progress: Math.min(25 + (localOutputs.length / rawJobs.length) * 55, 80),
+      });
   }
 
   if (aiRejectedJobs.length > 0) {
@@ -1165,7 +1182,7 @@ for (let i = offset; i < rawJobs.length; i++) {
 
   onStatus?.({ type: "almost_done", progress: 90 });
 
-  return { results: outputs, queryUsed: query, filteredCounts, nextOffset };
+  return { results: localOutputs, queryUsed: query, filteredCounts, nextOffset };
 }
 
 
@@ -1556,6 +1573,28 @@ Return ONLY valid JSON (no markdown, no code fences):
       async start(controller) {
         const writer = new StreamWriter(controller);
         writer.send({ type: "search_started", search_id: searchId });
+        
+        // Array to store scored jobs for watchdog timeout
+        const outputs: JobRow[] = [];
+        
+        // 290s watchdog timer - triggers before Vercel 300s timeout
+        let killTimer = setTimeout(() => {
+          debugLog(`[SEARCH] 290s watchdog triggered for search ${searchId}`);
+          writer.send({ 
+            type: "search_timeout", 
+            search_id: searchId, 
+            results: outputs,  // all jobs scored so far (empty for PF mode)
+            message: "Search timed out. Showing results so far.",
+            progress: 100 
+          });
+          writer.close();
+        }, 290_000);
+
+        const closeWriter = () => {
+          clearTimeout(killTimer);
+          writer.close();
+        };
+
         const sendStatus = (event: SearchEvent) => writer.send(event);
         const sendComplete = (event: SearchEvent) => {
           if (state.balances) {
@@ -1582,7 +1621,7 @@ Return ONLY valid JSON (no markdown, no code fences):
 
             if (!searchQuery || searchQuery === "jobs") {
               writer.send({ type: "error", code: "NO_QUERY", message: "Add job titles to your search profile first.", progress: 0 });
-              writer.close();
+              closeWriter();
               return;
             }
 
@@ -1599,7 +1638,8 @@ Return ONLY valid JSON (no markdown, no code fences):
                 { history: new Set(state.dedupSets.history), saved: new Set(state.dedupSets.saved), blocked: new Set(state.dedupSets.blocked), rejected: new Set(state.dedupSets.rejected ?? []) },
                 state.maxAgeDays,
                 offset,
-                continuationDeadline
+                continuationDeadline,
+                outputs
               );
 
               const totalFiltered = result.filteredCounts.history + result.filteredCounts.saved + result.filteredCounts.rejected + result.filteredCounts.blocked;
@@ -1633,7 +1673,7 @@ Return ONLY valid JSON (no markdown, no code fences):
               } else {
                 sendComplete({ type: "complete", results: [], progress: 100, message: "No strong matches found. Try broadening your criteria." });
               }
-              writer.close();
+              closeWriter();
               return;
             }
 
@@ -1666,7 +1706,7 @@ Return ONLY valid JSON (no markdown, no code fences):
 
             if (rawJobs.length === 0) {
               sendComplete({ type: "complete", results: [], progress: 100, message: "No matching jobs found. Try broadening your criteria." });
-              writer.close();
+              closeWriter();
               return;
             }
 
@@ -1697,10 +1737,10 @@ Return ONLY valid JSON (no markdown, no code fences):
                   profile_id: state.profile_id,
                   allResults: [],
                   nextOffset: 0,
-                }, SUPABASE_SERVICE_KEY),
-              });
-            writer.close();
-            return;
+}, SUPABASE_SERVICE_KEY),
+                });
+                closeWriter();
+                return;
           }
 
           // === PERSISTENT FINDER MODE (AI-generated career chains, 5 rounds) ===
@@ -1853,7 +1893,7 @@ Return ONLY valid JSON (no markdown, no code fences):
                   profile_id: state.profile_id,
                 }, SUPABASE_SERVICE_KEY),
               });
-              writer.close();
+              closeWriter();
               return;
             }
 
@@ -1889,7 +1929,7 @@ Return ONLY valid JSON (no markdown, no code fences):
                 if (!state.pfFiltered || !state.pfFiltered.rawJobs || state.pfFiltered.rawJobs.length === 0) {
                   debugLog(`[PF] ERROR: pfScoringPhase=true but pfFiltered is missing/empty! Sending error to client.`);
                   writer.send({ type: "error", code: "PF_STATE_ERROR", message: "Invalid search state: missing pre-fetched results. Please start a new search.", progress: 0 });
-                  writer.close();
+                  closeWriter();
                   return;
                 }
                 filtered = state.pfFiltered;
@@ -1947,7 +1987,7 @@ Return ONLY valid JSON (no markdown, no code fences):
                     pfFiltered: filtered,
                   }, SUPABASE_SERVICE_KEY),
                 });
-                writer.close();
+                closeWriter();
                 return;
               }
 
@@ -1965,7 +2005,8 @@ Return ONLY valid JSON (no markdown, no code fences):
                   { history: new Set(pfDedupSets.history || []), saved: new Set(pfDedupSets.saved || []), blocked: new Set(pfDedupSets.blocked || []), rejected: new Set(pfDedupSets.rejected || []) },
                   state.maxAgeDays,
                   0,
-                  roundDeadline
+                  roundDeadline,
+                  outputs
                 );
                 roundResults = result.results;
                 roundFilteredCounts = result.filteredCounts;
@@ -2029,7 +2070,7 @@ Return ONLY valid JSON (no markdown, no code fences):
                     profile_id: state.profile_id,
                   }, SUPABASE_SERVICE_KEY),
                 });
-                writer.close();
+                closeWriter();
                 return;
               }
             } catch (err) {
@@ -2099,13 +2140,13 @@ Return ONLY valid JSON (no markdown, no code fences):
             sendComplete({ type: "complete", results: [], progress: 100, message: noResultsMessage, pf_mode: true, pf_rounds: pfRoundsExecuted });
           }
 
-          writer.close();
+          closeWriter();
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
-          debugLog("[SEARCH] Unhandled error:", msg);
+          debugLog("[SEARCH] Unhandled error in stream:", msg);
           try {
             writer.send({ type: "error", code: "GENERIC_ERROR", message: "Something went wrong. Please try again.", progress: 0 });
-            writer.close();
+            closeWriter();
           } catch {}
         }
       },
