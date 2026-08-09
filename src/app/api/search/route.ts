@@ -68,6 +68,30 @@ const BLOCKED_ATS_TRACKERS = [
   'getwork',
 ];
 
+// Source priority for spec dedup tie-breaking (higher = keep this source)
+const SPEC_SOURCE_PRIORITY: Record<string, number> = {
+  jsearch: 7,
+  google_jobs: 6,
+  bing_jobs: 5,
+  ditto: 4,
+  workday: 3,
+  scrappa: 2,
+  adzuna: 1,
+};
+
+function specSourcePriority(job: any): number {
+  return SPEC_SOURCE_PRIORITY[job?.spec_source ?? ""] ?? 0;
+}
+
+// 100% keyword-match fingerprint: lowercase, whitespace collapsed. Identical specs dedup.
+function specFingerprint(spec: string): string {
+  return (spec || "")
+    .toLowerCase()
+    .replace(/[\r\n\t]+/g, " ")
+    .replace(/[ ]{2,}/g, " ")
+    .trim();
+}
+
 function parsePostedAt(posted?: string): number | null {
   if (!posted) return null;
   const val = posted.toLowerCase().replace(/^a[n]?\s+/, "1 ").replace(/^just posted$/, "0 days ago").replace(/\+/, "");
@@ -811,6 +835,7 @@ async function screenAndAnalyze(
   deadline?: number,
   outputs?: JobRow[],
   onCheckpoint?: (processed: number, total: number, accumulated: JobRow[], seenSpecs: { title: string; company: string; url: string }[]) => Promise<void>,
+  priorSpecKeys?: Set<string>,
 ): Promise<{ results: JobRow[]; queryUsed: string; filteredCounts: { history: number; saved: number; rejected: number; blocked: number }; nextOffset: number }> {
   const filteredCounts = { history: 0, saved: 0, rejected: 0, blocked: 0 };
   let nextOffset = offset;
@@ -852,8 +877,74 @@ async function screenAndAnalyze(
     return { results, queryUsed: query, filteredCounts, nextOffset };
   }
 
-  const jobSpecs = new Map(jobSpecsEntries);
-  const jobUrls = new Map(jobUrlsEntries);
+  let jobSpecs = new Map(jobSpecsEntries);
+  let jobUrls = new Map(jobUrlsEntries);
+
+  // ---- Spec dedup: collapse 100% keyword-matching specs (same job posted on multiple boards) ----
+  // Runs at the start of every call. priorSpecKeys carries fingerprints scored in earlier PF rounds
+  // → jobs that already appeared in a prior round get deduped from the total.
+  // priorFpKeys is NOT seeded from `outputs`: outputs holds the current round's already-scored jobs,
+  // which must stay in the list so resume offset math stays deterministic; they are only used below
+  // to remap `offset` to the deduped index space.
+  const scoredFpKeys = new Set<string>();
+  for (const r of outputs ?? []) {
+    const fk = specFingerprint((r as any).full_spec ?? "");
+    if (fk) scoredFpKeys.add(fk);
+  }
+  const priorFpKeys = new Set<string>(priorSpecKeys ?? []);
+  const keptJobs: any[] = [];
+  const keptSpecsEntries: [number, string][] = [];
+  const keptUrlsEntries: [number, string][] = [];
+  const keptFingerprints: (string | null)[] = [];
+  const fpToKeptIndex = new Map<string, number>();
+  let droppedFromTotal = 0;
+  let droppedInBatch = 0;
+  for (let i = 0; i < rawJobs.length; i++) {
+    const job = rawJobs[i];
+    const spec = jobSpecs.get(i) || (job as any)._spec || job.description || "";
+    const url = jobUrls.get(i) || buildJobUrl(job);
+    const fp = specFingerprint(spec);
+    if (!fp) {
+      const ni = keptJobs.length;
+      keptJobs.push(job); keptSpecsEntries.push([ni, spec]); keptUrlsEntries.push([ni, url]); keptFingerprints.push(null);
+      continue;
+    }
+    if (priorFpKeys.has(fp)) {
+      droppedFromTotal++;
+      continue;
+    }
+    const existingIdx = fpToKeptIndex.get(fp);
+    if (existingIdx !== undefined) {
+      droppedInBatch++;
+      const existing = keptJobs[existingIdx];
+      const existingLen = keptSpecsEntries[existingIdx][1].length;
+      if (spec.length > existingLen || (spec.length === existingLen && specSourcePriority(job) > specSourcePriority(existing))) {
+        keptJobs[existingIdx] = job;
+        keptSpecsEntries[existingIdx] = [existingIdx, spec];
+        keptUrlsEntries[existingIdx] = [existingIdx, url];
+      }
+      continue;
+    }
+    const ni = keptJobs.length;
+    keptJobs.push(job); keptSpecsEntries.push([ni, spec]); keptUrlsEntries.push([ni, url]); keptFingerprints.push(fp);
+    fpToKeptIndex.set(fp, ni);
+  }
+  if (droppedFromTotal + droppedInBatch > 0) {
+    // Remap offset to the deduped index space: the jobs already scored on a previous call (their
+    // fingerprints are in `outputs`) are the first N kept jobs in original order → resume at N.
+    let newOffset = 0;
+    for (const fp of keptFingerprints) {
+      if (fp !== null && scoredFpKeys.has(fp)) newOffset++;
+      else break;
+    }
+    offset = newOffset;
+    rawJobs = keptJobs;
+    jobSpecsEntries = keptSpecsEntries;
+    jobUrlsEntries = keptUrlsEntries;
+    jobSpecs = new Map(keptSpecsEntries);
+    jobUrls = new Map(keptUrlsEntries);
+    console.log(`[DEDUP] Spec dedup: dropped ${droppedFromTotal} from prior rounds + ${droppedInBatch} in-batch duplicates → ${rawJobs.length} jobs to score (offset remapped to ${newOffset})`);
+  }
 
   const localOutputs = outputs ?? [];
   const priorCount = localOutputs.length;
@@ -2084,7 +2175,16 @@ Return ONLY valid JSON (no markdown, no code fences):
                   roundOffset,
                   roundDeadline,
                   outputs,
-                  onCheckpoint
+                  onCheckpoint,
+                  // Cross-round spec dedup: fingerprints already scored in earlier PF rounds
+                  (() => {
+                    const keys = new Set<string>();
+                    for (const r of allResults) {
+                      const fk = specFingerprint(r.full_spec ?? "");
+                      if (fk) keys.add(fk);
+                    }
+                    return keys;
+                  })()
                 );
                 if (screeningPaused) return;
                 roundResults = result.results;
