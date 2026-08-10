@@ -12,7 +12,6 @@ export type SearchEvent =
   | { type: "error"; code: string; message: string; progress: number }
   | { type: "filtered_summary"; history: number; saved: number; rejected: number; blocked: number; progress: number }
   | { type: "pause"; message: string; progress: number; continuation: string; balances?: { search: number; cv: number; pf: number; has_searched: boolean }; plan?: string }
-  | { type: "screening_pause"; message: string; progress: number; continuation: string; screening_offset?: number; screening_total?: number; balances?: { search: number; cv: number; pf: number; has_searched: boolean }; plan?: string }
   | { type: "partial_complete"; results: unknown[]; progress: number; continuation: string; message: string; balances?: { search: number; cv: number; pf: number; has_searched: boolean }; plan?: string };
 
 export interface JobResult {

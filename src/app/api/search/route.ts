@@ -179,18 +179,6 @@ function getSupabase() {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 }
 
-async function saveCheckpoint(token: string, searchId: string, userId: string): Promise<string> {
-  const supabase = getSupabase();
-  const { data, error } = await supabase
-    .from("search_checkpoints")
-    .insert({ search_id: searchId, user_id: userId, continuation_token: token })
-    .select("id")
-    .single();
-  if (error) throw error;
-  console.log(`[CHECKPOINT] Saved checkpoint ${data.id} for search ${searchId}`);
-  return data.id;
-}
-
 async function loadCheckpoint(checkpointId: string, userId: string): Promise<string> {
   const supabase = getSupabase();
   const { data, error } = await supabase
@@ -202,12 +190,6 @@ async function loadCheckpoint(checkpointId: string, userId: string): Promise<str
   if (error || !data) throw new Error("Checkpoint not found");
   console.log(`[CHECKPOINT] Loaded checkpoint ${checkpointId}`);
   return data.continuation_token;
-}
-
-async function deleteCheckpoint(checkpointId: string, userId: string): Promise<void> {
-  const supabase = getSupabase();
-  await supabase.from("search_checkpoints").delete().eq("id", checkpointId).eq("user_id", userId);
-  console.log(`[CHECKPOINT] Deleted checkpoint ${checkpointId}`);
 }
 
 interface JobRow {
@@ -834,7 +816,6 @@ async function screenAndAnalyze(
   offset: number = 0,
   deadline?: number,
   outputs?: JobRow[],
-  onCheckpoint?: (processed: number, total: number, accumulated: JobRow[], seenSpecs: { title: string; company: string; url: string }[]) => Promise<void>,
   priorSpecKeys?: Set<string>,
 ): Promise<{ results: JobRow[]; queryUsed: string; filteredCounts: { history: number; saved: number; rejected: number; blocked: number }; nextOffset: number }> {
   const filteredCounts = { history: 0, saved: 0, rejected: 0, blocked: 0 };
@@ -954,7 +935,6 @@ async function screenAndAnalyze(
   // Deterministic ATS scoring — synchronous, zero external calls, no quota concerns.
   const batchSize = Math.min(16, Math.max(1, Math.floor(rawJobs.length / 5)));
   const interBatchDelayMs = 50;
-  const CHECKPOINT_EVERY = 100;
 
   debugLog(`[SCREENING] Starting deterministic ATS scoring: ${rawJobs.length} jobs, offset ${offset}, batchSize=${batchSize}, prior results=${priorCount}`);
   onStatus?.({ type: "screening_job", current: offset, total: rawJobs.length, progress: 25 });
@@ -1191,14 +1171,6 @@ async function screenAndAnalyze(
           total: rawJobs.length,
           progress: Math.min(25 + (localOutputs.length / rawJobs.length) * 55, 80),
         });
-    }
-
-    // Blocking screening checkpoint every 30 jobs (absolute across resumes) to reset Vercel runtime
-    if ((priorCount + processedCount) % CHECKPOINT_EVERY === 0 && processedCount < rawJobs.length && onCheckpoint) {
-      console.log(`[SCREENING] CHECKPOINT at ${processedCount}/${rawJobs.length} - saving state, sending pause`);
-      await onCheckpoint(processedCount, rawJobs.length, localOutputs, seenSpecs);
-      applySemanticFusion();
-      return { results: localOutputs, queryUsed: query, filteredCounts, nextOffset: processedCount };
     }
 
     if (batchEnd < rawJobs.length) await sleep(interBatchDelayMs);
@@ -1670,56 +1642,12 @@ Return ONLY valid JSON (no markdown, no code fences):
             sendStatus({ type: "searching", query: searchQuery, progress: 10 });
 
              if (isContinuation) {
-              const offset = state.screeningOffset ?? state.nextOffset ?? 0;
+              const offset = state.nextOffset ?? 0;
               const continuationDeadline = Date.now() + 240_000;
 
               // Seed outputs with prior results so screenAndAnalyze accumulates over them
               const priorResults: JobRow[] = state.allResults || [];
               for (const r of priorResults) outputs.push(r);
-
-              let screeningPaused = false;
-              const onCheckpoint = async (
-                processed: number,
-                total: number,
-                accumulated: JobRow[],
-                seenSpecs: { title: string; company: string; url: string }[]
-              ) => {
-                screeningPaused = true;
-                const checkpointToken = signContinuationToken({
-                  mode: "normal",
-                  rawJobs: state.rawJobs,
-                  jobSpecs: state.jobSpecs,
-                  jobUrls: state.jobUrls,
-                  queryUsed: state.queryUsed,
-                  searchId,
-                  titles: state.titles,
-                  profileLocation: state.profileLocation,
-                  profileIndustry: state.profileIndustry,
-                  cvTexts: state.cvTexts,
-                  bannedJobs: state.bannedJobs,
-                  bannedCompanies: state.bannedCompanies,
-                  hiddenJobKeys: state.hiddenJobKeys,
-                  query: state.query,
-                  dedupSets: state.dedupSets,
-                  maxAgeDays: state.maxAgeDays,
-                  profile_id: state.profile_id,
-                  allResults: accumulated,
-                  nextOffset: processed,
-                  screeningOffset: processed,
-                  screeningTotal: total,
-                }, SUPABASE_SERVICE_KEY);
-                const checkpointId = await saveCheckpoint(checkpointToken, searchId, user.id);
-                console.log(`[SCREENING] Checkpoint saved ${checkpointId}, pausing at ${processed}/${total}`);
-                sendComplete({
-                  type: "screening_pause",
-                  message: `Still screening... ${processed} of ${total} jobs analyzed. Hold tight.`,
-                  progress: Math.min(25 + (processed / total) * 55, 80),
-                  continuation: JSON.stringify({ checkpoint_id: checkpointId }),
-                  screening_offset: processed,
-                  screening_total: total,
-                });
-                closeWriter();
-              };
 
               const result = await screenAndAnalyze(
                 state.rawJobs, state.jobSpecs, state.jobUrls, state.queryUsed,
@@ -1730,10 +1658,8 @@ Return ONLY valid JSON (no markdown, no code fences):
                 state.maxAgeDays,
                 offset,
                 continuationDeadline,
-                outputs,
-                onCheckpoint
+                outputs
               );
-              if (screeningPaused) return;
 
               const totalFiltered = result.filteredCounts.history + result.filteredCounts.saved + result.filteredCounts.rejected + result.filteredCounts.blocked;
               if (totalFiltered > 0) {
@@ -1878,42 +1804,30 @@ Return ONLY valid JSON (no markdown, no code fences):
             pfBannedCompanies = state.bannedCompanies || [];
             pfDedupSets = state.dedupSets;
 
-            debugLog(`[PF] Resuming continuation: mode=pf, startRoundIndex=${startRoundIndex}, pfRoundsExecuted=${pfRoundsExecuted}, allResults.length=${allResults.length}, pfScoringPhase=${state.pfScoringPhase}, pfRoundNum=${state.pfRoundNum}`);
+            debugLog(`[PF] Resuming continuation: mode=pf, startRoundIndex=${startRoundIndex}, pfRoundsExecuted=${pfRoundsExecuted}, allResults.length=${allResults.length}`);
 
-            // Check if we're resuming at the scoring phase of a round (after search phase pause)
-            if (state.pfScoringPhase) {
-              debugLog(`[PF] Resuming at SCORING phase of round ${state.pfRoundNum} (pfScoringPhase=true)`);
-              if (!state.pfFiltered || !state.pfFiltered.rawJobs || state.pfFiltered.rawJobs.length === 0) {
-                debugLog(`[PF] ERROR: pfScoringPhase=true but pfFiltered is missing or empty! state.pfFiltered=${JSON.stringify(state.pfFiltered)}`);
-                // Fall through to normal flow
-              } else {
-                debugLog(`[PF] Using pre-fetched filtered results: ${state.pfFiltered.rawJobs.length} raw jobs`);
-                // Continue to scoring below with the pre-fetched results
-              }
-            } else {
-              // Rebuild title ladder and industry chain from refreshed profile data
-              // (in case profile was edited while search was paused)
-              titleChainSteps = Array.from({ length: MAX_ROUNDS }, (_, i) => {
-                const title = pfTitles[i]?.trim();
-                return title ? [title] : [];
-              });
-              for (let s = 0; s < MAX_ROUNDS; s++) {
-                if (titleChainSteps[s].length === 0) titleChainSteps[s] = [...pfTitles];
-              }
-              industryChain = [
-                state.industryStep1 || pfIndustry || "",
-                state.industryStep2 || pfIndustry || "",
-                state.industryStep3 || pfIndustry || "",
-                state.industryStep4 || pfIndustry || "",
-                state.industryStep5 || pfIndustry || "",
-              ];
-              debugLog(`[PF] Resuming at round ${startRoundIndex + 1}/${MAX_ROUNDS}, ${allResults.length} results so far`);
-              debugLog(`[PF] Rebuilt title ladder: ${pfTitles.join(" > ")}`);
-              debugLog(`[PF] Rebuilt industry ladder: ${industryChain.join(" > ")}`);
-              if (finish_now) {
-                hardStop = true;
-                debugLog("[PF] finish_now flag set, will finalize after current round");
-              }
+            // Rebuild title ladder and industry chain from refreshed profile data
+            // (in case profile was edited while search was paused)
+            titleChainSteps = Array.from({ length: MAX_ROUNDS }, (_, i) => {
+              const title = pfTitles[i]?.trim();
+              return title ? [title] : [];
+            });
+            for (let s = 0; s < MAX_ROUNDS; s++) {
+              if (titleChainSteps[s].length === 0) titleChainSteps[s] = [...pfTitles];
+            }
+            industryChain = [
+              state.industryStep1 || pfIndustry || "",
+              state.industryStep2 || pfIndustry || "",
+              state.industryStep3 || pfIndustry || "",
+              state.industryStep4 || pfIndustry || "",
+              state.industryStep5 || pfIndustry || "",
+            ];
+            debugLog(`[PF] Resuming at round ${startRoundIndex + 1}/${MAX_ROUNDS}, ${allResults.length} results so far`);
+            debugLog(`[PF] Rebuilt title ladder: ${pfTitles.join(" > ")}`);
+            debugLog(`[PF] Rebuilt industry ladder: ${industryChain.join(" > ")}`);
+            if (finish_now) {
+              hardStop = true;
+              debugLog("[PF] finish_now flag set, will finalize after current round");
             }
           } else {
             pfTitles = state.titles;
@@ -2022,148 +1936,22 @@ Return ONLY valid JSON (no markdown, no code fences):
             }
 
             try {
-              // Check if we're resuming at scoring phase (pfScoringPhase = true)
               let filtered;
-              if (state.pfScoringPhase) {
-                debugLog(`[PF] Round ${roundNum}: Resuming at SCORING phase - pfScoringPhase=${state.pfScoringPhase}, pfRoundNum=${state.pfRoundNum}, pfFiltered exists=${!!state.pfFiltered}, rawJobs=${state.pfFiltered?.rawJobs?.length || 0}`);
-                if (!state.pfFiltered || !state.pfFiltered.rawJobs || state.pfFiltered.rawJobs.length === 0) {
-                  debugLog(`[PF] ERROR: pfScoringPhase=true but pfFiltered is missing/empty! Sending error to client.`);
-                  writer.send({ type: "error", code: "PF_STATE_ERROR", message: "Invalid search state: missing pre-fetched results. Please start a new search.", progress: 0 });
-                  closeWriter();
-                  return;
-                }
-                filtered = state.pfFiltered;
-                debugLog(`[PF] Using pre-fetched filtered results: ${filtered.rawJobs.length} raw jobs, ${filtered.jobSpecs?.length || 0} specs, ${filtered.jobUrls?.length || 0} urls`);
-                // Clear the scoring phase flag so next iteration runs normally
-                state.pfScoringPhase = false;
-              } else {
-                debugLog(`[PF] Round ${roundNum}: Starting SEARCH phase (pfScoringPhase=false)`);
-                const pfHiddenKeys = state.hiddenJobKeys ? new Set<string>(state.hiddenJobKeys as string[]) : undefined;
-                filtered = await fetchAndFilterJobs(
-                  fullQuery, pfLocation, user, searchId,
-                  pfBannedJobs, pfBannedCompanies, dataClient, state.profile_id, sendStatus, roundNum,
-                  pfHiddenKeys, state.maxAgeDays, 5, platforms
-                );
-                debugLog(`[PF] Round ${roundNum}: fetchAndFilterJobs returned ${filtered.rawJobs?.length || 0} raw jobs`);
-              }
-
-              // Track whether we just resumed from a scoring-phase checkpoint (skip re-pausing)
-              const resumingScoring = state.pfScoringPhase && state.pfRoundNum === roundNum;
-
-              // Pause after search phase - similar to regular search "Found X matching results. Ready to score?"
-              // Uses checkpoint storage so the continuation token stays tiny regardless of job count.
-              if (filtered.rawJobs.length > 0 && !resumingScoring) {
-                const searchPhaseFiltered = filtered.rawJobs.length;
-                debugLog(`[PF] Round ${roundNum}: Sending SEARCH PHASE PAUSE - ${searchPhaseFiltered} jobs found, waiting for user to click Continue`);
-                const pauseToken = signContinuationToken({
-                  mode: "pf",
-                  nextRoundIndex: i,
-                  allResults,
-                  seenUrls: [...seenUrls],
-                  pfFilteredCounts,
-                  pfRoundsExecuted,
-                  pfAborted,
-                  searchId,
-                  titles: pfTitles,
-                  titleChainSteps,
-                  industryChain,
-                  profileLocation: pfLocation,
-                  profileIndustry: pfIndustry,
-                  cvTexts: pfCvTexts,
-                  bannedJobs: pfBannedJobs,
-                  bannedCompanies: pfBannedCompanies,
-                  dedupSets: {
-                    history: pfDedupSets.history ? [...pfDedupSets.history] : [],
-                    saved: pfDedupSets.saved ? [...pfDedupSets.saved] : [],
-                    blocked: pfDedupSets.blocked ? [...pfDedupSets.blocked] : [],
-                    rejected: pfDedupSets.rejected ? [...pfDedupSets.rejected] : [],
-                  },
-                  maxAgeDays: state.maxAgeDays,
-                  profile_id: state.profile_id,
-                  // Mark that we're at the scoring phase of this round
-                  pfScoringPhase: true,
-                  pfRoundNum: roundNum,
-                  pfQuery: fullQuery,
-                  pfFiltered: filtered,
-                }, SUPABASE_SERVICE_KEY);
-                const pauseCheckpointId = await saveCheckpoint(pauseToken, searchId, user.id);
-                console.log(`[CHECKPOINT] PF round ${roundNum} search-phase checkpoint saved ${pauseCheckpointId}`);
-                sendComplete({
-                  type: "pause",
-                  message: `Found ${searchPhaseFiltered} matching results for round ${roundNum}. Ready to score?`,
-                  progress: Math.min(((roundNum - 1) / MAX_ROUNDS) * 80 + 5, 80),
-                  continuation: JSON.stringify({ checkpoint_id: pauseCheckpointId }),
-                });
-                closeWriter();
-                return;
-              }
+              debugLog(`[PF] Round ${roundNum}: Starting SEARCH phase`);
+              const pfHiddenKeys = state.hiddenJobKeys ? new Set<string>(state.hiddenJobKeys as string[]) : undefined;
+              filtered = await fetchAndFilterJobs(
+                fullQuery, pfLocation, user, searchId,
+                pfBannedJobs, pfBannedCompanies, dataClient, state.profile_id, sendStatus, roundNum,
+                pfHiddenKeys, state.maxAgeDays, 5, platforms
+              );
+              debugLog(`[PF] Round ${roundNum}: fetchAndFilterJobs returned ${filtered.rawJobs?.length || 0} raw jobs`);
 
               let roundResults: JobRow[] = [];
               let roundFilteredCounts = { history: 0, saved: 0, rejected: 0, blocked: 0 };
 
               if (filtered.rawJobs.length > 0) {
                 const roundDeadline = Date.now() + 240_000;
-                const roundOffset = resumingScoring ? (state.screeningOffset ?? 0) : 0;
-                debugLog(`[PF] Round ${roundNum}: Starting SCORING phase with ${filtered.rawJobs.length} jobs${roundOffset > 0 ? `, resuming from offset ${roundOffset}` : ""}, deadline in ${Math.round((roundDeadline - Date.now()) / 1000)}s`);
-
-                // Seed outputs with prior PF results so screenAndAnalyze accumulates + checkpoint math stays correct
-                const roundPrior: JobRow[] = roundOffset > 0 ? (state.allResults || []) : [];
-                for (const r of roundPrior) outputs.push(r);
-
-                let screeningPaused = false;
-                const onCheckpoint = async (
-                  processed: number,
-                  total: number,
-                  accumulated: JobRow[],
-                  seenSpecs: { title: string; company: string; url: string }[]
-                ) => {
-                  screeningPaused = true;
-                  const mergedSeenUrls = new Set(seenUrls);
-                  for (const r of accumulated) mergedSeenUrls.add(r.job_url);
-                  const checkpointToken = signContinuationToken({
-                    mode: "pf",
-                    nextRoundIndex: i,
-                    allResults: accumulated,
-                    seenUrls: [...mergedSeenUrls],
-                    pfFilteredCounts,
-                    pfRoundsExecuted,
-                    pfAborted,
-                    searchId,
-                    titles: pfTitles,
-                    titleChainSteps,
-                    industryChain,
-                    profileLocation: pfLocation,
-                    profileIndustry: pfIndustry,
-                    cvTexts: pfCvTexts,
-                    bannedJobs: pfBannedJobs,
-                    bannedCompanies: pfBannedCompanies,
-                    dedupSets: {
-                      history: pfDedupSets.history ? [...pfDedupSets.history] : [],
-                      saved: pfDedupSets.saved ? [...pfDedupSets.saved] : [],
-                      blocked: pfDedupSets.blocked ? [...pfDedupSets.blocked] : [],
-                      rejected: pfDedupSets.rejected ? [...pfDedupSets.rejected] : [],
-                    },
-                    maxAgeDays: state.maxAgeDays,
-                    profile_id: state.profile_id,
-                    pfScoringPhase: true,
-                    pfRoundNum: roundNum,
-                    pfQuery: fullQuery,
-                    pfFiltered: filtered,
-                    screeningOffset: processed,
-                    screeningTotal: total,
-                  }, SUPABASE_SERVICE_KEY);
-                  const checkpointId = await saveCheckpoint(checkpointToken, searchId, user.id);
-                  console.log(`[SCREENING] PF round ${roundNum} checkpoint saved ${checkpointId}, pausing at ${processed}/${total}`);
-                  sendComplete({
-                    type: "screening_pause",
-                    message: `Still screening... ${processed} of ${total} jobs analyzed. Hold tight.`,
-                    progress: Math.min(25 + (processed / total) * 55, 80),
-                    continuation: JSON.stringify({ checkpoint_id: checkpointId }),
-                    screening_offset: processed,
-                    screening_total: total,
-                  });
-                  closeWriter();
-                };
+                debugLog(`[PF] Round ${roundNum}: Starting SCORING phase with ${filtered.rawJobs.length} jobs, deadline in ${Math.round((roundDeadline - Date.now()) / 1000)}s`);
 
                 const result = await screenAndAnalyze(
                   filtered.rawJobs, filtered.jobSpecs, filtered.jobUrls, filtered.queryUsed,
@@ -2172,10 +1960,9 @@ Return ONLY valid JSON (no markdown, no code fences):
                   sendStatus, roundNum,
                   { history: new Set(pfDedupSets.history || []), saved: new Set(pfDedupSets.saved || []), blocked: new Set(pfDedupSets.blocked || []), rejected: new Set(pfDedupSets.rejected || []) },
                   state.maxAgeDays,
-                  roundOffset,
+                  0,
                   roundDeadline,
                   outputs,
-                  onCheckpoint,
                   // Cross-round spec dedup: fingerprints already scored in earlier PF rounds
                   (() => {
                     const keys = new Set<string>();
@@ -2186,7 +1973,6 @@ Return ONLY valid JSON (no markdown, no code fences):
                     return keys;
                   })()
                 );
-                if (screeningPaused) return;
                 roundResults = result.results;
                 roundFilteredCounts = result.filteredCounts;
                 debugLog(`[PF] Round ${roundNum}: screenAndAnalyze completed - ${roundResults.length} scored, filtered: H=${roundFilteredCounts.history} S=${roundFilteredCounts.saved} R=${roundFilteredCounts.rejected} B=${roundFilteredCounts.blocked}`);
