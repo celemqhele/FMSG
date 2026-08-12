@@ -1,9 +1,17 @@
 import type { JobBoard, JobCard } from "./types";
+import { commercialJobs } from "./commercial";
 import { financeJobs } from "./finance";
 import { lifeSciencesJobs } from "./life-sciences";
 import { logisticsJobs } from "./logistics";
 
 export const jobBoards: JobBoard[] = [
+  {
+    slug: "commercial",
+    name: "Commercial",
+    tagline: "Sales, marketing and brand roles at South Africa's leading consumer-goods teams.",
+    search: { title: "Account Developer", location: "Alberton, Gauteng, South Africa" },
+    jobs: commercialJobs,
+  },
   {
     slug: "finance",
     name: "Finance",
