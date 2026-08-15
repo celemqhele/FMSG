@@ -3,6 +3,7 @@ import { commercialJobs } from "./commercial";
 import { financeJobs } from "./finance";
 import { lifeSciencesJobs } from "./life-sciences";
 import { logisticsJobs } from "./logistics";
+import { technologyJobs } from "./technology";
 
 export const jobBoards: JobBoard[] = [
   {
@@ -32,6 +33,13 @@ export const jobBoards: JobBoard[] = [
     tagline: "Transport, freight and heavy-lift project roles from leading global logistics operators.",
     search: { title: "Projects Engineer", location: "Kempton Park, South Africa" },
     jobs: logisticsJobs,
+  },
+  {
+    slug: "technology",
+    name: "Technology",
+    tagline: "IT, software and engineering roles from South Africa's leading employers.",
+    search: { title: "Problem Manager", location: "Johannesburg, South Africa" },
+    jobs: technologyJobs,
   },
 ];
 
