@@ -3,6 +3,7 @@ import { commercialJobs } from "./commercial";
 import { financeJobs } from "./finance";
 import { lifeSciencesJobs } from "./life-sciences";
 import { logisticsJobs } from "./logistics";
+import { ngoJobs } from "./ngo";
 import { technologyJobs } from "./technology";
 
 export const jobBoards: JobBoard[] = [
@@ -40,6 +41,13 @@ export const jobBoards: JobBoard[] = [
     tagline: "IT, software and engineering roles from South Africa's leading employers.",
     search: { title: "Problem Manager", location: "Johannesburg, South Africa" },
     jobs: technologyJobs,
+  },
+  {
+    slug: "ngo",
+    name: "Non-profit & NGOs",
+    tagline: "Impact-driven roles at South Africa's leading development and non-profit organisations.",
+    search: { title: "Partnerships", location: "Pretoria, South Africa" },
+    jobs: ngoJobs,
   },
 ];
 
