@@ -27,7 +27,8 @@ export function AutoLoginGuard() {
     if (
       pathname.startsWith("/auth/") ||
       pathname === "/dashboard" ||
-      pathname === "/onboarding"
+      pathname === "/onboarding" ||
+      pathname === "/jobs/global"
     ) {
       setGuardState("idle");
       return;
