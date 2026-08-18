@@ -140,6 +140,26 @@
       "tags": ["ats", "checkpoint", "pause", "pf", "resume", "bug-fix"],
       "summary": "Removed mid-round screening checkpoint + PF search-phase pause (slow-AI Vercel-timeout workarounds, obsolete with fast ATS). Fixed root cause of stuck resume 0d2f1bc6: pfScoringPhase resume never rebuilt titleChainSteps -> TypeError. tsc/eslint/build pass, -250 lines. Committed + pushed to production as 55a4ab2. User confirmed the fix works on deployed site.",
       "embedding": null
+    },
+    {
+      "id": "job-detail-pages-seo_2026-08-18_14-38-46",
+      "file": "sessions/job-detail-pages-seo_2026-08-18_14-38-46_COMPLETE.json",
+      "status": "COMPLETE",
+      "created": "2026-08-18T14:38:46Z",
+      "updated": "2026-08-18T14:38:46Z",
+      "tags": ["seo", "job-detail", "structured-data", "sitemap", "cards", "production"],
+      "summary": "Added individual job detail pages at /jobs/[category]/[slug] with SEO metadata, JSON-LD JobPosting schema, and card preview mode. Cards now show snippet (~410 chars) + View Job button instead of full description. Dynamic sitemap replaces static file. 13 static job pages pre-rendered as SSG. Committed 3f00983, pushed to production.",
+      "embedding": null
+    },
+    {
+      "id": "back-nav-source-path_2026-08-18_16-39-39",
+      "file": "sessions/back-nav-source-path_2026-08-18_16-39-39_COMPLETE.json",
+      "status": "COMPLETE",
+      "created": "2026-08-18T16:39:39Z",
+      "updated": "2026-08-18T16:39:39Z",
+      "tags": ["back-navigation", "job-detail", "localStorage", "ux-fix", "production"],
+      "summary": "Fixed back navigation from job detail page — stores source path (global vs category board) in localStorage when View Job is clicked, reads it on detail page mount to set correct back link destination. Prevents always defaulting to category board.",
+      "embedding": null
     }
   ]
 }

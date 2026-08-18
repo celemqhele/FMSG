@@ -64,6 +64,9 @@ export function GlobalJobsBoard({ boards }: { boards: JobBoard[] }) {
                       fullDescription=""
                       onDelete={() => {}}
                       onGenerateCv={() => {}}
+                      onViewJob={() => {
+                        try { localStorage.setItem("fmsg-view-job-from", "/jobs/global"); } catch {}
+                      }}
                       guest
                       gold={job.featured}
                     />
@@ -74,6 +77,9 @@ export function GlobalJobsBoard({ boards }: { boards: JobBoard[] }) {
                       fullDescription=""
                       onDelete={() => {}}
                       onGenerateCv={() => {}}
+                      onViewJob={() => {
+                        try { localStorage.setItem("fmsg-view-job-from", "/jobs/global"); } catch {}
+                      }}
                       guest
                       gold={job.featured}
                     />

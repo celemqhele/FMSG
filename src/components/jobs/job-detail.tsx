@@ -36,6 +36,17 @@ interface JobDetailProps {
 export function JobDetail({ category, slug, boardName, staticJob }: JobDetailProps) {
   const [job, setJob] = useState<StaticJob | null>(staticJob);
   const [loading, setLoading] = useState(!staticJob);
+  const [backHref, setBackHref] = useState(`/jobs/${category}`);
+
+  useEffect(() => {
+    try {
+      const from = localStorage.getItem("fmsg-view-job-from");
+      if (from) {
+        setBackHref(from);
+        localStorage.removeItem("fmsg-view-job-from");
+      }
+    } catch {}
+  }, []);
 
   useEffect(() => {
     if (staticJob) return;
@@ -87,17 +98,19 @@ export function JobDetail({ category, slug, boardName, staticJob }: JobDetailPro
               This job listing may have expired or the link may be incorrect.
             </p>
             <Link
-              href={`/jobs/${category}`}
+              href={backHref}
               className="inline-flex items-center gap-2 text-sm text-[var(--color-accent)] hover:underline"
             >
               <ArrowLeft size={14} />
-              Back to {boardName || "board"}
+              Back
             </Link>
           </div>
         </div>
       </DashboardLayout>
     );
   }
+
+  const backLabel = backHref === "/jobs/global" ? "All Job Cards" : boardName || "board";
 
   const applyButtons = (
     <div className="flex gap-3">
@@ -117,11 +130,11 @@ export function JobDetail({ category, slug, boardName, staticJob }: JobDetailPro
     <DashboardLayout guest onGuestSignUp={() => {}}>
       <div className="max-w-3xl mx-auto pt-6 pb-12 px-4 space-y-6">
         <Link
-          href={`/jobs/${category}`}
+          href={backHref}
           className="inline-flex items-center gap-1.5 text-sm text-white/60 hover:text-white transition-colors"
         >
           <ArrowLeft size={14} />
-          Back to {boardName || "board"}
+          Back to {backLabel}
         </Link>
 
         <div className="liquid-glass rounded-xl p-6 md:p-8 space-y-6">
@@ -161,11 +174,11 @@ export function JobDetail({ category, slug, boardName, staticJob }: JobDetailPro
         </div>
 
         <Link
-          href={`/jobs/${category}`}
+          href={backHref}
           className="inline-flex items-center gap-1.5 text-sm text-white/60 hover:text-white transition-colors"
         >
           <ArrowLeft size={14} />
-          Back to {boardName || "board"}
+          Back to {backLabel}
         </Link>
       </div>
     </DashboardLayout>

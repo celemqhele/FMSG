@@ -268,6 +268,7 @@ export function JobsBoard({ board }: { board: JobBoard }) {
             applyUrl: r.applyUrl,
             source: r.source,
           }));
+          localStorage.setItem("fmsg-view-job-from", `/jobs/${board.slug}`);
         } catch {}
       },
     };
@@ -315,7 +316,12 @@ export function JobsBoard({ board }: { board: JobBoard }) {
           {board.jobs.length > 0 ? (
             board.jobs.map((job) => (
               <div key={job.slug}>
-                {renderCard(toCardProps(job, board.slug), { gold: job.featured })}
+                {renderCard(toCardProps(job, board.slug), {
+                  gold: job.featured,
+                  onViewJob: () => {
+                    try { localStorage.setItem("fmsg-view-job-from", `/jobs/${board.slug}`); } catch {}
+                  },
+                })}
               </div>
             ))
           ) : (
