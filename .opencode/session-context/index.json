@@ -2,6 +2,16 @@
   "version": 1,
   "sessions": [
     {
+      "id": "gbp-images-html-to-png_2026-08-18_12-52-00",
+      "file": "sessions/gbp-images-html-to-png_2026-08-18_12-52-00_COMPLETE.json",
+      "status": "COMPLETE",
+      "created": "2026-08-18T12:52:00Z",
+      "updated": "2026-08-18T13:05:00Z",
+      "tags": ["gbp", "google-business", "images", "puppeteer", "html-to-png", "branding"],
+      "summary": "Created 7 Google Business Profile images for FMSG using HTML+CSS converted to PNG via Puppeteer. Includes logo, cover photo, 3 post images (AI matching, CV upload, SA focus), and 2 product mockups (dashboard, how-it-works). All files in gbp-images/output/.",
+      "embedding": null
+    },
+    {
       "id": "board-context-redirect_2026-08-18_15-00-00",
       "file": "sessions/board-context-redirect_2026-08-18_15-00-00_INCOMPLETE.json",
       "status": "INCOMPLETE",

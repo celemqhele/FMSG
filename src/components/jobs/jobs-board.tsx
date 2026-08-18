@@ -59,15 +59,17 @@ function storageSet(key: string) {
   }
 }
 
-function toCardProps(job: JobCard) {
+function toCardProps(job: JobCard, boardSlug: string) {
   return {
     id: job.slug,
     jobTitle: job.title,
     company: job.company,
     location: job.location,
     salary: job.salary,
+    snippet: job.snippet,
     description: job.description,
     jobUrl: job.applyUrl,
+    detailHref: `/jobs/${boardSlug}/${job.slug}`,
   };
 }
 
@@ -215,7 +217,7 @@ export function JobsBoard({ board }: { board: JobBoard }) {
   const completedLines = status === "done" ? MORE_LINES : MORE_LINES.slice(0, lineIndex);
   const activeLine = status === "done" ? "" : MORE_LINES[lineIndex];
 
-  const renderCard = (props: ReturnType<typeof toCardProps>, extra?: { gold?: boolean }) =>
+  const renderCard = (props: ReturnType<typeof toCardProps>, extra?: { gold?: boolean; onViewJob?: () => void }) =>
     isMobile ? (
       <MobileJobCard
         {...props}
@@ -223,6 +225,7 @@ export function JobsBoard({ board }: { board: JobBoard }) {
         fullDescription=""
         onDelete={() => {}}
         onGenerateCv={() => setCvPromptOpen(true)}
+        onViewJob={extra?.onViewJob}
         guest
         gold={extra?.gold}
       />
@@ -233,20 +236,42 @@ export function JobsBoard({ board }: { board: JobBoard }) {
         fullDescription=""
         onDelete={() => {}}
         onGenerateCv={() => setCvPromptOpen(true)}
+        onViewJob={extra?.onViewJob}
         guest
         gold={extra?.gold}
       />
     );
 
-  const resultCards = results.map((r, i) => ({
-    id: `more-${i}`,
-    jobTitle: r.title,
-    company: r.company,
-    location: r.location,
-    salary: r.salary,
-    description: r.description,
-    jobUrl: r.applyUrl,
-  }));
+  const resultCards = results.map((r, i) => {
+    const slug = r.title.toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/(^-|-$)/g, "")
+      .slice(0, 80);
+    return {
+      id: `more-${i}`,
+      jobTitle: r.title,
+      company: r.company,
+      location: r.location,
+      salary: r.salary,
+      snippet: r.description?.slice(0, 200) || "",
+      description: r.description,
+      jobUrl: r.applyUrl,
+      detailHref: `/jobs/${board.slug}/${slug}`,
+      onViewJob: () => {
+        try {
+          localStorage.setItem("fmsg-view-job", JSON.stringify({
+            title: r.title,
+            company: r.company,
+            location: r.location,
+            salary: r.salary,
+            description: r.description,
+            applyUrl: r.applyUrl,
+            source: r.source,
+          }));
+        } catch {}
+      },
+    };
+  });
 
   return (
     <>
@@ -290,7 +315,7 @@ export function JobsBoard({ board }: { board: JobBoard }) {
           {board.jobs.length > 0 ? (
             board.jobs.map((job) => (
               <div key={job.slug}>
-                {renderCard(toCardProps(job), { gold: job.featured })}
+                {renderCard(toCardProps(job, board.slug), { gold: job.featured })}
               </div>
             ))
           ) : (
@@ -342,7 +367,7 @@ export function JobsBoard({ board }: { board: JobBoard }) {
               )}
 
               {status === "done" &&
-                resultCards.map((card) => <div key={card.id}>{renderCard(card)}</div>)}
+                resultCards.map((card) => <div key={card.id}>{renderCard(card, { onViewJob: card.onViewJob })}</div>)}
 
               {status === "done" && resultCards.length === 0 && (
                 <div className="liquid-glass rounded-xl p-5 text-center">

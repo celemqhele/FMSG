@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { ExternalLink, FileText, Bookmark, Loader2 } from "lucide-react";
+import Link from "next/link";
+import { ExternalLink, FileText, Bookmark, Loader2, ArrowRight } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useActiveProfile } from "../dashboard-layout";
 import { MobileVerdictSheet } from "./mobile-verdict-sheet";
@@ -30,6 +31,9 @@ interface MobileJobCardProps {
   guest?: boolean;
   gold?: boolean;
   description?: string;
+  snippet?: string;
+  detailHref?: string;
+  onViewJob?: () => void;
   onGenerateCv?: () => void;
 }
 
@@ -57,6 +61,9 @@ export function MobileJobCard({
   guest,
   gold,
   description,
+  snippet,
+  detailHref,
+  onViewJob,
   onGenerateCv,
 }: MobileJobCardProps) {
   const [deleting, setDeleting] = useState(false);
@@ -110,19 +117,11 @@ export function MobileJobCard({
         ) : (
           <div className="mb-2.5" />
         )}
-        {description && (
+        {(snippet || description) && (
           <div className="mb-2.5">
-            <p className={`text-[10px] text-[var(--color-text-secondary)]/80 whitespace-pre-line leading-snug ${descExpanded ? "" : "line-clamp-2"}`}>
-              {description}
+            <p className="text-[10px] text-[var(--color-text-secondary)]/80 whitespace-pre-line leading-snug line-clamp-2">
+              {snippet || description}
             </p>
-            {description.length > 200 && (
-              <button
-                onClick={() => setDescExpanded(!descExpanded)}
-                className="mt-1 text-[10px] text-[var(--color-accent)]"
-              >
-                {descExpanded ? "Show less" : "Read more"}
-              </button>
-            )}
           </div>
         )}
         <div className="flex items-center gap-2">
@@ -133,6 +132,16 @@ export function MobileJobCard({
             <FileText size={10} />
             CV
           </button>
+          {detailHref && (
+            <Link
+              href={detailHref}
+              onClick={onViewJob}
+              className="flex items-center justify-center gap-1.5 h-9 px-2.5 text-[11px] font-medium text-[var(--color-text-primary)] border border-[var(--color-border)] rounded-[7px] active:scale-95 transition-all"
+            >
+              View
+              <ArrowRight size={9} />
+            </Link>
+          )}
           {jobUrl && (
             <a
               href={jobUrl}

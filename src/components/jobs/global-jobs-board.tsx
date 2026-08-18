@@ -6,15 +6,17 @@ import { MobileJobCard } from "@/components/dashboard/mobile/mobile-job-card";
 import { useIsMobile } from "@/hooks/use-mobile";
 import type { JobBoard, JobCard } from "@/data/jobs/types";
 
-function toCardProps(job: JobCard) {
+function toCardProps(job: JobCard, boardSlug: string) {
   return {
     id: job.slug,
     jobTitle: job.title,
     company: job.company,
     location: job.location,
     salary: job.salary,
+    snippet: job.snippet,
     description: job.description,
     jobUrl: job.applyUrl,
+    detailHref: `/jobs/${boardSlug}/${job.slug}`,
   };
 }
 
@@ -57,7 +59,7 @@ export function GlobalJobsBoard({ boards }: { boards: JobBoard[] }) {
                   <BoardTag name={board.name} />
                   {isMobile ? (
                     <MobileJobCard
-                      {...toCardProps(job)}
+                      {...toCardProps(job, board.slug)}
                       matchScore={0}
                       fullDescription=""
                       onDelete={() => {}}
@@ -67,7 +69,7 @@ export function GlobalJobsBoard({ boards }: { boards: JobBoard[] }) {
                     />
                   ) : (
                     <JobResultCard
-                      {...toCardProps(job)}
+                      {...toCardProps(job, board.slug)}
                       matchScore={0}
                       fullDescription=""
                       onDelete={() => {}}

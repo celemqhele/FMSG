@@ -4,6 +4,7 @@ Allow: /about
 Allow: /pricing
 Allow: /privacy
 Allow: /terms
+Allow: /jobs
 Disallow: /dashboard/
 Disallow: /api/
 Disallow: /auth/
