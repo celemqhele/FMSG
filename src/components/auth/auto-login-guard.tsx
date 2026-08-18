@@ -76,12 +76,20 @@ export function AutoLoginGuard() {
     };
   }, []);
 
+  const boardSlug = pathname.startsWith("/jobs/") ? pathname.split("/jobs/")[1] : null;
+
   if (guardState === "loading") {
     return null;
   }
 
   if (guardState === "transition") {
-    return <LoginTransition type="login" onComplete={() => setGuardState("idle")} />;
+    return (
+      <LoginTransition
+        type="login"
+        redirectTo={boardSlug ? `/dashboard?board=${boardSlug}` : undefined}
+        onComplete={() => setGuardState("idle")}
+      />
+    );
   }
 
   return null;

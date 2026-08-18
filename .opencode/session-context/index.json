@@ -2,6 +2,46 @@
   "version": 1,
   "sessions": [
     {
+      "id": "board-context-redirect_2026-08-18_15-00-00",
+      "file": "sessions/board-context-redirect_2026-08-18_15-00-00_INCOMPLETE.json",
+      "status": "INCOMPLETE",
+      "created": "2026-08-18T15:00:00Z",
+      "updated": "2026-08-18T15:00:00Z",
+      "tags": ["board", "redirect", "auth", "dashboard", "job-cards", "production"],
+      "summary": "Preserve job board context when logged-in user is redirected from /jobs/[category] to /dashboard. Pass board slug via ?board= query param, dynamically import board data on dashboard, display board jobs at top of search tab.",
+      "embedding": null
+    },
+    {
+      "id": "job-cards-batch_2026-08-16_03-53-58",
+      "file": "sessions/job-cards-batch_2026-08-16_03-53-58_INCOMPLETE.json",
+      "status": "INCOMPLETE",
+      "created": "2026-08-16T03:53:58.000Z",
+      "updated": "2026-08-16T03:53:58.000Z",
+      "tags": ["job-card", "boards", "finance", "technology", "logistics", "commercial", "life-sciences", "ngo", "production"],
+      "summary": "Added 11 static job cards: finance (Sanlam JP Manager, Premier FMCG Payroll Admin, Absa Claims Assessor, FNB Compliance), technology (Old Mutual Data Scientist + Manager Data Engineering), logistics (FlySafair), commercial (HEINEKEN), life-sciences (UP Deputy Dean), new 'ngo' board (UNICEF Partnerships Officer + Chief Health & Nutrition). Verified tsc/eslint/build, committed f582b47, pushed to production.",
+      "embedding": null
+    },
+    {
+      "id": "nedbank-job-card_2026-08-15_15-19-27",
+      "file": "sessions/nedbank-job-card_2026-08-15_15-19-27_COMPLETE.json",
+      "status": "COMPLETE",
+      "created": "2026-08-15T15:19:27.000Z",
+      "updated": "2026-08-15T15:19:27.000Z",
+      "tags": ["job-card", "technology", "board", "nedbank", "production"],
+      "summary": "Added Nedbank Problem Manager II static job card on a new 'technology' job board (ITIL/ServiceNow IT problem-management role, Johannesburg). Verified tsc/eslint/build, committed 65e4d70 and pushed to production.",
+      "embedding": null
+    },
+    {
+      "id": "job-post-commercial-board_2026-08-12_20-52-24",
+      "file": "sessions/job-post-commercial-board_2026-08-12_20-52-24_COMPLETE.json",
+      "status": "COMPLETE",
+      "created": "2026-08-12T20:52:24.000Z",
+      "updated": "2026-08-12T20:52:24.000Z",
+      "tags": ["job-post", "commercial", "board", "scaffold-removal"],
+      "summary": "Created Account Developer job card for Coca-Cola Beverages SA on a new 'commercial' board; removed 3 pre-existing demo job cards (esco-country-manager, senior-tax-manager, dsv-senior-manager-projects-engineer).",
+      "embedding": null
+    },
+    {
       "id": "search-profile-fix_2026-08-08_14-30-00",
       "file": "sessions/search-profile-fix_2026-08-08_14-30-00_COMPLETE.json",
       "status": "COMPLETE",
@@ -29,6 +69,66 @@
       "updated": "2026-08-09T14:30:00.000Z",
       "tags": ["pf", "deadline", "timeout", "pipeline", "vercel", "scraping", "ai-scoring"],
       "summary": "Added deadline awareness throughout entire pipeline (240s threshold), added search phase pauses between PF rounds with user confirmation",
+      "embedding": null
+    },
+    {
+      "id": "ats-scoring-migration_2026-08-09_06-00-00",
+      "file": "sessions/ats-scoring-migration_2026-08-09_06-00-00_COMPLETE.json",
+      "status": "COMPLETE",
+      "created": "2026-08-09T06:00:00.000Z",
+      "updated": "2026-08-09T06:45:00.000Z",
+      "tags": ["ats", "scoring", "ai-replacement", "taxonomy", "verdicts", "search", "production"],
+      "summary": "Replaced AI scoring pipeline with deterministic in-app ATS scoring (ESCO/O*NET taxonomies, weighted pillars, hard gates), switched verdicts to Apply/Consider/Don't apply, committed + pushed to production as 3baa65a. User confirmed: much faster (68 jobs in 3s), decent scoring",
+      "embedding": null
+    },
+    {
+      "id": "ats-scoring-vercel-logging_2026-08-09_06-38-00",
+      "file": "sessions/ats-scoring-vercel-logging_2026-08-09_06-38-00_COMPLETE.json",
+      "status": "COMPLETE",
+      "created": "2026-08-09T06:38:00.000Z",
+      "updated": "2026-08-09T06:45:00.000Z",
+      "tags": ["ats", "scoring", "logging", "vercel", "observability"],
+      "summary": "Made ATS per-job scoring progress visible in Vercel logs (was gated behind DEBUG=true via debugLog), added verdict-distribution summary per run. Deployed as 20abd4d",
+      "embedding": null
+    },
+    {
+      "id": "ats-phase2-pgvector-rrf_2026-08-09_06-45-00",
+      "file": "sessions/ats-phase2-pgvector-rrf_2026-08-09_06-45-00_INCOMPLETE.json",
+      "status": "INCOMPLETE",
+      "created": "2026-08-09T06:45:00.000Z",
+      "updated": "2026-08-09T07:20:00.000Z",
+      "tags": ["ats", "phase2", "pgvector", "embeddings", "rrf", "semantic"],
+      "summary": "Phase 2: pgvector dense embeddings + Reciprocal Rank Fusion over deterministic ATS scoring for better synonym/phrasing recall. Implemented ats-embeddings.ts, migration 035, RRF fusion (0.85 lex + 0.15 dense) in search route; tsc/build pass, smoke-tested, committed 58aa954 pushed to production. Migration 035 must be applied on Supabase.",
+      "embedding": null
+    },
+    {
+      "id": "supabase-sql-direct-access_2026-08-09_11-00-00",
+      "file": "sessions/supabase-sql-direct-access_2026-08-09_11-00-00_COMPLETE.json",
+      "status": "COMPLETE",
+      "created": "2026-08-09T11:00:00.000Z",
+      "updated": "2026-08-09T11:30:00.000Z",
+      "tags": ["supabase", "sql", "direct-access", "cleanup", "service-key", "workflow"],
+      "summary": "Deleted mqhele03@gmail.com's profile data + 73 storage CVs via curl.exe + service key (PowerShell proxy 401 fixed by using curl). Documented Supabase direct-access workflow: REST CRUD, Storage API, Auth Admin API; DDL needs dashboard/Management token. Key stored per request; .opencode/ gitignored.",
+      "embedding": null
+    },
+    {
+      "id": "ats-spec-dedup_2026-08-09_10-20-00",
+      "file": "sessions/ats-spec-dedup_2026-08-09_10-20-00_COMPLETE.json",
+      "status": "COMPLETE",
+      "created": "2026-08-09T10:20:00.000Z",
+      "updated": "2026-08-09T10:40:00.000Z",
+      "tags": ["ats", "dedup", "spec", "scoring", "pipeline", "production"],
+      "summary": "Deterministic spec dedup around ATS (no AI): 100% keyword-fingerprint match collapses duplicate specs at start of screenAndAnalyze each PF round + cross-round from total; longest spec / highest source priority kept; offset remap fixed for resume via outputs fingerprints. 13-sim-scenario validation, tsc/build pass, committed + pushed to production.",
+      "embedding": null
+    },
+    {
+      "id": "remove-screening-checkpoint_2026-08-10_16-20-43",
+      "file": "sessions/remove-screening-checkpoint_2026-08-10_16-20-43_COMPLETE.json",
+      "status": "COMPLETE",
+      "created": "2026-08-10T16:20:43.000Z",
+      "updated": "2026-08-10T16:28:52.000Z",
+      "tags": ["ats", "checkpoint", "pause", "pf", "resume", "bug-fix"],
+      "summary": "Removed mid-round screening checkpoint + PF search-phase pause (slow-AI Vercel-timeout workarounds, obsolete with fast ATS). Fixed root cause of stuck resume 0d2f1bc6: pfScoringPhase resume never rebuilt titleChainSteps -> TypeError. tsc/eslint/build pass, -250 lines. Committed + pushed to production as 55a4ab2. User confirmed the fix works on deployed site.",
       "embedding": null
     }
   ]

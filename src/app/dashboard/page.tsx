@@ -41,6 +41,7 @@ import { VerifyEmailBanner } from "@/components/dashboard/verify-email-banner";
 import { VerifyCodeModal } from "@/components/dashboard/verify-code-modal";
 import { ContinuePopup } from "@/components/dashboard/continue-popup";
 import { OfflineResultsModal } from "@/components/dashboard/offline-results-modal";
+import type { JobBoard } from "@/data/jobs/types";
 
 interface JobResult {
   id: string;
@@ -180,6 +181,7 @@ export default function DashboardPage() {
   const [showPfPromo, setShowPfPromo] = useState(false);
   const [pfMode, setPfMode] = useState(false);
   const [currentSearchId, setCurrentSearchId] = useState<string | null>(null);
+  const [boardJobs, setBoardJobs] = useState<JobBoard | null>(null);
 
   useEffect(() => { endTransition(); }, [endTransition]);
 
@@ -231,6 +233,14 @@ export default function DashboardPage() {
       const params = new URLSearchParams(window.location.search);
       if (params.get("tab") === "saved") {
         setActiveTab("saved");
+      }
+      const boardParam = params.get("board");
+      if (boardParam) {
+        import("@/data/jobs/categories").then(({ getBoardBySlug }) => {
+          const board = getBoardBySlug(boardParam);
+          if (board?.jobs.length) setBoardJobs(board);
+        });
+        window.history.replaceState({}, "", "/dashboard");
       }
       setAuthChecked(true);
       setUserEmail(data.session.user?.email ?? "");
@@ -908,6 +918,37 @@ export default function DashboardPage() {
                 {filteredSummary.saved > 0 && <span>{filteredSummary.saved} filtered: already saved</span>}
                 {filteredSummary.rejected > 0 && <span>{filteredSummary.rejected} filtered: previously rejected</span>}
                 {filteredSummary.blocked > 0 && <span>{filteredSummary.blocked} filtered: blocked</span>}
+              </div>
+            )}
+
+            {boardJobs && !searching && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-sm font-semibold text-white/90">{boardJobs.name} Jobs</h2>
+                  <button
+                    onClick={() => setBoardJobs(null)}
+                    className="text-xs text-white/50 hover:text-white/80 transition-colors"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+                {boardJobs.jobs.map((job) => (
+                  <JobResultCard
+                    key={job.slug}
+                    id={job.slug}
+                    jobTitle={job.title}
+                    company={job.company}
+                    location={job.location}
+                    salary={job.salary}
+                    matchScore={0}
+                    jobUrl={job.applyUrl}
+                    fullDescription={job.description}
+                    onDelete={() => setBoardJobs(null)}
+                    guest
+                    gold={job.featured}
+                    description={job.description}
+                  />
+                ))}
               </div>
             )}
 
