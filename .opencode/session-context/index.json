@@ -160,6 +160,16 @@
       "tags": ["back-navigation", "job-detail", "localStorage", "ux-fix", "production"],
       "summary": "Fixed back navigation from job detail page — stores source path (global vs category board) in localStorage when View Job is clicked, reads it on detail page mount to set correct back link destination. Prevents always defaulting to category board.",
       "embedding": null
+    },
+    {
+      "id": "delete-job-cards-expired_2026-08-20_15-50-40",
+      "file": "sessions/delete-job-cards-expired_2026-08-20_15-50-40_COMPLETE.json",
+      "status": "COMPLETE",
+      "created": "2026-08-20T15:50:40Z",
+      "updated": "2026-08-20T15:55:00Z",
+      "tags": ["job-cards", "delete", "expired-banner", "commercial", "logistics", "production"],
+      "summary": "Deleted Account Developer (Coca-Cola CCBSA) and Airport Operations Specialist (FlySafair) job cards. Moved to recycle_bin, removed from index files, updated commercial board search pre-fill. Updated JobDetail expired state to show red 'This job has expired' banner — auto-triggered for any deleted card via App Router blocking fallback.",
+      "embedding": null
     }
   ]
 }

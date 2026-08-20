@@ -93,9 +93,9 @@ export function JobDetail({ category, slug, boardName, staticJob }: JobDetailPro
       <DashboardLayout guest onGuestSignUp={() => {}}>
         <div className="max-w-3xl mx-auto pt-8 px-4">
           <div className="liquid-glass rounded-xl p-8 text-center">
-            <p className="text-base font-medium text-white mb-2">Job listing not found</p>
-            <p className="text-sm text-white/70 mb-4">
-              This job listing may have expired or the link may be incorrect.
+            <p className="text-base font-semibold text-red-400 mb-2">This job has expired</p>
+            <p className="text-sm text-white/50 mb-4">
+              This listing is no longer available.
             </p>
             <Link
               href={backHref}

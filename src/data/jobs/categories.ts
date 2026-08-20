@@ -11,7 +11,7 @@ export const jobBoards: JobBoard[] = [
     slug: "commercial",
     name: "Commercial",
     tagline: "Sales, marketing and brand roles at South Africa's leading consumer-goods teams.",
-    search: { title: "Account Developer", location: "Alberton, Gauteng, South Africa" },
+    search: { title: "Telesales", location: "Johannesburg, South Africa" },
     jobs: commercialJobs,
   },
   {

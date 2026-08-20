@@ -1,0 +1,59 @@
+{
+  "id": "delete-job-cards-expired_2026-08-20_15-50-40",
+  "status": "COMPLETE",
+  "created": "2026-08-20T15:50:40Z",
+  "updated": "2026-08-20T15:55:00Z",
+  "objective": "Delete two expired job cards (Account Developer at Coca-Cola CCBSA, Airport Operations Specialist at FlySafair) and update the expired-state banner on detail pages.",
+  "plan": [
+    "Find and delete Account Developer card (commercial board)",
+    "Find and delete Airport Operations Specialist card (logistics board)",
+    "Remove imports from index files, update categories.ts search pre-fill",
+    "Verify with npx tsc --noEmit",
+    "Update JobDetail component expired state to show red 'This job has expired' banner",
+    "Commit and push to production"
+  ],
+  "actions": [
+    {
+      "step": 1,
+      "description": "Searched codebase for both cards — found commercial/account-developer-ccb260811-6.ts and logistics/flysafair-airport-operations-specialist.ts, plus references in categories.ts",
+      "files": ["src/data/jobs/commercial/account-developer-ccb260811-6.ts", "src/data/jobs/logistics/flysafair-airport-operations-specialist.ts", "src/data/jobs/categories.ts"],
+      "done": true,
+      "key_decision": "Both cards moved to recycle_bin instead of deleted, per project convention"
+    },
+    {
+      "step": 2,
+      "description": "Moved both card files to recycle_bin, removed imports from commercial/index.ts and logistics/index.ts, emptied logisticsJobs array, updated commercial board search pre-fill from 'Account Developer' to 'Telesales'",
+      "files": ["recycle_bin/account-developer-ccb260811-6.ts", "recycle_bin/flysafair-airport-operations-specialist.ts", "src/data/jobs/commercial/index.ts", "src/data/jobs/logistics/index.ts", "src/data/jobs/categories.ts"],
+      "done": true,
+      "key_decision": "Logistics board kept empty (no jobs left) rather than removing the board entirely"
+    },
+    {
+      "step": 3,
+      "description": "Updated JobDetail expired state: changed 'Job listing not found' to 'This job has expired' in text-red-400, simplified subtitle to 'This listing is no longer available'",
+      "files": ["src/components/jobs/job-detail.tsx"],
+      "done": true,
+      "key_decision": "App Router fallback:blocking already handles deleted cards automatically — any removed card's detail page renders staticJob:null and hits the !job branch with the expired banner"
+    },
+    {
+      "step": 4,
+      "description": "Ran npx tsc --noEmit — only recycle_bin import errors (expected, harmless), no real errors",
+      "files": [],
+      "done": true,
+      "key_decision": null
+    }
+  ],
+  "key_decisions": [
+    "Deleted cards automatically show expired banner: generateStaticParams excludes removed slugs, App Router blocking fallback re-renders with staticJob:null, JobDetail shows red expired state",
+    "Logistics board now empty — ready for future jobs, board entry kept in categories.ts",
+    "Commercial board search pre-fill updated to 'Telesales / Johannesburg' to match remaining Heineken card"
+  ],
+  "files_modified": [
+    "src/components/jobs/job-detail.tsx",
+    "src/data/jobs/categories.ts",
+    "src/data/jobs/commercial/index.ts",
+    "src/data/jobs/logistics/index.ts"
+  ],
+  "done": true,
+  "user_confirmed": true,
+  "confirmation_timestamp": "2026-08-20T15:55:00Z"
+}
