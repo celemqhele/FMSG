@@ -7,6 +7,9 @@ CREATE TABLE IF NOT EXISTS search_rotation (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Data API access (new tables need explicit grants since Supabase Oct 30 2026 change)
+GRANT ALL ON TABLE public.search_rotation TO anon, authenticated, service_role;
+
 -- RLS: users can only see their own rotation
 ALTER TABLE search_rotation ENABLE ROW LEVEL SECURITY;
 

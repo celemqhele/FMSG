@@ -14,6 +14,9 @@ CREATE TABLE public_jobs (
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
+-- Data API access (new tables need explicit grants since Supabase Oct 30 2026 change)
+GRANT ALL ON TABLE public.public_jobs TO anon, authenticated, service_role;
+
 ALTER TABLE public_jobs ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Public can view active jobs"

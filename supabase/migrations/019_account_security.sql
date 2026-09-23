@@ -10,3 +10,6 @@ CREATE TABLE IF NOT EXISTS blocked_ips (
   blocked_at TIMESTAMPTZ DEFAULT now(),
   reason TEXT
 );
+
+-- Data API access (new tables need explicit grants since Supabase Oct 30 2026 change)
+GRANT ALL ON TABLE public.blocked_ips TO anon, authenticated, service_role;

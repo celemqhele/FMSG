@@ -10,6 +10,9 @@ CREATE TABLE IF NOT EXISTS discount_redemptions (
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
+-- Data API access (new tables need explicit grants since Supabase Oct 30 2026 change)
+GRANT ALL ON TABLE public.discount_redemptions TO anon, authenticated, service_role;
+
 -- One redemption per user per discount type
 CREATE UNIQUE INDEX IF NOT EXISTS idx_discount_redemptions_user_type
   ON discount_redemptions(user_id, discount_type);

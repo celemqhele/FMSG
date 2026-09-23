@@ -10,6 +10,9 @@ CREATE TABLE IF NOT EXISTS job_extractions (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
+-- Data API access (new tables need explicit grants since Supabase Oct 30 2026 change)
+GRANT ALL ON TABLE public.job_extractions TO anon, authenticated, service_role;
+
 -- Enable RLS
 ALTER TABLE job_extractions ENABLE ROW LEVEL SECURITY;
 

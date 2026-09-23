@@ -11,6 +11,9 @@ CREATE TABLE IF NOT EXISTS industry_taxonomy (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Data API access (new tables need explicit grants since Supabase Oct 30 2026 change)
+GRANT ALL ON TABLE public.industry_taxonomy TO anon, authenticated, service_role;
+
 -- 2. Industry ladder on search_profiles (5 broadening steps, hyper-niche -> broad)
 ALTER TABLE search_profiles
   ADD COLUMN IF NOT EXISTS industry_step_1 TEXT,

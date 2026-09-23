@@ -12,6 +12,9 @@ CREATE TABLE IF NOT EXISTS candidate_embeddings (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Data API access (new tables need explicit grants since Supabase Oct 30 2026 change)
+GRANT ALL ON TABLE public.candidate_embeddings TO anon, authenticated, service_role;
+
 -- HNSW cosine index for fast similarity search
 CREATE INDEX IF NOT EXISTS idx_candidate_embeddings_hnsw
   ON candidate_embeddings USING hnsw (embedding vector_cosine_ops);

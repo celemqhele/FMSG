@@ -19,6 +19,9 @@ CREATE TABLE guest_searches (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
+-- Data API access (new tables need explicit grants since Supabase Oct 30 2026 change)
+GRANT ALL ON TABLE public.guest_searches TO anon, authenticated, service_role;
+
 CREATE UNIQUE INDEX guest_searches_ip_hash_key ON guest_searches (ip_hash);
 
 ALTER TABLE guest_searches ENABLE ROW LEVEL SECURITY;
