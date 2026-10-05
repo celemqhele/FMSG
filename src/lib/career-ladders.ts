@@ -1,6 +1,7 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { callAIWithFallback } from "@/lib/gemini";
 import { debugLog } from "@/lib/debug";
+import { toSingleConcept } from "@/lib/search-query";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -113,10 +114,13 @@ NOT Technology.
 
 RULES:
 - Step 1 = the candidate's actual functional niche (e.g., "Web Development", "Financial Accounting", "Digital Marketing")
-- Step 2 = one level broader in the FUNCTION domain (e.g., "Software Development", "Accounting & Finance", "Marketing")
+- Step 2 = one level broader in the FUNCTION domain (e.g., "Software Development", "Accounting", "Marketing")
 - Step 3 = next level broader
 - Step 4 = next level broader
 - Step 5 = the broadest economic sector the FUNCTION belongs to
+- EVERY step must be exactly ONE industry concept. Never join two concepts with "&", "and", "/", or a comma.
+  Use "Financial Services" — NOT "Banking & Financial Services". Use "Technology" — NOT "Technology & Digital".
+  Each rung of a broadening ladder has to be a single clean concept.
 - Use the employer's industry ONLY as a tiebreaker when the function is genuinely ambiguous.
 - For industry-agnostic roles (developers, accountants, marketers, analysts), the function ALWAYS dominates.
 
@@ -164,19 +168,21 @@ RULES:
 - step 4 = next level broader
 - step 5 = the broadest economic sector this function belongs to
 - Each step must be a genuine, real-world industry category.
+- EVERY step must be exactly ONE industry concept. Never join two concepts with "&", "and", "/", or a comma.
+  Use "Financial Services" — NOT "Banking & Financial Services". Use "Technology" — NOT "Technology & Digital".
 - Use the employer's industry ONLY as a tiebreaker when the function is ambiguous.
 - For industry-agnostic roles (developers, accountants, marketers, analysts), function ALWAYS dominates.
 
 Example: Developer at a logistics company with titles "Software Developer → Backend Developer"
-→ ["Software Development", "Information Technology", "Technology", "Technology & Digital", "Technology & Digital"]
+→ ["Software Development", "Information Technology", "Technology", "Technology", "Technology"]
 NOT ["Logistics Technology", "Supply Chain Software", "Logistics", "Transportation", "Industrial Goods"]
 
 Example: Accountant at a retail company
-→ ["Financial Accounting", "Accounting & Finance", "Financial Services", "Business Services", "Business Services"]
+→ ["Financial Accounting", "Accounting", "Finance", "Financial Services", "Financial Services"]
 NOT ["Retail Finance", "Retail", "Consumer Goods", "Retail & Consumer Goods", "Consumer Goods"]
 
 Example: Digital marketer at an e-commerce company
-→ ["Digital Marketing", "Marketing & Advertising", "Media & Marketing", "Media & Entertainment", "Media & Entertainment"]
+→ ["Digital Marketing", "Marketing", "Advertising", "Media", "Media"]
 NOT ["E-commerce Marketing", "E-commerce", "Online Retail", "Retail", "Consumer Goods"]
 
 Example: "Private Wealth Banking"
@@ -217,14 +223,21 @@ Return ONLY valid JSON:
       if (idx >= 1 && idx <= 5) {
         const key = `step_${idx}` as keyof IndustryLadderSteps;
         const tidKey = `step_${idx}_taxonomy_id` as keyof IndustryLadderSteps;
-        result[key] = s.value ?? "";
+        // The prompt asks for one concept per rung, but compound labels still slip through.
+        // Collapse them here so a stored rung is always individually searchable.
+        const raw = typeof s.value === "string" ? s.value : "";
+        const value = toSingleConcept(raw);
+        if (value !== raw.trim()) {
+          console.warn(`[LADDER] Collapsed compound step ${idx}: "${raw}" → "${value}"`);
+        }
+        result[key] = value;
         (result as any)[tidKey] = s.taxonomy_id ?? null;
       }
     }
 
     return result;
   } catch (err) {
-    const step = industry.trim();
+    const step = toSingleConcept(industry) || industry.trim();
     return {
       step_1: step, step_1_taxonomy_id: null, step_2: step, step_2_taxonomy_id: null,
       step_3: step, step_3_taxonomy_id: null, step_4: step, step_4_taxonomy_id: null,

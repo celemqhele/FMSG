@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { callAIWithFallback } from "@/lib/gemini";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { toSingleConcept } from "@/lib/search-query";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -16,6 +17,8 @@ Look at the actual business of the companies listed in the work history.
 
 Rules:
 - Return one concise label (e.g. "Fintech", "Healthcare", "E-commerce", "Construction", "Education", "Critical Digital Infrastructure", "Manufacturing", "Telecommunications", "Logistics").
+- The label must be exactly ONE industry concept. Never join two with "&", "and", "/", or a comma.
+  Use "Financial Services" — NOT "Banking & Financial Services". Use "Technology" — NOT "Technology & Digital".
 - Do NOT include job titles or company names in your response. Just the industry.
 - If the CV is ambiguous or has no clear employer context, use job titles as a secondary hint but still prefer employer context.
 
@@ -63,7 +66,13 @@ export async function POST(request: NextRequest) {
     const cleaned = content.slice(content.indexOf("{"), content.lastIndexOf("}") + 1);
     const parsed = JSON.parse(cleaned);
 
-    return NextResponse.json({ industry: (parsed.industry ?? "").trim() });
+    const raw = String(parsed.industry ?? "").trim();
+    const industry = toSingleConcept(raw);
+    if (industry !== raw) {
+      console.warn(`[SUGGEST-INDUSTRY] Collapsed compound label: "${raw}" → "${industry}"`);
+    }
+
+    return NextResponse.json({ industry });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("Suggest industry error:", msg);

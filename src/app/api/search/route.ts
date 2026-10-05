@@ -13,6 +13,7 @@ import { debugLog } from "@/lib/debug";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { signContinuationToken, verifyAndDecodeContinuationToken } from "@/lib/continuation-token";
 import { BLACKLISTED_DOMAINS, BLACKLISTED_COMPANIES, extractDomain, buildJobUrl, isBlacklistedByVia, decodeGoogleRedirect, decodeBingRedirect } from "@/lib/job-filter";
+import { buildIndustryQuery } from "@/lib/search-query";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -1627,9 +1628,8 @@ Return ONLY valid JSON (no markdown, no code fences):
             const rotatedIndustry = industrySteps.length > 0
               ? industrySteps[rotationIndustryIndex % industrySteps.length]
               : (state.profileIndustry ?? "");
-            const industryPart = rotatedIndustry || "";
-            const locationPart = state.profileLocation ? `in ${state.profileLocation}` : "";
-            const searchQuery = [titleQuery, industryPart, locationPart, "jobs"].filter(Boolean).join(" ");
+            const industryPart = buildIndustryQuery(rotatedIndustry);
+            const searchQuery = [titleQuery, industryPart, "jobs"].filter(Boolean).join(" ");
 
             console.log(`[SEARCH] Rotation: title[${rotationTitleIndex % titles.length}]="${nicheTitle}", industry[${rotationIndustryIndex % (industrySteps.length || 1)}]="${industryPart}"`);
 
@@ -1919,8 +1919,12 @@ Return ONLY valid JSON (no markdown, no code fences):
             }
 
             const titleQuery = buildOrQuery(titles);
-            const industryPart = industry ? industry : "";
-            const fullQuery = [titleQuery, industryPart, pfLocation ? `in ${pfLocation}` : "", "jobs"].filter(Boolean).join(" ");
+            const industryPart = buildIndustryQuery(industry);
+            // Location is deliberately NOT in `q`. fetchAndFilterJobs passes it as SerpAPI's
+            // geo `location` param (province-mapped), which is already broader than the raw
+            // city+province string. Space-joining it here AND-ed both tokens and dropped
+            // legitimately-matching jobs (e.g. a "Pretoria" posting under a "Johannesburg" profile).
+            const fullQuery = [titleQuery, industryPart, "jobs"].filter(Boolean).join(" ");
 
             if (usedQueries.has(fullQuery.toLowerCase())) {
               debugLog(`[PF] Round ${roundNum}: skipping duplicate query "${fullQuery}"`);
