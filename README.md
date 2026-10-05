@@ -21,7 +21,9 @@ Copy `.env.local.example` to `.env.local` and fill in:
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes | Supabase anon/public key |
 | `SUPABASE_SERVICE_ROLE_KEY` | Yes | Supabase service role key (admin) |
 | `GEMINI_API_KEY` | Yes | Google Gemini API key |
+| `GEMINI_MODEL` | No | Tier-1 model (default `gemini-3.5-flash-lite`) |
 | `GROQ_API_KEY` | No | Groq fallback API key |
+| `GROQ_MODEL` | No | Tier-2 models, comma-separated, first that works wins (default `openai/gpt-oss-120b,openai/gpt-oss-20b`) |
 | `SERPAPI_API_KEY` | Yes | SerpAPI key for Google Jobs |
 | `JINA_API_KEY` | No | Jina AI reader key |
 | `PAYSTACK_SECRET_KEY` | Yes | Paystack secret key |

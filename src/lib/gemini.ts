@@ -2,9 +2,20 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 
 const GROQ_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions";
-// gpt-oss-120b rejects ~15k char prompts (HTTP 413). llama-3.1-70b-versatile
-// has 128k context and generous free-tier limits — handles full scoring prompts.
-const GROQ_MODEL = "llama-3.1-70b-versatile";
+
+// Tier 1 model. Gemini 3.x retired llama-era sampling params: custom
+// temperature/topP/topK are silently ignored, so the payload below sends none
+// and uses thinkingLevel as the only behavioural knob.
+const GEMINI_MODEL = process.env.GEMINI_MODEL ?? "gemini-3.5-flash-lite";
+
+// Groq's free/dev tier only serves the GPT-OSS family now — llama-3.1/3.3,
+// qwen3-32b/3.6-27b, kimi-k2 and llama-4 are all decommissioned or
+// Enterprise-only. Tried in order, first model that answers wins, so a future
+// retirement of the primary degrades instead of killing the whole tier.
+const GROQ_MODELS = (process.env.GROQ_MODEL ?? "openai/gpt-oss-120b,openai/gpt-oss-20b")
+  .split(",")
+  .map((m) => m.trim())
+  .filter(Boolean);
 
 interface AIConfig {
   maxOutputTokens?: number;
@@ -62,8 +73,11 @@ function markGeminiSuccess(): void {
 
 async function callGemini(systemPrompt: string, userText: string, config?: AIConfig): Promise<string> {
   const generationConfig: Record<string, unknown> = {
-    temperature: config?.temperature ?? 0.1,
     maxOutputTokens: config?.maxOutputTokens ?? 4096,
+    // Google recommends "minimal" for high-throughput classification and JSON
+    // extraction. Pinned explicitly so a model-side default change can't alter
+    // our output shape.
+    thinkingConfig: { thinkingLevel: "minimal" },
   };
   if (config?.responseMimeType) {
     generationConfig.responseMimeType = config.responseMimeType;
@@ -71,7 +85,7 @@ async function callGemini(systemPrompt: string, userText: string, config?: AICon
 
   const t0 = Date.now();
   const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
     {
       method: "POST",
       headers: {
@@ -89,85 +103,17 @@ async function callGemini(systemPrompt: string, userText: string, config?: AICon
   const elapsed = Date.now() - t0;
   if (!res.ok) {
     const errBody = await res.text();
-    console.error(`[AI-GEMINI] FAIL HTTP ${res.status} (${elapsed}ms) input=${userText.length}chars — ${errBody.slice(0, 150)}`);
+    console.error(`[AI-GEMINI] FAIL HTTP ${res.status} model=${GEMINI_MODEL} (${elapsed}ms) input=${userText.length}chars — ${errBody.slice(0, 150)}`);
     throw new Error(`Gemini error (${res.status}): ${errBody.slice(0, 200)}`);
   }
 
   const data = await res.json();
   const output = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-  console.log(`[AI-GEMINI] OK (${elapsed}ms) input=${userText.length}chars output=${output.length}chars`);
+  console.log(`[AI-GEMINI] OK model=${GEMINI_MODEL} (${elapsed}ms) input=${userText.length}chars output=${output.length}chars`);
   return output;
 }
 
-interface GeminiSearchResult {
-  text: string;
-  groundingMetadata?: {
-    searchEntryPoint?: { renderedContent: string };
-    groundingChunks?: { web?: { uri: string; title: string } }[];
-    groundingSupports?: { segment: { text: string }; support: { confidenceScore: number; groundingChunkIndices: number[] }[] }[];
-  };
-}
-
-export async function callGeminiWithSearch(
-  systemPrompt: string,
-  userText: string,
-  config?: AIConfig
-): Promise<GeminiSearchResult> {
-  await acquireAISlot();
-  try {
-    return await callGeminiWithSearchInner(systemPrompt, userText, config);
-  } finally {
-    releaseAISlot();
-  }
-}
-
-async function callGeminiWithSearchInner(
-  systemPrompt: string,
-  userText: string,
-  config?: AIConfig
-): Promise<GeminiSearchResult> {
-  const generationConfig: Record<string, unknown> = {
-    temperature: config?.temperature ?? 0.1,
-    maxOutputTokens: config?.maxOutputTokens ?? 4096,
-  };
-  if (config?.responseMimeType) {
-    generationConfig.responseMimeType = config.responseMimeType;
-  }
-
-  const t0 = Date.now();
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": GEMINI_API_KEY ?? "",
-      },
-      body: JSON.stringify({
-        system_instruction: { parts: [{ text: systemPrompt }] },
-        contents: [{ parts: [{ text: userText }] }],
-        generationConfig,
-        tools: [{ google_search: {} }],
-      }),
-    }
-  );
-
-  const elapsed = Date.now() - t0;
-  if (!res.ok) {
-    const errBody = await res.text();
-    console.error(`[AI-GEMINI-SEARCH] FAIL HTTP ${res.status} (${elapsed}ms) input=${userText.length}chars — ${errBody.slice(0, 150)}`);
-    throw new Error(`Gemini Search error (${res.status}): ${errBody.slice(0, 300)}`);
-  }
-
-  const data = await res.json();
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-  const groundingMetadata = data.candidates?.[0]?.groundingMetadata;
-  const chunks = groundingMetadata?.groundingChunks?.length ?? 0;
-  console.log(`[AI-GEMINI-SEARCH] OK (${elapsed}ms) input=${userText.length}chars output=${text.length}chars grounded_chunks=${chunks}`);
-  return { text, groundingMetadata };
-}
-
-export async function callGroq(systemPrompt: string, userText: string, config?: AIConfig): Promise<string> {
+async function callGroqSingle(model: string, systemPrompt: string, userText: string, config?: AIConfig): Promise<string> {
   const t0 = Date.now();
   const res = await fetch(GROQ_ENDPOINT, {
     method: "POST",
@@ -176,32 +122,49 @@ export async function callGroq(systemPrompt: string, userText: string, config?: 
       Authorization: `Bearer ${GROQ_API_KEY}`,
     },
     body: JSON.stringify({
-      model: GROQ_MODEL,
+      model,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userText },
       ],
-    max_tokens: Math.min(config?.maxOutputTokens ?? 4096, 16384),
-      temperature: config?.temperature ?? 0.1,
+      max_completion_tokens: Math.min(config?.maxOutputTokens ?? 4096, 16384),
+      // Groq: gpt-oss is tuned for 0.5-0.7 and degrades below that, so a caller
+      // asking for 0.1 gets floored rather than honoured literally.
+      temperature: Math.max(config?.temperature ?? 0.1, 0.5),
+      // Reasoning arrives in message.reasoning; content stays clean JSON.
+      include_reasoning: false,
     }),
   });
 
   const elapsed = Date.now() - t0;
   if (!res.ok) {
     const errBody = await res.text();
-    console.error(`[AI-GROQ] FAIL HTTP ${res.status} (${elapsed}ms) input=${userText.length}chars — ${errBody.slice(0, 150)}`);
-    throw new Error(`Groq error (${res.status}): ${errBody.slice(0, 200)}`);
+    console.error(`[AI-GROQ] FAIL HTTP ${res.status} model=${model} (${elapsed}ms) input=${userText.length}chars — ${errBody.slice(0, 150)}`);
+    throw new Error(`Groq error (${res.status}) on ${model}: ${errBody.slice(0, 200)}`);
   }
 
   const data = await res.json();
   const output = data.choices?.[0]?.message?.content ?? "";
-  console.log(`[AI-GROQ] OK (${elapsed}ms) input=${userText.length}chars output=${output.length}chars`);
+  console.log(`[AI-GROQ] OK model=${model} (${elapsed}ms) input=${userText.length}chars output=${output.length}chars`);
   return output;
+}
+
+export async function callGroq(systemPrompt: string, userText: string, config?: AIConfig): Promise<string> {
+  let lastErr: Error | null = null;
+  for (const model of GROQ_MODELS) {
+    try {
+      return await callGroqSingle(model, systemPrompt, userText, config);
+    } catch (err: any) {
+      lastErr = err;
+      console.warn(`[AI-GROQ] model=${model} failed: ${(err?.message ?? String(err)).slice(0, 100)}`);
+    }
+  }
+  throw lastErr ?? new Error("Groq: no models configured (GROQ_MODEL empty?)");
 }
 
 const OPENROUTER_FALLBACK_MODELS = [
   "openai/gpt-4o-mini",
-  "google/gemini-3.1-flash-lite",
+  "google/gemini-3.5-flash-lite",
   "deepseek/deepseek-chat",
 ];
 
@@ -301,7 +264,9 @@ async function callAIWithFallbackInner(
       const msg = err?.message ?? String(err);
       markGeminiFailure(msg);
       console.warn(`[AI-TIER] step="${stepName}" gemini FAILED: ${msg.slice(0, 100)}`);
-      const isRetryable = msg.includes("429") || msg.includes("quota") || msg.includes("401") || msg.includes("403") || /5\d{2}/.test(msg) || /UNAVAILABLE/i.test(msg);
+      // 404 = model id retired/renamed upstream — same operational class as a
+      // 429, so fall through rather than failing the caller's request.
+      const isRetryable = msg.includes("429") || msg.includes("quota") || msg.includes("401") || msg.includes("403") || msg.includes("404") || /5\d{2}/.test(msg) || /UNAVAILABLE/i.test(msg);
       if (!isRetryable) throw err;
     }
   } else {
@@ -323,7 +288,10 @@ async function callAIWithFallbackInner(
     } catch (err: any) {
       const msg = err?.message ?? String(err);
       console.warn(`[AI-TIER] step="${stepName}" groq FAILED: ${msg.slice(0, 100)}`);
-      const isRetryable = msg.includes("429") || msg.includes("quota") || msg.includes("401") || msg.includes("403") || msg.includes("413") || /5\d{2}/.test(msg) || /UNAVAILABLE/i.test(msg);
+      // 400/404/422 = a decommissioned or unrecognised model id (Groq retires
+      // models aggressively). Those are provider-side config failures, not bad
+      // prompts, so degrade to OpenRouter instead of failing the request.
+      const isRetryable = msg.includes("429") || msg.includes("quota") || msg.includes("400") || msg.includes("401") || msg.includes("403") || msg.includes("404") || msg.includes("413") || msg.includes("422") || /5\d{2}/.test(msg) || /UNAVAILABLE/i.test(msg);
       if (!isRetryable) throw err;
     }
   }
