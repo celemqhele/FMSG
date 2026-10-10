@@ -1,5 +1,6 @@
 import { checkApiLimit, recordApiCall, recordApiFailure } from "./api-rate-limit";
 import { mapLocationToProvince } from "./location";
+import { googleJobsQuery, jsearchQuery, adzunaQuery, scrappaQuery, bingQuery, dittoQuery } from "./source-queries";
 import puppeteer from "puppeteer-core";
 
 const SERPAPI_KEY = process.env.SERPAPI_API_KEY;
@@ -42,9 +43,10 @@ export async function searchGoogleJobs(params: SerpParams): Promise<SerpJob[]> {
     return [];
   }
 
+  const q = googleJobsQuery(params.q);
   const url = new URL("https://serpapi.com/search.json");
   url.searchParams.set("engine", "google_jobs");
-  url.searchParams.set("q", params.q);
+  url.searchParams.set("q", q);
   url.searchParams.set("api_key", SERPAPI_KEY!);
   if (params.location) url.searchParams.set("location", params.location);
   if (params.hl) url.searchParams.set("hl", params.hl);
@@ -53,7 +55,7 @@ export async function searchGoogleJobs(params: SerpParams): Promise<SerpJob[]> {
 
   const fullUrl = url.toString();
   const safeUrl = fullUrl.replace(/api_key=[^&]+/, "api_key=***");
-  console.log("[SRC1-GOOGLE-JOBS] REQ params:", JSON.stringify({ q: params.q, location: params.location, gl: params.gl }));
+  console.log("[SRC1-GOOGLE-JOBS] REQ params:", JSON.stringify({ q, location: params.location, gl: params.gl }));
   console.log("[SRC1-GOOGLE-JOBS] URL:", safeUrl);
 
   const res = await fetch(fullUrl);
@@ -94,7 +96,7 @@ export async function searchJSearch(params: SerpParams): Promise<SerpJob[]> {
     return [];
   }
 
-  const query = cleanQueryForSearch([params.q, params.location, "South Africa"].filter(Boolean).join(" "), params.location);
+  const query = jsearchQuery(params.q, params.location);
   const url = new URL("https://jsearch.p.rapidapi.com/search-v2");
   url.searchParams.set("query", query);
   url.searchParams.set("page", "1");
@@ -173,14 +175,8 @@ export async function searchAdzuna(params: SerpParams): Promise<SerpJob[]> {
     return [];
   }
 
-  // Strip Google-style operators and noise words that Adzuna doesn't support
-  const what = (params.q || "")
-    .replace(/["*]/g, "")           // remove quotes and wildcards
-    .replace(/\b(OR|AND|NOT)\b/gi, "") // remove boolean operators
-    .replace(/\b(in|jobs|job|south africa|cape town|johannesburg|durban|pretoria)\b/gi, "") // remove noise/location
-    .replace(/\s+/g, " ")           // collapse whitespace
-    .trim();
-  const where = params.location || "South Africa";
+  // Adzuna takes a separate `what` (keywords) and `where` (place)
+  const { what, where } = adzunaQuery(params.q, params.location);
 
   const url = new URL("https://api.adzuna.com/v1/api/jobs/za/search/1");
   url.searchParams.set("app_id", appId);
@@ -492,7 +488,7 @@ export async function searchJinaBingJobs(params: SerpParams, deadline?: number):
     return [];
   }
 
-  const query = cleanQueryForSearch([params.q, params.location, "South Africa"].filter(Boolean).join(" "), params.location);
+  const query = bingQuery(params.q, params.location);
   const location = params.location || "South Africa";
 
   recordApiCall("bing-jina");
@@ -502,7 +498,7 @@ export async function searchJinaBingJobs(params: SerpParams, deadline?: number):
 
 
 export async function searchWebJobs(params: SerpParams): Promise<SerpJob[]> {
-  const query = cleanQueryForSearch([params.q, params.location, "South Africa"].filter(Boolean).join(" "), params.location);
+  const query = scrappaQuery(params.q, params.location);
 
   console.log(`[SRC7-SEARCH] Searching Google Jobs via Scrappa: "${query}"`);
 
@@ -582,8 +578,7 @@ async function tryJinaWebJobs(query: string, location: string): Promise<SerpJob[
 
 // ─── Attempt 2: Scrappa (Google Jobs API) ────────────────────────────────
 
-async function tryScrappaJobs(rawQuery: string, location: string): Promise<SerpJob[]> {
-  const query = cleanQueryForSearch(rawQuery, location);
+async function tryScrappaJobs(query: string, location: string): Promise<SerpJob[]> {
   const apiKey = process.env.SCRAPPA_API;
   if (!apiKey) {
     console.warn(`[SRC7-SCRAPPA] SKIP — no SCRAPPA_API key`);
@@ -879,10 +874,9 @@ export async function searchDittoJobs(params: SerpParams, deadline?: number): Pr
     return [];
   }
 
-  // Extract just the first job title — params.q may contain multiple OR-quoted titles
-  const titleMatch = (params.q || "").match(/"([^"]+)"/);
-  const rawTitle = titleMatch ? titleMatch[1] : (params.q || "").split(/\s+(?:OR|AND|in\b)/i)[0];
-  const query = cleanDittoQuery(rawTitle);
+  // Extract just the role title — Ditto's job_title is pure keyword search,
+  // location goes through the numeric city id below.
+  const query = cleanDittoQuery(dittoQuery(params.q));
   // Ditto requires city-level location with numeric ID (province → hotspot city)
   const DITTO_CITY_MAP: Record<string, { id: string; name: string }> = {
     // Gauteng

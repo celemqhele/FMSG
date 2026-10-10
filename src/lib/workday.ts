@@ -12,6 +12,7 @@
 import https from "https";
 import { checkApiLimit, recordApiCall } from "./api-rate-limit";
 import type { SerpJob } from "./serpapi";
+import { workdayQuery } from "./source-queries";
 
 // ─── SA Workday Tenants ──────────────────────────────────────────────────
 // Hardcoded list — the CXS API is per-tenant, no global search exists.
@@ -217,7 +218,7 @@ export async function searchWorkdayJobs(params: { q: string; location?: string }
     return [];
   }
 
-  const query = params.q || "";
+  const query = workdayQuery(params.q);
   if (!query) {
     console.warn(`[WORKDAY] SKIP — empty query`);
     return [];
