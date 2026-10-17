@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Upload, X, Loader2, Trash2, Plus, FileText } from "lucide-react";
+import { LOCATION_SCOPES, type LocationScope } from "@/lib/location";
 import "../landing/liquid-glass.css";
 
 interface CvVariation {
@@ -31,6 +32,12 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
   const [industryStep3, setIndustryStep3] = useState("");
   const [industryStep4, setIndustryStep4] = useState("");
   const [industryStep5, setIndustryStep5] = useState("");
+  const [locationScope, setLocationScope] = useState<LocationScope>("provincial");
+  const [locationStep1, setLocationStep1] = useState("");
+  const [locationStep2, setLocationStep2] = useState("");
+  const [locationStep3, setLocationStep3] = useState("");
+  const [locationStep4, setLocationStep4] = useState("");
+  const [suggestingLocation, setSuggestingLocation] = useState(false);
   const [suggestingIndustry, setSuggestingIndustry] = useState(false);
   const [jobTypes, setJobTypes] = useState<string[]>([]);
   const [cvVariations, setCvVariations] = useState<CvVariation[]>([]);
@@ -45,6 +52,7 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
   const inputRef = useRef<HTMLInputElement>(null);
   const addInputRef = useRef<HTMLInputElement>(null);
   const suggestedIndustryRef = useRef(false);
+  const ladderLocationRef = useRef("");
 
   useEffect(() => {
     requestAnimationFrame(() => setMounted(true));
@@ -54,7 +62,7 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
     const supabase = createClient();
     supabase
       .from("search_profiles")
-      .select("name, job_titles, job_types, location, industry, industry_step_1, industry_step_2, industry_step_3, industry_step_4, industry_step_5, cv_variations")
+      .select("name, job_titles, job_types, location, industry, industry_step_1, industry_step_2, industry_step_3, industry_step_4, industry_step_5, cv_variations, location_scope, location_step_1, location_step_2, location_step_3, location_step_4")
       .eq("id", profileId)
       .maybeSingle()
       .then(({ data }: { data: any }) => {
@@ -63,6 +71,12 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
           setJobTitles(data.job_titles?.length ? data.job_titles : [""]);
           setJobTypes(data.job_types ?? []);
           setLocation(data.location ?? "");
+          ladderLocationRef.current = (data.location ?? "").trim();
+          setLocationScope((data.location_scope as LocationScope) ?? "provincial");
+          setLocationStep1(data.location_step_1 ?? "");
+          setLocationStep2(data.location_step_2 ?? "");
+          setLocationStep3(data.location_step_3 ?? "");
+          setLocationStep4(data.location_step_4 ?? "");
           setIndustry(data.industry ?? "");
           setIndustryStep1(data.industry_step_1 ?? "");
           setIndustryStep2(data.industry_step_2 ?? "");
@@ -101,6 +115,37 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
   }, [step, showUploadStep, jobTitles]);
 
   if (loadingProfile) return null;
+
+  /** Fetch the AI location ladder for a location. Returns the 4 rungs, or null on failure. */
+  const suggestLocationLadder = async (loc: string): Promise<string[] | null> => {
+    const cleaned = (loc ?? "").trim();
+    if (!cleaned) return null;
+    if (cleaned === ladderLocationRef.current) return [locationStep1, locationStep2, locationStep3, locationStep4];
+    const supabase = createClient();
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return null;
+    setSuggestingLocation(true);
+    try {
+      const res = await fetch("/api/suggest-location-ladder", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ location: cleaned }),
+      });
+      if (!res.ok) return null;
+      const ladder = await res.json();
+      const rungs: string[] = (ladder.steps ?? []).map((s: any) => s.value ?? "");
+      setLocationStep1(rungs[0] ?? "");
+      setLocationStep2(rungs[1] ?? "");
+      setLocationStep3(rungs[2] ?? "");
+      setLocationStep4(rungs[3] ?? "");
+      ladderLocationRef.current = cleaned;
+      return rungs;
+    } catch {
+      return null;
+    } finally {
+      setSuggestingLocation(false);
+    }
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const fileList = e.target.files;
@@ -224,6 +269,12 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
               }
             }
           }).catch(() => {});
+        }
+
+        // Auto-populate location ladder (city → region → country → continent)
+        const extractedLocation = (data.preferred_location ?? "").trim();
+        if (extractedLocation && location === "") {
+          suggestLocationLadder(extractedLocation).catch(() => {});
         }
 
         setStep("form");
@@ -427,9 +478,31 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
       .replace(/\b(Remote|Hybrid|On-site|Online|Work from home|WFH|Flexible|Anywhere)\b/gi, "")
       .replace(/[\s,;/-]+/g, " ")
       .trim();
+
+    // Ensure the location ladder matches the location being saved. If the AI
+    // call fails, clear the rungs — the search pipeline derives them from the
+    // profile location deterministically instead of using a stale ladder.
+    let saveStep1 = locationStep1, saveStep2 = locationStep2, saveStep3 = locationStep3, saveStep4 = locationStep4;
+    const ladderNeverBuilt = !saveStep1 && !saveStep2 && !saveStep3 && !saveStep4;
+    if (cleanedLocation && (location.trim() !== ladderLocationRef.current || ladderNeverBuilt)) {
+      const rungs = await suggestLocationLadder(location);
+      if (rungs) {
+        saveStep1 = rungs[0] ?? ""; saveStep2 = rungs[1] ?? "";
+        saveStep3 = rungs[2] ?? ""; saveStep4 = rungs[3] ?? "";
+      } else {
+        saveStep1 = ""; saveStep2 = ""; saveStep3 = ""; saveStep4 = "";
+      }
+    }
+
     const updateData: Record<string, any> = {
       job_titles: filtered,
       location: cleanedLocation,
+      location_scope: locationScope,
+      location_step_1: saveStep1,
+      location_step_2: saveStep2,
+      location_step_3: saveStep3,
+      location_step_4: saveStep4,
+      location_ladder_generated_at: new Date().toISOString(),
       industry: industry.trim(),
       industry_step_1: industryStep1,
       industry_step_2: industryStep2,
@@ -579,10 +652,69 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
                 <input
                   value={location}
                   onChange={(e) => setLocation(e.target.value)}
+                  onBlur={() => { if (location.trim()) suggestLocationLadder(location).catch(() => {}); }}
                   placeholder="e.g. Johannesburg, Cape Town"
                   className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-white placeholder-white/30 focus:outline-none focus:border-[var(--color-accent)] transition-colors"
                 />
                 <p className="mt-1 text-xs text-white/50">City or country only. Select work type below.</p>
+              </div>
+
+              {/* Location Scope */}
+              <div>
+                <label className="text-sm font-medium text-white mb-1.5 block">
+                  Location Scope <span className="text-white/50 font-normal">(how far out to search)</span>
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {LOCATION_SCOPES.map((s) => (
+                    <button
+                      key={s.value}
+                      type="button"
+                      title={s.hint}
+                      onClick={() => setLocationScope(s.value)}
+                      className={`px-3 py-2 rounded-lg text-xs border transition-colors ${
+                        locationScope === s.value
+                          ? "bg-[var(--color-accent)]/20 border-[var(--color-accent)] text-white"
+                          : "bg-white/5 border-white/10 text-white/70 hover:border-white/20"
+                      }`}
+                    >
+                      {s.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-1 text-xs text-white/50">
+                  {LOCATION_SCOPES.find((s) => s.value === locationScope)?.hint}. Jobs outside this scope are filtered out; remote roles always pass.
+                </p>
+              </div>
+
+              {/* Location Ladder */}
+              <div>
+                <label className="text-sm font-medium text-white mb-1.5 block">
+                  Location Ladder{" "}
+                  {suggestingLocation
+                    ? <span className="text-white/50 font-normal">(AI-populating…)</span>
+                    : <span className="text-white/50 font-normal">(AI-populated, edit any step)</span>}
+                </label>
+                <p className="text-xs text-white/50 mb-2">
+                  Anchors the scope filter on your own area. Step 1 is your city, Step 4 your continent.
+                </p>
+                <div className="space-y-2">
+                  {[
+                    { label: "Step 1: City", value: locationStep1, setter: setLocationStep1, placeholder: "e.g. Johannesburg" },
+                    { label: "Step 2: Province / Region", value: locationStep2, setter: setLocationStep2, placeholder: "e.g. Gauteng" },
+                    { label: "Step 3: Country", value: locationStep3, setter: setLocationStep3, placeholder: "e.g. South Africa" },
+                    { label: "Step 4: Continent", value: locationStep4, setter: setLocationStep4, placeholder: "e.g. Africa" },
+                  ].map((s) => (
+                    <div key={s.label} className="space-y-0.5">
+                      <label className="text-[11px] text-white/40">{s.label}</label>
+                      <input
+                        value={s.value}
+                        onChange={(e) => s.setter(e.target.value)}
+                        placeholder={s.placeholder}
+                        className="w-full px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-sm text-white placeholder-white/30 focus:outline-none focus:border-[var(--color-accent)] transition-colors"
+                      />
+                    </div>
+                  ))}
+                </div>
               </div>
 
               {/* Industry Ladder */}

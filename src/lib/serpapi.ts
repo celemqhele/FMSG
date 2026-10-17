@@ -25,6 +25,8 @@ export interface SerpJob {
   spec_source?: "google_jobs" | "jsearch" | "adzuna" | "linkedin" | "bing_jobs" | "web_jobs" | "ditto" | "workday";
   salary_min?: number;
   salary_max?: number;
+  /** Location was stamped from the search query, not reported by the source — filter treats it as unknown. */
+  _locationUnverified?: boolean;
 }
 
 interface SerpParams {
@@ -141,10 +143,12 @@ export async function searchJSearch(params: SerpParams): Promise<SerpJob[]> {
     }
     return jobs.map((j: any) => {
       const fullDesc = j.job_description || "";
+      const jobLocation = j.job_city || j.job_state || "";
       return {
         title: j.job_title || "",
         company_name: j.employer_name || "Unknown",
-        location: j.job_city || j.job_state || params.location || "",
+        location: jobLocation || params.location || "",
+        _locationUnverified: !jobLocation,
         description: fullDesc.slice(0, 3000),
         link: j.job_apply_link || j.job_google_link || "",
         via: j.employer_name || "",
@@ -628,17 +632,21 @@ async function tryScrappaJobs(query: string, location: string): Promise<SerpJob[
     }
 
     recordApiCall("scrappa");
-    const jobs: SerpJob[] = results.map((j: any) => ({
-      title: String(j.title || "").trim(),
-      company_name: String(j.company_name || "Unknown").trim(),
-      location: String(j.location || location).trim(),
-      description: String(j.description || "").slice(0, 3000),
-      link: String(j.link || ""),
-      via: String(j.via || "google_jobs").toLowerCase(),
-      posted_at: j.detected_extensions?.posted_at || "",
-      hasFullSpec: (j.description?.length ?? 0) > 300,
-      spec_source: "web_jobs" as const,
-    }));
+    const jobs: SerpJob[] = results.map((j: any) => {
+      const jobLoc = String(j.location || "").trim();
+      return {
+        title: String(j.title || "").trim(),
+        company_name: String(j.company_name || "Unknown").trim(),
+        location: jobLoc || location.trim(),
+        _locationUnverified: !jobLoc,
+        description: String(j.description || "").slice(0, 3000),
+        link: String(j.link || ""),
+        via: String(j.via || "google_jobs").toLowerCase(),
+        posted_at: j.detected_extensions?.posted_at || "",
+        hasFullSpec: (j.description?.length ?? 0) > 300,
+        spec_source: "web_jobs" as const,
+      };
+    });
 
     console.log(`[SRC7-SCRAPPA] SUCCESS — ${jobs.length} jobs parsed`);
     if (jobs.length > 0) {
@@ -774,6 +782,7 @@ async function tryBrightDataWebJobs(query: string, location: string, deadline?: 
             title: job.title,
             company_name: job.company || "Unknown",
             location: job.location || location,
+            _locationUnverified: !job.location,
             description: job.description.slice(0, 3000),
             link: decodedLink,
             via: "bing",
@@ -1035,6 +1044,7 @@ export async function searchDittoJobs(params: SerpParams, deadline?: number): Pr
             title: preview.title,
             company_name: preview.company || "Unknown",
             location: preview.location || params.location || "",
+            _locationUnverified: !preview.location,
             description: fullDescription.slice(0, 3000),
             link: finalLink,
             via: "ditto",
@@ -1247,10 +1257,12 @@ function parseBingJobsMarkdown(content: string, defaultLocation?: string, pageLi
 
     if (isJobTitle && !line.includes("|")) {
       if (currentTitle) {
+        const parsedLoc = cleanText(currentLocation);
         jobs.push({
           title: cleanText(currentTitle),
           company_name: cleanText(currentCompany) || "Unknown",
-          location: cleanText(currentLocation) || defaultLocation || "",
+          location: parsedLoc || defaultLocation || "",
+          _locationUnverified: !parsedLoc,
           description: cleanText(currentDescription).slice(0, 3000),
           link: findBestLink(currentTitle, currentCompany) || extractBestJobUrl(currentDescription),
           via: currentVia || "bing",
@@ -1295,10 +1307,12 @@ function parseBingJobsMarkdown(content: string, defaultLocation?: string, pageLi
   }
 
   if (currentTitle) {
+    const parsedLoc = cleanText(currentLocation);
     jobs.push({
       title: cleanText(currentTitle),
       company_name: cleanText(currentCompany) || "Unknown",
-      location: cleanText(currentLocation) || defaultLocation || "",
+      location: parsedLoc || defaultLocation || "",
+      _locationUnverified: !parsedLoc,
       description: cleanText(currentDescription).slice(0, 3000),
       link: findBestLink(currentTitle, currentCompany) || extractBestJobUrl(currentDescription),
       via: currentVia || "bing_jobs",

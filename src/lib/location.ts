@@ -91,6 +91,500 @@ const SA_CITY_TO_PROVINCE: Record<string, { province: string; cityName: string }
 
 const SA_PROVINCES = ["Gauteng", "Western Cape", "KwaZulu-Natal", "Eastern Cape", "Free State", "Limpopo", "Mpumalanga", "North West", "Northern Cape"];
 
+// ─── Location scope filter (city → region → country → continent → world) ────
+// The user's scope setting (search_profiles.location_scope) hard-filters search
+// results to their chosen geographic tier. All lookups here are deterministic —
+// the AI only builds the user's ladder once at profile save; every job match at
+// search time uses these static tables.
+
+export type LocationScope = "local" | "provincial" | "country" | "continental" | "world";
+
+export const LOCATION_SCOPES: { value: LocationScope; label: string; hint: string }[] = [
+  { value: "local", label: "Local", hint: "Only my city / metro area" },
+  { value: "provincial", label: "Provincial", hint: "My province / region" },
+  { value: "country", label: "Country", hint: "Anywhere in my country" },
+  { value: "continental", label: "Continental", hint: "Anywhere on my continent" },
+  { value: "world", label: "World", hint: "No location filter" },
+];
+
+/** AI-generated broadening ladder (mirrors the industry ladder pattern). */
+export interface LocationLadder {
+  city: string;      // location_step_1
+  region: string;    // location_step_2
+  country: string;   // location_step_3
+  continent: string; // location_step_4
+}
+
+export interface JobGeo {
+  city: string;
+  region: string;
+  country: string;
+  continent: string;
+  isRemote: boolean;
+  /** "exact" = city/region resolved · "country" = only country resolved · "unknown" = nothing resolved */
+  confidence: "exact" | "country" | "unknown";
+}
+
+/**
+ * Patterns that mean the job is genuinely workable from anywhere (checked on
+ * the location field only). Note "hybrid"/"flexible" are deliberately NOT here:
+ * a hybrid role still has a real workplace, so it is resolved like an on-site
+ * role (e.g. "Hybrid – Sandton" is a Sandton job, not a worldwide remote job).
+ */
+export const REMOTE_LOCATION_PATTERNS = ["remote", "work from home", "wfh", "anywhere", "worldwide", "global", "fully remote", "100% remote", "remote-first", "telecommute", "work remotely"];
+
+/**
+ * Country → continent table for classifying a job's location.
+ * Africa is complete (all 54); the rest covers the world's major job markets.
+ * Lowercase, matched with word boundaries.
+ */
+const CONTINENT_BY_COUNTRY: Record<string, string[]> = {
+  "Africa": [
+    "algeria", "angola", "benin", "botswana", "burkina faso", "burundi", "cabo verde", "cameroon",
+    "central african republic", "chad", "comoros", "congo", "democratic republic of the congo", "drc",
+    "djibouti", "egypt", "equatorial guinea", "eritrea", "eswatini", "ethiopia", "gabon", "gambia",
+    "ghana", "guinea", "guinea-bissau", "ivory coast", "côte d'ivoire", "kenya", "lesotho", "liberia",
+    "libya", "madagascar", "malawi", "mali", "mauritania", "mauritius", "morocco", "mozambique",
+    "namibia", "niger", "nigeria", "rwanda", "sao tome and principe", "senegal", "seychelles",
+    "sierra leone", "somalia", "south africa", "south sudan", "sudan", "tanzania", "togo", "tunisia",
+    "uganda", "zambia", "zimbabwe",
+  ],
+  "Europe": [
+    "albania", "andorra", "armenia", "austria", "belarus", "belgium", "bosnia", "bulgaria", "croatia",
+    "cyprus", "czech republic", "czechia", "denmark", "estonia", "finland", "france",
+    "germany", "greece", "hungary", "iceland", "ireland", "italy", "kosovo", "latvia", "liechtenstein",
+    "lithuania", "luxembourg", "malta", "moldova", "monaco", "montenegro", "netherlands", "holland",
+    "north macedonia", "norway", "poland", "portugal", "romania", "russia", "san marino", "serbia",
+    "slovakia", "slovenia", "spain", "sweden", "switzerland", "turkey", "ukraine", "united kingdom",
+    "uk", "england", "scotland", "wales",
+  ],
+  "North America": [
+    "united states", "usa", "canada", "mexico", "costa rica", "cuba", "dominican republic",
+    "guatemala", "honduras", "jamaica", "panama", "trinidad", "barbados", "bahamas", "haiti",
+  ],
+  "South America": [
+    "argentina", "bolivia", "brazil", "chile", "colombia", "ecuador", "paraguay", "peru", "uruguay",
+    "venezuela", "guyana", "suriname",
+  ],
+  "Asia": [
+    "china", "india", "indonesia", "japan", "south korea", "north korea", "malaysia", "singapore",
+    "thailand", "vietnam", "philippines", "pakistan", "bangladesh", "sri lanka", "nepal", "bhutan",
+    "myanmar", "cambodia", "laos", "mongolia", "taiwan", "hong kong", "israel", "palestine", "jordan",
+    "lebanon", "iraq", "iran", "saudi arabia", "uae", "united arab emirates", "qatar", "kuwait",
+    "bahrain", "oman", "yemen", "syria", "kazakhstan", "uzbekistan", "turkmenistan", "kyrgyzstan",
+    "tajikistan", "afghanistan", "brunei", "maldives",
+  ],
+  "Oceania": [
+    "australia", "new zealand", "fiji", "papua new guinea", "samoa", "tonga", "solomon islands",
+    "vanuatu", "kiribati", "micronesia", "palau", "nauru", "marshall islands",
+  ],
+};
+
+// Compile one word-boundary regex per continent at module load (deterministic, no AI).
+const COUNTRY_PATTERNS: { regex: RegExp; country: string; continent: string }[] = Object.entries(
+  CONTINENT_BY_COUNTRY
+).flatMap(([continent, countries]) =>
+  countries.map((c) => ({
+    regex: new RegExp(`\\b${c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i"),
+    country: c,
+    continent,
+  }))
+);
+// Longest names first so "united arab emirates" beats "uae", "south africa" beats nothing else, etc.
+COUNTRY_PATTERNS.sort((a, b) => b.country.length - a.country.length);
+
+const CANONICAL_COUNTRY: Record<string, string> = {
+  "uk": "United Kingdom", "england": "United Kingdom", "scotland": "United Kingdom", "wales": "United Kingdom",
+  "holland": "Netherlands", "czech republic": "Czechia",
+  "congo": "Republic of the Congo", "democratic republic of the congo": "DR Congo", "drc": "DR Congo",
+  "usa": "United States", "united states": "United States", "uae": "United Arab Emirates",
+  "united arab emirates": "United Arab Emirates", "côte d'ivoire": "Ivory Coast",
+  "south africa": "South Africa",
+};
+
+/**
+ * Well-known metro areas → country. Job boards very often publish city-only
+ * locations ("New York", "London", "Dubai"), so without this table a foreign
+ * job would look like an unknown location and be kept instead of filtered.
+ * Only applied to the LOCATION FIELD (never to spec text — too noisy there).
+ */
+const FOREIGN_CITY_TO_COUNTRY: Record<string, { country: string; continent: string }> = {
+  // Europe
+  "london": { country: "United Kingdom", continent: "Europe" },
+  "manchester": { country: "United Kingdom", continent: "Europe" },
+  "birmingham": { country: "United Kingdom", continent: "Europe" },
+  "edinburgh": { country: "United Kingdom", continent: "Europe" },
+  "glasgow": { country: "United Kingdom", continent: "Europe" },
+  "bristol": { country: "United Kingdom", continent: "Europe" },
+  "dublin": { country: "Ireland", continent: "Europe" },
+  "cork": { country: "Ireland", continent: "Europe" },
+  "amsterdam": { country: "Netherlands", continent: "Europe" },
+  "rotterdam": { country: "Netherlands", continent: "Europe" },
+  "eindhoven": { country: "Netherlands", continent: "Europe" },
+  "paris": { country: "France", continent: "Europe" },
+  "lyon": { country: "France", continent: "Europe" },
+  "toulouse": { country: "France", continent: "Europe" },
+  "berlin": { country: "Germany", continent: "Europe" },
+  "munich": { country: "Germany", continent: "Europe" },
+  "munchen": { country: "Germany", continent: "Europe" },
+  "hamburg": { country: "Germany", continent: "Europe" },
+  "frankfurt": { country: "Germany", continent: "Europe" },
+  "stuttgart": { country: "Germany", continent: "Europe" },
+  "dusseldorf": { country: "Germany", continent: "Europe" },
+  "madrid": { country: "Spain", continent: "Europe" },
+  "barcelona": { country: "Spain", continent: "Europe" },
+  "valencia": { country: "Spain", continent: "Europe" },
+  "lisbon": { country: "Portugal", continent: "Europe" },
+  "porto": { country: "Portugal", continent: "Europe" },
+  "rome": { country: "Italy", continent: "Europe" },
+  "milan": { country: "Italy", continent: "Europe" },
+  "milano": { country: "Italy", continent: "Europe" },
+  "turin": { country: "Italy", continent: "Europe" },
+  "zurich": { country: "Switzerland", continent: "Europe" },
+  "geneva": { country: "Switzerland", continent: "Europe" },
+  "vienna": { country: "Austria", continent: "Europe" },
+  "brussels": { country: "Belgium", continent: "Europe" },
+  "antwerp": { country: "Belgium", continent: "Europe" },
+  "copenhagen": { country: "Denmark", continent: "Europe" },
+  "stockholm": { country: "Sweden", continent: "Europe" },
+  "gothenburg": { country: "Sweden", continent: "Europe" },
+  "oslo": { country: "Norway", continent: "Europe" },
+  "helsinki": { country: "Finland", continent: "Europe" },
+  "warsaw": { country: "Poland", continent: "Europe" },
+  "krakow": { country: "Poland", continent: "Europe" },
+  "prague": { country: "Czechia", continent: "Europe" },
+  "budapest": { country: "Hungary", continent: "Europe" },
+  "bucharest": { country: "Romania", continent: "Europe" },
+  "athens": { country: "Greece", continent: "Europe" },
+  "istanbul": { country: "Turkey", continent: "Europe" },
+  "moscow": { country: "Russia", continent: "Europe" },
+  "kyiv": { country: "Ukraine", continent: "Europe" },
+  // North America
+  "new york": { country: "United States", continent: "North America" },
+  "nyc": { country: "United States", continent: "North America" },
+  "san francisco": { country: "United States", continent: "North America" },
+  "silicon valley": { country: "United States", continent: "North America" },
+  "los angeles": { country: "United States", continent: "North America" },
+  "seattle": { country: "United States", continent: "North America" },
+  "boston": { country: "United States", continent: "North America" },
+  "chicago": { country: "United States", continent: "North America" },
+  "austin": { country: "United States", continent: "North America" },
+  "denver": { country: "United States", continent: "North America" },
+  "atlanta": { country: "United States", continent: "North America" },
+  "dallas": { country: "United States", continent: "North America" },
+  "houston": { country: "United States", continent: "North America" },
+  "miami": { country: "United States", continent: "North America" },
+  "washington dc": { country: "United States", continent: "North America" },
+  "california": { country: "United States", continent: "North America" },
+  "texas": { country: "United States", continent: "North America" },
+  "toronto": { country: "Canada", continent: "North America" },
+  "vancouver": { country: "Canada", continent: "North America" },
+  "montreal": { country: "Canada", continent: "North America" },
+  "calgary": { country: "Canada", continent: "North America" },
+  "mexico city": { country: "Mexico", continent: "North America" },
+  // South America
+  "sao paulo": { country: "Brazil", continent: "South America" },
+  "rio de janeiro": { country: "Brazil", continent: "South America" },
+  "buenos aires": { country: "Argentina", continent: "South America" },
+  "santiago": { country: "Chile", continent: "South America" },
+  "bogota": { country: "Colombia", continent: "South America" },
+  "lima": { country: "Peru", continent: "South America" },
+  // Asia / Middle East
+  "dubai": { country: "United Arab Emirates", continent: "Asia" },
+  "abu dhabi": { country: "United Arab Emirates", continent: "Asia" },
+  "abudhabi": { country: "United Arab Emirates", continent: "Asia" },
+  "doha": { country: "Qatar", continent: "Asia" },
+  "riyadh": { country: "Saudi Arabia", continent: "Asia" },
+  "jeddah": { country: "Saudi Arabia", continent: "Asia" },
+  "singapore": { country: "Singapore", continent: "Asia" },
+  "hong kong": { country: "Hong Kong", continent: "Asia" },
+  "shanghai": { country: "China", continent: "Asia" },
+  "beijing": { country: "China", continent: "Asia" },
+  "shenzhen": { country: "China", continent: "Asia" },
+  "tokyo": { country: "Japan", continent: "Asia" },
+  "osaka": { country: "Japan", continent: "Asia" },
+  "seoul": { country: "South Korea", continent: "Asia" },
+  "taipei": { country: "Taiwan", continent: "Asia" },
+  "kuala lumpur": { country: "Malaysia", continent: "Asia" },
+  "jakarta": { country: "Indonesia", continent: "Asia" },
+  "manila": { country: "Philippines", continent: "Asia" },
+  "bangkok": { country: "Thailand", continent: "Asia" },
+  "ho chi minh": { country: "Vietnam", continent: "Asia" },
+  "hanoi": { country: "Vietnam", continent: "Asia" },
+  "bengaluru": { country: "India", continent: "Asia" },
+  "bangalore": { country: "India", continent: "Asia" },
+  "mumbai": { country: "India", continent: "Asia" },
+  "delhi": { country: "India", continent: "Asia" },
+  "new delhi": { country: "India", continent: "Asia" },
+  "hyderabad": { country: "India", continent: "Asia" },
+  "chennai": { country: "India", continent: "Asia" },
+  "pune": { country: "India", continent: "Asia" },
+  "gurgaon": { country: "India", continent: "Asia" },
+  "noida": { country: "India", continent: "Asia" },
+  "kolkata": { country: "India", continent: "Asia" },
+  "tel aviv": { country: "Israel", continent: "Asia" },
+  "jerusalem": { country: "Israel", continent: "Asia" },
+  // Oceania
+  "sydney": { country: "Australia", continent: "Oceania" },
+  "melbourne": { country: "Australia", continent: "Oceania" },
+  "brisbane": { country: "Australia", continent: "Oceania" },
+  "perth": { country: "Australia", continent: "Oceania" },
+  "adelaide": { country: "Australia", continent: "Oceania" },
+  "auckland": { country: "New Zealand", continent: "Oceania" },
+  "wellington": { country: "New Zealand", continent: "Oceania" },
+  // Rest of Africa (SA cities are handled by the SA map above)
+  "cairo": { country: "Egypt", continent: "Africa" },
+  "lagos": { country: "Nigeria", continent: "Africa" },
+  "abuja": { country: "Nigeria", continent: "Africa" },
+  "nairobi": { country: "Kenya", continent: "Africa" },
+  "accra": { country: "Ghana", continent: "Africa" },
+  "casablanca": { country: "Morocco", continent: "Africa" },
+  "tunis": { country: "Tunisia", continent: "Africa" },
+  "algiers": { country: "Algeria", continent: "Africa" },
+  "addis ababa": { country: "Ethiopia", continent: "Africa" },
+  "kampala": { country: "Uganda", continent: "Africa" },
+  "dar es salaam": { country: "Tanzania", continent: "Africa" },
+  "kigali": { country: "Rwanda", continent: "Africa" },
+  "lusaka": { country: "Zambia", continent: "Africa" },
+  "harare": { country: "Zimbabwe", continent: "Africa" },
+  "gaborone": { country: "Botswana", continent: "Africa" },
+  "windhoek": { country: "Namibia", continent: "Africa" },
+  "maputo": { country: "Mozambique", continent: "Africa" },
+  "luanda": { country: "Angola", continent: "Africa" },
+  "abidjan": { country: "Ivory Coast", continent: "Africa" },
+  "dakar": { country: "Senegal", continent: "Africa" },
+  "maseru": { country: "Lesotho", continent: "Africa" },
+  "mbabane": { country: "Eswatini", continent: "Africa" },
+};
+
+const FOREIGN_CITY_PATTERNS: { regex: RegExp; country: string; continent: string }[] = Object.entries(
+  FOREIGN_CITY_TO_COUNTRY
+).map(([city, meta]) => ({
+  regex: new RegExp(`\\b${city.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i"),
+  country: meta.country,
+  continent: meta.continent,
+}));
+FOREIGN_CITY_PATTERNS.sort((a, b) => b.country.length - a.country.length);
+
+/**
+ * "Remote — US", "Remote (UK)", "Remote - EMEA" … these are NOT workable from
+ * anywhere; they restrict the role to a region. Detected before the generic
+ * remote markers so they resolve to a country/continent instead of passing as
+ * location-independent everywhere.
+ */
+const REMOTE_RESTRICTION_REGEX =
+  /\b(?:remote|anywhere|wfh|work from home)\s*[-–—(,:/]*\s*(us|u\.s\.|usa|united states|uk|u\.k\.|united kingdom|eu|e\.u\.|europe|emea|canada|india|australia|germany|france|spain|netherlands|ireland|new zealand|singapore|uae|poland|brazil|japan|china)\b/i;
+const REMOTE_RESTRICTION_REGION: Record<string, { country?: string; continent?: string }> = {
+  "us": { country: "United States" }, "u.s.": { country: "United States" }, "usa": { country: "United States" },
+  "united states": { country: "United States" },
+  "uk": { country: "United Kingdom" }, "u.k.": { country: "United Kingdom" }, "united kingdom": { country: "United Kingdom" },
+  "eu": { continent: "Europe" }, "e.u.": { continent: "Europe" }, "europe": { continent: "Europe" }, "emea": { continent: "Europe" },
+  "canada": { country: "Canada" }, "india": { country: "India" }, "australia": { country: "Australia" },
+  "germany": { country: "Germany" }, "france": { country: "France" }, "spain": { country: "Spain" },
+  "netherlands": { country: "Netherlands" }, "ireland": { country: "Ireland" }, "new zealand": { country: "New Zealand" },
+  "singapore": { country: "Singapore" }, "uae": { country: "United Arab Emirates" },
+  "poland": { country: "Poland" }, "brazil": { country: "Brazil" }, "japan": { country: "Japan" }, "china": { country: "China" },
+};
+const CONTINENT_OF_COUNTRY: Record<string, string> = Object.fromEntries(
+  Object.entries(CONTINENT_BY_COUNTRY).flatMap(([continent, countries]) => countries.map((c) => [c, continent]))
+);
+
+function normPlace(s: string): string {
+  return s.toLowerCase().trim().replace(/[-\s]+/g, " ");
+}
+
+/** Compare two place names tolerantly ("KwaZulu Natal" == "kwaZulu-Natal"). */
+export function placeEq(a: string, b: string): boolean {
+  if (!a || !b) return false;
+  return normPlace(a) === normPlace(b);
+}
+
+/**
+ * Find the country mentioned in a text fragment, if any.
+ * `includeCities` also matches well-known metro areas ("London" → UK) — used for
+ * the location FIELD only, never for spec text.
+ */
+function detectCountry(text: string, opts?: { includeCities?: boolean }): { country: string; continent: string } | null {
+  if (!text) return null;
+  for (const { regex, country, continent } of COUNTRY_PATTERNS) {
+    if (regex.test(text)) {
+      return { country: CANONICAL_COUNTRY[country] ?? country.charAt(0).toUpperCase() + country.slice(1), continent };
+    }
+  }
+  if (opts?.includeCities) {
+    for (const { regex, country, continent } of FOREIGN_CITY_PATTERNS) {
+      if (regex.test(text)) return { country, continent };
+    }
+  }
+  return null;
+}
+
+/**
+ * Whole-word containment test ("East London" contains "east london", but
+ * "London" does not contain "east london").
+ */
+function containsWholeWord(text: string, phrase: string): boolean {
+  const escaped = phrase.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&").trim();
+  if (!escaped) return false;
+  return new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`, "i").test(text.toLowerCase());
+}
+
+/**
+ * Resolve a job's geography from its location field (and spec text as a
+ * second pass). `unverified` = the source stamped the *query's* location onto
+ * the job (see serpapi.ts `_locationUnverified`) — the field is skipped and
+ * only the spec can resolve the job.
+ */
+export function resolveJobGeo(location: string, opts?: { spec?: string; unverified?: boolean }): JobGeo {
+  const geo: JobGeo = { city: "", region: "", country: "", continent: "", isRemote: false, confidence: "unknown" };
+  const field = (location || "").trim();
+
+  if (field && !opts?.unverified) {
+    // 1. Restricted remote ("Remote – US", "Remote (UK)", "Remote - EMEA") is
+    // NOT workable from anywhere — resolve it to that region so scopes filter it.
+    const restriction = field.match(REMOTE_RESTRICTION_REGEX);
+    if (restriction) {
+      const region = REMOTE_RESTRICTION_REGION[restriction[1].toLowerCase()];
+      if (region) {
+        geo.country = region.country ?? "";
+        geo.continent = region.continent ?? (region.country ? CONTINENT_OF_COUNTRY[normPlace(region.country)] ?? "" : "");
+        geo.confidence = "country";
+        return geo; // isRemote deliberately stays false
+      }
+    }
+  }
+
+  // 2. Location-independent markers — checked on the raw field: sources stamp a
+  // *query* location when missing, never the word "Remote".
+  if (field && REMOTE_LOCATION_PATTERNS.some((p) => field.toLowerCase().includes(p))) {
+    geo.isRemote = true;
+  }
+
+  if (field && !opts?.unverified) {
+    // 3. SA city/suburb → province (metro folding handles Sandton → Johannesburg etc.)
+    const mapped = mapLocationToProvince(field);
+    const saMatch = SA_PROVINCES.includes(mapped.province);
+    // 4. A country — or a well-known foreign metro — named in the field
+    const country = detectCountry(field, { includeCities: true });
+
+    // The SA partial matcher can fold a *substring* into an SA name ("London" →
+    // "East London"). When the SA result is only a loose alias and the field also
+    // names a foreign place, trust the foreign match ("London" is the UK).
+    const saIsWholeWord = saMatch && containsWholeWord(field, mapped.cityName);
+    if (saMatch && (saIsWholeWord || !country)) {
+      geo.city = mapped.cityName;
+      geo.region = mapped.province;
+      geo.country = "South Africa";
+      geo.continent = "Africa";
+      geo.confidence = "exact";
+      return geo;
+    }
+
+    if (country) {
+      geo.country = country.country;
+      geo.continent = country.continent;
+      geo.confidence = "country";
+      // "Madrid, Spain" / "Lagos, Nigeria" → first segment is a probable city
+      const firstSegment = field.split(",")[0].trim();
+      if (firstSegment && !placeEq(firstSegment, country.country) && firstSegment.length > 1) {
+        geo.city = firstSegment;
+      }
+      return geo;
+    }
+  }
+
+  // Second pass: the scraped spec may name the country even when the field was unverified/empty
+  const spec = opts?.spec || "";
+  if (spec) {
+    const country = detectCountry(spec.slice(0, 4000));
+    if (country) {
+      geo.country = country.country;
+      geo.continent = country.continent;
+      geo.confidence = "country";
+    }
+  }
+  return geo;
+}
+
+/**
+ * Check a job's geography against the user's ladder at their chosen scope.
+ * Returns "match" (keep), "demote" (keep but score lower), or "drop".
+ */
+export function jobMatchesScope(
+  job: JobGeo,
+  ladder: LocationLadder,
+  scope: LocationScope
+): "match" | "demote" | "drop" {
+  if (scope === "world") return "match";
+  if (job.isRemote) return "match"; // remote roles are location-independent
+  if (job.confidence === "unknown") return "demote"; // never hard-drop unknowns
+
+  // Degrade up a tier when the ladder rung is missing — never drop everything
+  let effective: LocationScope = scope;
+  if (effective === "local" && !ladder.city) effective = "provincial";
+  if (effective === "provincial" && !ladder.region) effective = "country";
+  if (effective === "country" && !ladder.country) effective = "continental";
+  if (effective === "continental" && !ladder.continent) return "demote";
+
+  if (effective === "local" || effective === "provincial") {
+    // Known region on both sides decides definitively
+    if (job.region && ladder.region) {
+      if (placeEq(job.region, ladder.region)) {
+        // Same region — exact city match is a full match, otherwise demote at local scope
+        if (effective === "provincial") return "match";
+        if (job.city && ladder.city && placeEq(job.city, ladder.city)) return "match";
+        return "demote"; // right region, unknown/other city
+      }
+      return "drop"; // same country, different region — out at local/provincial scope
+    }
+    if (job.city && ladder.city && placeEq(job.city, ladder.city)) return "match";
+    if (job.country && ladder.country && placeEq(job.country, ladder.country)) return "demote"; // right country, region unknown
+    if (job.country && ladder.country && !placeEq(job.country, ladder.country)) return "drop";
+    return "demote";
+  }
+
+  if (effective === "country") {
+    if (job.country && ladder.country && placeEq(job.country, ladder.country)) return "match";
+    return "drop"; // job resolved to another country — out of scope
+  }
+
+  // continental
+  if (job.continent && ladder.continent && placeEq(job.continent, ladder.continent)) return "match";
+  return "drop";
+}
+
+/**
+ * Build a best-effort ladder straight from the profile location text — used
+ * when the AI ladder hasn't been generated yet (legacy profiles). Returns
+ * empty rungs for whatever can't be resolved; jobMatchesScope degrades up.
+ */
+export function buildLadderFromProfileLocation(rawLocation: string): LocationLadder {
+  const ladder: LocationLadder = { city: "", region: "", country: "", continent: "" };
+  if (!rawLocation) return ladder;
+
+  const mapped = mapLocationToProvince(rawLocation);
+  if (SA_PROVINCES.includes(mapped.province)) {
+    ladder.city = mapped.cityName;
+    ladder.region = mapped.province;
+    ladder.country = "South Africa";
+    ladder.continent = "Africa";
+    return ladder;
+  }
+
+  const country = detectCountry(rawLocation, { includeCities: true });
+  if (country) {
+    ladder.country = country.country;
+    ladder.continent = country.continent;
+    const firstSegment = rawLocation.split(",")[0].trim();
+    if (firstSegment && !placeEq(firstSegment, country.country)) ladder.city = firstSegment;
+    return ladder;
+  }
+
+  // Unresolvable (e.g. "Remote") — leave empty; scope filter then demotes only
+  ladder.city = rawLocation.split(",")[0].trim();
+  return ladder;
+}
+
 /**
  * Map a user's profile location (city, suburb, area) to the correct
  * province for tighter search queries across all job sources.

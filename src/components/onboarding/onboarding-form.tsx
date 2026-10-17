@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Upload, Loader2, Plus, X, FileText } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { LOCATION_SCOPES, type LocationScope } from "@/lib/location";
 
 interface ExtractedData {
   name: string;
@@ -51,8 +52,15 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
   const [industryStep5, setIndustryStep5] = useState("");
   const [suggestingIndustry, setSuggestingIndustry] = useState(false);
   const [suggestingLadder, setSuggestingLadder] = useState(false);
+  const [locationScope, setLocationScope] = useState<LocationScope>("provincial");
+  const [locationStep1, setLocationStep1] = useState("");
+  const [locationStep2, setLocationStep2] = useState("");
+  const [locationStep3, setLocationStep3] = useState("");
+  const [locationStep4, setLocationStep4] = useState("");
+  const [suggestingLocation, setSuggestingLocation] = useState(false);
   const suggestedIndustryRef = useRef(false);
   const suggestedLadderRef = useRef(false);
+  const ladderLocationRef = useRef("");
 
   const handleFile = async (files: FileList | File[]) => {
     setError("");
@@ -152,6 +160,10 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
         }).catch(() => {}).finally(() => setSuggestingIndustry(false));
       }
 
+      // Auto-populate the location ladder (city → region → country → continent)
+      const extractedLocation = (data.preferred_location ?? "").trim();
+      if (extractedLocation) suggestLocationLadder(extractedLocation).catch(() => {});
+
       setStep("review");
     } catch {
       setError("Could not analyze CV. Please try again.");
@@ -190,6 +202,37 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
       setSuggestingLadder(false);
     });
   }, [step, industry, jobTitles]);
+
+  /** Fetch the AI location ladder for a location. Returns the 4 rungs, or null on failure. */
+  const suggestLocationLadder = async (loc: string): Promise<string[] | null> => {
+    const cleaned = (loc ?? "").trim();
+    if (!cleaned) return null;
+    if (cleaned === ladderLocationRef.current) return [locationStep1, locationStep2, locationStep3, locationStep4];
+    const supabase = createClient();
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return null;
+    setSuggestingLocation(true);
+    try {
+      const res = await fetch("/api/suggest-location-ladder", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ location: cleaned }),
+      });
+      if (!res.ok) return null;
+      const ladder = await res.json();
+      const rungs: string[] = (ladder.steps ?? []).map((s: any) => s.value ?? "");
+      setLocationStep1(rungs[0] ?? "");
+      setLocationStep2(rungs[1] ?? "");
+      setLocationStep3(rungs[2] ?? "");
+      setLocationStep4(rungs[3] ?? "");
+      ladderLocationRef.current = cleaned;
+      return rungs;
+    } catch {
+      return null;
+    } finally {
+      setSuggestingLocation(false);
+    }
+  };
 
   const addJobTitle = () => {
     const t = jobTitleInput.trim();
@@ -238,11 +281,25 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
       .replace(/[\s,;/-]+/g, " ")
       .trim();
 
+    // Ensure the location ladder matches the location being saved; on AI failure
+    // clear the rungs so the search pipeline derives them deterministically.
+    let saveStep1 = locationStep1, saveStep2 = locationStep2, saveStep3 = locationStep3, saveStep4 = locationStep4;
+    if (cleanedLocation && location.trim() !== ladderLocationRef.current) {
+      const ok = await suggestLocationLadder(location);
+      if (!ok) { saveStep1 = ""; saveStep2 = ""; saveStep3 = ""; saveStep4 = ""; }
+    }
+
     const spData = {
       name: profileName,
       job_titles: jobTitles,
       job_types: jobTypes,
       location: cleanedLocation,
+      location_scope: locationScope,
+      location_step_1: saveStep1,
+      location_step_2: saveStep2,
+      location_step_3: saveStep3,
+      location_step_4: saveStep4,
+      location_ladder_generated_at: new Date().toISOString(),
       industry: industry.trim(),
       industry_step_1: industryStep1,
       industry_step_2: industryStep2,
@@ -388,9 +445,67 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1.5">Preferred Location</label>
-          <input value={location} onChange={(e) => setLocation(e.target.value)} className={inputClass(!!location)} placeholder="City or province" />
+          <input value={location} onChange={(e) => setLocation(e.target.value)} onBlur={() => { if (location.trim()) suggestLocationLadder(location).catch(() => {}); }} className={inputClass(!!location)} placeholder="City or province" />
           {!location && <p className="mt-1 text-xs text-yellow-600">Missing, fill in manually</p>}
           <p className="mt-1 text-xs text-gray-400">City or country only. Select work type below.</p>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">
+            Location Scope
+            <span className="ml-2 text-[10px] font-normal text-gray-400">(how far out to search)</span>
+          </label>
+          <div className="flex flex-wrap gap-2">
+            {LOCATION_SCOPES.map((s) => (
+              <button
+                key={s.value}
+                type="button"
+                title={s.hint}
+                onClick={() => setLocationScope(s.value)}
+                className={`px-4 py-2 text-sm font-medium rounded-lg border transition-colors ${
+                  locationScope === s.value
+                    ? "bg-[var(--color-accent)]/10 border-[var(--color-accent)] text-[var(--color-accent)]"
+                    : "bg-gray-50 border-gray-200 text-gray-600 hover:text-gray-900 hover:border-gray-300"
+                }`}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+          <p className="mt-1 text-xs text-gray-400">
+            {LOCATION_SCOPES.find((s) => s.value === locationScope)?.hint}. Jobs outside this scope are filtered out; remote roles always pass.
+          </p>
+        </div>
+
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="text-sm font-medium text-gray-700">
+              Location Ladder
+              <span className="ml-2 text-[10px] font-normal text-gray-400">(AI-populated, edit any step)</span>
+            </label>
+            {suggestingLocation && <Loader2 size={12} className="text-blue-500 animate-spin" />}
+          </div>
+          <p className="text-xs text-gray-400 mb-2">
+            Anchors your scope filter on your own area — Step 1 is your city, Step 4 your continent.
+          </p>
+          <div className="space-y-2">
+            {[
+              { label: "Step 1: City", value: locationStep1, setter: setLocationStep1, placeholder: "e.g. Johannesburg" },
+              { label: "Step 2: Province / Region", value: locationStep2, setter: setLocationStep2, placeholder: "e.g. Gauteng" },
+              { label: "Step 3: Country", value: locationStep3, setter: setLocationStep3, placeholder: "e.g. South Africa" },
+              { label: "Step 4: Continent", value: locationStep4, setter: setLocationStep4, placeholder: "e.g. Africa" },
+            ].map((s) => (
+              <div key={s.label}>
+                <label className="text-xs text-gray-400">{s.label}</label>
+                <input
+                  value={s.value}
+                  onChange={(e) => s.setter(e.target.value)}
+                  placeholder={s.placeholder}
+                  className="w-full px-4 py-2 text-sm rounded-lg border border-gray-300 bg-gray-50 text-gray-900 placeholder-gray-400 focus:outline-none focus:border-[var(--color-accent)] transition-colors"
+                />
+              </div>
+            ))}
+          </div>
         </div>
 
         <div>

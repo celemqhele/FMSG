@@ -4,7 +4,14 @@ import { createClient } from "@supabase/supabase-js";
 import { searchGoogleJobs, searchJSearch, searchAdzuna, searchWebJobs, searchJinaBingJobs, searchDittoJobs, isCategoryPage, scrapePageBrightData, scrapePageApify, type SerpJob } from "@/lib/serpapi";
 import { searchWorkdayJobs, fetchWorkdayDetail, WORKDAY_TENANTS, type WorkdayTenant } from "@/lib/workday";
 import { extractText } from "@/lib/pdf";
-import { mapLocationToProvince } from "@/lib/location";
+import {
+  mapLocationToProvince,
+  resolveJobGeo,
+  jobMatchesScope,
+  buildLadderFromProfileLocation,
+  type LocationScope,
+  type LocationLadder,
+} from "@/lib/location";
 import { callAIWithFallback, lastAITier } from "@/lib/gemini";
 import { scoreMatch } from "@/lib/ats-scoring";
 import { embedTexts, cosineSimilarity, reciprocalRankFusion, buildCandidateText, buildJobText, EMBEDDING_MODEL } from "@/lib/ats-embeddings";
@@ -291,6 +298,35 @@ async function fetchPaginatedJobs(params: { q: string; location?: string; hl?: s
   return all;
 }
 
+const SEARCH_PROFILE_COLUMNS =
+  "job_titles, location, industry, industry_step_1, industry_step_2, industry_step_3, industry_step_4, industry_step_5, cv_variations";
+const LOCATION_SCOPE_COLUMNS =
+  "location_scope, location_step_1, location_step_2, location_step_3, location_step_4";
+
+/**
+ * Load a search profile including the location-scope columns from migration 036.
+ * Falls back to the pre-036 column set when those columns don't exist yet, so a
+ * deploy that lands before the migration is applied doesn't break searching.
+ */
+async function loadSearchProfile(client: any, profileId: string, userId: string) {
+  const withScope = await client
+    .from("search_profiles")
+    .select(`${SEARCH_PROFILE_COLUMNS}, ${LOCATION_SCOPE_COLUMNS}`)
+    .eq("id", profileId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (!withScope.error) return withScope.data;
+  debugLog("[SEARCH] location scope columns missing, using legacy profile select:", withScope.error?.message);
+  const legacy = await client
+    .from("search_profiles")
+    .select(SEARCH_PROFILE_COLUMNS)
+    .eq("id", profileId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (legacy.error) debugLog("[SEARCH] search_profiles select failed:", legacy.error.message);
+  return legacy.data;
+}
+
 async function fetchAndFilterJobs(
   query: string,
   profileLocation: string,
@@ -307,6 +343,8 @@ async function fetchAndFilterJobs(
   maxPages?: number,
   allowedPlatforms?: string[] | null,
   deadline?: number,
+  locationScope?: LocationScope,
+  locationLadder?: LocationLadder,
 ): Promise<{ rawJobs: any[]; jobSpecs: [number, string][]; jobUrls: [number, string][]; queryUsed: string }> {
   function sanitiseLocation(raw: string): string | undefined {
     if (!raw) return undefined;
@@ -510,33 +548,52 @@ async function fetchAndFilterJobs(
     (j as any)._postedAtMs = parsePostedAt(postedStr) ?? 0;
   }
 
-  // Location safety net — whitelist: only keep jobs in SA, remote, or with no location
-  const SA_CITIES = /\b(johannesburg|cape town|durban|pretoria|gqeberha|port elizabeth|bloemfontein|east london|polokwane|nelspruit|kimberley|soweto|centurion|sandton|midrand|stellenbosch|roodepoort|benoni|boksburg|germiston|vereeniging|umhlanga|pinetown|pietermaritzburg|howick|newcastle|barberton|white river|graskop|hoedspruit|phalaborwa|thohoyandou|tzaneen|haenertsburg|rustenburg|klerksdorp|potchefstroom|upington|george|knysna|plettenberg bay|mossel bay|hermanus|paarl|worcester|makhanda|jeffreys bay)\b/i;
-  const SA_PROVINCES = /\b(gauteng|western cape|kwazulu-natal|kwa-zulu natal|eastern cape|free state|limpopo|mpumalanga|north west|northern cape|south africa)\b/i;
+  // Location scope filter — hard filter on the user's chosen tier
+  // (local / provincial / country / continental / world). Stage 1 runs on the
+  // location field only (pre-scrape, saves scraping credits); jobs whose
+  // location can't be resolved are KEPT and demoted, then re-checked in
+  // stage 2 once the spec is scraped.
+  const effectiveScope: LocationScope = locationScope ?? "country";
+  const effectiveLadder: LocationLadder =
+    locationLadder && (locationLadder.country || locationLadder.continent)
+      ? locationLadder
+      : buildLadderFromProfileLocation(profileLocation);
 
-  const beforeCount = rawJobs.length;
-  rawJobs = rawJobs.filter((j) => {
-    const loc = ((j as any).location ?? "").toLowerCase();
-    const title = ((j as any).title ?? "").toLowerCase();
-    const company = ((j as any).company_name ?? "").toLowerCase();
-    const combined = `${loc} ${title} ${company}`;
-
-    // Remote jobs — keep (can be worked from anywhere)
-    if (/\b(remote|work from home|anywhere|worldwide|global|flexible)\b/i.test(combined)) return true;
-
-    // Jobs with no location — keep (don't lose potential matches)
-    if (!loc || loc.length < 2) return true;
-
-    // Explicitly SA — keep (check location, title, and company)
-    if (SA_CITIES.test(loc) || SA_PROVINCES.test(loc) || /south africa|\bSA\b|\bZA\b/i.test(combined)) return true;
-
-    // Has a specific location but it's not SA — reject (whitelist approach)
-    return false;
-  });
-
-  if (rawJobs.length < beforeCount) {
-    locationFilterRemoved = beforeCount - rawJobs.length;
-    console.log(`[PIPELINE] Location filter removed ${locationFilterRemoved} non-SA jobs (${beforeCount} → ${rawJobs.length})`);
+  const scopeRejected: { job: any; reason: string }[] = [];
+  if (effectiveScope !== "world" && (effectiveLadder.country || effectiveLadder.continent)) {
+    const beforeScope = rawJobs.length;
+    let keptMatch = 0, keptDemote = 0;
+    rawJobs = rawJobs.filter((j) => {
+      const geo = resolveJobGeo((j as any).location ?? "", { unverified: (j as any)._locationUnverified === true });
+      const verdict = jobMatchesScope(geo, effectiveLadder, effectiveScope);
+      if (verdict === "drop") {
+        (j as any)._scopeRejected = true;
+        scopeRejected.push({
+          job: j,
+          reason: `outside_${effectiveScope}_scope (job: ${geo.country || geo.region || geo.city || "unknown"}, you: ${effectiveLadder.country || effectiveLadder.continent})`,
+        });
+        return false;
+      }
+      if (verdict === "match") keptMatch++;
+      else { keptDemote++; (j as any)._scopeUnverified = true; } // re-checked in stage 2 with the scraped spec
+      return true;
+    });
+    console.log(`[PIPELINE] Location scope (${effectiveScope}, ladder: ${effectiveLadder.city || "-"}/${effectiveLadder.region || "-"}/${effectiveLadder.country || "-"}/${effectiveLadder.continent || "-"}): kept ${keptMatch} match + ${keptDemote} unverified, rejected ${scopeRejected.length} (${beforeScope} → ${rawJobs.length})`);
+    if (scopeRejected.length > 0) {
+      const rows = scopeRejected.map(({ job: j, reason }) => ({
+        user_id: user.id, search_id: searchId, search_query: query,
+        profile_id: profile_id,
+        job_title: j.title, company: j.company_name, location: j.location ?? '',
+        snippet: (j.description ?? '').slice(0, 500), job_url: buildJobUrl(j), reason,
+        rejection_category: 'location', rejection_reason: reason,
+        passed_domain_filter: false, passed_banned_filter: false,
+      }));
+      dataClient.from("rejected_jobs").insert(rows).then((r: any) => r.error && debugLog('[SEARCH] Failed to log location-rejected:', r.error));
+      locationFilterRemoved = scopeRejected.length;
+    }
+  } else if (effectiveScope !== "world") {
+    // No ladder resolvable at all (e.g. profile location "Remote") — keep everything
+    console.log(`[PIPELINE] Location scope filter skipped — no ladder resolvable from "${profileLocation}"`);
   }
 
   // Domain blacklist pre-filter — deterministic, blocks aggregator/spam sites before spec scraping
@@ -766,6 +823,44 @@ async function fetchAndFilterJobs(
   rawJobs = rawJobs.filter((j) => !(j as any)._expired);
   console.log(`[PIPELINE] Pre-spec-gate: ${rawJobs.length} jobs (specs set=${rawJobs.filter((j) => (j as any)._spec).length}, bing=${rawJobs.filter((j) => j.spec_source === "bing_jobs").length})`);
 
+  // Stage 2 location scope re-check — now that specs are scraped, re-resolve the
+  // jobs whose location was unknown at stage 1 (field-only) and drop the ones
+  // the spec reveals to be out of scope.
+  if (effectiveScope !== "world" && (effectiveLadder.country || effectiveLadder.continent)) {
+    const stage2Candidates = rawJobs.filter((j) => (j as any)._scopeUnverified);
+    if (stage2Candidates.length > 0) {
+      const stage2Rejected: { job: any; reason: string }[] = [];
+      rawJobs = rawJobs.filter((j) => {
+        if (!(j as any)._scopeUnverified) return true;
+        const geo = resolveJobGeo((j as any).location ?? "", {
+          spec: (j as any)._spec ?? "",
+          unverified: (j as any)._locationUnverified === true,
+        });
+        if (jobMatchesScope(geo, effectiveLadder, effectiveScope) === "drop") {
+          stage2Rejected.push({
+            job: j,
+            reason: `outside_${effectiveScope}_scope_spec (job: ${geo.country || geo.region || geo.city || "unknown"}, you: ${effectiveLadder.country || effectiveLadder.continent})`,
+          });
+          return false;
+        }
+        return true;
+      });
+      if (stage2Rejected.length > 0) {
+        console.log(`[PIPELINE] Location scope stage 2 (spec re-check): rejected ${stage2Rejected.length} of ${stage2Candidates.length} unverified`);
+        const rows = stage2Rejected.map(({ job: j, reason }) => ({
+          user_id: user.id, search_id: searchId, search_query: query,
+          profile_id: profile_id,
+          job_title: j.title, company: j.company_name, location: j.location ?? '',
+          snippet: ((j as any)._spec ?? '').slice(0, 500), job_url: buildJobUrl(j), reason,
+          rejection_category: 'location', rejection_reason: reason,
+          passed_domain_filter: false, passed_banned_filter: false,
+        }));
+        dataClient.from("rejected_jobs").insert(rows).then((r: any) => r.error && debugLog('[SEARCH] Failed to log location stage2 rejected:', r.error));
+        locationFilterRemoved += stage2Rejected.length;
+      }
+    }
+  }
+
   {
     const filtered: typeof rawJobs = [];
     const filteredSpecs = new Map<number, string>();
@@ -818,6 +913,8 @@ async function screenAndAnalyze(
   deadline?: number,
   outputs?: JobRow[],
   priorSpecKeys?: Set<string>,
+  locationScope?: LocationScope,
+  locationLadder?: LocationLadder,
 ): Promise<{ results: JobRow[]; queryUsed: string; filteredCounts: { history: number; saved: number; rejected: number; blocked: number }; nextOffset: number }> {
   const filteredCounts = { history: 0, saved: 0, rejected: 0, blocked: 0 };
   let nextOffset = offset;
@@ -1043,6 +1140,9 @@ async function screenAndAnalyze(
       cvTexts,
       maxAgeDays,
       bannedCompanies,
+      locationScope,
+      locationLadder,
+      locationUnverified: job._locationUnverified === true,
     });
     console.log(`[SCREENING] Job ${index + 1}/${rawJobs.length}: "${job.title}" @ "${job.company_name}" scored ${result.score} (${result.recruiter_verdict})${semanticSims?.[index] != null ? ` sim=${semanticSims[index].toFixed(2)}` : ""}`);
     return { result, fullSpec, jobUrl };
@@ -1275,12 +1375,7 @@ export async function POST(request: NextRequest) {
       // Re-fetch search profile to get latest job_titles, industry steps, cv_variations
       // This ensures profile edits are reflected when resuming a paused search
       if (state.profile_id) {
-        const { data: searchProfile } = await dataClient
-          .from("search_profiles")
-          .select("job_titles, location, industry, industry_step_1, industry_step_2, industry_step_3, industry_step_4, industry_step_5, cv_variations")
-          .eq("id", state.profile_id)
-          .eq("user_id", user.id)
-          .maybeSingle();
+        const searchProfile = await loadSearchProfile(dataClient, state.profile_id, user.id);
         if (searchProfile?.job_titles?.length) {
           state.titles = searchProfile.job_titles;
           state.profileLocation = searchProfile.location ?? "";
@@ -1291,6 +1386,13 @@ export async function POST(request: NextRequest) {
           state.industryStep3 = (searchProfile as any).industry_step_3 ?? "";
           state.industryStep4 = (searchProfile as any).industry_step_4 ?? "";
           state.industryStep5 = (searchProfile as any).industry_step_5 ?? "";
+          state.locationScope = (searchProfile as any).location_scope ?? "country";
+          state.locationLadder = {
+            city: (searchProfile as any).location_step_1 ?? "",
+            region: (searchProfile as any).location_step_2 ?? "",
+            country: (searchProfile as any).location_step_3 ?? "",
+            continent: (searchProfile as any).location_step_4 ?? "",
+          };
           debugLog(`[SEARCH] Refreshed search profile on resume: ${state.titles.length} titles, industry steps updated`);
         }
       }
@@ -1425,12 +1527,7 @@ export async function POST(request: NextRequest) {
       let cvVariations: { name: string; file_path: string }[] = [];
 
       if (profile_id) {
-        const { data: searchProfile } = await dataClient
-          .from("search_profiles")
-          .select("job_titles, location, industry, industry_step_1, industry_step_2, industry_step_3, industry_step_4, industry_step_5, cv_variations")
-          .eq("id", profile_id)
-          .eq("user_id", user.id)
-          .maybeSingle();
+        const searchProfile = await loadSearchProfile(dataClient, profile_id, user.id);
         if (searchProfile?.job_titles?.length) {
           titles = searchProfile.job_titles;
           profileLocation = searchProfile.location ?? "";
@@ -1442,6 +1539,13 @@ export async function POST(request: NextRequest) {
           state.industryStep3 = (searchProfile as any).industry_step_3 ?? "";
           state.industryStep4 = (searchProfile as any).industry_step_4 ?? "";
           state.industryStep5 = (searchProfile as any).industry_step_5 ?? "";
+          state.locationScope = (searchProfile as any).location_scope ?? "country";
+          state.locationLadder = {
+            city: (searchProfile as any).location_step_1 ?? "",
+            region: (searchProfile as any).location_step_2 ?? "",
+            country: (searchProfile as any).location_step_3 ?? "",
+            continent: (searchProfile as any).location_step_4 ?? "",
+          };
         }
       }
 
@@ -1580,6 +1684,9 @@ Return ONLY valid JSON (no markdown, no code fences):
         industryStep3: state.industryStep3 || "",
         industryStep4: state.industryStep4 || "",
         industryStep5: state.industryStep5 || "",
+        // Location scope (local/provincial/country/continental/world) + AI ladder
+        locationScope: state.locationScope ?? "country",
+        locationLadder: state.locationLadder ?? buildLadderFromProfileLocation(profileLocation),
       };
     }
 
@@ -1658,7 +1765,10 @@ Return ONLY valid JSON (no markdown, no code fences):
                 state.maxAgeDays,
                 offset,
                 continuationDeadline,
-                outputs
+                outputs,
+                undefined,
+                state.locationScope,
+                state.locationLadder
               );
 
               const totalFiltered = result.filteredCounts.history + result.filteredCounts.saved + result.filteredCounts.rejected + result.filteredCounts.blocked;
@@ -1708,7 +1818,8 @@ Return ONLY valid JSON (no markdown, no code fences):
             const { rawJobs, jobSpecs, jobUrls, queryUsed } = await fetchAndFilterJobs(
               searchQuery, state.profileLocation, user, searchId,
               state.bannedJobs, state.bannedCompanies, dataClient, state.profile_id, sendStatus, undefined,
-              hiddenKeys, state.maxAgeDays, 2, platforms
+              hiddenKeys, state.maxAgeDays, 2, platforms,
+              state.locationScope, state.locationLadder
             );
 
             // Advance rotation for next search
@@ -1761,6 +1872,8 @@ Return ONLY valid JSON (no markdown, no code fences):
                   dedupSets: { history: [...state.dedupSets.history], saved: [...state.dedupSets.saved], blocked: [...state.dedupSets.blocked], rejected: [...state.dedupSets.rejected] },
                   maxAgeDays: state.maxAgeDays,
                   profile_id: state.profile_id,
+                  locationScope: state.locationScope,
+                  locationLadder: state.locationLadder,
                   allResults: [],
                   nextOffset: 0,
 }, SUPABASE_SERVICE_KEY),
@@ -1905,6 +2018,8 @@ Return ONLY valid JSON (no markdown, no code fences):
                   },
                   maxAgeDays: state.maxAgeDays,
                   profile_id: state.profile_id,
+                  locationScope: state.locationScope,
+                  locationLadder: state.locationLadder,
                 }, SUPABASE_SERVICE_KEY),
               });
               closeWriter();
@@ -1946,7 +2061,8 @@ Return ONLY valid JSON (no markdown, no code fences):
               filtered = await fetchAndFilterJobs(
                 fullQuery, pfLocation, user, searchId,
                 pfBannedJobs, pfBannedCompanies, dataClient, state.profile_id, sendStatus, roundNum,
-                pfHiddenKeys, state.maxAgeDays, 5, platforms
+                pfHiddenKeys, state.maxAgeDays, 5, platforms,
+                state.locationScope, state.locationLadder
               );
               debugLog(`[PF] Round ${roundNum}: fetchAndFilterJobs returned ${filtered.rawJobs?.length || 0} raw jobs`);
 
@@ -1975,7 +2091,9 @@ Return ONLY valid JSON (no markdown, no code fences):
                       if (fk) keys.add(fk);
                     }
                     return keys;
-                  })()
+                  })(),
+                  state.locationScope,
+                  state.locationLadder
                 );
                 roundResults = result.results;
                 roundFilteredCounts = result.filteredCounts;
@@ -2037,6 +2155,8 @@ Return ONLY valid JSON (no markdown, no code fences):
                     },
                     maxAgeDays: state.maxAgeDays,
                     profile_id: state.profile_id,
+                    locationScope: state.locationScope,
+                    locationLadder: state.locationLadder,
                   }, SUPABASE_SERVICE_KEY),
                 });
                 closeWriter();

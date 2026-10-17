@@ -2,6 +2,16 @@
   "version": 1,
   "sessions": [
     {
+      "id": "location-scope-filter_2026-10-17_21-07-39",
+      "file": "sessions/location-scope-filter_2026-10-17_21-07-39_INCOMPLETE.json",
+      "status": "INCOMPLETE",
+      "created": "2026-10-17T21:07:39Z",
+      "updated": "2026-10-17T21:07:39Z",
+      "tags": ["search", "location", "scope", "filter", "profile", "ladder", "ats", "migration-036", "production"],
+      "summary": "Added a user-anchored location-scope filter to /api/search: profile-level scope (local/provincial/country/continental/world) + AI-generated 4-rung location ladder on search_profiles (migration 036), deterministic two-stage hard filter with unknown-location jobs kept+demoted, scope-aware ATS location pillar and knockout gate, and scope+ladder selectors in the desktop modal / mobile sheet / guest onboarding. tsc, eslint (baseline) and build green. Migration 036 must be applied in the Supabase SQL editor before pushing to production.",
+      "embedding": null
+    },
+    {
       "id": "gbp-images-html-to-png_2026-08-18_12-52-00",
       "file": "sessions/gbp-images-html-to-png_2026-08-18_12-52-00_COMPLETE.json",
       "status": "COMPLETE",
@@ -13,8 +23,8 @@
     },
     {
       "id": "board-context-redirect_2026-08-18_15-00-00",
-      "file": "sessions/board-context-redirect_2026-08-18_15-00-00_INCOMPLETE.json",
-      "status": "INCOMPLETE",
+      "file": "sessions/board-context-redirect_2026-08-18_15-00-00_COMPLETE.json",
+      "status": "COMPLETE",
       "created": "2026-08-18T15:00:00Z",
       "updated": "2026-08-18T15:00:00Z",
       "tags": ["board", "redirect", "auth", "dashboard", "job-cards", "production"],
@@ -159,6 +169,16 @@
       "updated": "2026-08-18T16:39:39Z",
       "tags": ["back-navigation", "job-detail", "localStorage", "ux-fix", "production"],
       "summary": "Fixed back navigation from job detail page — stores source path (global vs category board) in localStorage when View Job is clicked, reads it on detail page mount to set correct back link destination. Prevents always defaulting to category board.",
+      "embedding": null
+    },
+    {
+      "id": "global-jobs-page_2026-08-18_15-30-00",
+      "file": "sessions/global-jobs-page_2026-08-18_15-30-00_COMPLETE.json",
+      "status": "COMPLETE",
+      "created": "2026-08-18T15:30:00Z",
+      "updated": "2026-08-18T15:30:00Z",
+      "tags": ["global-jobs", "public-page", "boards", "auto-login-guard", "production"],
+      "summary": "Created public /jobs/global page aggregating every board's static cards for quick admin review — server page + GlobalJobsBoard client component, AutoLoginGuard skip-list entry, BoardTag category labels.",
       "embedding": null
     },
     {

@@ -1,4 +1,4 @@
-﻿import { mapLocationToProvince } from "@/lib/location";
+﻿import { mapLocationToProvince, resolveJobGeo, jobMatchesScope, placeEq, LocationLadder, LocationScope } from "@/lib/location";
 import skillsTaxonomy from "@/data/taxonomy/skills.json";
 import titlesTaxonomy from "@/data/taxonomy/titles.json";
 
@@ -19,6 +19,12 @@ export interface AtsScoringInput {
   cvTexts: { name: string; text: string }[];
   maxAgeDays?: number;
   bannedCompanies?: string[];
+  /** User's chosen location scope (from search_profiles.location_scope). */
+  locationScope?: LocationScope;
+  /** AI-generated city → region → country → continent ladder. */
+  locationLadder?: LocationLadder;
+  /** True when the source stamped the *query's* location onto the job (unknown to us). */
+  locationUnverified?: boolean;
 }
 
 export interface AtsPillarScores {
@@ -102,6 +108,8 @@ const TITLE_ALIAS_TO_SOC: Map<string, { soc: string; canonical: string; level?: 
 
 // ---------- Text helpers ----------
 
+// Checked against the LOCATION FIELD only — the field is short and a
+// "Flexible"/"Global" there genuinely means location-independent.
 const SAFE_LOCATION_PATTERNS = [
   "remote",
   "work from home",
@@ -113,6 +121,23 @@ const SAFE_LOCATION_PATTERNS = [
   "hybrid",
   "fully remote",
   "100% remote",
+];
+
+// Checked against the SPEC text — only phrases that unambiguously describe the
+// role's work mode. Bare "flexible"/"global" in a 3000-char spec ("flexible
+// hours", "global markets") is noise and must not pass a job as remote.
+const STRONG_REMOTE_PHRASES = [
+  "fully remote",
+  "100% remote",
+  "remote-first",
+  "remote first",
+  "work from home",
+  "wfh",
+  "remote work",
+  "work remotely",
+  "anywhere in south africa",
+  "anywhere in the world",
+  "work from anywhere",
 ];
 
 const FOREIGN_COUNTRY_PATTERNS = [
@@ -368,9 +393,11 @@ function titleMatchScore(jobTitle: string, candidateTitles: string[]): { score: 
 
 // ---------- Location ----------
 
-function isSafeRemote(text: string): boolean {
-  const lower = text.toLowerCase();
-  return SAFE_LOCATION_PATTERNS.some((p) => lower.includes(p));
+function isSafeRemote(locationField: string, spec: string): boolean {
+  const loc = (locationField || "").toLowerCase();
+  if (SAFE_LOCATION_PATTERNS.some((p) => loc.includes(p))) return true;
+  const lower = (spec || "").toLowerCase();
+  return STRONG_REMOTE_PHRASES.some((p) => lower.includes(p));
 }
 
 function isForeign(text: string): boolean {
@@ -378,11 +405,38 @@ function isForeign(text: string): boolean {
   return FOREIGN_COUNTRY_PATTERNS.some((p) => lower.includes(p));
 }
 
-function scoreLocation(jobLocation: string, candidateLocation: string, spec: string): { score: number; reason: string; taxes: string[] } {
-  const combined = `${jobLocation} ${spec}`.toLowerCase();
-  if (isSafeRemote(jobLocation.toLowerCase() + " " + spec.toLowerCase())) {
+function scoreLocation(
+  jobLocation: string,
+  candidateLocation: string,
+  spec: string,
+  scope?: LocationScope,
+  ladder?: LocationLadder,
+  locationUnverified?: boolean
+): { score: number; reason: string; taxes: string[] } {
+  if (isSafeRemote(jobLocation, spec)) {
     return { score: 100, reason: "Remote-friendly role — no location restriction", taxes: [] };
   }
+
+  // Scope-aware path: the pipeline filter already dropped out-of-scope jobs, so
+  // anything still unknown here gets demoted (80 → 70) rather than knocked.
+  if (scope && scope !== "world") {
+    const geo = resolveJobGeo(jobLocation, { spec, unverified: locationUnverified });
+    const verdict = jobMatchesScope(geo, ladder ?? { city: "", region: "", country: "", continent: "" }, scope);
+    if (verdict === "match") {
+      if (geo.region && ladder?.region && placeEq(geo.region, ladder.region)) {
+        return { score: 100, reason: `In your selected scope — same region (${geo.region})`, taxes: [] };
+      }
+      return { score: 100, reason: `In your selected location scope (${geo.country || geo.region || geo.city})`, taxes: [] };
+    }
+    if (verdict === "demote") {
+      return { score: 70, reason: "Job location could not be verified — kept but ranked lower", taxes: [] };
+    }
+    // "drop" should have been filtered pre-scrape; belt-and-braces knockout.
+    return { score: 0, reason: "Job is outside your selected location scope", taxes: [] };
+  }
+
+  // Legacy path (no scope set): SA-centric heuristics
+  const combined = `${jobLocation} ${spec}`.toLowerCase();
   if (isForeign(combined)) {
     return { score: 0, reason: "Role is located outside South Africa", taxes: [] };
   }
@@ -521,16 +575,32 @@ export function scoreMatch(input: AtsScoringInput): AtsScoringResult {
     };
   }
 
-  const remote = isSafeRemote((input.location ?? "") + " " + spec);
-  const foreign = isForeign((input.location ?? "") + " " + spec);
-  if (!remote && foreign) {
-    return {
-      score: 0, adjustment_note: null, reason: "Job is not hiring in the candidate's location (outside South Africa)",
-      estimated_salary: "", knockout_fail: true, suggested_cv_name: "",
-      pillar_scores: { industry: 0, function: 0, scale: 0, tools: 0, location: 0 },
-      pillar_reasons: {}, taxes_applied: [], total_questions_asked: 0, yes_answers: 0,
-      recruiter_verdict: "Don't apply", dynamic_requirements: null,
-    };
+  const remote = isSafeRemote(input.location ?? "", spec);
+  if (!remote) {
+    const scope = input.locationScope ?? "country";
+    const ladder = input.locationLadder ?? { city: "", region: "", country: "", continent: "" };
+    if (scope !== "world" && (ladder.country || ladder.continent)) {
+      const geo = resolveJobGeo(input.location ?? "", { spec, unverified: input.locationUnverified });
+      if (geo.confidence !== "unknown" && jobMatchesScope(geo, ladder, scope) === "drop") {
+        return {
+          score: 0, adjustment_note: null,
+          reason: `Job is outside your selected location scope (${geo.country || geo.region || geo.city}, you: ${ladder.country || ladder.continent})`,
+          estimated_salary: "", knockout_fail: true, suggested_cv_name: "",
+          pillar_scores: { industry: 0, function: 0, scale: 0, tools: 0, location: 0 },
+          pillar_reasons: {}, taxes_applied: [], total_questions_asked: 0, yes_answers: 0,
+          recruiter_verdict: "Don't apply", dynamic_requirements: null,
+        };
+      }
+    } else if (isForeign((input.location ?? "") + " " + spec)) {
+      // Legacy SA-centric gate for profiles without a ladder yet
+      return {
+        score: 0, adjustment_note: null, reason: "Job is not hiring in the candidate's location (outside South Africa)",
+        estimated_salary: "", knockout_fail: true, suggested_cv_name: "",
+        pillar_scores: { industry: 0, function: 0, scale: 0, tools: 0, location: 0 },
+        pillar_reasons: {}, taxes_applied: [], total_questions_asked: 0, yes_answers: 0,
+        recruiter_verdict: "Don't apply", dynamic_requirements: null,
+      };
+    }
   }
 
   // Date gate (lenient — no date = pass)
@@ -612,7 +682,10 @@ export function scoreMatch(input: AtsScoringInput): AtsScoringResult {
   const { score: functionScore, reason: functionReason, jobSoc } = titleMatchScore(jobTitle, input.candidateTitles ?? []);
 
   // ---- 4. Location (10%) ----
-  const { score: locationScore, reason: locationReason, taxes: locTaxes } = scoreLocation(input.location ?? "", input.candidateLocation ?? "", spec);
+  const { score: locationScore, reason: locationReason, taxes: locTaxes } = scoreLocation(
+    input.location ?? "", input.candidateLocation ?? "", spec,
+    input.locationScope, input.locationLadder, input.locationUnverified
+  );
   taxes.push(...locTaxes);
 
   // ---- 5. Education / industry (5%) ----
