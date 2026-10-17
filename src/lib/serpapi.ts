@@ -1,5 +1,6 @@
 import { checkApiLimit, recordApiCall, recordApiFailure } from "./api-rate-limit";
 import { mapLocationToProvince } from "./location";
+import { serializeError } from "./log";
 import { googleJobsQuery, jsearchQuery, adzunaQuery, scrappaQuery, bingQuery, dittoQuery } from "./source-queries";
 import puppeteer from "puppeteer-core";
 
@@ -158,7 +159,7 @@ export async function searchJSearch(params: SerpParams): Promise<SerpJob[]> {
       };
     });
   } catch (err) {
-    console.error(`[SRC2-JSEARCH] EXCEPTION:`, err);
+    console.error(`[SRC2-JSEARCH] EXCEPTION: ${serializeError(err)}`);
     return [];
   }
 }
@@ -229,7 +230,7 @@ export async function searchAdzuna(params: SerpParams): Promise<SerpJob[]> {
       };
     });
   } catch (err) {
-    console.error(`[SRC3-ADZUNA] EXCEPTION:`, err);
+    console.error(`[SRC3-ADZUNA] EXCEPTION: ${serializeError(err)}`);
     return [];
   }
 }
@@ -348,7 +349,7 @@ export async function searchLinkedInJobs(params: SerpParams): Promise<SerpJob[]>
     }
     return jobs;
   } catch (err) {
-    console.error(`[SRC4-LINKEDIN] EXCEPTION:`, err);
+    console.error(`[SRC4-LINKEDIN] EXCEPTION: ${serializeError(err)}`);
     return [];
   }
 }
@@ -469,7 +470,7 @@ export async function scrapeJobPage(
       hasFullSpec: true,
     };
   } catch (err) {
-    console.error(`[SCRAPE-JOB] EXCEPTION for ${url}:`, err);
+    console.error(`[SCRAPE-JOB] EXCEPTION for ${url}: ${serializeError(err)}`);
     return null;
   }
 }
@@ -574,7 +575,7 @@ async function tryJinaWebJobs(query: string, location: string): Promise<SerpJob[
     }
     return jobs;
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = serializeError(err);
     console.error(`[SRC7-JINA] EXCEPTION: ${msg.slice(0, 200)} — will try next source`);
     return [];
   }
@@ -654,7 +655,7 @@ async function tryScrappaJobs(query: string, location: string): Promise<SerpJob[
     }
     return jobs;
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = serializeError(err);
     console.error(`[SRC7-SCRAPPA] EXCEPTION: ${msg.slice(0, 200)} — will try next source`);
     return [];
   }
@@ -804,7 +805,7 @@ async function tryBrightDataWebJobs(query: string, location: string, deadline?: 
     }
     return jobs;
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = serializeError(err);
     console.error(`[BRIGHTDATA] EXCEPTION: ${msg.slice(0, 200)}`);
     return [];
   } finally {
@@ -1074,7 +1075,7 @@ export async function searchDittoJobs(params: SerpParams, deadline?: number): Pr
     }
     return jobs;
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = serializeError(err);
     console.error(`[DITTO] EXCEPTION: ${msg.slice(0, 200)}`);
     return [];
   } finally {
@@ -1154,7 +1155,7 @@ async function tryApifyWebJobs(query: string, location: string): Promise<SerpJob
     }
     return jobs;
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = serializeError(err);
     console.error(`[SRC7-APIFY] EXCEPTION: ${msg.slice(0, 200)} — will try next source`);
     return [];
   }
@@ -1473,7 +1474,7 @@ export async function scrapePageBrightData(url: string): Promise<string> {
     console.log(`[SCRAPE-BRIGHTDATA] OK ${content.length} chars from ${url.slice(0, 80)}`);
     return content.trim();
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = serializeError(err);
     console.warn(`[SCRAPE-BRIGHTDATA] FAIL ${msg.slice(0, 100)} from ${url.slice(0, 80)}`);
     return "";
   } finally {
@@ -1509,7 +1510,7 @@ export async function scrapePageApify(url: string): Promise<string> {
     console.log(`[SCRAPE-APIFY] OK ${content.length} chars from ${url.slice(0, 80)}`);
     return content.trim();
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = serializeError(err);
     console.warn(`[SCRAPE-APIFY] FAIL ${msg.slice(0, 100)} from ${url.slice(0, 80)}`);
     return "";
   }

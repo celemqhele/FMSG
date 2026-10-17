@@ -17,6 +17,7 @@ import { scoreMatch } from "@/lib/ats-scoring";
 import { embedTexts, cosineSimilarity, reciprocalRankFusion, buildCandidateText, buildJobText, EMBEDDING_MODEL } from "@/lib/ats-embeddings";
 import { StreamWriter, type SearchEvent } from "@/lib/search-stream";
 import { debugLog } from "@/lib/debug";
+import { serializeError, trackBackground } from "@/lib/log";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { signContinuationToken, verifyAndDecodeContinuationToken } from "@/lib/continuation-token";
 import { BLACKLISTED_DOMAINS, BLACKLISTED_COMPANIES, extractDomain, buildJobUrl, isBlacklistedByVia, decodeGoogleRedirect, decodeBingRedirect } from "@/lib/job-filter";
@@ -327,6 +328,23 @@ async function loadSearchProfile(client: any, profileId: string, userId: string)
   return legacy.data;
 }
 
+/**
+ * Fire-and-forget `rejected_jobs` insert. Every rejection-logging call in this file happens
+ * *after* the pipeline has moved on (on Vercel possibly after the response is flushed), and
+ * the old code used the DEBUG-gated `debugLog` — a no-op in production — with no rejection
+ * handler at all, so a failed insert simply vanished. Now every failure is logged with its
+ * category so the tracking table can be reconciled against the pipeline counters.
+ */
+function logRejectedJobs(dataClient: any, rows: any[], label: string) {
+  if (!rows || rows.length === 0) return;
+  trackBackground(
+    `rejected_jobs insert (${label})`,
+    dataClient.from("rejected_jobs").insert(rows).then((r: any) => {
+      if (r?.error) console.warn(`[SEARCH] rejected_jobs insert failed (${label}): ${serializeError(r.error)}`);
+    }),
+  );
+}
+
 async function fetchAndFilterJobs(
   query: string,
   profileLocation: string,
@@ -382,6 +400,7 @@ async function fetchAndFilterJobs(
 
   const serpParams = buildSerpParams(tightenedLocation);
   const pages = maxPages ?? 2;
+  const sid = searchId ? searchId.slice(0, 8) : "no-id";
 
   let rawJobs: SerpJob[];
   let dedupCount = 0;
@@ -402,29 +421,30 @@ async function fetchAndFilterJobs(
       workday: isAll,               // Workday CXS API (29 SA tenants, no browser)
     };
 
+    const sid = searchId ? searchId.slice(0, 8) : "no-id";
     const enabledCount = Object.values(sources).filter(Boolean).length;
-    console.log(`[PIPELINE] Starting ${enabledCount}-source parallel search:`, JSON.stringify({ query, location: sanitisedLocation, pages, platforms: allowedPlatforms, sources }));
+    console.log(`[PIPELINE ${sid}] Starting ${enabledCount}-source parallel search:`, JSON.stringify({ query, location: sanitisedLocation, pages, platforms: allowedPlatforms, sources }));
 
     // Build promises for enabled sources only
     const promiseEntries = Object.entries(sources).filter(([, enabled]) => enabled).map(([key]) => {
       switch (key) {
         case "googleJobs":
-          return ["googleJobs", withTimeout(fetchPaginatedJobs(serpParams, pages), 60_000, "Google Jobs").catch((err) => { console.error(`[PIPELINE] Google Jobs TIMEOUT/FAIL: ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}`); return [] as SerpJob[]; })] as const;
+          return ["googleJobs", withTimeout(fetchPaginatedJobs(serpParams, pages), 60_000, "Google Jobs").catch((err) => { console.error(`[PIPELINE ${sid}] Google Jobs TIMEOUT/FAIL: ${serializeError(err)}`); return [] as SerpJob[]; })] as const;
         case "jSearch":
-          return ["jSearch", withTimeout(searchJSearch(serpParams), 60_000, "JSearch").catch((err) => { console.error(`[PIPELINE] JSearch TIMEOUT/FAIL: ${err}`); return [] as SerpJob[]; })] as const;
+          return ["jSearch", withTimeout(searchJSearch(serpParams), 60_000, "JSearch").catch((err) => { console.error(`[PIPELINE ${sid}] JSearch TIMEOUT/FAIL: ${serializeError(err)}`); return [] as SerpJob[]; })] as const;
         case "adzuna":
-          return ["adzuna", withTimeout(searchAdzuna(serpParams), 60_000, "Adzuna").catch((err) => { console.error(`[PIPELINE] Adzuna TIMEOUT/FAIL: ${err}`); return [] as SerpJob[]; })] as const;
+          return ["adzuna", withTimeout(searchAdzuna(serpParams), 60_000, "Adzuna").catch((err) => { console.error(`[PIPELINE ${sid}] Adzuna TIMEOUT/FAIL: ${serializeError(err)}`); return [] as SerpJob[]; })] as const;
         case "webJobs":
-          return ["webJobs", withTimeout(searchWebJobs(serpParams), 60_000, "Web Jobs").catch((err) => { console.error(`[PIPELINE] Web Jobs TIMEOUT/FAIL: ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}`); return [] as SerpJob[]; })] as const;
+          return ["webJobs", withTimeout(searchWebJobs(serpParams), 60_000, "Web Jobs").catch((err) => { console.error(`[PIPELINE ${sid}] Web Jobs TIMEOUT/FAIL: ${serializeError(err)}`); return [] as SerpJob[]; })] as const;
         case "jinaBing":
           const jinaBingDeadline = deadline ? deadline - Date.now() : 60_000;
-          return ["jinaBing", searchJinaBingJobs(serpParams, jinaBingDeadline).catch((err) => { console.error(`[PIPELINE] Jina Bing Jobs FAIL: ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}`); return [] as SerpJob[]; })] as const;
+          return ["jinaBing", searchJinaBingJobs(serpParams, jinaBingDeadline).catch((err) => { console.error(`[PIPELINE ${sid}] Jina Bing Jobs FAIL: ${serializeError(err)}`); return [] as SerpJob[]; })] as const;
         case "ditto":
           const dittoDeadline = deadline ? deadline - Date.now() : 90_000;
-          return ["ditto", withTimeout(searchDittoJobs(serpParams, dittoDeadline), 90_000, "Ditto Jobs").catch((err) => { console.error(`[PIPELINE] Ditto Jobs TIMEOUT/FAIL: ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}`); return [] as SerpJob[]; })] as const;
+          return ["ditto", withTimeout(searchDittoJobs(serpParams, dittoDeadline), 90_000, "Ditto Jobs").catch((err) => { console.error(`[PIPELINE ${sid}] Ditto Jobs TIMEOUT/FAIL: ${serializeError(err)}`); return [] as SerpJob[]; })] as const;
         case "workday":
           const workdayDeadline = deadline ? deadline - Date.now() : 60_000;
-          return ["workday", withTimeout(searchWorkdayJobs(serpParams, workdayDeadline), 60_000, "Workday").catch((err) => { console.error(`[PIPELINE] Workday TIMEOUT/FAIL: ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}`); return [] as SerpJob[]; })] as const;
+          return ["workday", withTimeout(searchWorkdayJobs(serpParams, workdayDeadline), 60_000, "Workday").catch((err) => { console.error(`[PIPELINE ${sid}] Workday TIMEOUT/FAIL: ${serializeError(err)}`); return [] as SerpJob[]; })] as const;
         default:
           return [key, Promise.resolve([])] as const;
       }
@@ -432,21 +452,43 @@ async function fetchAndFilterJobs(
 
     const pipelineStart = Date.now();
     const resultObj: Record<string, any[]> = {};
+    // Flipped once the race below stops waiting. Sources that answer afterwards are then
+    // logged as LATE (result discarded) instead of looking like ordinary results — this is
+    // what made the 2026-10-17 "search failed instantly" logs so confusing: Workday's 378
+    // jobs were logged 3s AFTER the pipeline had already merged nothing.
+    let pipelineContinued = false;
     const sourcePromises = promiseEntries.map(([key, promise]) => {
       return promise.then((result) => {
         resultObj[key] = result;
-        console.log(`[PIPELINE] ${key} resolved: ${(result as any[]).length} jobs (${Date.now() - pipelineStart}ms elapsed)`);
-      }).catch(() => { resultObj[key] = []; });
+        const elapsed = Date.now() - pipelineStart;
+        if (pipelineContinued) {
+          console.warn(`[PIPELINE ${sid}] ${key} resolved LATE (+${elapsed}ms): ${(result as any[]).length} jobs — pipeline already continued without it, RESULT DISCARDED`);
+        } else {
+          console.log(`[PIPELINE ${sid}] ${key} resolved: ${(result as any[]).length} jobs (${elapsed}ms elapsed)`);
+        }
+      }).catch((err) => { resultObj[key] = []; console.warn(`[PIPELINE ${sid}] ${key} settle handler failed: ${serializeError(err)}`); });
     });
 
     // Use passed deadline or default to 270s for backward compatibility
     const pipelineDeadlineMs = deadline ? (deadline - Date.now()) : 270_000;
-    const pipelineTimeout = new Promise<void>((resolve) => setTimeout(resolve, Math.max(1000, pipelineDeadlineMs)));
+    const pipelineTimeoutMs = Math.max(1000, pipelineDeadlineMs);
+    const pipelineTimeout = new Promise<void>((resolve) => setTimeout(resolve, pipelineTimeoutMs));
     await Promise.race([Promise.all(sourcePromises), pipelineTimeout]);
+    pipelineContinued = true;
+
+    // Make the outcome of the race explicit: "every source settled" vs "gave up waiting".
+    // An abandoned search would otherwise be indistinguishable from a genuinely empty one.
+    const settledKeys = promiseEntries.map(([k]) => k).filter((k) => k in resultObj);
+    const pendingKeys = promiseEntries.map(([k]) => k).filter((k) => !(k in resultObj));
+    if (pendingKeys.length === 0) {
+      console.log(`[PIPELINE ${sid}] parallel-search race: all ${promiseEntries.length} sources settled in ${Date.now() - pipelineStart}ms`);
+    } else {
+      console.warn(`[PIPELINE ${sid}] parallel-search race TIMED OUT after ${Math.round(pipelineTimeoutMs / 1000)}s — only ${settledKeys.length}/${promiseEntries.length} sources settled; continuing WITHOUT [${pendingKeys.join(", ")}] (they keep running in the background; their results are discarded and logged as LATE)`);
+    }
 
     // Check deadline after parallel search phase
     if (deadline && Date.now() >= deadline) {
-      debugLog(`[PIPELINE] Deadline reached after parallel search, returning early`);
+      console.warn(`[PIPELINE ${sid}] deadline reached after the parallel search phase — returning 0 jobs (settled ${settledKeys.length}/${promiseEntries.length} sources)`);
       return { rawJobs: [], jobSpecs: [], jobUrls: [], queryUsed: query };
     }
 
@@ -458,7 +500,7 @@ async function fetchAndFilterJobs(
     const dittoJobs = (resultObj["ditto"] ?? []) as SerpJob[];
     const workdayJobs = (resultObj["workday"] ?? []) as SerpJob[];
 
-    console.log(`[PIPELINE] Sources returned after ${Date.now() - pipelineStart}ms: GoogleJobs=${googleJobs.length} JSearch=${jsearchJobs.length} Adzuna=${adzunaJobs.length} WebJobs=${webJobsJobs.length} JinaBing=${jinaBingJobs.length} Ditto=${dittoJobs.length} Workday=${workdayJobs.length}`);
+    console.log(`[PIPELINE ${sid}] Sources returned after ${Date.now() - pipelineStart}ms (settled ${settledKeys.length}/${promiseEntries.length}${pendingKeys.length ? `, missing [${pendingKeys.join(", ")}]` : ""}): GoogleJobs=${googleJobs.length} JSearch=${jsearchJobs.length} Adzuna=${adzunaJobs.length} WebJobs=${webJobsJobs.length} JinaBing=${jinaBingJobs.length} Ditto=${dittoJobs.length} Workday=${workdayJobs.length}`);
 
     // Merge all sources with dedup (priority: JSearch > Google Jobs > Bing Jobs > Scrappa > Adzuna)
     rawJobs = [];
@@ -495,7 +537,7 @@ async function fetchAndFilterJobs(
     }
 
     // Priority order: JSearch (best inline) → Google Jobs → Bing Jobs → Ditto → Workday → Scrappa → Adzuna
-    console.log("[PIPELINE] Merging sources (priority: JSearch > Google > Bing > Ditto > Workday > Scrappa > Adzuna)");
+    console.log(`[PIPELINE ${sid}] Merging sources (priority: JSearch > Google > Bing > Ditto > Workday > Scrappa > Adzuna)`);
     addJobs(jsearchJobs);
     addJobs(googleJobs);
     addJobs(jinaBingJobs);
@@ -504,7 +546,7 @@ async function fetchAndFilterJobs(
     addJobs(webJobsJobs);
     addJobs(adzunaJobs);
 
-    console.log(`[PIPELINE] Dedup complete: ${rawJobs.length} unique jobs from ${googleJobs.length + jsearchJobs.length + adzunaJobs.length + webJobsJobs.length + jinaBingJobs.length + dittoJobs.length + workdayJobs.length} total`);
+    console.log(`[PIPELINE ${sid}] Dedup complete: ${rawJobs.length} unique jobs from ${googleJobs.length + jsearchJobs.length + adzunaJobs.length + webJobsJobs.length + jinaBingJobs.length + dittoJobs.length + workdayJobs.length} total`);
     dedupCount = rawJobs.length;
 
     // Filter out category/search/listing pages masquerading as individual job listings
@@ -588,7 +630,7 @@ async function fetchAndFilterJobs(
       else { keptDemote++; (j as any)._scopeUnverified = true; } // re-checked in stage 2 with the scraped spec
       return true;
     });
-    console.log(`[PIPELINE] Location scope (${effectiveScope}, ladder: ${effectiveLadder.city || "-"}/${effectiveLadder.region || "-"}/${effectiveLadder.country || "-"}/${effectiveLadder.continent || "-"}): kept ${keptMatch} match + ${keptDemote} unverified, rejected ${scopeRejected.length} (${beforeScope} → ${rawJobs.length})`);
+    console.log(`[PIPELINE ${sid}] Location scope (${effectiveScope}, ladder: ${effectiveLadder.city || "-"}/${effectiveLadder.region || "-"}/${effectiveLadder.country || "-"}/${effectiveLadder.continent || "-"}): kept ${keptMatch} match + ${keptDemote} unverified, rejected ${scopeRejected.length} (${beforeScope} → ${rawJobs.length})`);
     if (scopeRejected.length > 0) {
       const rows = scopeRejected.map(({ job: j, reason }) => ({
         user_id: user.id, search_id: searchId, search_query: query,
@@ -598,7 +640,7 @@ async function fetchAndFilterJobs(
         rejection_category: 'location', rejection_reason: reason,
         passed_domain_filter: false, passed_banned_filter: false,
       }));
-      dataClient.from("rejected_jobs").insert(rows).then((r: any) => r.error && debugLog('[SEARCH] Failed to log location-rejected:', r.error));
+      logRejectedJobs(dataClient, rows, "location stage 1");
       locationFilterRemoved = scopeRejected.length;
     }
   } else if (effectiveScope !== "world") {
@@ -634,7 +676,7 @@ async function fetchAndFilterJobs(
       rejection_category: 'domain', rejection_reason: reason,
       passed_domain_filter: false, passed_banned_filter: false,
     }));
-    dataClient.from("rejected_jobs").insert(rows).then((r: any) => r.error && debugLog('[SEARCH] Failed to log blacklist rejected:', r.error));
+    logRejectedJobs(dataClient, rows, "blacklist");
   }
 
   const bannedRejected: any[] = [];
@@ -657,7 +699,7 @@ async function fetchAndFilterJobs(
       rejection_category: 'banned', rejection_reason: bannedJobs.includes(buildJobUrl(j)) ? 'banned_job' : 'banned_company',
       passed_domain_filter: true, passed_banned_filter: false,
     }));
-    dataClient.from("rejected_jobs").insert(rows).then((r: any) => r.error && debugLog('[SEARCH] Failed to log banned rejected:', r.error));
+    logRejectedJobs(dataClient, rows, "banned");
   }
 
   // Platform filter: keep only jobs from allowed platforms
@@ -693,7 +735,7 @@ async function fetchAndFilterJobs(
       reason: 'ats_tracker', rejection_category: 'spam', rejection_reason: 'ats_tracker_or_lead_aggregator',
       passed_domain_filter: false, passed_banned_filter: false,
     }));
-    dataClient.from("rejected_jobs").insert(rows).then((r: any) => r.error && debugLog('[SEARCH] Failed to log ATS rejected:', r.error));
+    logRejectedJobs(dataClient, rows, "ats-tracker");
   }
 
   // Reject jobs with no real URL or search-result-page URLs (saves Jina API calls)
@@ -721,7 +763,7 @@ async function fetchAndFilterJobs(
       reason: 'no_real_url', rejection_category: 'spam', rejection_reason: 'no_real_job_url_or_search_page',
       passed_domain_filter: false, passed_banned_filter: false,
     }));
-    dataClient.from("rejected_jobs").insert(rows).then((r: any) => r.error && debugLog('[SEARCH] Failed to log no-URL rejected:', r.error));
+    logRejectedJobs(dataClient, rows, "no-url");
     console.log(`[PIPELINE] Rejected ${noUrlRejected.length} jobs with no real URL`);
   }
 
@@ -823,7 +865,7 @@ async function fetchAndFilterJobs(
       reason: 'jina_read_failed', rejection_category: 'ai', rejection_reason: 'jina_read_failed',
       passed_domain_filter: false, passed_banned_filter: false,
     }));
-    dataClient.from("rejected_jobs").insert(rows).then((r: any) => r.error && debugLog('[SEARCH] Failed to log no-spec rejected:', r.error));
+    logRejectedJobs(dataClient, rows, "no-spec");
   }
   rawJobs = rawJobs.filter((j) => !(j as any)._noSpec);
   if (rawJobs.length === 0) return { rawJobs: [], jobSpecs: [], jobUrls: [], queryUsed: query };
@@ -856,7 +898,7 @@ async function fetchAndFilterJobs(
         return true;
       });
       if (stage2Rejected.length > 0) {
-        console.log(`[PIPELINE] Location scope stage 2 (spec re-check): rejected ${stage2Rejected.length} of ${stage2Candidates.length} unverified`);
+        console.log(`[PIPELINE ${sid}] Location scope stage 2 (spec re-check): rejected ${stage2Rejected.length} of ${stage2Candidates.length} unverified`);
         const rows = stage2Rejected.map(({ job: j, reason }) => ({
           user_id: user.id, search_id: searchId, search_query: query,
           profile_id: profile_id,
@@ -865,7 +907,7 @@ async function fetchAndFilterJobs(
           rejection_category: 'location', rejection_reason: reason,
           passed_domain_filter: false, passed_banned_filter: false,
         }));
-        dataClient.from("rejected_jobs").insert(rows).then((r: any) => r.error && debugLog('[SEARCH] Failed to log location stage2 rejected:', r.error));
+        logRejectedJobs(dataClient, rows, "location stage 2");
         locationFilterRemoved += stage2Rejected.length;
       }
     }
