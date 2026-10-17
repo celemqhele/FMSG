@@ -24,3 +24,12 @@ ALTER TABLE public.search_profiles
 ALTER TABLE public.search_profiles
   ADD CONSTRAINT search_profiles_location_scope_check
   CHECK (location_scope IN ('local', 'provincial', 'country', 'continental', 'world'));
+
+-- PostgREST (Data API v14) can serve a STALE schema cache after DDL: the columns
+-- exist in Postgres, but the REST API still answers 42703 "column ... does not
+-- exist" (and `select=*` omits them), because a Postgres notification-queue
+-- issue stopped PostgREST receiving the reload signal. Without this, the app's
+-- search_profiles selects fail even though the migration "succeeded".
+-- Supabase's documented fix: flush the notification queue, then ask for a reload.
+SELECT pg_notification_queue_usage();
+NOTIFY pgrst, 'reload schema';
