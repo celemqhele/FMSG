@@ -8,7 +8,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 - **Project:** FMSG (Find Me Some Jobs) — AI-powered South African job matching SaaS
 - **Stack:** Next.js 16 (App Router), React 19, Tailwind CSS v4, Supabase, Paystack, SerpAPI
-- **Deploy:** Vercel (beta → production, no main branch)
+- **Deploy:** Vercel (beta → production, no main branch). **Caveat (observed 2026-10-17):** a push to `production` lands as a **Preview** deployment — the live domain keeps serving the previous build until that deployment is **promoted to Production in the Vercel dashboard**. Don't assume a push is live: probe a route you changed, or check `https://api.github.com/repos/celemqhele/FMSG/deployments` (public, no auth; the `environment` field reads `Preview – fmsg` vs `Production – fmsg`). The repo is connected to **two** Vercel projects (`fmsg`, `fmsg-2`), each building every commit as a Preview.
 - **Audit log:** See `PRODUCTION_AUDIT.md` for full list of issues found & fixed on June 24, 2026
 - **SQL to run:** 3 migrations must be applied on Supabase before production go-live (see PRODUCTION_AUDIT.md)
 

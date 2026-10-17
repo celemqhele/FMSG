@@ -8,7 +8,7 @@
       "created": "2026-10-17T21:07:39Z",
       "updated": "2026-10-17T21:27:12Z",
       "tags": ["search", "location", "scope", "filter", "profile", "ladder", "ats", "migration-036", "postgrest-schema-cache", "production"],
-      "summary": "Added a user-anchored location-scope filter to /api/search: profile-level scope (local/provincial/country/continental/world) + AI-generated 4-rung location ladder on search_profiles (migration 036), deterministic two-stage hard filter with unknown-location jobs kept+demoted, scope-aware ATS location pillar and knockout gate, and scope+ladder selectors in the desktop modal / mobile sheet / guest onboarding. tsc, eslint (baseline) and build green. Migration 036 needed a 6-step runbook because the Supabase SQL editor reported success while adding nothing; applied and verified (47/47 profiles backfilled to country). Pushed 7af3b27 + 3d6fdbd to origin/production. Awaiting live scope testing.",
+      "summary": "Added a user-anchored location-scope filter to /api/search: profile-level scope (local/provincial/country/continental/world) + AI-generated 4-rung location ladder on search_profiles (migration 036), deterministic two-stage hard filter with unknown-location jobs kept+demoted, scope-aware ATS location pillar and knockout gate, and scope+ladder selectors in the desktop modal / mobile sheet / guest onboarding. tsc, eslint (baseline) and build green. Migration 036 needed a 6-step runbook because the Supabase SQL editor reported success while adding nothing; applied and verified (47/47 profiles backfilled to country). Pushed 7af3b27 + 3d6fdbd, then found the push had produced only Vercel Preview deployments - promoted f0e8bba to Production and confirmed live (route + client bundle verified). Awaiting live scope testing.",
       "embedding": null
     },
     {
@@ -33,12 +33,12 @@
     },
     {
       "id": "job-cards-batch_2026-08-16_03-53-58",
-      "file": "sessions/job-cards-batch_2026-08-16_03-53-58_INCOMPLETE.json",
-      "status": "INCOMPLETE",
+      "file": "sessions/job-cards-batch_2026-08-16_03-53-58_COMPLETE.json",
+      "status": "COMPLETE",
       "created": "2026-08-16T03:53:58.000Z",
-      "updated": "2026-08-16T03:53:58.000Z",
+      "updated": "2026-10-17T21:52:16Z",
       "tags": ["job-card", "boards", "finance", "technology", "logistics", "commercial", "life-sciences", "ngo", "production"],
-      "summary": "Added 11 static job cards: finance (Sanlam JP Manager, Premier FMCG Payroll Admin, Absa Claims Assessor, FNB Compliance), technology (Old Mutual Data Scientist + Manager Data Engineering), logistics (FlySafair), commercial (HEINEKEN), life-sciences (UP Deputy Dean), new 'ngo' board (UNICEF Partnerships Officer + Chief Health & Nutrition). Verified tsc/eslint/build, committed f582b47, pushed to production.",
+      "summary": "Added 11 static job cards: finance (Sanlam JP Manager, Premier FMCG Payroll Admin, Absa Claims Assessor, FNB Compliance), technology (Old Mutual Data Scientist + Manager Data Engineering), logistics (FlySafair), commercial (HEINEKEN), life-sciences (UP Deputy Dean), new 'ngo' board (UNICEF Partnerships Officer + Chief Health & Nutrition). Verified tsc/eslint/build, committed f582b47, pushed to production. Closed COMPLETE 2026-10-17 after live-verifying the card detail pages return 200 on the production domain.",
       "embedding": null
     },
     {
