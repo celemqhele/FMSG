@@ -346,6 +346,16 @@ async function fetchAndFilterJobs(
   locationScope?: LocationScope,
   locationLadder?: LocationLadder,
 ): Promise<{ rawJobs: any[]; jobSpecs: [number, string][]; jobUrls: [number, string][]; queryUsed: string }> {
+  // Guard: `deadline` must be a finite number. It is subtracted from Date.now() and fed
+  // to setTimeout below, so ANY non-numeric value (e.g. a positional argument that shifted
+  // by one because an optional slot was skipped) becomes setTimeout(NaN) → fires after ~1ms
+  // → the Promise.race in the parallel-search phase is lost instantly and the search
+  // returns 0 jobs without a single source being awaited. Fail loudly instead.
+  if (deadline !== undefined && !Number.isFinite(deadline)) {
+    console.warn(`[PIPELINE] Non-numeric deadline ignored (${typeof deadline}: ${String(deadline).slice(0, 40)}) — check call-site argument order`);
+    deadline = undefined;
+  }
+
   function sanitiseLocation(raw: string): string | undefined {
     if (!raw) return undefined;
     const stripped = raw.replace(/\b(Remote|Hybrid|On-site|Online|Work from home|WFH|Flexible|Anywhere)\b/gi, "").trim();
@@ -916,6 +926,14 @@ async function screenAndAnalyze(
   locationScope?: LocationScope,
   locationLadder?: LocationLadder,
 ): Promise<{ results: JobRow[]; queryUsed: string; filteredCounts: { history: number; saved: number; rejected: number; blocked: number }; nextOffset: number }> {
+  // Guard: see the matching guard in fetchAndFilterJobs. A non-numeric deadline would make
+  // every `Date.now() < deadline` check false, silently disabling the embedding budget and
+  // the early-exit checks.
+  if (deadline !== undefined && !Number.isFinite(deadline)) {
+    console.warn(`[SCREENING] Non-numeric deadline ignored (${typeof deadline}: ${String(deadline).slice(0, 40)}) — check call-site argument order`);
+    deadline = undefined;
+  }
+
   const filteredCounts = { history: 0, saved: 0, rejected: 0, blocked: 0 };
   let nextOffset = offset;
 
@@ -1728,6 +1746,15 @@ Return ONLY valid JSON (no markdown, no code fences):
         try {
           const effectivePfMode = state.pf_mode ?? (state.mode === "pf");
 
+          // Typed locals for the location scope + ladder. `state` is `any` (`let state: any`),
+          // and passing it straight into fetchAndFilterJobs/screenAndAnalyze let a *missing
+          // optional argument* shift every later argument by one without tsc noticing — the
+          // 2026-10-17 bug where the scope string landed in the `deadline` slot, so
+          // setTimeout(NaN) fired after ~1ms and every search returned 0 jobs instantly.
+          // With concrete declared types here, such a shift fails to compile.
+          const scopeForSearch: LocationScope = state.locationScope ?? "country";
+          const ladderForSearch: LocationLadder = state.locationLadder ?? buildLadderFromProfileLocation(profileLocation);
+
           if (!effectivePfMode) {
             // Rotate through titles and industries (most relevant first)
             const nicheTitle = state.titles?.[rotationTitleIndex % titles.length] ?? state.titles?.[0] ?? "";
@@ -1767,8 +1794,8 @@ Return ONLY valid JSON (no markdown, no code fences):
                 continuationDeadline,
                 outputs,
                 undefined,
-                state.locationScope,
-                state.locationLadder
+                scopeForSearch,
+                ladderForSearch
               );
 
               const totalFiltered = result.filteredCounts.history + result.filteredCounts.saved + result.filteredCounts.rejected + result.filteredCounts.blocked;
@@ -1815,12 +1842,17 @@ Return ONLY valid JSON (no markdown, no code fences):
 
             // Search + filter + screen in one shot
             const hiddenKeys = state.hiddenJobKeys ? new Set<string>(state.hiddenJobKeys as string[]) : undefined;
-            const { rawJobs, jobSpecs, jobUrls, queryUsed } = await fetchAndFilterJobs(
+            // The `undefined` is the optional `deadline` slot — it must not be skipped:
+            // dropping it shifts every later argument (the 2026-10-17 "0 jobs in 16ms" bug).
+            // With `scopeForSearch`/`ladderForSearch` carrying concrete types, such a shift
+            // is a compile error. The Parameters<> annotation pins arity the same way.
+            const findArgs: Parameters<typeof fetchAndFilterJobs> = [
               searchQuery, state.profileLocation, user, searchId,
               state.bannedJobs, state.bannedCompanies, dataClient, state.profile_id, sendStatus, undefined,
-              hiddenKeys, state.maxAgeDays, 2, platforms,
-              state.locationScope, state.locationLadder
-            );
+              hiddenKeys, state.maxAgeDays, 2, platforms, undefined,
+              scopeForSearch, ladderForSearch,
+            ];
+            const { rawJobs, jobSpecs, jobUrls, queryUsed } = await fetchAndFilterJobs(...findArgs);
 
             // Advance rotation for next search
             if (profile_id) {
@@ -2058,12 +2090,14 @@ Return ONLY valid JSON (no markdown, no code fences):
               let filtered;
               debugLog(`[PF] Round ${roundNum}: Starting SEARCH phase`);
               const pfHiddenKeys = state.hiddenJobKeys ? new Set<string>(state.hiddenJobKeys as string[]) : undefined;
-              filtered = await fetchAndFilterJobs(
+              // Typed tuple — see the note at the previous call site. `undefined` = deadline.
+              const pfFindArgs: Parameters<typeof fetchAndFilterJobs> = [
                 fullQuery, pfLocation, user, searchId,
                 pfBannedJobs, pfBannedCompanies, dataClient, state.profile_id, sendStatus, roundNum,
-                pfHiddenKeys, state.maxAgeDays, 5, platforms,
-                state.locationScope, state.locationLadder
-              );
+                pfHiddenKeys, state.maxAgeDays, 5, platforms, undefined,
+                scopeForSearch, ladderForSearch,
+              ];
+              filtered = await fetchAndFilterJobs(...pfFindArgs);
               debugLog(`[PF] Round ${roundNum}: fetchAndFilterJobs returned ${filtered.rawJobs?.length || 0} raw jobs`);
 
               let roundResults: JobRow[] = [];
@@ -2092,8 +2126,8 @@ Return ONLY valid JSON (no markdown, no code fences):
                     }
                     return keys;
                   })(),
-                  state.locationScope,
-                  state.locationLadder
+                  scopeForSearch,
+                  ladderForSearch
                 );
                 roundResults = result.results;
                 roundFilteredCounts = result.filteredCounts;
