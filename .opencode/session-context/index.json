@@ -6,9 +6,9 @@
       "file": "sessions/location-scope-filter_2026-10-17_21-07-39_INCOMPLETE.json",
       "status": "INCOMPLETE",
       "created": "2026-10-17T21:07:39Z",
-      "updated": "2026-10-17T21:07:39Z",
-      "tags": ["search", "location", "scope", "filter", "profile", "ladder", "ats", "migration-036", "production"],
-      "summary": "Added a user-anchored location-scope filter to /api/search: profile-level scope (local/provincial/country/continental/world) + AI-generated 4-rung location ladder on search_profiles (migration 036), deterministic two-stage hard filter with unknown-location jobs kept+demoted, scope-aware ATS location pillar and knockout gate, and scope+ladder selectors in the desktop modal / mobile sheet / guest onboarding. tsc, eslint (baseline) and build green. Migration 036 must be applied in the Supabase SQL editor before pushing to production.",
+      "updated": "2026-10-17T21:27:12Z",
+      "tags": ["search", "location", "scope", "filter", "profile", "ladder", "ats", "migration-036", "postgrest-schema-cache", "production"],
+      "summary": "Added a user-anchored location-scope filter to /api/search: profile-level scope (local/provincial/country/continental/world) + AI-generated 4-rung location ladder on search_profiles (migration 036), deterministic two-stage hard filter with unknown-location jobs kept+demoted, scope-aware ATS location pillar and knockout gate, and scope+ladder selectors in the desktop modal / mobile sheet / guest onboarding. tsc, eslint (baseline) and build green. Migration 036 needed a 6-step runbook because the Supabase SQL editor reported success while adding nothing; applied and verified (47/47 profiles backfilled to country). Pushed 7af3b27 + 3d6fdbd to origin/production. Awaiting live scope testing.",
       "embedding": null
     },
     {

@@ -42,6 +42,9 @@ When the user asks to "create a job post", "post a job", "add a job", or "write 
   - Storage delete: `DELETE /storage/v1/object/<bucket>/<path>` (URL-encode the filename).
   - Auth users: `GET/DELETE /auth/v1/admin/users` (PostgREST does NOT expose the `auth` schema).
 - **New tables / migrations (DDL):** PostgREST can't run DDL. Either apply `supabase/migrations/*.sql` in the Supabase dashboard SQL editor, or add a Management API access token (`sbp_...`) to hit `POST /v1/projects/{ref}/database/query`.
+- **DDL in the dashboard SQL editor: run statements ONE AT A TIME.** Studio executes a pasted multi-statement script as a single transaction and the Results tab effectively reports only the *last* statement — so a script whose earlier statement failed (or that never actually ran) still reads `Success. No rows returned.` Verify each step with its own `SELECT`.
+- **Never treat REST as proof that a migration ran (PostgREST v14 stale schema cache).** After DDL the Data API can still return `{"code":"42703","message":"column ... does not exist"}`, omit the new column from the OpenAPI spec at `/rest/v1/`, AND omit it from `select=*`, while the column exists in Postgres. Fix: `select pg_notification_queue_usage();` (Supabase-documented; `NOTIFY pgrst, 'reload schema';` is the blunt version and silently no-ops if a reload is already in flight). Authoritative check: `select column_name, data_type, column_default from information_schema.columns where table_schema='public' and table_name='<table>' and column_name like '<prefix>%';`. Full write-up: `.opencode/context/supabase-access/supabase-direct-access_2026-10-17.md`.
+- **curl.exe gotcha:** `-o $null` is silently dropped by PowerShell, so curl consumes the next flag as its output filename and the request goes out malformed → `401 Unauthorized` with no body. Always pass a real path (`-o recycle_bin\out.txt`).
 - **GRANTS REQUIRED (Oct 30 2026 Supabase change):** New tables in `public` no longer get automatic Data API grants. Any migration that `CREATE TABLE`s MUST include `GRANT ALL ON TABLE public.<table> TO anon, authenticated, service_role;` in the same migration, or PostgREST returns `permission denied`/404 for BOTH user (anon/authenticated) AND admin (service_role) access — service_role bypasses RLS, not grants. This also applies to preview branches and `supabase db reset`. Existing tables keep their grants. Pattern already applied in migrations 019/022/026/028/030/031/033/035.
 - **Gotcha:** `job_extractions` (migration 031) and `search_checkpoints` FK to `auth.users` **without** `ON DELETE CASCADE` — the app's "delete account" flow breaks on them (SQLSTATE 23503). Other user tables cascade fine.
 
@@ -60,7 +63,7 @@ Get-ChildItem -Recurse -Filter *.md -Path ".opencode\context" | Select-String -P
 - ats-scoring/ — deterministic ATS scoring pipeline (scoring engine swap, Vercel logging, pgvector RRF fusion, spec dedup)
 - search-pipeline/ — /api/search flow (search profile persistence & PF fixes, deadline awareness, screening checkpoints/pauses and their removal)
 - job-boards/ — static job cards & board pages (card posts/removals lifecycle, detail pages + SEO, board navigation/global page)
-- supabase-access/ — direct Supabase SQL/data operations (curl.exe workflow, storage/auth admin, schema gotchas)
+- supabase-access/ — direct Supabase SQL/data operations (curl.exe workflow, storage/auth admin, DDL verification & PostgREST schema-cache traps, schema gotchas)
 - branding/ — Google Business Profile images and other brand assets
 
 ### Naming requirement
@@ -106,4 +109,5 @@ solidifies the context chain.
 
 | File Path | Description |
 |-----------|-------------|
-| - | - |
+| `scripts/tmp-geo-check.ts`, `scripts/tmp-tsconfig.json` | Throwaway ts-node harness + project config used to run the 2026-10-17 location-scope geo matrix (18 location cases × 5 scopes × 2 user locations) against `src/lib/location.ts`; the empty `scripts/` dir created for them was removed |
+| `eslint-out.json`, `eslint-out2.json` | eslint JSON reports from the 2026-10-17 location-scope change, kept only to compare the 3 profile-editor components against their pre-change baseline |
