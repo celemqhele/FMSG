@@ -363,7 +363,7 @@ async function fetchAndFilterJobs(
   deadline?: number,
   locationScope?: LocationScope,
   locationLadder?: LocationLadder,
-): Promise<{ rawJobs: any[]; jobSpecs: [number, string][]; jobUrls: [number, string][]; queryUsed: string }> {
+): Promise<{ rawJobs: any[]; jobSpecs: [number, string][]; jobUrls: [number, string][]; queryUsed: string; deadlineHit?: boolean }> {
   // Guard: `deadline` must be a finite number. It is subtracted from Date.now() and fed
   // to setTimeout below, so ANY non-numeric value (e.g. a positional argument that shifted
   // by one because an optional slot was skipped) becomes setTimeout(NaN) → fires after ~1ms
@@ -789,67 +789,121 @@ async function fetchAndFilterJobs(
 
   console.log(`[PIPELINE] Filter breakdown: dedup=${dedupCount} → cat=${catFilterRemoved}, loc=${locationFilterRemoved}, blacklist=${blacklistRejected.length}, banned=${bannedRejected.length}, ats=${atsRejected.length}, noUrl=${noUrlRejected.length}, snippet=${snippetRejected.length} → survived=${rawJobs.length}`);
   console.log(`[PIPELINE] Spec assignment: ${rawJobs.length} jobs entering (bing=${rawJobs.filter((j) => j.spec_source === "bing_jobs").length}, fullSpec=${rawJobs.filter((j) => j.hasFullSpec).length})`);
-  for (let i = 0; i < rawJobs.length; i++) {
-    // Check deadline before each job's spec scraping
-    if (deadline && Date.now() >= deadline) {
-      debugLog(`[PIPELINE] Deadline reached during spec scraping at job ${i}/${rawJobs.length}, returning early`);
-      return { rawJobs: [], jobSpecs: [], jobUrls: [], queryUsed: query };
-    }
+  // ─── Spec fetch: bounded worker pool ─────────────────────────────────────────
+  // This used to be a sequential `for` loop — the dominant wall-clock cost of a search
+  // (N jobs × per-job Jina → BrightData → Apify cascade; 450 jobs could blow past the
+  // 290s watchdog and return nothing). Spec fetches are independent, so run up to
+  // SPEC_CONCURRENCY (default 8) at once, each job hard-capped at 30s so one hanging
+  // fetch can't straggle the pool. When the deadline passes, workers stop pulling new
+  // jobs and everything fetched so far is KEPT (best-so-far) instead of the old
+  // behaviour of `return { rawJobs: [] }` — discarding the whole search.
+  const specTotal = rawJobs.length;
+  const specConcurrency = Math.max(1, Math.min(Number(process.env.SPEC_CONCURRENCY) || 8, 16));
+  const SPEC_JOB_TIMEOUT_MS = 30_000;
+  let specNext = 0;
+  let specAttempted = 0;
+  let specDeadlineHit = false;
+  const specStartedAt = Date.now();
 
-    const job = rawJobs[i];
-    const jobUrl = buildJobUrl(job);
-
-    if (job.hasFullSpec && job.description && (job.description.length >= SHORT_SPEC_THRESHOLD || job.spec_source === "bing_jobs")) {
-      (job as any)._spec = job.description;
-      if (isExpired(job.description)) (job as any)._expired = true;
-      continue;
-    }
-
+  // One job's full spec cascade: Workday CXS (instant JSON) → Jina → BrightData → Apify.
+  // `aborted: true` = the deadline cut the cascade short (job never fully fetched).
+  const scrapeSpecFor = async (job: any, jobUrl: string): Promise<{ specText: string; jinaStatus: number; aborted: boolean }> => {
     let specText = "";
     let jinaStatus = 0;
     if (jobUrl) {
-      // Fast-path: Workday CXS API (instant JSON, no browser needed)
-      if (job.spec_source === "workday" && (job as any)._workdayTenant && (job as any)._workdayPath) {
-        if (deadline && Date.now() >= deadline) {
-          debugLog(`[PIPELINE] Deadline reached before Workday detail fetch`);
-          break;
-        }
+      if (job.spec_source === "workday" && job._workdayTenant && job._workdayPath) {
+        if (deadline && Date.now() >= deadline) return { specText, jinaStatus, aborted: true };
         try {
-          specText = await fetchWorkdayDetail((job as any)._workdayTenant as WorkdayTenant, (job as any)._workdayPath as string);
+          specText = await fetchWorkdayDetail(job._workdayTenant as WorkdayTenant, job._workdayPath as string);
         } catch {}
       }
-      // Cascade: Jina (fast, free) → Bright Data (renders JS) → Apify (markdown)
       if (!specText) {
         try {
           const jina1 = await fetchJinaPage(jobUrl, JINA_API ?? null);
           jinaStatus = jina1.status;
           specText = jina1.content;
           if (!specText && JINA_API) {
-            if (deadline && Date.now() >= deadline) break;
+            if (deadline && Date.now() >= deadline) return { specText, jinaStatus, aborted: true };
             const jina2 = await fetchJinaPage(jobUrl, null);
             jinaStatus = jina2.status;
             specText = jina2.content;
           }
         } catch {}
         if (!specText) {
-          if (deadline && Date.now() >= deadline) break;
+          if (deadline && Date.now() >= deadline) return { specText, jinaStatus, aborted: true };
           try { specText = await scrapePageBrightData(jobUrl); } catch {}
         }
         if (!specText) {
-          if (deadline && Date.now() >= deadline) break;
+          if (deadline && Date.now() >= deadline) return { specText, jinaStatus, aborted: true };
           try { specText = await scrapePageApify(jobUrl); } catch {}
         }
       }
     }
-    if (!specText) {
-      (job as any)._noSpec = true;
-      continue;
+    return { specText, jinaStatus, aborted: false };
+  };
+
+  const specWorker = async (workerId: number): Promise<void> => {
+    while (true) {
+      if (deadline && Date.now() >= deadline) { specDeadlineHit = true; return; }
+      const i = specNext++;
+      if (i >= specTotal) return;
+      const job: any = rawJobs[i];
+      const jobUrl = buildJobUrl(job);
+
+      try {
+        if (job.hasFullSpec && job.description && (job.description.length >= SHORT_SPEC_THRESHOLD || job.spec_source === "bing_jobs")) {
+          job._spec = job.description;
+          if (isExpired(job.description)) job._expired = true;
+        } else {
+          const fetched = await withTimeout(
+            scrapeSpecFor(job, jobUrl),
+            SPEC_JOB_TIMEOUT_MS,
+            `spec scrape worker${workerId} "${String(job.title ?? "").slice(0, 40)}"`
+          ).catch(() => ({ specText: "", jinaStatus: 0, aborted: false }));
+
+          if (fetched.aborted) {
+            // Deadline cut this job short — leave it unmarked so it's dropped with the
+            // "never fetched" group below rather than logged as a scrape failure.
+          } else if (!fetched.specText) {
+            job._noSpec = true;
+          } else {
+            job._spec = fetched.specText;
+            // Check for expired/unavailable jobs: text patterns OR Jina HTTP error page
+            if (isExpired(fetched.specText) || isJinaErrorPage(fetched.jinaStatus, fetched.specText)) {
+              job._expired = true;
+              console.log(`[PIPELINE] Expired/unavailable: "${job.title}" at "${job.company_name}" — jina=${fetched.jinaStatus}, reason=${isJinaErrorPage(fetched.jinaStatus, fetched.specText) ? 'jina_error_page' : 'expired_pattern'}`);
+            }
+          }
+        }
+      } catch (err) {
+        // Never let one job kill a worker — mark it spec-less so the normal filters drop it.
+        console.warn(`[PIPELINE ${sid}] Spec worker ${workerId} error on "${String(job.title ?? "").slice(0, 40)}": ${serializeError(err)}`);
+        job._noSpec = true;
+      }
+
+      specAttempted++;
+      if (specAttempted % 10 === 0 || specAttempted === specTotal) {
+        onStatus?.({
+          type: "specs_progress",
+          completed: specAttempted,
+          total: specTotal,
+          progress: 20 + Math.round((specAttempted / Math.max(1, specTotal)) * 5),
+        });
+      }
     }
-    (job as any)._spec = specText;
-    // Check for expired/unavailable jobs: text patterns OR Jina HTTP error page
-    if (isExpired(specText) || isJinaErrorPage(jinaStatus, specText)) {
-      (job as any)._expired = true;
-      console.log(`[PIPELINE] Expired/unavailable: "${job.title}" at "${job.company_name}" — jina=${jinaStatus}, reason=${isJinaErrorPage(jinaStatus, specText) ? 'jina_error_page' : 'expired_pattern'}`);
+  };
+
+  await Promise.all(Array.from({ length: Math.min(specConcurrency, specTotal) }, (_, w) => specWorker(w)));
+
+  {
+    const withSpec = rawJobs.filter((j: any) => j._spec).length;
+    if (specDeadlineHit) {
+      const attempted = rawJobs.filter((j: any) => j._spec || j._noSpec).length;
+      const skipped = specTotal - attempted;
+      if (skipped > 0) rawJobs = rawJobs.filter((j: any) => j._spec || j._noSpec);
+      console.log(`[PIPELINE ${sid}] Spec deadline hit after ${Math.round((Date.now() - specStartedAt) / 1000)}s — best-so-far kept: ${withSpec} jobs with spec (${skipped} never fetched, ${specAttempted}/${specTotal} attempted)`);
+    } else {
+      console.log(`[PIPELINE ${sid}] Spec fetch complete: ${specTotal} jobs in ${Math.round((Date.now() - specStartedAt) / 1000)}s (${specConcurrency} workers, ${withSpec} with spec, ${specAttempted - withSpec} failed)`);
     }
   }
 
@@ -938,7 +992,7 @@ async function fetchAndFilterJobs(
     }
     rawJobs = filtered;
     console.log(`[PIPELINE] fetchAndFilterJobs returning ${rawJobs.length} jobs for scoring (specs=${filteredSpecs.size})`);
-    return { rawJobs, jobSpecs: [...filteredSpecs.entries()], jobUrls: [...filteredUrls.entries()], queryUsed: query };
+    return { rawJobs, jobSpecs: [...filteredSpecs.entries()], jobUrls: [...filteredUrls.entries()], queryUsed: query, ...(specDeadlineHit ? { deadlineHit: true } : {}) };
   }
 }
 
@@ -1323,14 +1377,16 @@ async function screenAndAnalyze(
         spec_source: job.spec_source ?? null,
       });
 
-      // Emit job_scored event for localStorage backup
+      // Emit job_scored event — the client renders the card immediately (progressive
+      // population); `current` is jobs scored THIS run (localOutputs may be seeded with
+      // prior results in continuation/PF rounds, which would overcount vs `total`).
       onStatus?.({
           type: "job_scored",
           search_id: searchId,
           job: localOutputs[localOutputs.length - 1],
-          current: localOutputs.length,
+          current: localOutputs.length - priorCount,
           total: rawJobs.length,
-          progress: Math.min(25 + (localOutputs.length / rawJobs.length) * 55, 80),
+          progress: Math.min(25 + ((localOutputs.length - priorCount) / rawJobs.length) * 55, 80),
         });
     }
 
@@ -1891,10 +1947,13 @@ Return ONLY valid JSON (no markdown, no code fences):
             const findArgs: Parameters<typeof fetchAndFilterJobs> = [
               searchQuery, state.profileLocation, user, searchId,
               state.bannedJobs, state.bannedCompanies, dataClient, state.profile_id, sendStatus, undefined,
-              hiddenKeys, state.maxAgeDays, 2, platforms, undefined,
+              hiddenKeys, state.maxAgeDays, 2, platforms, Date.now() + 250_000,
               scopeForSearch, ladderForSearch,
             ];
-            const { rawJobs, jobSpecs, jobUrls, queryUsed } = await fetchAndFilterJobs(...findArgs);
+            // Fetch budget: 250s of the 290s watchdog — if the spec pool exhausts it, it
+            // returns best-so-far (deadlineHit) instead of running into the watchdog with
+            // nothing to show. The remaining ~40s cover the rotation upsert + pause event.
+            const { rawJobs, jobSpecs, jobUrls, queryUsed, deadlineHit } = await fetchAndFilterJobs(...findArgs);
 
             // Advance rotation for next search
             if (profile_id) {
@@ -1925,7 +1984,7 @@ Return ONLY valid JSON (no markdown, no code fences):
             const totalFiltered = state.dedupSets.history.size + state.dedupSets.saved.size + state.dedupSets.rejected.size + state.dedupSets.blocked.size;
             sendComplete({
               type: "pause",
-              message: `Found ${rawJobs.length} matching results. Ready to score?`,
+              message: `Found ${rawJobs.length} matching results${deadlineHit ? " (search window exhausted — showing best so far)" : ""}. Ready to score?`,
               progress: 20,
               ...(totalFiltered > 0 ? { filtered_summary: { history: state.dedupSets.history.size, saved: state.dedupSets.saved.size, rejected: state.dedupSets.rejected.size, blocked: state.dedupSets.blocked.size } } : {}),
                 continuation: signContinuationToken({
@@ -2136,7 +2195,7 @@ Return ONLY valid JSON (no markdown, no code fences):
               const pfFindArgs: Parameters<typeof fetchAndFilterJobs> = [
                 fullQuery, pfLocation, user, searchId,
                 pfBannedJobs, pfBannedCompanies, dataClient, state.profile_id, sendStatus, roundNum,
-                pfHiddenKeys, state.maxAgeDays, 5, platforms, undefined,
+                pfHiddenKeys, state.maxAgeDays, 5, platforms, pfStartTime + 200_000,
                 scopeForSearch, ladderForSearch,
               ];
               filtered = await fetchAndFilterJobs(...pfFindArgs);
