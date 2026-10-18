@@ -345,6 +345,135 @@ function logRejectedJobs(dataClient: any, rows: any[], label: string) {
   );
 }
 
+// ─── Title triage (pre-scrape) ────────────────────────────────────────────────
+// Collapse ~1000 raw jobs down to the few matching the profile's title ladder
+// BEFORE the expensive spec-fetch stage, using ONE Gemini Flash Lite call per
+// search (not one per job). Each job keeps its stable 1-based index — the "spec
+// ID" — and the model returns the numbers to keep; we map them straight back, so
+// titles are never re-matched and no job is lost to paraphrase/dupes. Fails OPEN:
+// any error, empty/unparseable reply, or deadline-skipped chunk keeps its jobs
+// (degrades to today's behaviour, never to "nothing").
+//
+// Input is packed into chunks under the safe budget so no AI tier's input
+// truncation (Groq/OpenRouter cap at 15k chars) can hide tail jobs — which would
+// otherwise silently drop them. The cap bounds only triaged survivors; fail-open
+// jobs bypass it for safety.
+async function triageJobsByTitle(
+  jobs: any[],
+  titles: string[],
+  opts?: { cap?: number; deadline?: number },
+): Promise<{ kept: any[]; dropped: number; skipped?: string }> {
+  const cap = Math.max(0, opts?.cap ?? (Number(process.env.TITLE_TRIAGE_MAX) || 150));
+  if (jobs.length === 0) return { kept: jobs, dropped: 0, skipped: "empty" };
+  if (cap === 0) return { kept: jobs, dropped: 0, skipped: "disabled" };
+  const ladder = (titles ?? []).map((t) => (t ?? "").trim()).filter(Boolean);
+  if (ladder.length === 0) return { kept: jobs, dropped: 0, skipped: "no-titles" };
+  if (opts?.deadline && Date.now() >= opts.deadline) return { kept: jobs, dropped: 0, skipped: "deadline" };
+  if (jobs.length <= 3) return { kept: jobs, dropped: 0, skipped: "too-few" };
+
+  const roleList = ladder.map((t) => `"${t}"`).join(", ");
+  const system =
+    "You are a job-title filter. Reply with ONLY a comma-separated list of numbers. No explanation, no titles, no words.";
+
+  const CHUNK_LINE_BUDGET = 13000;
+  const chunks: { start: number; lines: string[] }[] = [];
+  let cur: { start: number; lines: string[] } | null = null;
+  let curSize = 0;
+  jobs.forEach((j, i) => {
+    const line = `${i + 1}. ${String(j.title ?? "").slice(0, 120)}`;
+    const size = line.length + 1;
+    if (!cur || curSize + size > CHUNK_LINE_BUDGET) {
+      cur = { start: i, lines: [] };
+      curSize = 1200; // header allowance (role list + instructions)
+      chunks.push(cur);
+    }
+    cur.lines.push(line);
+    curSize += size;
+  });
+
+  const maxOut = Math.min(cap, jobs.length);
+  const failOpen = new Set<number>();  // kept unconditionally (error / unparseable / deadline-skipped)
+  const ordered: number[] = [];        // relevance-ordered triaged survivors (global indices)
+
+  for (const chunk of chunks) {
+    const end = chunk.start + chunk.lines.length;
+    if (opts?.deadline && Date.now() >= opts.deadline) {
+      for (let i = chunk.start; i < end; i++) failOpen.add(i);
+      continue;
+    }
+    const perChunkMax = Math.min(maxOut, chunk.lines.length);
+    const user = [
+      `Candidate is targeting these job roles: ${roleList}`,
+      `Below is a numbered list of job titles. Keep ONLY the titles that match one of the target roles. Return at most ${perChunkMax} numbers, most-relevant-first.`,
+      `Reply with just the numbers, comma-separated. No other text.`,
+      "",
+      ...chunk.lines,
+    ].join("\n");
+
+    let raw = "";
+    try {
+      raw = await callAIWithFallback(system, user, "title_triage", {
+        maxOutputTokens: 512,
+        temperature: 0,
+        responseMimeType: "text/plain",
+      });
+    } catch (err) {
+      console.warn(`[PIPELINE] Title triage call failed — keeping chunk [${chunk.start + 1}-${end}] (${serializeError(err).slice(0, 80)})`);
+      for (let i = chunk.start; i < end; i++) failOpen.add(i);
+      continue;
+    }
+
+    const local = parseTriageNumbers(raw ?? "", chunk.lines.length);
+    if (!local || local.length === 0) {
+      console.warn(`[PIPELINE] Title triage unparseable — keeping chunk [${chunk.start + 1}-${end}] (reply: ${JSON.stringify((raw ?? "").slice(0, 60))})`);
+      for (let i = chunk.start; i < end; i++) failOpen.add(i);
+      continue;
+    }
+    for (const ln of local) {
+      const g = chunk.start + (ln - 1); // chunk-local → global index
+      if (g >= 0 && g < jobs.length && !ordered.includes(g)) ordered.push(g);
+    }
+  }
+
+  // Cap triaged survivors in relevance order; fail-open jobs always kept.
+  const kept = new Set<number>(failOpen);
+  let triagedCount = 0;
+  for (const g of ordered) {
+    if (triagedCount >= maxOut) break;
+    kept.add(g);
+    triagedCount++;
+  }
+  const keptJobs = jobs.filter((_, i) => kept.has(i));
+  return { kept: keptJobs, dropped: jobs.length - keptJobs.length };
+}
+
+// Parse a triage reply into chunk-local 1-based indices (order preserved). Expands
+// ranges ("1-5") before extracting, since a range reply is common. Returns null when
+// nothing valid is found so the caller can fail open.
+function parseTriageNumbers(raw: string, count: number): number[] | null {
+  if (!raw) return null;
+  const text = raw.replace(/(\d+)\s*[-–—]\s*(\d+)/g, (_m, a, b) => {
+    const s = parseInt(a, 10);
+    const e = parseInt(b, 10);
+    if (s >= 1 && e <= count && s <= e) {
+      const parts: string[] = [];
+      for (let i = s; i <= e; i++) parts.push(String(i));
+      return parts.join(" ");
+    }
+    return " ";
+  });
+  const out: number[] = [];
+  const seen = new Set<number>();
+  for (const m of text.matchAll(/\d+/g)) {
+    const n = parseInt(m[0], 10);
+    if (n >= 1 && n <= count && !seen.has(n)) {
+      seen.add(n);
+      out.push(n);
+    }
+  }
+  return out.length > 0 ? out : null;
+}
+
 async function fetchAndFilterJobs(
   query: string,
   profileLocation: string,
@@ -363,6 +492,7 @@ async function fetchAndFilterJobs(
   deadline?: number,
   locationScope?: LocationScope,
   locationLadder?: LocationLadder,
+  titles?: string[],
 ): Promise<{ rawJobs: any[]; jobSpecs: [number, string][]; jobUrls: [number, string][]; queryUsed: string; deadlineHit?: boolean }> {
   // Guard: `deadline` must be a finite number. It is subtracted from Date.now() and fed
   // to setTimeout below, so ANY non-numeric value (e.g. a positional argument that shifted
@@ -795,6 +925,22 @@ async function fetchAndFilterJobs(
 
   console.log(`[PIPELINE] Filter breakdown: dedup=${dedupCount} → cat=${catFilterRemoved}, loc=${locationFilterRemoved}, blacklist=${blacklistRejected.length}, banned=${bannedRejected.length}, ats=${atsRejected.length}, noUrl=${noUrlRejected.length}, snippet=${snippetRejected.length} → survived=${rawJobs.length}`);
   console.log(`[PIPELINE] Spec assignment: ${rawJobs.length} jobs entering (bing=${rawJobs.filter((j) => j.spec_source === "bing_jobs").length}, fullSpec=${rawJobs.filter((j) => j.hasFullSpec).length})`);
+  // ─── Title triage (pre-scrape) ────────────────────────────────────────────────
+  // Collapse the (often ~1000) surviving raw jobs down to those matching the
+  // profile's title ladder BEFORE spending scrape credits. One Flash Lite call
+  // per search (index-based, lossless, fail-open — see triageJobsByTitle). Runs
+  // after all free deterministic filters so we only triage real candidates, and
+  // before the spec pool so only survivors get scraped.
+  if (rawJobs.length > 0 && Array.isArray(titles) && titles.length > 0) {
+    const triage = await triageJobsByTitle(rawJobs, titles, { deadline });
+    if (triage.skipped) {
+      console.log(`[PIPELINE] Title triage skipped (${triage.skipped}) — keeping all ${rawJobs.length} jobs`);
+    } else {
+      rawJobs = triage.kept;
+      console.log(`[PIPELINE] Title triage: kept ${rawJobs.length}, dropped ${triage.dropped} (against ${titles.length} title rung(s): ${titles.map((t) => JSON.stringify(t)).join(", ")})`);
+      onStatus?.({ type: "found_results", count: rawJobs.length, progress: 20 });
+    }
+  }
   // ─── Spec fetch: bounded worker pool ─────────────────────────────────────────
   // This used to be a sequential `for` loop — the dominant wall-clock cost of a search
   // (N jobs × per-job Jina → BrightData → Apify cascade; 450 jobs could blow past the
@@ -2061,7 +2207,7 @@ Return ONLY valid JSON (no markdown, no code fences):
               searchQuery, state.profileLocation, user, searchId,
               state.bannedJobs, state.bannedCompanies, dataClient, state.profile_id, sendStatus, undefined,
               hiddenKeys, state.maxAgeDays, 2, platforms, Date.now() + 250_000,
-              scopeForSearch, ladderForSearch,
+              scopeForSearch, ladderForSearch, state.titles ?? titles,
             ];
             // Fetch budget: 250s of the 290s watchdog — if the spec pool exhausts it, it
             // returns best-so-far (deadlineHit) instead of running into the watchdog with
@@ -2309,7 +2455,7 @@ Return ONLY valid JSON (no markdown, no code fences):
                 fullQuery, pfLocation, user, searchId,
                 pfBannedJobs, pfBannedCompanies, dataClient, state.profile_id, sendStatus, roundNum,
                 pfHiddenKeys, state.maxAgeDays, 5, platforms, pfStartTime + 200_000,
-                scopeForSearch, ladderForSearch,
+                scopeForSearch, ladderForSearch, state.titles ?? titles,
               ];
               filtered = await fetchAndFilterJobs(...pfFindArgs);
               debugLog(`[PF] Round ${roundNum}: fetchAndFilterJobs returned ${filtered.rawJobs?.length || 0} raw jobs`);
