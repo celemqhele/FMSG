@@ -6,8 +6,8 @@ import { searchWorkdayJobs, fetchWorkdayDetail, WORKDAY_TENANTS, type WorkdayTen
 import { extractText } from "@/lib/pdf";
 import {
   mapLocationToProvince,
-  resolveJobGeo,
-  jobMatchesScope,
+  resolveJobGeos,
+  foldScopeVerdicts,
   buildLadderFromProfileLocation,
   type LocationScope,
   type LocationLadder,
@@ -616,10 +616,16 @@ async function fetchAndFilterJobs(
     const beforeScope = rawJobs.length;
     let keptMatch = 0, keptDemote = 0;
     rawJobs = rawJobs.filter((j) => {
-      const geo = resolveJobGeo((j as any).location ?? "", { unverified: (j as any)._locationUnverified === true });
-      const verdict = jobMatchesScope(geo, effectiveLadder, effectiveScope);
+      const geos = resolveJobGeos({
+        field: (j as any).location ?? "",
+        extras: (j as any)._extraLocations,
+        link: buildJobUrl(j),
+        unverified: (j as any)._locationUnverified === true,
+      });
+      const verdict = foldScopeVerdicts(geos, effectiveLadder, effectiveScope);
       if (verdict === "drop") {
         (j as any)._scopeRejected = true;
+        const geo = geos.find((g) => g.confidence !== "unknown") ?? geos[0];
         scopeRejected.push({
           job: j,
           reason: `outside_${effectiveScope}_scope (job: ${geo.country || geo.region || geo.city || "unknown"}, you: ${effectiveLadder.country || effectiveLadder.continent})`,
@@ -814,7 +820,15 @@ async function fetchAndFilterJobs(
       if (job.spec_source === "workday" && job._workdayTenant && job._workdayPath) {
         if (deadline && Date.now() >= deadline) return { specText, jinaStatus, aborted: true };
         try {
-          specText = await fetchWorkdayDetail(job._workdayTenant as WorkdayTenant, job._workdayPath as string);
+          const detail = await fetchWorkdayDetail(job._workdayTenant as WorkdayTenant, job._workdayPath as string);
+          specText = detail.text;
+          // The detail endpoint's location feeds the scope filter (stage 1 already
+          // ran on the listing fields; this helps stage 2/3 decide foreign vs local).
+          if (detail.location) {
+            const extras: string[] = Array.isArray(job._extraLocations) ? job._extraLocations : [];
+            if (!extras.includes(detail.location)) extras.push(detail.location);
+            job._extraLocations = extras;
+          }
         } catch {}
       }
       if (!specText) {
@@ -938,17 +952,25 @@ async function fetchAndFilterJobs(
       const stage2Rejected: { job: any; reason: string }[] = [];
       rawJobs = rawJobs.filter((j) => {
         if (!(j as any)._scopeUnverified) return true;
-        const geo = resolveJobGeo((j as any).location ?? "", {
+        const geos = resolveJobGeos({
+          field: (j as any).location ?? "",
+          extras: (j as any)._extraLocations,
+          link: buildJobUrl(j),
           spec: (j as any)._spec ?? "",
           unverified: (j as any)._locationUnverified === true,
         });
-        if (jobMatchesScope(geo, effectiveLadder, effectiveScope) === "drop") {
+        const verdict = foldScopeVerdicts(geos, effectiveLadder, effectiveScope);
+        if (verdict === "drop") {
+          const geo = geos.find((g) => g.confidence !== "unknown") ?? geos[0];
           stage2Rejected.push({
             job: j,
             reason: `outside_${effectiveScope}_scope_spec (job: ${geo.country || geo.region || geo.city || "unknown"}, you: ${effectiveLadder.country || effectiveLadder.continent})`,
           });
           return false;
         }
+        // Resolved to a confident match (e.g. spec/link named an in-scope place) —
+        // no longer "unverified", so stage 3 won't queue it for the LLM.
+        if (verdict === "match") (j as any)._scopeUnverified = false;
         return true;
       });
       if (stage2Rejected.length > 0) {
@@ -964,6 +986,97 @@ async function fetchAndFilterJobs(
         logRejectedJobs(dataClient, rows, "location stage 2");
         locationFilterRemoved += stage2Rejected.length;
       }
+    }
+  }
+
+  // Stage 3 — LLM location verdict for jobs the deterministic layers couldn't
+  // place. Only jobs still unknown after field + extras + link country-code +
+  // spec are queued. The prompt is deliberately minimal and the reply must be
+  // strictly "true" (in scope) or "false" (foreign) — no explanation — to keep
+  // token and rate-limit burn near zero. "false" drops the job; any parse
+  // failure or API error FAILS OPEN (job is kept, demoted) so a flaky AI tier
+  // never mass-drops good jobs.
+  if (effectiveScope !== "world" && (effectiveLadder.country || effectiveLadder.continent)) {
+    const LOC_VERDICT_MAX = Math.max(0, Number(process.env.LOC_VERDICT_MAX) || 30);
+    const LOC_VERDICT_CONCURRENCY = 3;
+
+    // Human phrase for the seeker's target area, inserted verbatim into the prompt.
+    const targetArea =
+      effectiveScope === "local" && effectiveLadder.city ? effectiveLadder.city
+      : effectiveScope === "provincial" && effectiveLadder.region ? effectiveLadder.region
+      : effectiveScope === "continental" && effectiveLadder.continent ? effectiveLadder.continent
+      : effectiveLadder.country || effectiveLadder.continent || "";
+
+    const stage3Candidates: any[] = [];
+    for (const j of rawJobs) {
+      if (!(j as any)._scopeUnverified) continue;               // already placed confidently
+      if ((j as any).isRemote || (j as any)._workdayRemote) continue; // remote always matches
+      if (stage3Candidates.length >= LOC_VERDICT_MAX) break;
+      stage3Candidates.push(j);
+    }
+
+    if (stage3Candidates.length > 0 && targetArea) {
+      const stage3Rejected: { job: any; reason: string }[] = [];
+      let passed = 0, failedOpen = 0;
+      let next = 0;
+      const t0 = Date.now();
+      const worker = async () => {
+        while (true) {
+          const i = next++;
+          if (i >= stage3Candidates.length) return;
+          const j = stage3Candidates[i];
+          // Probe text = every location string we hold for this job (field + extras).
+          const parts = [String((j as any).location ?? "")]
+            .concat(Array.isArray((j as any)._extraLocations) ? (j as any)._extraLocations.map((s: unknown) => String(s ?? "")) : [])
+            .map((s) => s.trim())
+            .filter((s) => s.length > 1);
+          const probe = Array.from(new Set(parts)).join(" / ").slice(0, 300);
+          const userText = `Is "${probe}" within ${targetArea}? Reply true or false.`;
+          try {
+            const raw = await callAIWithFallback(
+              "You are a strict location filter. Reply with exactly one word: true or false. No explanation.",
+              userText,
+              "location_verdict",
+              { maxOutputTokens: 4, temperature: 0, responseMimeType: "text/plain" }
+            );
+            const word = raw.trim().toLowerCase();
+            if (word.startsWith("false")) {
+              stage3Rejected.push({
+                job: j,
+                reason: `outside_${effectiveScope}_scope_llm (job: ${probe || "unknown"}, you: ${targetArea})`,
+              });
+            } else if (word.startsWith("true")) {
+              passed++;
+              (j as any)._scopeUnverified = false; // placed — don't re-queue on later rounds
+            } else {
+              // Fail-open: unparseable reply keeps the job (demoted), never drops it.
+              failedOpen++;
+              console.warn(`[PIPELINE ${sid}] loc-verdict unparseable for "${(j as any).title}": ${JSON.stringify(raw.slice(0, 40))}`);
+            }
+          } catch (err) {
+            // Fail-open: API error keeps the job (demoted).
+            failedOpen++;
+            console.warn(`[PIPELINE ${sid}] loc-verdict error for "${(j as any).title}": ${serializeError(err).slice(0, 100)}`);
+          }
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(LOC_VERDICT_CONCURRENCY, stage3Candidates.length) }, () => worker()));
+
+      if (stage3Rejected.length > 0) {
+        const dropSet = new Set(stage3Rejected.map((r) => r.job));
+        rawJobs = rawJobs.filter((j) => !dropSet.has(j));
+        const rows = stage3Rejected.map(({ job: j, reason }) => ({
+          user_id: user.id, search_id: searchId, search_query: query,
+          profile_id: profile_id,
+          job_title: j.title, company: j.company_name, location: j.location ?? '',
+          snippet: ((j as any)._spec ?? '').slice(0, 500), job_url: buildJobUrl(j), reason,
+          rejection_category: 'location', rejection_reason: reason,
+          passed_domain_filter: false, passed_banned_filter: false,
+        }));
+        logRejectedJobs(dataClient, rows, "location stage 3 (llm)");
+        locationFilterRemoved += stage3Rejected.length;
+      }
+      console.log(`[PIPELINE ${sid}] Location stage 3 (LLM verdict): ${stage3Candidates.length} queued (cap ${LOC_VERDICT_MAX}) → passed ${passed}, rejected ${stage3Rejected.length}, failed-open ${failedOpen} in ${Date.now() - t0}ms`);
     }
   }
 

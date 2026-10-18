@@ -205,6 +205,12 @@ async function searchSingleTenant(
       _workdayTenant: tenant,
       _workdayPath: p.externalPath,
       _workdayRemote: p.remoteType || "",
+      // Every location string Workday reports for this card (locationsText plus
+      // the per-location bulletFields) — the location-scope filter checks ALL of
+      // them so a multi-location card passes if ANY location is in scope.
+      _extraLocations: [p.locationsText, ...(Array.isArray(p.bulletFields) ? p.bulletFields : [])]
+        .map((s) => (typeof s === "string" ? s.trim() : ""))
+        .filter((s) => s.length > 1),
     }));
   } catch {
     return [];
@@ -257,12 +263,16 @@ export async function searchWorkdayJobs(params: { q: string; location?: string }
 export async function fetchWorkdayDetail(
   tenant: WorkdayTenant,
   externalPath: string,
-): Promise<string> {
+): Promise<{ text: string; location: string }> {
   const url = cxsGetUrl(tenant, externalPath);
 
   try {
     const raw = await httpGet(url);
     const data: WorkdayDetailResponse = JSON.parse(raw);
+
+    // The detail endpoint reports a location the listing card often omits —
+    // the location-scope filter needs it to decide foreign vs in-scope.
+    const location = (data.jobPostingInfo?.location ?? "").trim();
 
     // Extract job description HTML and strip tags for plain text
     const html = data.jobPostingInfo?.jobDescription ?? "";
@@ -281,13 +291,13 @@ export async function fetchWorkdayDetail(
 
     if (plainText.length > 50) {
       console.log(`[WORKDAY-DETAIL] OK ${plainText.length} chars from ${tenant.name}`);
-      return plainText.slice(0, 3000);
+      return { text: plainText.slice(0, 3000), location };
     }
 
-    return "";
+    return { text: "", location };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.warn(`[WORKDAY-DETAIL] FAIL ${msg.slice(0, 100)} from ${tenant.name}`);
-    return "";
+    return { text: "", location: "" };
   }
 }

@@ -430,14 +430,14 @@ function containsWholeWord(text: string, phrase: string): boolean {
 }
 
 /**
- * Resolve a job's geography from its location field (and spec text as a
- * second pass). `unverified` = the source stamped the *query's* location onto
- * the job (see serpapi.ts `_locationUnverified`) — the field is skipped and
- * only the spec can resolve the job.
+ * Resolve a job's geography from its location field ONLY (remote markers, SA
+ * city→province map, country/foreign-metro names). `unverified` = the source
+ * stamped the *query's* location onto the job (see serpapi.ts
+ * `_locationUnverified`) — the field is skipped entirely.
  */
-export function resolveJobGeo(location: string, opts?: { spec?: string; unverified?: boolean }): JobGeo {
+function resolveGeoFromField(fieldRaw: string, opts?: { unverified?: boolean }): JobGeo {
   const geo: JobGeo = { city: "", region: "", country: "", continent: "", isRemote: false, confidence: "unknown" };
-  const field = (location || "").trim();
+  const field = (fieldRaw || "").trim();
 
   if (field && !opts?.unverified) {
     // 1. Restricted remote ("Remote – US", "Remote (UK)", "Remote - EMEA") is
@@ -492,18 +492,159 @@ export function resolveJobGeo(location: string, opts?: { spec?: string; unverifi
       return geo;
     }
   }
+  return geo;
+}
 
-  // Second pass: the scraped spec may name the country even when the field was unverified/empty
-  const spec = opts?.spec || "";
-  if (spec) {
-    const country = detectCountry(spec.slice(0, 4000));
-    if (country) {
-      geo.country = country.country;
-      geo.continent = country.continent;
-      geo.confidence = "country";
+// ── URL-path country codes (Workday et al.) ──────────────────────────────────
+// Workday job links bury the country in a path segment as an ISO 3166-1 code:
+//   https://vendor.wd.myworkdayjobs.com/…/job/Cape-Town/Western-Cape/ZAF/<uuid>
+// Alpha-3 ("ZAF", "GBR", "USA") is unambiguous. Alpha-2 codes that collide with
+// US state abbreviations (CA, VA, GA, IN, …) are skipped — "/job/Springfield/VA/"
+// is Virginia, not Vietnam. Codes are matched ONLY as whole path segments, never
+// free text.
+const ISO_ALPHA3_ROWS =
+  "AFG|Afghanistan;ALB|Albania;DZA|Algeria;ASM|American Samoa;AND|Andorra;AGO|Angola;AIA|Anguilla;ATA|Antarctica;ATG|Antigua and Barbuda;ARG|Argentina;ARM|Armenia;ABW|Aruba;AUS|Australia;AUT|Austria;AZE|Azerbaijan;BHS|Bahamas;BHR|Bahrain;BGD|Bangladesh;BRB|Barbados;BLR|Belarus;BEL|Belgium;BLZ|Belize;BEN|Benin;BMU|Bermuda;BTN|Bhutan;BOL|Bolivia;BIH|Bosnia and Herzegovina;BWA|Botswana;BVT|Bouvet Island;BRA|Brazil;BRN|Brunei;BGR|Bulgaria;BFA|Burkina Faso;BDI|Burundi;CPV|Cabo Verde;KHM|Cambodia;CMR|Cameroon;CAN|Canada;CYM|Cayman Islands;CAF|Central African Republic;TCD|Chad;CHL|Chile;CHN|China;CXR|Christmas Island;COC|Cocos Islands;COL|Colombia;COM|Comoros;COG|Republic of the Congo;COD|DR Congo;COK|Cook Islands;CRI|Costa Rica;CIV|Ivory Coast;HRV|Croatia;CUB|Cuba;CYP|Cyprus;CZE|Czechia;DNK|Denmark;DJI|Djibouti;DMA|Dominica;DOM|Dominican Republic;ECU|Ecuador;EGY|Egypt;SLV|El Salvador;GNQ|Equatorial Guinea;ERI|Eritrea;EST|Estonia;ETH|Ethiopia;FLK|Falkland Islands;FRO|Faroe Islands;FJI|Fiji;FIN|Finland;FRA|France;GUF|French Guiana;PYF|French Polynesia;GAB|Gabon;GMB|Gambia;GEO|Georgia;DEU|Germany;GHA|Ghana;GIB|Gibraltar;GRC|Greece;GRL|Greenland;GRD|Grenada;GLP|Guadeloupe;GUM|Guam;GTM|Guatemala;GGY|Guernsey;GIN|Guinea;GNB|Guinea-Bissau;GUY|Guyana;HTI|Haiti;HMD|Heard Island;VAT|Holy See;HND|Honduras;HKG|Hong Kong;HUN|Hungary;ISL|Iceland;IND|India;IDN|Indonesia;IRN|Iran;IRQ|Iraq;IRL|Ireland;IMN|Isle of Man;ISR|Israel;ITA|Italy;JAM|Jamaica;JPN|Japan;JEY|Jersey;JOR|Jordan;KAZ|Kazakhstan;KEN|Kenya;KIR|Kiribati;PRK|North Korea;KOR|South Korea;KWT|Kuwait;KGZ|Kyrgyzstan;LAO|Laos;LVA|Latvia;LBN|Lebanon;LSO|Lesotho;LBR|Liberia;LBY|Libya;LIE|Liechtenstein;LTU|Lithuania;LUX|Luxembourg;MAC|Macao;MDG|Madagascar;MWI|Malawi;MYS|Malaysia;MDV|Maldives;MLI|Mali;MLT|Malta;MHL|Marshall Islands;MTQ|Martinique;MRT|Mauritania;MUS|Mauritius;MYT|Mayotte;MEX|Mexico;FSM|Micronesia;MDA|Moldova;MCO|Monaco;MNG|Mongolia;MNE|Montenegro;MSR|Montserrat;MAR|Morocco;MOZ|Mozambique;MMR|Myanmar;NAM|Namibia;NRU|Nauru;NPL|Nepal;NLD|Netherlands;NCL|New Caledonia;NZL|New Zealand;NIC|Nicaragua;NER|Niger;NGA|Nigeria;NIU|Niue;NFK|Norfolk Island;MKD|North Macedonia;MNP|Northern Mariana Islands;NOR|Norway;OMN|Oman;PAK|Pakistan;PLW|Palau;PSE|Palestine;PAN|Panama;PNG|Papua New Guinea;PRY|Paraguay;PER|Peru;PHL|Philippines;PCN|Pitcairn;POL|Poland;PRT|Portugal;PRI|Puerto Rico;QAT|Qatar;REU|Reunion;ROU|Romania;RUS|Russia;RWA|Rwanda;BLM|Saint Barthelemy;SHN|Saint Helena;KNA|Saint Kitts and Nevis;LCA|Saint Lucia;MAF|Saint Martin;VCT|Saint Vincent;WSM|Samoa;SMR|San Marino;STP|Sao Tome and Principe;SAU|Saudi Arabia;SEN|Senegal;SRB|Serbia;SYC|Seychelles;SLE|Sierra Leone;SGP|Singapore;SVK|Slovakia;SVN|Slovenia;SLB|Solomon Islands;SOM|Somalia;ZAF|South Africa;SSD|South Sudan;ESP|Spain;LKA|Sri Lanka;SDN|Sudan;SUR|Suriname;SJV|Svalbard;SWZ|Eswatini;SWE|Sweden;CHE|Switzerland;SYR|Syria;TWN|Taiwan;TJK|Tajikistan;TZA|Tanzania;THA|Thailand;TLS|Timor-Leste;TGO|Togo;TKL|Tokelau;TON|Tonga;TTO|Trinidad and Tobago;TUN|Tunisia;TUR|Turkey;TKM|Turkmenistan;TCA|Turks and Caicos Islands;TUV|Tuvalu;UGA|Uganda;UKR|Ukraine;ARE|United Arab Emirates;GBR|United Kingdom;USA|United States;URY|Uruguay;UZB|Uzbekistan;VUT|Vanuatu;VEN|Venezuela;VNM|Vietnam;VGB|British Virgin Islands;VIR|U.S. Virgin Islands;WLF|Wallis and Futuna;ESH|Western Sahara;YEM|Yemen;ZMB|Zambia;ZWE|Zimbabwe";
+const ISO_ALPHA2_ROWS =
+  "AF|Afghanistan;AL|Albania;DZ|Algeria;AS|American Samoa;AD|Andorra;AO|Angola;AI|Anguilla;AQ|Antarctica;AG|Antigua and Barbuda;AR|Argentina;AM|Armenia;AW|Aruba;AU|Australia;AT|Austria;AZ|Azerbaijan;BS|Bahamas;BH|Bahrain;BD|Bangladesh;BB|Barbados;BY|Belarus;BE|Belgium;BZ|Belize;BJ|Benin;BM|Bermuda;BT|Bhutan;BO|Bolivia;BA|Bosnia and Herzegovina;BW|Botswana;BV|Bouvet Island;BR|Brazil;IO|British Indian Ocean Territory;BN|Brunei;BG|Bulgaria;BF|Burkina Faso;BI|Burundi;CV|Cabo Verde;KH|Cambodia;CM|Cameroon;CA|Canada;KY|Cayman Islands;CF|Central African Republic;TD|Chad;CL|Chile;CN|China;CX|Christmas Island;CC|Cocos Islands;CO|Colombia;KM|Comoros;CG|Republic of the Congo;CD|DR Congo;CK|Cook Islands;CR|Costa Rica;CI|Ivory Coast;HR|Croatia;CU|Cuba;CY|Cyprus;CZ|Czechia;DK|Denmark;DJ|Djibouti;DM|Dominica;DO|Dominican Republic;EC|Ecuador;EG|Egypt;SV|El Salvador;GQ|Equatorial Guinea;ER|Eritrea;EE|Estonia;ET|Ethiopia;FK|Falkland Islands;FO|Faroe Islands;FJ|Fiji;FI|Finland;FR|France;GF|French Guiana;PF|French Polynesia;TF|French Southern Territories;GA|Gabon;GM|Gambia;GE|Georgia;DE|Germany;GH|Ghana;GI|Gibraltar;GR|Greece;GL|Greenland;GD|Grenada;GP|Guadeloupe;GU|Guam;GT|Guatemala;GG|Guernsey;GN|Guinea;GW|Guinea-Bissau;GY|Guyana;HT|Haiti;HM|Heard Island;VA|Holy See;HN|Honduras;HK|Hong Kong;HU|Hungary;IS|Iceland;IN|India;ID|Indonesia;IR|Iran;IQ|Iraq;IE|Ireland;IM|Isle of Man;IL|Israel;IT|Italy;JM|Jamaica;JP|Japan;JE|Jersey;JO|Jordan;KZ|Kazakhstan;KE|Kenya;KI|Kiribati;KP|North Korea;KR|South Korea;KW|Kuwait;KG|Kyrgyzstan;LA|Laos;LV|Latvia;LB|Lebanon;LS|Lesotho;LR|Liberia;LY|Libya;LI|Liechtenstein;LT|Lithuania;LU|Luxembourg;MO|Macao;MK|North Macedonia;MG|Madagascar;MW|Malawi;MY|Malaysia;MV|Maldives;ML|Mali;MT|Malta;MH|Marshall Islands;MQ|Martinique;MR|Mauritania;MU|Mauritius;YT|Mayotte;MX|Mexico;FM|Micronesia;MD|Moldova;MC|Monaco;MN|Mongolia;ME|Montenegro;MS|Montserrat;MA|Morocco;MZ|Mozambique;MM|Myanmar;NA|Namibia;NR|Nauru;NP|Nepal;NL|Netherlands;NC|New Caledonia;NZ|New Zealand;NI|Nicaragua;NE|Niger;NG|Nigeria;NU|Niue;NF|Norfolk Island;MP|Northern Mariana Islands;NO|Norway;OM|Oman;PK|Pakistan;PW|Palau;PS|Palestine;PA|Panama;PG|Papua New Guinea;PY|Paraguay;PE|Peru;PH|Philippines;PN|Pitcairn;PL|Poland;PT|Portugal;PR|Puerto Rico;QA|Qatar;RE|Reunion;RO|Romania;RU|Russia;RW|Rwanda;BL|Saint Barthelemy;SH|Saint Helena;KN|Saint Kitts and Nevis;LC|Saint Lucia;MF|Saint Martin;PM|Saint Pierre and Miquelon;VC|Saint Vincent;WS|Samoa;SM|San Marino;ST|Sao Tome and Principe;SA|Saudi Arabia;SN|Senegal;RS|Serbia;SC|Seychelles;SL|Sierra Leone;SG|Singapore;SK|Slovakia;SI|Slovenia;SB|Solomon Islands;SO|Somalia;ZA|South Africa;SS|South Sudan;ES|Spain;LK|Sri Lanka;SD|Sudan;SR|Suriname;SJ|Svalbard;SZ|Eswatini;SE|Sweden;CH|Switzerland;SY|Syria;TW|Taiwan;TJ|Tajikistan;TZ|Tanzania;TH|Thailand;TL|Timor-Leste;TG|Togo;TK|Tokelau;TO|Tonga;TT|Trinidad and Tobago;TN|Tunisia;TR|Turkey;TM|Turkmenistan;TC|Turks and Caicos Islands;TV|Tuvalu;UG|Uganda;UA|Ukraine;AE|United Arab Emirates;GB|United Kingdom;UK|United Kingdom;US|United States;UY|Uruguay;UZ|Uzbekistan;VU|Vanuatu;VE|Venezuela;VN|Vietnam;VG|British Virgin Islands;VI|U.S. Virgin Islands;WF|Wallis and Futuna;EH|Western Sahara;YE|Yemen;ZM|Zambia;ZW|Zimbabwe";
+const ISO_CODE_TO_COUNTRY: Record<string, string> = (() => {
+  const m: Record<string, string> = {};
+  for (const rows of [ISO_ALPHA3_ROWS, ISO_ALPHA2_ROWS]) {
+    for (const row of rows.split(";")) {
+      const i = row.indexOf("|");
+      if (i > 0) m[row.slice(0, i)] = row.slice(i + 1);
     }
   }
+  return m;
+})();
+const US_STATE_ABBRS = new Set(
+  "AL AK AZ AR CA CO CT DE FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY DC".split(" ")
+);
+
+/**
+ * Deterministic geography from a job's URL path: the ISO country-code segment,
+ * plus the adjacent city/region slugs. Never called on free text — codes are
+ * only trustworthy as whole path segments. Returns `unknown` when nothing matches.
+ */
+export function resolveGeoFromLink(link: string): JobGeo {
+  const geo: JobGeo = { city: "", region: "", country: "", continent: "", isRemote: false, confidence: "unknown" };
+  if (!link) return geo;
+  let path = link;
+  try { path = new URL(link).pathname; } catch { /* already a bare path */ }
+  const jobIdx = path.toLowerCase().indexOf("/job/");
+  if (jobIdx === -1) return geo;
+  const segments = path
+    .slice(jobIdx + 5)
+    .split("/")
+    .filter(Boolean)
+    .map((s) => { try { return decodeURIComponent(s); } catch { return s; } })
+    // Drop uuids, long numeric req-ids, and LOCALE pairs ("en-US", "fr-FR",
+    // "pt-BR") — a locale is a language setting, not a location. Real locale
+    // region subtags are exactly 2 letters (ISO 3166-1 alpha-2), while city
+    // second-parts are 4+ ("New-York", "San-Jose", "Cape-Town"), so this never
+    // removes a genuine place slug — and no ISO country code contains a dash.
+    .filter(
+      (s) =>
+        s.length > 1 &&
+        !/^[0-9a-f][0-9a-f-]{15,}$/i.test(s) &&
+        !/^\d{5,}$/.test(s) &&
+        !/^[a-z]{2,3}[-_][a-z]{2}$/i.test(s)
+    );
+
+  // Scan from the end: Workday lays the path out as …/city/region/COUNTRY/<uuid>,
+  // so the country code is the last code-looking segment.
+  for (let i = segments.length - 1; i >= 0; i--) {
+    const code = segments[i].toUpperCase();
+    if (code.length === 2 && US_STATE_ABBRS.has(code)) continue;
+    const country = ISO_CODE_TO_COUNTRY[code];
+    if (!country) continue;
+    geo.country = country;
+    geo.continent = CONTINENT_OF_COUNTRY[normPlace(country)] ?? "";
+    geo.confidence = "country";
+    // The one or two slugs before the code are usually city + region.
+    for (let k = i - 1; k >= 0 && k >= i - 2; k--) {
+      const text = segments[k].replace(/-/g, " ").trim();
+      if (text.length < 2) continue;
+      const place = detectCountry(text, { includeCities: true });
+      if (place && placeEq(place.country, geo.country) && !geo.city) { geo.city = text; break; }
+      const mapped = mapLocationToProvince(text);
+      if (SA_PROVINCES.includes(mapped.province)) {
+        if (mapped.cityName && mapped.cityName !== mapped.province && !geo.city) geo.city = mapped.cityName;
+        if (!geo.region) geo.region = mapped.province;
+        break;
+      }
+    }
+    return geo;
+  }
+
+  // No ISO code — last resort, try each slug as a plain place name ("Cape-Town").
+  for (let i = segments.length - 1; i >= 0; i--) {
+    const text = segments[i].replace(/-/g, " ").trim();
+    const resolved = resolveGeoFromField(text);
+    if (resolved.confidence !== "unknown") return resolved;
+  }
   return geo;
+}
+
+/**
+ * Resolve every independent location signal on a job — the location field, the
+ * extra location strings sources carry (Workday shows up to four), the job URL
+ * path, and (last) the scraped spec. Returns one JobGeo per distinct signal
+ * that resolved; a single `unknown` geo when none did. Callers fold with
+ * `foldScopeVerdicts`, so a multi-location job passes when ANY location passes.
+ * `unverified` (source stamped the query's location) skips field, extras and
+ * link — only the spec can resolve such a job.
+ */
+export function resolveJobGeos(opts: { field?: string; extras?: string[]; link?: string; spec?: string; unverified?: boolean }): JobGeo[] {
+  const geos: JobGeo[] = [];
+  const push = (g: JobGeo) => {
+    const key = `${g.city}|${g.region}|${g.country}|${g.isRemote}`;
+    if (!geos.some((x) => `${x.city}|${x.region}|${x.country}|${x.isRemote}` === key)) geos.push(g);
+  };
+
+  push(resolveGeoFromField(opts.field ?? "", { unverified: opts.unverified }));
+  if (!opts.unverified) {
+    for (const extra of opts.extras ?? []) push(resolveGeoFromField(extra));
+    if (opts.link) push(resolveGeoFromLink(opts.link));
+  }
+
+  // Second pass: the scraped spec may name the country even when nothing else did
+  if (geos.every((g) => g.confidence === "unknown") && opts.spec) {
+    const country = detectCountry(opts.spec.slice(0, 4000));
+    if (country) {
+      push({ city: "", region: "", country: country.country, continent: country.continent, isRemote: false, confidence: "country" });
+    }
+  }
+  return geos;
+}
+
+/**
+ * Fold per-location scope verdicts into one: a multi-location job PASSES when
+ * ANY of its locations passes; only a job whose every location is out of scope
+ * is dropped; anything still unknown demotes (never a hard drop).
+ */
+export function foldScopeVerdicts(
+  geos: JobGeo[],
+  ladder: LocationLadder,
+  scope: LocationScope
+): "match" | "demote" | "drop" {
+  let verdict: "match" | "demote" | "drop" = "drop";
+  for (const geo of geos) {
+    const v = jobMatchesScope(geo, ladder, scope);
+    if (v === "match") return "match";
+    if (v === "demote") verdict = "demote";
+  }
+  return verdict;
+}
+
+/**
+ * Resolve a job's geography from its location field (and spec text as a
+ * second pass). `unverified` = the source stamped the *query's* location onto
+ * the job (see serpapi.ts `_locationUnverified`) — the field is skipped and
+ * only the spec can resolve the job. Single-signal back-compat wrapper over
+ * `resolveJobGeos` (first resolved signal wins).
+ */
+export function resolveJobGeo(location: string, opts?: { spec?: string; unverified?: boolean }): JobGeo {
+  return resolveJobGeos({ field: location, spec: opts?.spec, unverified: opts?.unverified })[0];
 }
 
 /**
