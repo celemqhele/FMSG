@@ -345,6 +345,9 @@ export default function DashboardPage() {
     setProgress(0);
     setHasSearched(true);
     setResultMessage("");
+    // Fresh search: clear previous cards so progressive job_scored inserts don't mix
+    // old results with the new run (complete/timeout will set the authoritative list).
+    setResults([]);
     setStatusCompleted([]);
     setStatusActive("Searching live job listings");
     setFilteredSummary(null);
@@ -599,6 +602,17 @@ export default function DashboardPage() {
               setProgress(event.progress ?? 20);
               break;
 
+            case "specs_progress":
+              // Spec-fetch progress from the server's worker pool (fires between
+              // found_results and the pause/scoring phase — was dead air before).
+              currentStatusActive =
+                event.completed >= event.total
+                  ? `Found ${event.total} matching results`
+                  : `Fetching job details ${event.completed} of ${event.total}`;
+              setStatusActive(currentStatusActive);
+              setProgress(event.progress ?? 22);
+              break;
+
             case "filtered_summary":
               setFilteredSummary({ history: event.history, saved: event.saved, rejected: event.rejected, blocked: event.blocked });
               break;
@@ -627,6 +641,25 @@ export default function DashboardPage() {
               break;
 
             case "job_scored":
+              // Progressive rendering: the card lands as soon as the job is scored instead
+              // of waiting for `complete`. `sortedResults` re-sorts on every insert, so a
+              // later high scorer jumps above earlier cards (score_highest default).
+              // A duplicate key (same job re-emitted) replaces in place.
+              setResults((prev) => {
+                const job = event.job as JobResult;
+                const key = job.job_url || job.id;
+                const idx = prev.findIndex((r) => (r.job_url || r.id) === key);
+                if (idx >= 0) {
+                  const next = [...prev];
+                  next[idx] = job;
+                  return next;
+                }
+                return [...prev, job];
+              });
+              currentStatusActive = `Scored ${event.current} of ${event.total} jobs`;
+              setStatusActive(currentStatusActive);
+              setProgress(event.progress ?? 40);
+
               // Store each scored job in localStorage for offline recovery
               if (currentSearchId) {
                 const key = `fmsg_search_${currentSearchId}`;
@@ -652,6 +685,9 @@ export default function DashboardPage() {
               break;
 
             case "search_timeout":
+              // Best-so-far: the server sends every job scored before the watchdog fired —
+              // keep them on the main grid instead of discarding progressive cards.
+              if (event.results?.length) setResults(event.results as JobResult[]);
               // Search timed out - show offline results modal with localStorage data
               if (event.search_id) {
                 setOfflineSearchId(event.search_id);
