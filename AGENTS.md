@@ -103,6 +103,8 @@ solidifies the context chain.
 - **Rule 1**: If any prior session is `INCOMPLETE`, skill MUST surface it at session start with summary.
 - **Rule 2**: Skill handles all file I/O for session logging automatically.
 - **Secrets**: API keys, tokens, passwords, emails are auto-redacted before write.
+- **Tracking caveat (observed 2026-10-17)**: `.opencode/` is gitignored (the Supabase service key lives there), so session JSONs and context files are **local-only** unless force-added — `git add -f .opencode/session-context .opencode/context` (never `.opencode/supabase-access.env`, never `.opencode/node_modules`). `index.json` *is* tracked, so the registry can reference session files that do not exist in the repo; check `git status --ignored` before claiming a "session bookkeeping" commit landed anything.
+- **Background work must be logged too**: if a session leaves anything running (watchers, dev servers, polling jobs) or observes deploy/build state, record it in the session JSON `actions` **and** the matching context file — the exact command, the output file path, what it does, and when it expires. A silent background job must be distinguishable from a dead one.
 
 # Recycle Bin / Restore
 **NEVER delete files directly.** When a file is "deleted", you MUST move it to `/recycle_bin` instead of running `rm` or `Remove-Item` on the original location. Add an entry to the table below detailing the original path and purpose.
@@ -111,3 +113,4 @@ solidifies the context chain.
 |-----------|-------------|
 | `scripts/tmp-geo-check.ts`, `scripts/tmp-tsconfig.json` | Throwaway ts-node harness + project config used to run the 2026-10-17 location-scope geo matrix (18 location cases × 5 scopes × 2 user locations) against `src/lib/location.ts`; the empty `scripts/` dir created for them was removed |
 | `eslint-out.json`, `eslint-out2.json` | eslint JSON reports from the 2026-10-17 location-scope change, kept only to compare the 3 profile-editor components against their pre-change baseline |
+| `recycle_bin/update_session_logging_steps.py`, `recycle_bin/update_context_log_completeness.py`, `recycle_bin/update_agents_recycle_row.py`, `recycle_bin/deployments.json`, `recycle_bin/logs-workaround.txt` | Throwaway Python/dump harnesses written 2026-10-18 to append the Vercel-logging steps (25-28) + `background_tasks` to the `location-scope-filter` session JSON, insert the "Vercel log completeness" section into the search-pipeline context file, and to hold a GitHub deployments-API response while probing deploy state; `promotewatch.txt` / `promotewatch_aaaa5c7.txt` in the same folder are the promotion watchers' output (see the background-task entries in the session JSON) |
