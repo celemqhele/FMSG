@@ -50,6 +50,54 @@ function releaseAISlot(): void {
   if (next) next();
 }
 
+/** Live saturation gauge: how many slots are busy and how many callers are queued. */
+function aiLoad(): string {
+  return `inFlight=${activeAICalls}/${AI_MAX_CONCURRENCY} queued=${aiWaiters.length}`;
+}
+
+// ─── Per-request AI stats (for the [AI-STATS] summary line) ──────────────────
+// On Vercel each invocation is a fresh module instance, so these counters are
+// per-search — a clean tally of how much the Gemini free tier actually held up.
+export const aiStats = {
+  geminiCalls: 0,
+  geminiOk: 0,
+  geminiRateLimited: 0,   // HTTP 429 / RESOURCE_EXHAUSTED
+  geminiOtherFail: 0,     // non-quota errors (404/5xx/etc.)
+  fellToGroq: 0,          // Gemini unusable → Groq served the call
+  fellToOpenRouter: 0,    // Gemini+Groq unusable → OpenRouter served the call
+  totalQueueWaitMs: 0,    // time callers spent blocked on the 8-slot semaphore
+  maxQueueWaitMs: 0,
+  lastRetryAfterSec: null as number | null,
+};
+
+export function aiStatsSnapshot(): Record<string, number | null> {
+  return { ...aiStats };
+}
+
+/** Pull rate-limit detail out of a Gemini 429: retry-after header + quota body. */
+function parseGeminiRateLimit(res: Response, body: string): { retryAfterSec: number | null; quota: string } {
+  let retryAfterSec: number | null = null;
+  const ra = res.headers.get("retry-after");
+  if (ra) {
+    const n = parseInt(ra, 10);
+    if (!Number.isNaN(n)) retryAfterSec = n;
+  }
+  let quota = "";
+  try {
+    const parsed = JSON.parse(body);
+    if (parsed?.error?.status) quota = String(parsed.error.status);
+    for (const d of parsed?.error?.details ?? []) {
+      if (d?.quotaId) quota = String(d.quotaId);
+      else if (d?.metricName) quota = String(d.metricName);
+      if (d?.retryDelay && retryAfterSec === null) {
+        const secs = parseFloat(String(d.retryDelay).replace(/s$/, ""));
+        if (!Number.isNaN(secs)) retryAfterSec = Math.ceil(secs);
+      }
+    }
+  } catch { /* body isn't JSON — header-only detail */ }
+  return { retryAfterSec, quota };
+}
+
 // ─── Gemini circuit breaker ──────────────────────────────────────────────────
 // Once Gemini starts 429ing (free tier burns out mid-run), stop calling it and
 // go straight to Groq/OpenRouter so remaining jobs finish instead of wasting
@@ -60,9 +108,10 @@ let gemini429Streak = 0;
 function markGeminiFailure(errMsg: string): void {
   if (errMsg.includes("429") || errMsg.includes("quota") || errMsg.includes("RESOURCE_EXHAUSTED")) {
     gemini429Streak++;
+    console.warn(`[AI-GEMINI] rate-limit streak=${gemini429Streak} (opens circuit at 2) [${aiLoad()}]`);
     if (gemini429Streak >= 2) {
       geminiExhausted = true;
-      console.warn("[AI-GEMINI] Exhausted (2+ consecutive 429s) — bypassing Gemini for this request");
+      console.warn(`[AI-GEMINI] CIRCUIT OPEN — 2+ consecutive 429s, bypassing Gemini for the rest of this request [${aiLoad()}]`);
     }
   }
 }
@@ -103,13 +152,23 @@ async function callGemini(systemPrompt: string, userText: string, config?: AICon
   const elapsed = Date.now() - t0;
   if (!res.ok) {
     const errBody = await res.text();
-    console.error(`[AI-GEMINI] FAIL HTTP ${res.status} model=${GEMINI_MODEL} (${elapsed}ms) input=${userText.length}chars — ${errBody.slice(0, 150)}`);
+    const isRateLimit = res.status === 429 || /RESOURCE_EXHAUSTED|quota/i.test(errBody);
+    if (isRateLimit) {
+      const { retryAfterSec, quota } = parseGeminiRateLimit(res, errBody);
+      aiStats.geminiRateLimited++;
+      aiStats.lastRetryAfterSec = retryAfterSec;
+      console.warn(`[AI-GEMINI] RATE-LIMITED HTTP ${res.status} model=${GEMINI_MODEL} (${elapsed}ms) retryAfter=${retryAfterSec ?? "?"}s quota="${quota || "?"}" [${aiLoad()}] input=${userText.length}chars — ${errBody.slice(0, 120)}`);
+    } else {
+      aiStats.geminiOtherFail++;
+      console.error(`[AI-GEMINI] FAIL HTTP ${res.status} model=${GEMINI_MODEL} (${elapsed}ms) [${aiLoad()}] input=${userText.length}chars — ${errBody.slice(0, 150)}`);
+    }
     throw new Error(`Gemini error (${res.status}): ${errBody.slice(0, 200)}`);
   }
 
   const data = await res.json();
   const output = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-  console.log(`[AI-GEMINI] OK model=${GEMINI_MODEL} (${elapsed}ms) input=${userText.length}chars output=${output.length}chars`);
+  aiStats.geminiOk++;
+  console.log(`[AI-GEMINI] OK model=${GEMINI_MODEL} (${elapsed}ms) [${aiLoad()}] input=${userText.length}chars output=${output.length}chars`);
   return output;
 }
 
@@ -236,9 +295,20 @@ export async function callAIWithFallback(
   stepName: string,
   config?: AIConfig
 ): Promise<string> {
+  aiStats.geminiCalls++;
+  // Measure how long this call is BLOCKED on the 8-slot semaphore. This is the
+  // hidden latency: a call that queues 20s then answers in 500ms used to log
+  // total=500ms, making a saturated Gemini tier look "instant".
+  const q0 = Date.now();
   await acquireAISlot();
+  const queueWaitMs = Date.now() - q0;
+  aiStats.totalQueueWaitMs += queueWaitMs;
+  if (queueWaitMs > aiStats.maxQueueWaitMs) aiStats.maxQueueWaitMs = queueWaitMs;
+  if (queueWaitMs >= 500) {
+    console.warn(`[AI-SLOT] step="${stepName}" waited ${queueWaitMs}ms for a slot [${aiLoad()}]`);
+  }
   try {
-    return await callAIWithFallbackInner(systemPrompt, userText, stepName, config);
+    return await callAIWithFallbackInner(systemPrompt, userText, stepName, config, queueWaitMs);
   } finally {
     releaseAISlot();
   }
@@ -248,9 +318,11 @@ async function callAIWithFallbackInner(
   systemPrompt: string,
   userText: string,
   stepName: string,
-  config?: AIConfig
+  config: AIConfig | undefined,
+  queueWaitMs: number
 ): Promise<string> {
   const t0 = Date.now();
+  const total = () => queueWaitMs + (Date.now() - t0); // includes the queue wait we just burned
 
   // Tier 1: Gemini (skipped once circuit breaker trips — quota burned out)
   if (!geminiExhausted) {
@@ -258,7 +330,7 @@ async function callAIWithFallbackInner(
       const result = await callGemini(systemPrompt, userText, config);
       lastAITier = "gemini";
       markGeminiSuccess();
-      console.log(`[AI-TIER] step="${stepName}" tier=gemini total=${Date.now() - t0}ms`);
+      console.log(`[AI-TIER] step="${stepName}" tier=gemini total=${total()}ms (queued ${queueWaitMs}ms)`);
       return result;
     } catch (err: any) {
       const msg = err?.message ?? String(err);
@@ -268,6 +340,7 @@ async function callAIWithFallbackInner(
       // 429, so fall through rather than failing the caller's request.
       const isRetryable = msg.includes("429") || msg.includes("quota") || msg.includes("401") || msg.includes("403") || msg.includes("404") || /5\d{2}/.test(msg) || /UNAVAILABLE/i.test(msg);
       if (!isRetryable) throw err;
+      console.warn(`[AI-TIER] step="${stepName}" gemini→groq fallback after ${total()}ms (queue ${queueWaitMs}ms)`);
     }
   } else {
     console.log(`[AI-TIER] step="${stepName}" skipping gemini (exhausted)`);
@@ -283,7 +356,8 @@ async function callAIWithFallbackInner(
     try {
       const result = await callGroq(systemPrompt, truncatedText, config);
       lastAITier = "groq";
-      console.log(`[AI-TIER] step="${stepName}" tier=groq total=${Date.now() - t0}ms`);
+      aiStats.fellToGroq++;
+      console.log(`[AI-TIER] step="${stepName}" tier=groq total=${total()}ms (queued ${queueWaitMs}ms)`);
       return result;
     } catch (err: any) {
       const msg = err?.message ?? String(err);
@@ -293,6 +367,7 @@ async function callAIWithFallbackInner(
       // prompts, so degrade to OpenRouter instead of failing the request.
       const isRetryable = msg.includes("429") || msg.includes("quota") || msg.includes("400") || msg.includes("401") || msg.includes("403") || msg.includes("404") || msg.includes("413") || msg.includes("422") || /5\d{2}/.test(msg) || /UNAVAILABLE/i.test(msg);
       if (!isRetryable) throw err;
+      console.warn(`[AI-TIER] step="${stepName}" groq→openrouter fallback after ${total()}ms`);
     }
   }
 
@@ -300,11 +375,12 @@ async function callAIWithFallbackInner(
   try {
     const result = await callOpenRouter(systemPrompt, truncatedText, config);
     lastAITier = "openrouter";
-    console.log(`[AI-TIER] step="${stepName}" tier=openrouter total=${Date.now() - t0}ms`);
+    aiStats.fellToOpenRouter++;
+    console.log(`[AI-TIER] step="${stepName}" tier=openrouter total=${total()}ms (queued ${queueWaitMs}ms)`);
     return result;
   } catch (err: any) {
     const msg = err?.message ?? String(err);
-    console.error(`[AI-TIER] step="${stepName}" ALL TIERS FAILED after ${Date.now() - t0}ms: ${msg.slice(0, 150)}`);
+    console.error(`[AI-TIER] step="${stepName}" ALL TIERS FAILED after ${total()}ms: ${msg.slice(0, 150)}`);
     throw err;
   }
 }

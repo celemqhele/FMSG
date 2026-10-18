@@ -12,7 +12,7 @@ import {
   type LocationScope,
   type LocationLadder,
 } from "@/lib/location";
-import { callAIWithFallback, lastAITier } from "@/lib/gemini";
+import { callAIWithFallback, lastAITier, aiStatsSnapshot } from "@/lib/gemini";
 import { scoreMatch } from "@/lib/ats-scoring";
 import { embedTexts, cosineSimilarity, reciprocalRankFusion, buildCandidateText, buildJobText, EMBEDDING_MODEL } from "@/lib/ats-embeddings";
 import { StreamWriter, type SearchEvent } from "@/lib/search-stream";
@@ -941,6 +941,12 @@ async function fetchAndFilterJobs(
       onStatus?.({ type: "found_results", count: rawJobs.length, progress: 20 });
     }
   }
+  {
+    // Post-triage AI health snapshot — one line showing whether Gemini's free
+    // tier actually held (rate-limits, fallbacks to slower tiers, queue wait).
+    const s = aiStatsSnapshot();
+    console.log(`[AI-STATS] after-triage: gemini ${s.geminiOk}/${s.geminiCalls} ok, rateLimited=${s.geminiRateLimited}, otherFail=${s.geminiOtherFail}, fellToGroq=${s.fellToGroq}, fellToOpenRouter=${s.fellToOpenRouter}, queueWait total/Max=${s.totalQueueWaitMs}/${s.maxQueueWaitMs}ms, lastRetryAfter=${s.lastRetryAfterSec ?? "-"}s, tierNow=${lastAITier}`);
+  }
   // ─── Spec fetch: bounded worker pool ─────────────────────────────────────────
   // This used to be a sequential `for` loop — the dominant wall-clock cost of a search
   // (N jobs × per-job Jina → BrightData → Apify cascade; 450 jobs could blow past the
@@ -1224,6 +1230,10 @@ async function fetchAndFilterJobs(
       }
       console.log(`[PIPELINE ${sid}] Location stage 3 (LLM verdict): ${stage3Candidates.length} queued (cap ${LOC_VERDICT_MAX}) → passed ${passed}, rejected ${stage3Rejected.length}, failed-open ${failedOpen} in ${Date.now() - t0}ms`);
     }
+  }
+  {
+    const s = aiStatsSnapshot();
+    console.log(`[AI-STATS] after-locverdict: gemini ${s.geminiOk}/${s.geminiCalls} ok, rateLimited=${s.geminiRateLimited}, otherFail=${s.geminiOtherFail}, fellToGroq=${s.fellToGroq}, fellToOpenRouter=${s.fellToOpenRouter}, queueWait total/Max=${s.totalQueueWaitMs}/${s.maxQueueWaitMs}ms, lastRetryAfter=${s.lastRetryAfterSec ?? "-"}s, tierNow=${lastAITier}`);
   }
 
   {
