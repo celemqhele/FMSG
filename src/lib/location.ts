@@ -619,21 +619,37 @@ export function resolveJobGeos(opts: { field?: string; extras?: string[]; link?:
 
 /**
  * Fold per-location scope verdicts into one: a multi-location job PASSES when
- * ANY of its locations passes; only a job whose every location is out of scope
- * is dropped; anything still unknown demotes (never a hard drop).
+ * ANY of its locations passes. A confidently-resolved out-of-scope location
+ * drops the job UNLESS another confidently-resolved location is possibly
+ * in-scope (e.g. right country, region unknown). Unresolvable signals — req
+ * IDs, dates or "title_R 12345" composites that pollute Workday's
+ * _extraLocations all resolve to confidence "unknown" — must NOT veto a
+ * confident foreign verdict (they used to: one "drop" + any "demote" returned
+ * "demote", so junk strings kept foreign jobs alive). With no confident
+ * signal at all, the job demotes (never a hard drop) and stage 3's LLM
+ * verdict decides.
  */
 export function foldScopeVerdicts(
   geos: JobGeo[],
   ladder: LocationLadder,
   scope: LocationScope
 ): "match" | "demote" | "drop" {
-  let verdict: "match" | "demote" | "drop" = "drop";
+  let sawKnownDrop = false;  // a confidently-resolved out-of-scope location
+  let sawKnownMaybe = false; // a confidently-resolved possibly-in-scope location
+  let sawUnknown = false;    // junk / unresolvable signals
   for (const geo of geos) {
     const v = jobMatchesScope(geo, ladder, scope);
     if (v === "match") return "match";
-    if (v === "demote") verdict = "demote";
+    if (v === "demote") {
+      if (geo.confidence === "unknown") sawUnknown = true;
+      else sawKnownMaybe = true;
+    } else {
+      sawKnownDrop = true;
+    }
   }
-  return verdict;
+  if (sawKnownDrop && !sawKnownMaybe) return "drop"; // junk can't save a resolved foreign job
+  if (sawKnownMaybe || sawUnknown) return "demote";
+  return "drop"; // no signals at all — out (matches previous behaviour)
 }
 
 /**

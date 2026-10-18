@@ -1145,16 +1145,21 @@ async function fetchAndFilterJobs(
     }
   }
 
-  // Stage 3 — LLM location verdict for jobs the deterministic layers couldn't
-  // place. Only jobs still unknown after field + extras + link country-code +
-  // spec are queued. The prompt is deliberately minimal and the reply must be
-  // strictly "true" (in scope) or "false" (foreign) — no explanation — to keep
-  // token and rate-limit burn near zero. "false" drops the job; any parse
-  // failure or API error FAILS OPEN (job is kept, demoted) so a flaky AI tier
-  // never mass-drops good jobs.
+  // Stage 3 — batched LLM location verdict for jobs the deterministic layers
+  // couldn't place. Only jobs still unknown after field + extras + link
+  // country-code + spec are queued. Locations are CLEANED (Workday bulletFields
+  // leak req IDs, dates and "title_R 12345" composites into _extraLocations),
+  // deduped across jobs, then numbered and judged in CHUNKS — one Gemini call
+  // per ~10k chars (typically ONE call per search), like title triage. The old
+  // design cost one call per job and capped at 30, so with 300-job searches the
+  // tail silently auto-approved. The reply must be strictly the numbers of the
+  // out-of-scope probes (or "none") — no explanation — to keep token and
+  // rate-limit burn near zero. Fail-open per CHUNK: any error, unparseable
+  // reply, or deadline-skipped chunk keeps its jobs (demoted), so a flaky AI
+  // tier never mass-drops good jobs. Remaining cap bounds queued jobs only;
+  // over-cap jobs fail open (kept, demoted).
   if (effectiveScope !== "world" && (effectiveLadder.country || effectiveLadder.continent)) {
-    const LOC_VERDICT_MAX = Math.max(0, Number(process.env.LOC_VERDICT_MAX) || 30);
-    const LOC_VERDICT_CONCURRENCY = 3;
+    const LOC_VERDICT_MAX = Math.max(0, Number(process.env.LOC_VERDICT_MAX) || 400);
 
     // Human phrase for the seeker's target area, inserted verbatim into the prompt.
     const targetArea =
@@ -1163,76 +1168,147 @@ async function fetchAndFilterJobs(
       : effectiveScope === "continental" && effectiveLadder.continent ? effectiveLadder.continent
       : effectiveLadder.country || effectiveLadder.continent || "";
 
-    const stage3Candidates: any[] = [];
-    for (const j of rawJobs) {
-      if (!(j as any)._scopeUnverified) continue;               // already placed confidently
-      if ((j as any).isRemote || (j as any)._workdayRemote) continue; // remote always matches
-      if (stage3Candidates.length >= LOC_VERDICT_MAX) break;
-      stage3Candidates.push(j);
+    // One clean probe string per job: every location signal we hold (field +
+    // extras), junk filtered out, deduped, capped.
+    const isLocJunk = (s: string): boolean =>
+      /^\d{4}-\d{2}-\d{2}$/.test(s) ||                       // dates
+      /^\d+\s*locations?$/i.test(s) ||                       // "2 Locations"
+      /^(?:[A-Z]{1,3}-)?R?\s*-?\d{4,}$/i.test(s) ||          // req IDs (R-15992041, 79667)
+      /^(?:JR|VR)-?\s*\d+$/i.test(s) ||                      // req IDs (JR-79667)
+      /\b\d{4}-\d{2}-\d{2}\b/.test(s) ||                     // embedded dates
+      /_\s*(?:JR|VR|R)\s*\d/i.test(s);                      // "Title_R 15992041 1" composites
+    const probeFor = (j: any): string => {
+      const parts = [String(j?.location ?? "")]
+        .concat(Array.isArray(j?._extraLocations) ? j._extraLocations.map((s: unknown) => String(s ?? "")) : [])
+        .map((s) => s.trim())
+        .filter((s) => s.length > 1 && s.length <= 120 && !isLocJunk(s));
+      const uniq = Array.from(new Set(parts.map((s) => s.toLowerCase())))
+        .map((lc) => parts.find((p) => p.toLowerCase() === lc)!)
+        .slice(0, 4);
+      return uniq.join(" / ").slice(0, 300);
+    };
+
+    const stage3Candidates: { jobs: any[]; probe: string }[] = [];
+    const probeIndex = new Map<string, number>();
+    let stage3OverCap = 0, stage3NoProbe = 0;
+    {
+      for (const j of rawJobs) {
+        if (!(j as any)._scopeUnverified) continue;               // already placed confidently
+        if ((j as any).isRemote || (j as any)._workdayRemote) continue; // remote always matches
+        const probe = probeFor(j);
+        // Nothing usable after cleaning (field was pure junk) — no verdict to
+        // ask for; keep demoted (fail-open) rather than judging a blank.
+        if (!probe) { stage3NoProbe++; continue; }
+        // Identical probes (Workday repeats the same city across dozens of reqs)
+        // share one verdict — one prompt line, applied to every job holding it.
+        const key = probe.toLowerCase();
+        const existing = probeIndex.get(key);
+        if (existing !== undefined) { stage3Candidates[existing].jobs.push(j); continue; }
+        if (stage3Candidates.length >= LOC_VERDICT_MAX) { stage3OverCap++; continue; }
+        probeIndex.set(key, stage3Candidates.length);
+        stage3Candidates.push({ jobs: [j], probe });
+      }
     }
 
     if (stage3Candidates.length > 0 && targetArea) {
-      const stage3Rejected: { job: any; reason: string }[] = [];
-      let passed = 0, failedOpen = 0;
-      let next = 0;
+      // Numbered chunks under the safe budget so no tier's input truncation
+      // (Groq/OpenRouter cap at 15k chars) hides tail probes.
+      const CHUNK_LINE_BUDGET = 9000;
+      const chunks: { start: number; probes: string[] }[] = [];
+      let cur: { start: number; probes: string[] } | null = null;
+      let curSize = 0;
+      stage3Candidates.forEach((c, i) => {
+        const line = `${i + 1}. ${c.probe || "unspecified location"}`;
+        const size = line.length + 1;
+        if (!cur || curSize + size > CHUNK_LINE_BUDGET) {
+          cur = { start: i, probes: [] };
+          curSize = 1200; // header allowance (target area + instructions)
+          chunks.push(cur);
+        }
+        cur.probes.push(line);
+        curSize += size;
+      });
+
+      const stage3Rejected: { job: any; probe: string }[] = [];
+      let placed = 0, failedOpen = 0;
+      const markPlaced = (from: number, to: number) => {
+        for (let i = from; i < to; i++)
+          for (const job of stage3Candidates[i].jobs) (job as any)._scopeUnverified = false;
+      };
+      const failOpenRange = (from: number, to: number, why: string) => {
+        for (let i = from; i < to; i++) failedOpen += stage3Candidates[i].jobs.length;
+        markPlaced(from, to); // fail-open = kept, no longer "unverified"
+        console.warn(`[PIPELINE ${sid}] loc-verdict fail-open for probes [${from + 1}-${to}] (${why})`);
+      };
+
+      const system =
+        `You are a strict location filter for a job seeker. Each input line is numbered and holds a job's location ` +
+        `(multiple locations on one line are separated by "/"). Reply with ONLY the numbers of the lines that are clearly ` +
+        `OUTSIDE ${targetArea} — in a foreign country, or far from ${targetArea}. A line passes if ANY of its locations is ` +
+        `inside ${targetArea}. If you cannot place a location with confidence (unknown town, building name), leave its number ` +
+        `out — it passes. Reply "none" if no line is clearly outside. No explanation, no other text.`;
+
       const t0 = Date.now();
-      const worker = async () => {
-        while (true) {
-          const i = next++;
-          if (i >= stage3Candidates.length) return;
-          const j = stage3Candidates[i];
-          // Probe text = every location string we hold for this job (field + extras).
-          const parts = [String((j as any).location ?? "")]
-            .concat(Array.isArray((j as any)._extraLocations) ? (j as any)._extraLocations.map((s: unknown) => String(s ?? "")) : [])
-            .map((s) => s.trim())
-            .filter((s) => s.length > 1);
-          const probe = Array.from(new Set(parts)).join(" / ").slice(0, 300);
-          const userText = `Is "${probe}" within ${targetArea}? Reply true or false.`;
-          try {
-            const raw = await callAIWithFallback(
-              "You are a strict location filter. Reply with exactly one word: true or false. No explanation.",
-              userText,
-              "location_verdict",
-              { maxOutputTokens: 4, temperature: 0, responseMimeType: "text/plain" }
-            );
-            const word = raw.trim().toLowerCase();
-            if (word.startsWith("false")) {
-              stage3Rejected.push({
-                job: j,
-                reason: `outside_${effectiveScope}_scope_llm (job: ${probe || "unknown"}, you: ${targetArea})`,
-              });
-            } else if (word.startsWith("true")) {
-              passed++;
-              (j as any)._scopeUnverified = false; // placed — don't re-queue on later rounds
-            } else {
-              // Fail-open: unparseable reply keeps the job (demoted), never drops it.
-              failedOpen++;
-              console.warn(`[PIPELINE ${sid}] loc-verdict unparseable for "${(j as any).title}": ${JSON.stringify(raw.slice(0, 40))}`);
-            }
-          } catch (err) {
-            // Fail-open: API error keeps the job (demoted).
-            failedOpen++;
-            console.warn(`[PIPELINE ${sid}] loc-verdict error for "${(j as any).title}": ${serializeError(err).slice(0, 100)}`);
+      for (const chunk of chunks) {
+        const from = chunk.start;
+        const to = chunk.start + chunk.probes.length;
+        if (deadline && Date.now() >= deadline) { failOpenRange(from, to, "deadline"); continue; }
+        const userText = chunk.probes.join("\n");
+        let raw = "";
+        try {
+          raw = await callAIWithFallback(system, userText, "location_verdict", {
+            maxOutputTokens: 1024,
+            temperature: 0,
+            responseMimeType: "text/plain",
+          });
+        } catch (err) {
+          failOpenRange(from, to, serializeError(err).slice(0, 80));
+          continue;
+        }
+        const text = (raw ?? "").trim();
+        if (/^none\.?$/i.test(text)) {
+          markPlaced(from, to);
+          for (let i = from; i < to; i++) placed += stage3Candidates[i].jobs.length;
+          continue;
+        }
+        const nums = parseTriageNumbers(text, chunk.probes.length);
+        if (!nums || nums.length === 0) {
+          failOpenRange(from, to, `unparseable reply: ${JSON.stringify(text.slice(0, 40))}`);
+          continue;
+        }
+        const outSet = new Set(nums.map((n) => from + (n - 1))); // chunk-local → global
+        for (let i = from; i < to; i++) {
+          const c = stage3Candidates[i];
+          if (outSet.has(i)) {
+            for (const job of c.jobs) stage3Rejected.push({ job, probe: c.probe });
+          } else {
+            for (const job of c.jobs) (job as any)._scopeUnverified = false;
+            placed += c.jobs.length;
           }
         }
-      };
-      await Promise.all(Array.from({ length: Math.min(LOC_VERDICT_CONCURRENCY, stage3Candidates.length) }, () => worker()));
+      }
 
       if (stage3Rejected.length > 0) {
         const dropSet = new Set(stage3Rejected.map((r) => r.job));
         rawJobs = rawJobs.filter((j) => !dropSet.has(j));
-        const rows = stage3Rejected.map(({ job: j, reason }) => ({
+        const rows = stage3Rejected.map(({ job: j, probe }) => ({
           user_id: user.id, search_id: searchId, search_query: query,
           profile_id: profile_id,
           job_title: j.title, company: j.company_name, location: j.location ?? '',
-          snippet: ((j as any)._spec ?? '').slice(0, 500), job_url: buildJobUrl(j), reason,
-          rejection_category: 'location', rejection_reason: reason,
+          snippet: ((j as any)._spec ?? '').slice(0, 500), job_url: buildJobUrl(j),
+          reason: `outside_${effectiveScope}_scope_llm (job: ${probe || "unknown"}, you: ${targetArea})`,
+          rejection_category: 'location',
+          rejection_reason: `outside_${effectiveScope}_scope_llm (job: ${probe || "unknown"}, you: ${targetArea})`,
           passed_domain_filter: false, passed_banned_filter: false,
         }));
         logRejectedJobs(dataClient, rows, "location stage 3 (llm)");
         locationFilterRemoved += stage3Rejected.length;
       }
-      console.log(`[PIPELINE ${sid}] Location stage 3 (LLM verdict): ${stage3Candidates.length} queued (cap ${LOC_VERDICT_MAX}) → passed ${passed}, rejected ${stage3Rejected.length}, failed-open ${failedOpen} in ${Date.now() - t0}ms`);
+      if (stage3OverCap > 0 || stage3NoProbe > 0) {
+        console.warn(`[PIPELINE ${sid}] Location stage 3: ${stage3OverCap} over cap ${LOC_VERDICT_MAX} + ${stage3NoProbe} with no usable probe — kept demoted (fail-open)`);
+      }
+      const queuedJobs = stage3Candidates.reduce((n, c) => n + c.jobs.length, 0);
+      console.log(`[PIPELINE ${sid}] Location stage 3 (batched LLM verdict): ${queuedJobs} jobs / ${stage3Candidates.length} unique probes in ${chunks.length} chunk(s) → placed ${placed}, rejected ${stage3Rejected.length}, failed-open ${failedOpen}, over-cap ${stage3OverCap}, no-probe ${stage3NoProbe} in ${Date.now() - t0}ms`);
     }
   }
   {
