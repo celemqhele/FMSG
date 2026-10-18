@@ -74,6 +74,20 @@ export function aiStatsSnapshot(): Record<string, number | null> {
   return { ...aiStats };
 }
 
+/** Reset per-search counters at the top of each search so [AI-STATS] stays
+ *  per-search even on a warm Fluid instance that reuses module state. */
+export function resetAIStats(): void {
+  aiStats.geminiCalls = 0;
+  aiStats.geminiOk = 0;
+  aiStats.geminiRateLimited = 0;
+  aiStats.geminiOtherFail = 0;
+  aiStats.fellToGroq = 0;
+  aiStats.fellToOpenRouter = 0;
+  aiStats.totalQueueWaitMs = 0;
+  aiStats.maxQueueWaitMs = 0;
+  aiStats.lastRetryAfterSec = null;
+}
+
 /** Pull rate-limit detail out of a Gemini 429: retry-after header + quota body. */
 function parseGeminiRateLimit(res: Response, body: string): { retryAfterSec: number | null; quota: string } {
   let retryAfterSec: number | null = null;
@@ -98,20 +112,35 @@ function parseGeminiRateLimit(res: Response, body: string): { retryAfterSec: num
   return { retryAfterSec, quota };
 }
 
-// ─── Gemini circuit breaker ──────────────────────────────────────────────────
-// Once Gemini starts 429ing (free tier burns out mid-run), stop calling it and
-// go straight to Groq/OpenRouter so remaining jobs finish instead of wasting
-// time on doomed attempts.
-export let geminiExhausted = false;
+// ─── Gemini circuit breaker (cooldown-based) ─────────────────────────────────
+// On 2+ consecutive 429s we bypass Gemini for a COOLDOWN window, not forever.
+// The free-tier quota resets per minute, so re-enabling after the window lets
+// Gemini recover. The old behaviour (`exhausted = true`, never reset) was a
+// correctness bug under Fluid compute: one request's rate-limit poisoned every
+// later request that landed on the same warm instance — a big part of why the
+// title triage kept failing open. The cooldown self-heals instead.
+const GEMINI_COOLDOWN_MS = Number(process.env.GEMINI_COOLDOWN_MS) || 45_000;
+let geminiExhaustedUntil = 0;
 let gemini429Streak = 0;
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+function geminiOnCooldown(): boolean {
+  if (geminiExhaustedUntil !== 0 && Date.now() >= geminiExhaustedUntil) {
+    geminiExhaustedUntil = 0;
+    gemini429Streak = 0;
+    console.log(`[AI-GEMINI] cooldown elapsed (${Math.round(GEMINI_COOLDOWN_MS / 1000)}s) — Gemini re-enabled`);
+  }
+  return geminiExhaustedUntil !== 0;
+}
 
 function markGeminiFailure(errMsg: string): void {
   if (errMsg.includes("429") || errMsg.includes("quota") || errMsg.includes("RESOURCE_EXHAUSTED")) {
     gemini429Streak++;
-    console.warn(`[AI-GEMINI] rate-limit streak=${gemini429Streak} (opens circuit at 2) [${aiLoad()}]`);
+    console.warn(`[AI-GEMINI] rate-limit streak=${gemini429Streak} (opens cooldown at 2) [${aiLoad()}]`);
     if (gemini429Streak >= 2) {
-      geminiExhausted = true;
-      console.warn(`[AI-GEMINI] CIRCUIT OPEN — 2+ consecutive 429s, bypassing Gemini for the rest of this request [${aiLoad()}]`);
+      geminiExhaustedUntil = Date.now() + GEMINI_COOLDOWN_MS;
+      console.warn(`[AI-GEMINI] COOLDOWN OPEN — 2+ consecutive 429s, bypassing Gemini for ${Math.round(GEMINI_COOLDOWN_MS / 1000)}s [${aiLoad()}]`);
     }
   }
 }
@@ -132,44 +161,63 @@ async function callGemini(systemPrompt: string, userText: string, config?: AICon
     generationConfig.responseMimeType = config.responseMimeType;
   }
 
-  const t0 = Date.now();
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": GEMINI_API_KEY ?? "",
-      },
-      body: JSON.stringify({
-        system_instruction: { parts: [{ text: systemPrompt }] },
-        contents: [{ parts: [{ text: userText }] }],
-        generationConfig,
-      }),
-    }
-  );
+  // Bounded Retry-After backoff: on a 429 we wait the header's seconds (capped)
+  // and RETRY HERE — staying on the fast Flash-Lite tier — before giving up and
+  // letting the caller fall through to the much slower Groq/OpenRouter tiers.
+  const MAX_ATTEMPTS = 3;
+  const MAX_BACKOFF_MS = 8000;
 
-  const elapsed = Date.now() - t0;
-  if (!res.ok) {
+  let lastErr: Error | null = null;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const t0 = Date.now();
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": GEMINI_API_KEY ?? "",
+        },
+        body: JSON.stringify({
+          system_instruction: { parts: [{ text: systemPrompt }] },
+          contents: [{ parts: [{ text: userText }] }],
+          generationConfig,
+        }),
+      }
+    );
+    const elapsed = Date.now() - t0;
+
+    if (res.ok) {
+      const data = await res.json();
+      const output = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+      aiStats.geminiOk++;
+      console.log(`[AI-GEMINI] OK model=${GEMINI_MODEL} attempt=${attempt}/${MAX_ATTEMPTS} (${elapsed}ms) [${aiLoad()}] input=${userText.length}chars output=${output.length}chars`);
+      return output;
+    }
+
     const errBody = await res.text();
     const isRateLimit = res.status === 429 || /RESOURCE_EXHAUSTED|quota/i.test(errBody);
     if (isRateLimit) {
       const { retryAfterSec, quota } = parseGeminiRateLimit(res, errBody);
       aiStats.geminiRateLimited++;
       aiStats.lastRetryAfterSec = retryAfterSec;
-      console.warn(`[AI-GEMINI] RATE-LIMITED HTTP ${res.status} model=${GEMINI_MODEL} (${elapsed}ms) retryAfter=${retryAfterSec ?? "?"}s quota="${quota || "?"}" [${aiLoad()}] input=${userText.length}chars — ${errBody.slice(0, 120)}`);
+      const backoffMs = Math.min((retryAfterSec ?? 1) * 1000, MAX_BACKOFF_MS);
+      const canRetry = attempt < MAX_ATTEMPTS;
+      console.warn(`[AI-GEMINI] RATE-LIMITED HTTP ${res.status} attempt=${attempt}/${MAX_ATTEMPTS} model=${GEMINI_MODEL} (${elapsed}ms) retryAfter=${retryAfterSec ?? "?"}s quota="${quota || "?"}" [${aiLoad()}] input=${userText.length}chars${canRetry ? ` — backing off ${backoffMs}ms` : ""} — ${errBody.slice(0, 120)}`);
+      if (canRetry) {
+        await sleep(backoffMs);
+        continue;
+      }
     } else {
       aiStats.geminiOtherFail++;
       console.error(`[AI-GEMINI] FAIL HTTP ${res.status} model=${GEMINI_MODEL} (${elapsed}ms) [${aiLoad()}] input=${userText.length}chars — ${errBody.slice(0, 150)}`);
     }
-    throw new Error(`Gemini error (${res.status}): ${errBody.slice(0, 200)}`);
+
+    lastErr = new Error(`Gemini error (${res.status}): ${errBody.slice(0, 200)}`);
+    break; // non-rate-limit, or retries exhausted → surface to caller
   }
 
-  const data = await res.json();
-  const output = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-  aiStats.geminiOk++;
-  console.log(`[AI-GEMINI] OK model=${GEMINI_MODEL} (${elapsed}ms) [${aiLoad()}] input=${userText.length}chars output=${output.length}chars`);
-  return output;
+  throw lastErr ?? new Error("Gemini: retries exhausted");
 }
 
 async function callGroqSingle(model: string, systemPrompt: string, userText: string, config?: AIConfig): Promise<string> {
@@ -324,8 +372,8 @@ async function callAIWithFallbackInner(
   const t0 = Date.now();
   const total = () => queueWaitMs + (Date.now() - t0); // includes the queue wait we just burned
 
-  // Tier 1: Gemini (skipped once circuit breaker trips — quota burned out)
-  if (!geminiExhausted) {
+  // Tier 1: Gemini (skipped while it's in its 429 cooldown window)
+  if (!geminiOnCooldown()) {
     try {
       const result = await callGemini(systemPrompt, userText, config);
       lastAITier = "gemini";
@@ -343,7 +391,7 @@ async function callAIWithFallbackInner(
       console.warn(`[AI-TIER] step="${stepName}" gemini→groq fallback after ${total()}ms (queue ${queueWaitMs}ms)`);
     }
   } else {
-    console.log(`[AI-TIER] step="${stepName}" skipping gemini (exhausted)`);
+    console.log(`[AI-TIER] step="${stepName}" skipping gemini (cooldown)`);
   }
 
   const MAX_INPUT_CHARS = 15000;

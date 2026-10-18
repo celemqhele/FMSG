@@ -12,7 +12,7 @@ import {
   type LocationScope,
   type LocationLadder,
 } from "@/lib/location";
-import { callAIWithFallback, lastAITier, aiStatsSnapshot } from "@/lib/gemini";
+import { callAIWithFallback, lastAITier, aiStatsSnapshot, resetAIStats } from "@/lib/gemini";
 import { scoreMatch } from "@/lib/ats-scoring";
 import { embedTexts, cosineSimilarity, reciprocalRankFusion, buildCandidateText, buildJobText, EMBEDDING_MODEL } from "@/lib/ats-embeddings";
 import { StreamWriter, type SearchEvent } from "@/lib/search-stream";
@@ -503,6 +503,10 @@ async function fetchAndFilterJobs(
     console.warn(`[PIPELINE] Non-numeric deadline ignored (${typeof deadline}: ${String(deadline).slice(0, 40)}) — check call-site argument order`);
     deadline = undefined;
   }
+
+  // Per-search AI counters — reset so the [AI-STATS] summary reflects THIS run
+  // even when a warm Fluid instance reuses the module.
+  resetAIStats();
 
   function sanitiseLocation(raw: string): string | undefined {
     if (!raw) return undefined;
