@@ -13,7 +13,7 @@ import {
   type LocationLadder,
 } from "@/lib/location";
 import { callAIWithFallback, lastAITier, aiStatsSnapshot, resetAIStats } from "@/lib/gemini";
-import { scoreMatch } from "@/lib/ats-scoring";
+import { scoreJobsWithAI, type AiJobInput, type AiJobScore } from "@/lib/ai-scoring";
 import { embedTexts, cosineSimilarity, reciprocalRankFusion, buildCandidateText, buildJobText, EMBEDDING_MODEL } from "@/lib/ats-embeddings";
 import { StreamWriter, type SearchEvent } from "@/lib/search-stream";
 import { debugLog } from "@/lib/debug";
@@ -1511,27 +1511,72 @@ async function screenAndAnalyze(
     console.log(`[SEMANTIC] RRF fused ${fusedCount}/${scored.length} scored results`);
   };
 
-  // Process one job synchronously — pure function, safe to run in parallel
+  // ---- AI requirements-vs-CV scoring (replaces the deterministic ATS score) ----
+  // Runs BEFORE the batch loop so each job's holistic AI score is ready when the
+  // loop builds its row. Fails open: jobs the AI couldn't score (rate-limit,
+  // deadline, parse error) stay unscored (-1) and are kept, never dropped.
+  let aiScores = new Map<number, AiJobScore>();
+  {
+    const aiBudgetOk = !deadline || Date.now() < deadline - 20_000;
+    if (aiBudgetOk) {
+      const candidateText = buildCandidateText({
+        titles: titles ?? [],
+        industry: profileIndustry ?? "",
+        cvText: cvTexts.map((c) => c.text).join("\n"),
+      });
+      const aiJobs: AiJobInput[] = rawJobs.map((job: any, i: number) => ({
+        index: i,
+        title: job.title ?? "",
+        company: job.company_name ?? "",
+        location: job.location ?? "",
+        postedAt: job._postedAt ?? "",
+        spec: jobSpecs.get(i) || job.description || "",
+      }));
+      onStatus?.({ type: "screening_job", current: 0, total: rawJobs.length, progress: 26 });
+      aiScores = await scoreJobsWithAI(aiJobs, {
+        candidateText,
+        deadline: deadline ? deadline - 15_000 : undefined,
+        sid: searchId.slice(0, 8),
+      });
+      const aiStat = aiStatsSnapshot();
+      console.log(`[AI-STATS] after-ai-scoring: gemini ${aiStat.geminiOk}/${aiStat.geminiCalls} ok, rateLimited=${aiStat.geminiRateLimited}, otherFail=${aiStat.geminiOtherFail}, fellToGroq=${aiStat.fellToGroq}, fellToOpenRouter=${aiStat.fellToOpenRouter}, queueWait total/Max=${aiStat.totalQueueWaitMs}/${aiStat.maxQueueWaitMs}ms, lastRetryAfter=${aiStat.lastRetryAfterSec ?? "-"}s, tierNow=${lastAITier}`);
+      console.log(`[AI-SCORING] coverage: ${aiScores.size}/${rawJobs.length} scored, ${rawJobs.length - aiScores.size} unscored (fail-open)`);
+      onStatus?.({ type: "screening_job", current: 0, total: rawJobs.length, progress: 30 });
+    } else {
+      console.warn(`[AI-SCORING] sid=${searchId.slice(0, 8)} skipped — insufficient deadline budget (fail-open, jobs unscored)`);
+    }
+  }
+
+  // Process one job synchronously — builds the result row from the AI score.
   const processSingleJob = (job: any, index: number): { result: any; fullSpec: string; jobUrl: string } => {
     const jobUrl = jobUrls.get(index) || buildJobUrl(job);
     const fullSpec = jobSpecs.get(index) || "";
-    const result = scoreMatch({
-      jobTitle: job.title ?? "",
-      company: job.company_name ?? "",
-      location: job.location ?? "",
-      jobDescription: fullSpec || job.description || "",
-      jobUrl,
-      candidateLocation: profileLocation ?? "",
-      candidateIndustry: profileIndustry ?? "",
-      candidateTitles: titles ?? [],
-      cvTexts,
-      maxAgeDays,
-      bannedCompanies,
-      locationScope,
-      locationLadder,
-      locationUnverified: job._locationUnverified === true,
-    });
-    console.log(`[SCREENING] Job ${index + 1}/${rawJobs.length}: "${job.title}" @ "${job.company_name}" scored ${result.score} (${result.recruiter_verdict})${semanticSims?.[index] != null ? ` sim=${semanticSims[index].toFixed(2)}` : ""}`);
+    const ai = aiScores.get(index);
+    const score = ai ? ai.score : -1; // -1 = unscored (fail-open)
+    const reasonLines: string[] = [];
+    if (ai) {
+      if (ai.reason) reasonLines.push(ai.reason);
+      if (ai.locationMismatch) reasonLines.push("Location may not match — verify work arrangement.");
+      if (ai.stale) reasonLines.push("Posting may be expired — verify it is still open.");
+    } else {
+      reasonLines.push("AI scoring unavailable — job kept, not scored.");
+    }
+    const result = {
+      score,
+      reason: reasonLines.join("\n"),
+      recruiter_verdict: score < 0 ? "Unscored" : score >= 75 ? "Apply" : score >= 60 ? "Consider" : "Don't apply",
+      pillar_scores: null,
+      pillar_reasons: null,
+      taxes_applied: [] as string[],
+      dynamic_requirements: null,
+      adjustment_note: "",
+      estimated_salary: "",
+      suggested_cv_name: "",
+      knockout_fail: null,
+      total_questions_asked: null,
+      yes_answers: null,
+    };
+    console.log(`[SCREENING] Job ${index + 1}/${rawJobs.length}: "${job.title}" @ "${job.company_name}" scored ${score}${ai ? " (ai)" : " (unscored)"}${semanticSims?.[index] != null ? ` sim=${semanticSims[index].toFixed(2)}` : ""}`);
     return { result, fullSpec, jobUrl };
   };
 
