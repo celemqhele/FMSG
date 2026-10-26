@@ -1,6 +1,5 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { callAIWithFallback } from "@/lib/gemini";
-import { debugLog } from "@/lib/debug";
 import { toSingleConcept } from "@/lib/search-query";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -10,17 +9,17 @@ function getSupabase(): SupabaseClient {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 }
 
+/**
+ * Two-rung industry ladder: the candidate's functional niche, then the main
+ * industry that function belongs to. Persistent Finder runs one search per
+ * rung (rounds 1-2) and then repeats both titles with the industry removed
+ * (rounds 3-4), so a near-duplicate middle rung would add nothing.
+ */
 interface IndustryLadderSteps {
   step_1: string;
   step_1_taxonomy_id: string | null;
   step_2: string;
   step_2_taxonomy_id: string | null;
-  step_3: string;
-  step_3_taxonomy_id: string | null;
-  step_4: string;
-  step_4_taxonomy_id: string | null;
-  step_5: string;
-  step_5_taxonomy_id: string | null;
 }
 
 // ─── Taxonomy subtree fetcher ────────────────────────────────────────────
@@ -84,8 +83,6 @@ export async function generateIndustryLadder(industry: string, jobTitles?: strin
   if (!industry?.trim()) {
     return {
       step_1: "", step_1_taxonomy_id: null, step_2: "", step_2_taxonomy_id: null,
-      step_3: "", step_3_taxonomy_id: null, step_4: "", step_4_taxonomy_id: null,
-      step_5: "", step_5_taxonomy_id: null,
     };
   }
 
@@ -102,25 +99,22 @@ export async function generateIndustryLadder(industry: string, jobTitles?: strin
 
   const systemPrompt = hasTaxonomy
     ? `You are a career matching specialist. Given a candidate's job function and
-a constrained industry taxonomy, build a 5-step industry broadening ladder.
+a constrained industry taxonomy, build a 2-step industry ladder.
 
 CRITICAL RULE: The ladder must anchor on the CANDIDATE'S SKILL SET AND JOB FUNCTION,
 NOT the employer's operating industry. A React/Node developer's ladder is
-Web Development → Software Development → IT → Technology → Digital Economy —
-even if they work at a logistics company. A developer at a bank builds software,
-so their ladder is Software Development → IT → Technology, NOT Banking → Financial Services.
-An accountant at a tech company builds their ladder from Accounting → Finance → Business,
-NOT Technology.
+Web Development → Technology — even if they work at a logistics company. A developer
+at a bank builds software, so their ladder is Software Development → Technology,
+NOT Banking → Financial Services. An accountant at a tech company builds their
+ladder from Accounting → Financial Services, NOT Technology.
 
 RULES:
-- Step 1 = the candidate's actual functional niche (e.g., "Web Development", "Financial Accounting", "Digital Marketing")
-- Step 2 = one level broader in the FUNCTION domain (e.g., "Software Development", "Accounting", "Marketing")
-- Step 3 = next level broader
-- Step 4 = next level broader
-- Step 5 = the broadest economic sector the FUNCTION belongs to
+- Step 1 = the candidate's actual functional niche (e.g. "Web Development", "Financial Accounting", "Digital Marketing")
+- Step 2 = the MAIN INDUSTRY that function belongs to — the broadest node on the
+  path that still describes the work (e.g. "Technology", "Financial Services", "Marketing").
+  It must be meaningfully broader than step 1, never a near-duplicate of it.
 - EVERY step must be exactly ONE industry concept. Never join two concepts with "&", "and", "/", or a comma.
   Use "Financial Services" — NOT "Banking & Financial Services". Use "Technology" — NOT "Technology & Digital".
-  Each rung of a broadening ladder has to be a single clean concept.
 - Use the employer's industry ONLY as a tiebreaker when the function is genuinely ambiguous.
 - For industry-agnostic roles (developers, accountants, marketers, analysts), the function ALWAYS dominates.
 
@@ -131,9 +125,10 @@ ${branchJson}
 TASK:
 1. Identify the candidate's CORE FUNCTION from their job titles (e.g., "Software Development", "Financial Accounting", "Digital Marketing").
 2. Find the closest taxonomy node to that FUNCTION (not the employer's industry).
-3. Walk upward through each parent to depth 0.
-4. Build a 5-step ladder.
-5. If the taxonomy path has fewer than 5 nodes, pad by repeating step 5.
+3. Walk upward through each parent toward depth 0.
+4. Step 1 = the closest node to the function. Step 2 = the broadest node on that
+   path (the root / depth-0 sector), so the two rungs actually differ in breadth.
+5. If the path has only one distinct node, repeat it for step 2.
 6. For each step, include the taxonomy_id (UUID) if one exists, otherwise null.
 
 The ladder MUST stay within the taxonomy branch — never cross sectors.
@@ -144,29 +139,24 @@ Return ONLY valid JSON:
 {
   "steps": [
     { "step": 1, "value": "...", "taxonomy_id": "uuid-or-null" },
-    { "step": 2, "value": "...", "taxonomy_id": "uuid-or-null" },
-    { "step": 3, "value": "...", "taxonomy_id": "uuid-or-null" },
-    { "step": 4, "value": "...", "taxonomy_id": "uuid-or-null" },
-    { "step": 5, "value": "...", "taxonomy_id": "uuid-or-null" }
+    { "step": 2, "value": "...", "taxonomy_id": "uuid-or-null" }
   ]
 }`
     : `You are a career matching specialist. Given a candidate's job function and
-employer industry, build a 5-step industry broadening ladder using your
-knowledge of real-world industry hierarchies.
+employer industry, build a 2-step industry ladder using your knowledge of
+real-world industry hierarchies.
 
 CRITICAL RULE: Anchor the ladder on the CANDIDATE'S SKILL SET AND JOB FUNCTION,
 NOT the employer's operating industry. A React/Node developer at a logistics
-company broadens through: Web Development → Software Development → IT → Technology
-→ Digital Economy. NOT Logistics Technology → Supply Chain → Transportation.
-An accountant at a tech company broadens through: Financial Accounting → Accounting
-→ Finance → Business → Professional Services. NOT Technology → Software → IT.
+company broadens through: Web Development → Technology. NOT Logistics Technology
+→ Supply Chain. An accountant at a tech company broadens through:
+Financial Accounting → Financial Services. NOT Technology → Software.
 
 RULES:
 - step 1 = the candidate's most specific functional niche
-- step 2 = one level broader in the function domain
-- step 3 = next level broader
-- step 4 = next level broader
-- step 5 = the broadest economic sector this function belongs to
+- step 2 = the MAIN INDUSTRY that function belongs to — one or two levels broader,
+  the broadest real-world label that still describes the work. It must be
+  meaningfully broader than step 1, never a near-duplicate of it.
 - Each step must be a genuine, real-world industry category.
 - EVERY step must be exactly ONE industry concept. Never join two concepts with "&", "and", "/", or a comma.
   Use "Financial Services" — NOT "Banking & Financial Services". Use "Technology" — NOT "Technology & Digital".
@@ -174,30 +164,27 @@ RULES:
 - For industry-agnostic roles (developers, accountants, marketers, analysts), function ALWAYS dominates.
 
 Example: Developer at a logistics company with titles "Software Developer → Backend Developer"
-→ ["Software Development", "Information Technology", "Technology", "Technology", "Technology"]
-NOT ["Logistics Technology", "Supply Chain Software", "Logistics", "Transportation", "Industrial Goods"]
+→ ["Software Development", "Technology"]
+NOT ["Logistics Technology", "Transportation"]
 
 Example: Accountant at a retail company
-→ ["Financial Accounting", "Accounting", "Finance", "Financial Services", "Financial Services"]
-NOT ["Retail Finance", "Retail", "Consumer Goods", "Retail & Consumer Goods", "Consumer Goods"]
+→ ["Financial Accounting", "Financial Services"]
+NOT ["Retail Finance", "Consumer Goods"]
 
 Example: Digital marketer at an e-commerce company
-→ ["Digital Marketing", "Marketing", "Advertising", "Media", "Media"]
-NOT ["E-commerce Marketing", "E-commerce", "Online Retail", "Retail", "Consumer Goods"]
+→ ["Digital Marketing", "Marketing"]
+NOT ["E-commerce Marketing", "Retail"]
 
 Example: "Private Wealth Banking"
-→ ["Private Wealth Banking", "Wealth Management", "Banking", "Financial Services", "Financial Services"]
+→ ["Private Wealth Banking", "Financial Services"]
 Example: "Pharmaceuticals"
-→ ["Pharmaceutical R&D", "Pharmaceuticals", "Healthcare Products", "Healthcare", "Healthcare"]
+→ ["Pharmaceutical R&D", "Healthcare"]
 
 Return ONLY valid JSON:
 {
   "steps": [
     { "step": 1, "value": "Pharmaceutical R&D", "taxonomy_id": null },
-    { "step": 2, "value": "Pharmaceuticals", "taxonomy_id": null },
-    { "step": 3, "value": "Healthcare Products", "taxonomy_id": null },
-    { "step": 4, "value": "Healthcare", "taxonomy_id": null },
-    { "step": 5, "value": "Healthcare", "taxonomy_id": null }
+    { "step": 2, "value": "Healthcare", "taxonomy_id": null }
   ]
 }`;
 
@@ -214,13 +201,11 @@ Return ONLY valid JSON:
 
     const result: IndustryLadderSteps = {
       step_1: "", step_1_taxonomy_id: null, step_2: "", step_2_taxonomy_id: null,
-      step_3: "", step_3_taxonomy_id: null, step_4: "", step_4_taxonomy_id: null,
-      step_5: "", step_5_taxonomy_id: null,
     };
 
     for (const s of steps) {
       const idx = s.step;
-      if (idx >= 1 && idx <= 5) {
+      if (idx >= 1 && idx <= 2) {
         const key = `step_${idx}` as keyof IndustryLadderSteps;
         const tidKey = `step_${idx}_taxonomy_id` as keyof IndustryLadderSteps;
         // The prompt asks for one concept per rung, but compound labels still slip through.
@@ -240,8 +225,6 @@ Return ONLY valid JSON:
     const step = toSingleConcept(industry) || industry.trim();
     return {
       step_1: step, step_1_taxonomy_id: null, step_2: step, step_2_taxonomy_id: null,
-      step_3: step, step_3_taxonomy_id: null, step_4: step, step_4_taxonomy_id: null,
-      step_5: step, step_5_taxonomy_id: null,
     };
   }
 }

@@ -72,7 +72,7 @@ export function MobilePFPromoPopup({ isOpen, onEnable, onDismiss }: MobilePFProm
               <h3 className="text-[13px] font-semibold text-white">Persistent Finder searches wider</h3>
             </div>
             <p className="text-[11px] text-white/60 leading-relaxed">
-              It runs your search across all 5 job titles and all 5 industry steps automatically, from your hyper-niche to the broadest sector, so it finds roles a single search would miss entirely.
+              It runs your search across both of your job titles and both industry rungs automatically — then repeats both titles with the industry keyword removed, so it finds roles a single search would miss entirely.
             </p>
           </div>
 

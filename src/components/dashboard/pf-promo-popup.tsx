@@ -45,7 +45,7 @@ export function PFPromoPopup({ isOpen, onEnable, onDismiss }: PFPromoPopupProps)
               </div>
             </div>
             <p className="text-[13px] text-white/60 leading-relaxed">
-              It runs your search across all 5 job titles and all 5 industry steps automatically, from your hyper-niche to the broadest sector, so it finds roles a single search would miss entirely.
+              It runs your search across both of your job titles and both industry rungs automatically — then repeats both titles with the industry keyword removed, so it finds roles a single search would miss entirely.
             </p>
           </div>
 

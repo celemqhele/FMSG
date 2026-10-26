@@ -300,7 +300,7 @@ async function fetchPaginatedJobs(params: { q: string; location?: string; hl?: s
 }
 
 const SEARCH_PROFILE_COLUMNS =
-  "job_titles, location, industry, industry_step_1, industry_step_2, industry_step_3, industry_step_4, industry_step_5, cv_variations";
+  "job_titles, location, industry, industry_step_1, industry_step_2, cv_variations";
 const LOCATION_SCOPE_COLUMNS =
   "location_scope, location_step_1, location_step_2, location_step_3, location_step_4";
 
@@ -1887,15 +1887,13 @@ export async function POST(request: NextRequest) {
       if (state.profile_id) {
         const searchProfile = await loadSearchProfile(dataClient, state.profile_id, user.id);
         if (searchProfile?.job_titles?.length) {
-          state.titles = searchProfile.job_titles;
+          // Two-rung title ladder (main + secondary) — see PF_ROUND_PLAN below.
+          state.titles = searchProfile.job_titles.slice(0, 2);
           state.profileLocation = searchProfile.location ?? "";
           state.profileIndustry = searchProfile.industry ?? "";
           state.cvVariations = searchProfile.cv_variations ?? [];
           state.industryStep1 = (searchProfile as any).industry_step_1 ?? "";
           state.industryStep2 = (searchProfile as any).industry_step_2 ?? "";
-          state.industryStep3 = (searchProfile as any).industry_step_3 ?? "";
-          state.industryStep4 = (searchProfile as any).industry_step_4 ?? "";
-          state.industryStep5 = (searchProfile as any).industry_step_5 ?? "";
           state.locationScope = (searchProfile as any).location_scope ?? "country";
           state.locationLadder = {
             city: (searchProfile as any).location_step_1 ?? "",
@@ -2039,16 +2037,14 @@ export async function POST(request: NextRequest) {
       if (profile_id) {
         const searchProfile = await loadSearchProfile(dataClient, profile_id, user.id);
         if (searchProfile?.job_titles?.length) {
-          titles = searchProfile.job_titles;
+          // Two-rung title ladder (main + secondary) — see PF_ROUND_PLAN below.
+          titles = searchProfile.job_titles.slice(0, 2);
           profileLocation = searchProfile.location ?? "";
           profileIndustry = searchProfile.industry ?? "";
           cvVariations = searchProfile.cv_variations ?? [];
-          // Pre-load industry ladder steps
+          // Pre-load industry ladder rungs (niche + main industry)
           state.industryStep1 = (searchProfile as any).industry_step_1 ?? "";
           state.industryStep2 = (searchProfile as any).industry_step_2 ?? "";
-          state.industryStep3 = (searchProfile as any).industry_step_3 ?? "";
-          state.industryStep4 = (searchProfile as any).industry_step_4 ?? "";
-          state.industryStep5 = (searchProfile as any).industry_step_5 ?? "";
           state.locationScope = (searchProfile as any).location_scope ?? "country";
           state.locationLadder = {
             city: (searchProfile as any).location_step_1 ?? "",
@@ -2067,13 +2063,10 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ results: [], code: "NO_TITLES", message: "Add job titles to your search profile first." });
       }
 
-      // Build industry steps array from profile
+      // Build industry rung array from profile (niche, main industry)
       industrySteps = [
         state.industryStep1 || "",
         state.industryStep2 || "",
-        state.industryStep3 || "",
-        state.industryStep4 || "",
-        state.industryStep5 || "",
       ].filter(Boolean);
 
       // Look up search rotation state (which title/industry combo to use next)
@@ -2188,12 +2181,9 @@ Return ONLY valid JSON (no markdown, no code fences):
         balances: liveBalances,
         plan: livePlan,
         maxAgeDays,
-        // Industry ladder steps (for PF mode)
+        // Industry ladder rungs (for PF mode): niche + main industry
         industryStep1: state.industryStep1 || "",
         industryStep2: state.industryStep2 || "",
-        industryStep3: state.industryStep3 || "",
-        industryStep4: state.industryStep4 || "",
-        industryStep5: state.industryStep5 || "",
         // Location scope (local/provincial/country/continental/world) + AI ladder
         locationScope: state.locationScope ?? "country",
         locationLadder: state.locationLadder ?? buildLadderFromProfileLocation(profileLocation),
@@ -2409,8 +2399,27 @@ Return ONLY valid JSON (no markdown, no code fences):
                 return;
           }
 
-          // === PERSISTENT FINDER MODE (AI-generated career chains, 5 rounds) ===
-          const MAX_ROUNDS = 5;
+          // === PERSISTENT FINDER MODE (2 title rungs × industry on/off = 4 rounds) ===
+          //
+          // Rounds 1-2 pair each title rung with an industry rung; rounds 3-4 repeat
+          // the same two titles with the industry keyword removed so the search widens
+          // past the candidate's own sector. A 5-rung industry walk never fits in one
+          // request anyway, so the ladder is deliberately 2 rungs deep.
+          //
+          //   R1  main title      + niche industry   (industry_step_1)
+          //   R2  secondary title + main industry    (industry_step_2)
+          //   R3  main title      — industry OFF
+          //   R4  secondary title — industry OFF
+          //
+          // Missing rung fallbacks: title → all titles, industry → profileIndustry →
+          // no industry keyword at all.
+          const PF_ROUND_PLAN: { title: number; industry: number | null }[] = [
+            { title: 0, industry: 0 },
+            { title: 1, industry: 1 },
+            { title: 0, industry: null },
+            { title: 1, industry: null },
+          ];
+          const MAX_ROUNDS = PF_ROUND_PLAN.length;
 
           let allResults: JobRow[] = [];
           let pfFilteredCounts = { history: 0, saved: 0, rejected: 0, blocked: 0 };
@@ -2425,16 +2434,19 @@ Return ONLY valid JSON (no markdown, no code fences):
           let pfBannedCompanies: string[];
           let pfDedupSets: any;
           let startRoundIndex: number = 0;
-          let titleChainSteps: string[][] = []; // [step][titles] — 5 steps, each is all titles for that round
-          let industryChain: string[] = [];    // [step] — 5 industry terms
+          let industryChain: string[] = [];    // [rung] — 2 industry terms (niche, main)
           let hardStop = false;
+          // Queries already run for this PF search. Carried in the continuation token
+          // so a resume cannot re-run (and re-bill) a round whose query is identical —
+          // e.g. a profile with one title and no industry rung.
+          const usedQueries = new Set<string>();
 
           if (isContinuation && state.mode === "pf") {
             allResults = state.allResults || [];
             pfFilteredCounts = state.pfFilteredCounts || { history: 0, saved: 0, rejected: 0, blocked: 0 };
             seenUrls = new Set(state.seenUrls || []);
             pfRoundsExecuted = state.pfRoundsExecuted || 0;
-            startRoundIndex = state.nextRoundIndex || 0;
+            startRoundIndex = Math.min(state.nextRoundIndex || 0, MAX_ROUNDS);
             pfAborted = state.pfAborted || false;
             pfTitles = state.titles;
             pfLocation = state.profileLocation;
@@ -2446,25 +2458,19 @@ Return ONLY valid JSON (no markdown, no code fences):
 
             debugLog(`[PF] Resuming continuation: mode=pf, startRoundIndex=${startRoundIndex}, pfRoundsExecuted=${pfRoundsExecuted}, allResults.length=${allResults.length}`);
 
-            // Rebuild title ladder and industry chain from refreshed profile data
-            // (in case profile was edited while search was paused)
-            titleChainSteps = Array.from({ length: MAX_ROUNDS }, (_, i) => {
-              const title = pfTitles[i]?.trim();
-              return title ? [title] : [];
-            });
-            for (let s = 0; s < MAX_ROUNDS; s++) {
-              if (titleChainSteps[s].length === 0) titleChainSteps[s] = [...pfTitles];
-            }
+            // Rebuild the industry rungs from refreshed profile data (in case the
+            // profile was edited while the search was paused). Title rungs come
+            // straight from pfTitles, so there is nothing positional to restore.
             industryChain = [
               state.industryStep1 || pfIndustry || "",
               state.industryStep2 || pfIndustry || "",
-              state.industryStep3 || pfIndustry || "",
-              state.industryStep4 || pfIndustry || "",
-              state.industryStep5 || pfIndustry || "",
             ];
+            if (Array.isArray(state.usedQueries)) {
+              for (const q of state.usedQueries) usedQueries.add(String(q));
+            }
             debugLog(`[PF] Resuming at round ${startRoundIndex + 1}/${MAX_ROUNDS}, ${allResults.length} results so far`);
-            debugLog(`[PF] Rebuilt title ladder: ${pfTitles.join(" > ")}`);
-            debugLog(`[PF] Rebuilt industry ladder: ${industryChain.join(" > ")}`);
+            debugLog(`[PF] Title rungs: ${pfTitles.join(" > ")}`);
+            debugLog(`[PF] Industry rungs: ${industryChain.join(" > ") || "(none)"}`);
             if (finish_now) {
               hardStop = true;
               debugLog("[PF] finish_now flag set, will finalize after current round");
@@ -2482,28 +2488,16 @@ Return ONLY valid JSON (no markdown, no code fences):
             startRoundIndex = 0;
             seenUrls = new Set([...pfDedupSets.history, ...pfDedupSets.saved, ...pfDedupSets.blocked]);
 
-            // Title ladder: job_titles IS the 5-step broadening ladder
-            titleChainSteps = Array.from({ length: MAX_ROUNDS }, (_, i) => {
-              const title = pfTitles[i]?.trim();
-              return title ? [title] : [];
-            });
-            for (let s = 0; s < MAX_ROUNDS; s++) {
-              if (titleChainSteps[s].length === 0) titleChainSteps[s] = [...pfTitles];
-            }
-
-            // Industry ladder: directly from search_profiles columns (set during profile load)
+            // Title ladder: job_titles IS the 2-step ladder (main + secondary).
+            // Industry ladder: directly from search_profiles columns (niche, main).
             industryChain = [
               state.industryStep1 || pfIndustry || "",
               state.industryStep2 || pfIndustry || "",
-              state.industryStep3 || pfIndustry || "",
-              state.industryStep4 || pfIndustry || "",
-              state.industryStep5 || pfIndustry || "",
             ];
-            debugLog(`[PF] Title ladder: ${pfTitles.join(" > ")}`);
-            debugLog(`[PF] Industry ladder: ${industryChain.join(" > ")}`);
+            debugLog(`[PF] Title rungs: ${pfTitles.join(" > ")}`);
+            debugLog(`[PF] Industry rungs: ${industryChain.join(" > ") || "(none)"}`);
           }
 
-          const usedQueries = new Set<string>();
           const pfStartTime = Date.now();
 
           for (let i = startRoundIndex; i < MAX_ROUNDS && !finish_now; i++) {
@@ -2530,13 +2524,13 @@ Return ONLY valid JSON (no markdown, no code fences):
                   pfAborted: true,
                   searchId,
                   titles: pfTitles,
-                  titleChainSteps,
                   industryChain,
                   profileLocation: pfLocation,
                   profileIndustry: pfIndustry,
                   cvTexts: pfCvTexts,
                   bannedJobs: pfBannedJobs,
                   bannedCompanies: pfBannedCompanies,
+                  usedQueries: [...usedQueries],
                   dedupSets: {
                     history: pfDedupSets.history ? [...pfDedupSets.history] : [],
                     saved: pfDedupSets.saved ? [...pfDedupSets.saved] : [],
@@ -2553,12 +2547,13 @@ Return ONLY valid JSON (no markdown, no code fences):
               return;
             }
 
-            const titles = titleChainSteps[i];
-            const industry = industryChain[i] || pfIndustry;
-
-            if (titles.length === 0) {
-              titles.push(...pfTitles);
-            }
+            const plan = PF_ROUND_PLAN[i];
+            const rungTitle = (pfTitles[plan.title] ?? "").trim();
+            const titles = rungTitle ? [rungTitle] : [...pfTitles];
+            // `null` industry rung = the widening rounds: title-only query.
+            const industry = plan.industry == null
+              ? ""
+              : (industryChain[plan.industry] || pfIndustry || "");
 
             const titleQuery = buildOrQuery(titles);
             const industryPart = buildIndustryQuery(industry);
@@ -2574,7 +2569,7 @@ Return ONLY valid JSON (no markdown, no code fences):
             }
             usedQueries.add(fullQuery.toLowerCase());
 
-            debugLog(`[PF] Round ${roundNum}/${MAX_ROUNDS}: "${fullQuery}"`);
+            debugLog(`[PF] Round ${roundNum}/${MAX_ROUNDS}${plan.industry == null ? " (no industry)" : ""}: "${fullQuery}"`);
             sendStatus({ type: "pf_round", round: roundNum, max: MAX_ROUNDS, query: fullQuery, progress: Math.min((roundNum / MAX_ROUNDS) * 80, 80) });
 
             if (pfRoundsExecuted > 0 && lastAITier === "openrouter") {
@@ -2669,13 +2664,13 @@ Return ONLY valid JSON (no markdown, no code fences):
                     pfAborted,
                     searchId,
                     titles: pfTitles,
-                    titleChainSteps,
                     industryChain,
                     profileLocation: pfLocation,
                     profileIndustry: pfIndustry,
                     cvTexts: pfCvTexts,
                     bannedJobs: pfBannedJobs,
                     bannedCompanies: pfBannedCompanies,
+                    usedQueries: [...usedQueries],
                     dedupSets: {
                       history: pfDedupSets.history ? [...pfDedupSets.history] : [],
                       saved: pfDedupSets.saved ? [...pfDedupSets.saved] : [],

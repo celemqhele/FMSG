@@ -31,9 +31,6 @@ export async function POST(request: NextRequest) {
       steps: [
         { step: 1, value: steps.step_1, taxonomy_id: steps.step_1_taxonomy_id },
         { step: 2, value: steps.step_2, taxonomy_id: steps.step_2_taxonomy_id },
-        { step: 3, value: steps.step_3, taxonomy_id: steps.step_3_taxonomy_id },
-        { step: 4, value: steps.step_4, taxonomy_id: steps.step_4_taxonomy_id },
-        { step: 5, value: steps.step_5, taxonomy_id: steps.step_5_taxonomy_id },
       ],
     });
   } catch (err) {

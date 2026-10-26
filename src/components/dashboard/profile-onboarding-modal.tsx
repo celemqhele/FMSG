@@ -20,6 +20,9 @@ interface ProfileOnboardingModalProps {
   onSaved?: () => void;
 }
 
+/** The title ladder is 2 rungs deep: main title + one secondary title. */
+const MAX_JOB_TITLES = 2;
+
 export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode, showUploadStep, onSaved }: ProfileOnboardingModalProps) {
   const [step, setStep] = useState<"upload" | "extracting" | "form">(showUploadStep ? "upload" : "form");
   const [file, setFile] = useState<File | null>(null);
@@ -29,9 +32,6 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
   const [industry, setIndustry] = useState("");
   const [industryStep1, setIndustryStep1] = useState("");
   const [industryStep2, setIndustryStep2] = useState("");
-  const [industryStep3, setIndustryStep3] = useState("");
-  const [industryStep4, setIndustryStep4] = useState("");
-  const [industryStep5, setIndustryStep5] = useState("");
   const [locationScope, setLocationScope] = useState<LocationScope>("provincial");
   const [locationStep1, setLocationStep1] = useState("");
   const [locationStep2, setLocationStep2] = useState("");
@@ -62,13 +62,13 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
     const supabase = createClient();
     supabase
       .from("search_profiles")
-      .select("name, job_titles, job_types, location, industry, industry_step_1, industry_step_2, industry_step_3, industry_step_4, industry_step_5, cv_variations, location_scope, location_step_1, location_step_2, location_step_3, location_step_4")
+      .select("name, job_titles, job_types, location, industry, industry_step_1, industry_step_2, cv_variations, location_scope, location_step_1, location_step_2, location_step_3, location_step_4")
       .eq("id", profileId)
       .maybeSingle()
       .then(({ data }: { data: any }) => {
         if (data) {
           setName(data.name ?? "");
-          setJobTitles(data.job_titles?.length ? data.job_titles : [""]);
+          setJobTitles(data.job_titles?.length ? data.job_titles.slice(0, 2) : [""]);
           setJobTypes(data.job_types ?? []);
           setLocation(data.location ?? "");
           ladderLocationRef.current = (data.location ?? "").trim();
@@ -80,9 +80,6 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
           setIndustry(data.industry ?? "");
           setIndustryStep1(data.industry_step_1 ?? "");
           setIndustryStep2(data.industry_step_2 ?? "");
-          setIndustryStep3(data.industry_step_3 ?? "");
-          setIndustryStep4(data.industry_step_4 ?? "");
-          setIndustryStep5(data.industry_step_5 ?? "");
           setCvVariations(data.cv_variations?.length ? data.cv_variations : []);
         }
         setLoadingProfile(false);
@@ -203,7 +200,7 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
         }
 
         const titles = Array.isArray(data.job_titles) && data.job_titles.length > 0
-          ? data.job_titles
+          ? data.job_titles.slice(0, 2)
           : [""];
         // Only auto-fill if user hasn't entered anything yet
         if (jobTitles.length === 1 && jobTitles[0] === "") {
@@ -263,9 +260,6 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
               if (ladder.steps) {
                 if (industryStep1 === "") setIndustryStep1(ladder.steps[0]?.value ?? "");
                 if (industryStep2 === "") setIndustryStep2(ladder.steps[1]?.value ?? "");
-                if (industryStep3 === "") setIndustryStep3(ladder.steps[2]?.value ?? "");
-                if (industryStep4 === "") setIndustryStep4(ladder.steps[3]?.value ?? "");
-                if (industryStep5 === "") setIndustryStep5(ladder.steps[4]?.value ?? "");
               }
             }
           }).catch(() => {});
@@ -445,7 +439,7 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
     setJobTitles(next);
   };
 
-  const addTitle = () => setJobTitles((prev) => [...prev, ""]);
+  const addTitle = () => setJobTitles((prev) => (prev.length >= MAX_JOB_TITLES ? prev : [...prev, ""]));
 
   const removeTitle = (i: number) => {
     if (jobTitles.length <= 1) return;
@@ -453,7 +447,7 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
   };
 
   const handleSave = async () => {
-    const filtered = jobTitles.map((t) => t.trim()).filter(Boolean);
+    const filtered = jobTitles.map((t) => t.trim()).filter(Boolean).slice(0, MAX_JOB_TITLES);
     if (filtered.length === 0) {
       setError("Add at least one job title.");
       return;
@@ -506,9 +500,6 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
       industry: industry.trim(),
       industry_step_1: industryStep1,
       industry_step_2: industryStep2,
-      industry_step_3: industryStep3,
-      industry_step_4: industryStep4,
-      industry_step_5: industryStep5,
       industry_ladder_generated_at: new Date().toISOString(),
       job_types: jobTypes,
       cv_variations: namedCvs,
@@ -622,13 +613,14 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
 
               <div>
                 <label className="text-sm font-medium text-white mb-1.5 block">Job Titles</label>
+                <p className="text-xs text-white/50 mb-2">A main title and one secondary title to broaden into.</p>
                 <div className="flex flex-col gap-2">
                   {jobTitles.map((t, i) => (
                     <div key={i} className="flex items-center gap-2">
                       <input
                         value={t}
                         onChange={(e) => handleTitleChange(i, e.target.value)}
-                        placeholder="e.g. Software Engineer"
+                        placeholder={i === 0 ? "e.g. Software Engineer" : "e.g. Backend Developer"}
                         className="flex-1 px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-white placeholder-white/30 focus:outline-none focus:border-[var(--color-accent)] transition-colors"
                       />
                       {jobTitles.length > 1 && (
@@ -639,12 +631,14 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
                     </div>
                   ))}
                 </div>
-                <button
-                  onClick={addTitle}
-                  className="mt-1.5 text-xs text-[var(--color-accent)] hover:underline"
-                >
-                  + Add another title
-                </button>
+                {jobTitles.length < MAX_JOB_TITLES && (
+                  <button
+                    onClick={addTitle}
+                    className="mt-1.5 text-xs text-[var(--color-accent)] hover:underline"
+                  >
+                    + Add another title
+                  </button>
+                )}
               </div>
 
               <div>
@@ -720,18 +714,15 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
               {/* Industry Ladder */}
               <div>
                 <label className="text-sm font-medium text-white mb-1.5 block">
-                  Industry Ladder <span className="text-white/50 font-normal">(AI-populated, edit any step)</span>
+                  Industry Ladder <span className="text-white/50 font-normal">(AI-populated, edit either rung)</span>
                 </label>
                 <p className="text-xs text-white/50 mb-2">
-                  Controls how Persistent Finder broadens your industry across 5 search rounds. Step 1 is your hyper-niche, Step 5 is the broadest sector.
+                  Two rungs: your niche, then the main industry it belongs to. Persistent Finder searches both across 4 rounds (the last two drop the industry keyword).
                 </p>
                 <div className="space-y-2">
                   {[
-                    { label: "Step 1: Hyper-Niche", value: industryStep1, setter: setIndustryStep1, placeholder: "e.g. Private Wealth Banking" },
-                    { label: "Step 2: Niche", value: industryStep2, setter: setIndustryStep2, placeholder: "e.g. Wealth Management" },
-                    { label: "Step 3: Sub-Sector", value: industryStep3, setter: setIndustryStep3, placeholder: "e.g. Banking" },
-                    { label: "Step 4: Industry", value: industryStep4, setter: setIndustryStep4, placeholder: "e.g. Financial Services" },
-                    { label: "Step 5: Broad Sector", value: industryStep5, setter: setIndustryStep5, placeholder: "e.g. Financial Services" },
+                    { label: "Step 1: Niche", value: industryStep1, setter: setIndustryStep1, placeholder: "e.g. Private Wealth Banking" },
+                    { label: "Step 2: Main Industry", value: industryStep2, setter: setIndustryStep2, placeholder: "e.g. Financial Services" },
                   ].map((s) => (
                     <div key={s.label} className="space-y-0.5">
                       <label className="text-[11px] text-white/40">{s.label}</label>

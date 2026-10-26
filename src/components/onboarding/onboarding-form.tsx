@@ -20,6 +20,9 @@ interface ExtractedData {
 
 type Step = "upload" | "extracting" | "review";
 
+/** The title ladder is 2 rungs deep: main title + one secondary title. */
+const MAX_JOB_TITLES = 2;
+
 interface OnboardingFormProps {
   onOnboarded?: () => void;
 }
@@ -47,9 +50,6 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
   const [industry, setIndustry] = useState("");
   const [industryStep1, setIndustryStep1] = useState("");
   const [industryStep2, setIndustryStep2] = useState("");
-  const [industryStep3, setIndustryStep3] = useState("");
-  const [industryStep4, setIndustryStep4] = useState("");
-  const [industryStep5, setIndustryStep5] = useState("");
   const [suggestingIndustry, setSuggestingIndustry] = useState(false);
   const [suggestingLadder, setSuggestingLadder] = useState(false);
   const [locationScope, setLocationScope] = useState<LocationScope>("provincial");
@@ -105,7 +105,7 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
       setSurname(data.surname ?? "");
       setPhone(data.phone ?? "");
       setAddress(data.address ?? "");
-      setJobTitles(data.job_titles ?? []);
+      setJobTitles((data.job_titles ?? []).slice(0, 2));
       setJobTypes(data.job_types ?? []);
       setLocation(data.preferred_location ?? "");
       setCurrentSalary(data.current_salary ?? null);
@@ -193,9 +193,6 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
           if (ladder.steps) {
             setIndustryStep1(ladder.steps[0]?.value ?? "");
             setIndustryStep2(ladder.steps[1]?.value ?? "");
-            setIndustryStep3(ladder.steps[2]?.value ?? "");
-            setIndustryStep4(ladder.steps[3]?.value ?? "");
-            setIndustryStep5(ladder.steps[4]?.value ?? "");
           }
         }
       } catch {}
@@ -236,7 +233,7 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
 
   const addJobTitle = () => {
     const t = jobTitleInput.trim();
-    if (t && !jobTitles.includes(t)) setJobTitles([...jobTitles, t]);
+    if (t && jobTitles.length < MAX_JOB_TITLES && !jobTitles.includes(t)) setJobTitles([...jobTitles, t]);
     setJobTitleInput("");
   };
 
@@ -291,7 +288,7 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
 
     const spData = {
       name: profileName,
-      job_titles: jobTitles,
+      job_titles: jobTitles.map((t) => t.trim()).filter(Boolean).slice(0, MAX_JOB_TITLES),
       job_types: jobTypes,
       location: cleanedLocation,
       location_scope: locationScope,
@@ -303,9 +300,6 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
       industry: industry.trim(),
       industry_step_1: industryStep1,
       industry_step_2: industryStep2,
-      industry_step_3: industryStep3,
-      industry_step_4: industryStep4,
-      industry_step_5: industryStep5,
       industry_ladder_generated_at: new Date().toISOString(),
       cv_variations: cvVariations.map((cv) => ({ name: cv.name || "CV", file_path: cv.file_path })),
     };
@@ -421,6 +415,7 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
         <h2 className="text-lg font-semibold text-gray-900">Career Information</h2>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1.5">Desired Job Titles</label>
+          <p className="text-xs text-gray-400 mb-2">A main title and one secondary title to broaden into.</p>
           <div className="flex flex-wrap gap-2 mb-2">
             {jobTitles.map((t) => (
               <span key={t} className="inline-flex items-center gap-1 px-3 py-1 text-xs font-medium text-gray-700 bg-gray-100 border border-gray-200 rounded-full">
@@ -429,18 +424,20 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
               </span>
             ))}
           </div>
-          <div className="flex gap-2">
-            <input
-              value={jobTitleInput}
-              onChange={(e) => setJobTitleInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addJobTitle())}
-              className="flex-1 px-4 py-2 text-sm rounded-lg border border-gray-300 bg-gray-50 text-gray-900 placeholder-gray-400 focus:outline-none focus:border-[var(--color-accent)] transition-colors"
-              placeholder="Add a title"
-            />
-            <button onClick={addJobTitle} className="px-3 py-2 text-sm font-medium text-white bg-[var(--color-accent)] rounded-lg hover:bg-[var(--color-accent-hover)] transition-colors">
-              <Plus size={16} />
-            </button>
-          </div>
+          {jobTitles.length < MAX_JOB_TITLES && (
+            <div className="flex gap-2">
+              <input
+                value={jobTitleInput}
+                onChange={(e) => setJobTitleInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addJobTitle())}
+                className="flex-1 px-4 py-2 text-sm rounded-lg border border-gray-300 bg-gray-50 text-gray-900 placeholder-gray-400 focus:outline-none focus:border-[var(--color-accent)] transition-colors"
+                placeholder="Add a title"
+              />
+              <button onClick={addJobTitle} className="px-3 py-2 text-sm font-medium text-white bg-[var(--color-accent)] rounded-lg hover:bg-[var(--color-accent-hover)] transition-colors">
+                <Plus size={16} />
+              </button>
+            </div>
+          )}
         </div>
 
         <div>
@@ -548,15 +545,13 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
             {suggestingLadder && <Loader2 size={12} className="text-blue-500 animate-spin" />}
           </div>
           <p className="text-xs text-gray-400 mb-2">
-            Controls how Persistent Finder broadens your industry across 5 search rounds.
+            Two rungs: your niche, then the main industry it belongs to. Persistent Finder
+            searches both across 4 rounds (the last two drop the industry keyword).
           </p>
           <div className="space-y-2">
             {[
-              { label: "Step 1: Hyper-Niche", value: industryStep1, setter: setIndustryStep1, placeholder: "e.g. Private Wealth Banking" },
-              { label: "Step 2: Niche", value: industryStep2, setter: setIndustryStep2, placeholder: "e.g. Wealth Management" },
-              { label: "Step 3: Sub-Sector", value: industryStep3, setter: setIndustryStep3, placeholder: "e.g. Banking" },
-              { label: "Step 4: Industry", value: industryStep4, setter: setIndustryStep4, placeholder: "e.g. Financial Services" },
-              { label: "Step 5: Broad Sector", value: industryStep5, setter: setIndustryStep5, placeholder: "e.g. Financial Services" },
+              { label: "Step 1: Niche", value: industryStep1, setter: setIndustryStep1, placeholder: "e.g. Private Wealth Banking" },
+              { label: "Step 2: Main Industry", value: industryStep2, setter: setIndustryStep2, placeholder: "e.g. Financial Services" },
             ].map((s) => (
               <div key={s.label} className="space-y-0.5">
                 <label className="text-[11px] text-gray-500">{s.label}</label>
