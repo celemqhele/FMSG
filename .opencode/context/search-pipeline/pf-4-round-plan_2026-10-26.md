@@ -69,7 +69,20 @@ Two inherited values are odd because the *old* ladder was already inconsistent �
 - `npm run build` succeeded (all routes compiled, `/jobs/[category]` still SSG'd).
 - Backfill verified 27/27 patched, `still-mismatched=0`.
 
+## Follow-up: legacy-profile upgrade prompt (same day)
+
+The trim left every existing profile carrying data the UI no longer shows: 28 of 30 profiles had 3-12 `job_titles` and 28 still had `industry_step_3/4/5` populated. Searches cope (they slice to 2 and read rungs 1-2), but opening the profile editor and saving would **silently drop** the extra titles and rungs. The user asked for a prompt ("legacy profile detected — reload as modern infra?") so users are told rather than surprised.
+
+- **Detection** (`src/lib/legacy-profile.ts`): legacy = more than 2 clean `job_titles`, **or** any of `industry_step_3/4/5` non-empty. Replayed against live data before shipping: **29 of 30 profiles** are legacy (28 by title surplus, 28 by retired rungs, one profile had 12 titles).
+- **Upgrade** (`upgradeLegacyProfile`): keep the first two titles (the same ones searches already use), re-derive both industry rungs via `POST /api/suggest-industry-ladder` (the existing 2-rung generator), then `UPDATE search_profiles SET job_titles=<2>, industry_step_1/2=<new>, industry_step_3/4/5=null, industry_ladder_generated_at=now()`. If the AI call or auth fails, the existing rungs are kept and the profile still ends up modern — the flow cannot leave a profile broken (`ladderRebuilt: false` surfaces as "the ladder generator was unavailable, so your existing rungs were kept").
+- **UI**: `src/components/dashboard/legacy-profile-popup.tsx` (desktop) + `mobile/mobile-legacy-profile-popup.tsx` (bottom sheet, drag-to-dismiss like `mobile-pf-promo-popup.tsx`). Four states — idle → working → done (chips of the two titles + both rungs + retired list) / error (retry). Copy positions it as a **ladder upgrade**: "no search credit used", keeps top two titles, rebuilds the rungs, clears 3 retired rungs.
+- **Mounting**: `src/components/dashboard/dashboard-layout.tsx` (so it covers `/dashboard`, `/profile`, `/settings`, `/upgrade` — every `DashboardLayout` surface — and has `handleOpenEdit` for the "Review profile" escape hatch). Guests are skipped; the prompt hides while the profile editor is open; the render guard `legacyProfile.id === activeProfileId` stops a stale profile's prompt surviving a profile switch.
+- **Dismissal** is snoozed per profile for **7 days** in `localStorage` (`fmsg_legacy_ladder_snoozed:<profileId>`), not permanently, so a legacy profile gets another chance without nagging every load.
+- **Editors now clear the retired columns**: `profile-onboarding-modal.tsx`, `mobile-profile-onboarding-sheet.tsx` and `onboarding-form.tsx` add `industry_step_3/4/5: null` to their save payloads — so "Review profile → save" also modernises a profile and the prompt stops on its own.
+- **Verified**: `npx tsc --noEmit` clean, no new eslint findings (still the same 7 pre-existing), `npm run build` OK, and a throwaway preview route (`recycle_bin/legacy-preview-tmp/page.tsx`) server-rendered both the idle and done states with the expected copy — no headless browser was available (`connect ECONNREFUSED 127.0.0.1:9222`), so the visual check was SSR HTML inspection, not a screenshot.
+
 ## Gotchas / traps hit
+
 
 - **PowerShell `"$base?select=..."` silently breaks the URL.** In a double-quoted string, `$base?select` is parsed as a variable named `base?select` (empty), so `curl.exe` received `=id,...` and returned HTTP **000** with no body. Use `"${base}?select=..."`. The interactive one-liners worked only because the URL was fully literal — the failure appeared for the first time in the script form; always brace the variable before a `?`.
 - PostgREST cannot express `SET col_a = col_b`; use a read-then-PATCH loop, or the dashboard SQL editor / Management API for real SQL.

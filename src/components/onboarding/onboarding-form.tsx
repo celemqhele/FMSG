@@ -300,6 +300,11 @@ export function OnboardingForm({ onOnboarded }: OnboardingFormProps) {
       industry: industry.trim(),
       industry_step_1: industryStep1,
       industry_step_2: industryStep2,
+      // Retired rungs from the old 5-step ladder: nulled on save so a legacy
+      // profile being re-onboarded stops reading as legacy.
+      industry_step_3: null,
+      industry_step_4: null,
+      industry_step_5: null,
       industry_ladder_generated_at: new Date().toISOString(),
       cv_variations: cvVariations.map((cv) => ({ name: cv.name || "CV", file_path: cv.file_path })),
     };

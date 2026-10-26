@@ -281,6 +281,9 @@ export function MobileProfileOnboardingSheet({ profileId, onClose, onDelete, edi
       location_ladder_generated_at: new Date().toISOString(),
       industry: industry.trim(),
       industry_step_1: industryStep1, industry_step_2: industryStep2,
+      // Retired rungs from the old 5-step ladder: nulled on save so an edited
+      // profile stops reading as legacy (nothing reads these columns).
+      industry_step_3: null, industry_step_4: null, industry_step_5: null,
       industry_ladder_generated_at: new Date().toISOString(), job_types: jobTypes, cv_variations: namedCvs,
     };
     if (name.trim()) updateData.name = name.trim();

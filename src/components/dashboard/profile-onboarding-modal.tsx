@@ -500,6 +500,11 @@ export function ProfileOnboardingModal({ profileId, onClose, onDelete, editMode,
       industry: industry.trim(),
       industry_step_1: industryStep1,
       industry_step_2: industryStep2,
+      // Retired rungs from the old 5-step ladder: nulled on save so a profile
+      // edited here stops reading as legacy (nothing reads these columns).
+      industry_step_3: null,
+      industry_step_4: null,
+      industry_step_5: null,
       industry_ladder_generated_at: new Date().toISOString(),
       job_types: jobTypes,
       cv_variations: namedCvs,

@@ -20,6 +20,19 @@ import { useTransition } from "@/components/providers/transition-provider";
 import { createClient } from "@/lib/supabase/client";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { MobileLayout } from "./mobile/mobile-layout";
+import { LegacyProfilePopup } from "./legacy-profile-popup";
+import { MobileLegacyProfilePopup } from "./mobile/mobile-legacy-profile-popup";
+import {
+  MAX_LADDER_TITLES,
+  isLegacyLadderProfile,
+  isLegacyLadderSnoozed,
+  snoozeLegacyLadder,
+  surplusTitles,
+  upgradeLegacyProfile,
+  type LegacyLadderProfile,
+  type LegacyUpgradeResult,
+  type LegacyUpgradeStatus,
+} from "@/lib/legacy-profile";
 import "../landing/liquid-glass.css";
 
 const ProfileContext = createContext<{
@@ -102,6 +115,82 @@ export function DashboardLayout({ children, guest, onGuestSignUp }: { children: 
     setIsNewProfile(false);
     endTransition();
   }, [endTransition]);
+
+  // ── Legacy (retired 5-rung) profile upgrade prompt ──────────────────────
+  // Profiles created before the 2-rung ladder trim still carry rungs 3-5.
+  // Searches ignore them, but the profile editor would drop them silently, so
+  // offer a one-click rewrite. Dismissals are snoozed per profile for a week.
+  const [legacyProfile, setLegacyProfile] = useState<LegacyLadderProfile | null>(null);
+  const [legacyStatus, setLegacyStatus] = useState<LegacyUpgradeStatus>("idle");
+  const [legacyResult, setLegacyResult] = useState<LegacyUpgradeResult | null>(null);
+  const [legacyError, setLegacyError] = useState("");
+
+  useEffect(() => {
+    if (guest || !activeProfileId) return;
+    if (isLegacyLadderSnoozed(activeProfileId)) return;
+
+    let cancelled = false;
+    const supabase = createClient();
+    supabase
+      .from("search_profiles")
+      .select("id, job_titles, industry, industry_step_1, industry_step_2, industry_step_3, industry_step_4, industry_step_5")
+      .eq("id", activeProfileId)
+      .maybeSingle()
+      .then(({ data }: { data: any }) => {
+        if (cancelled) return;
+        if (data && isLegacyLadderProfile(data)) {
+          setLegacyProfile(data as LegacyLadderProfile);
+          setLegacyStatus("idle");
+          setLegacyResult(null);
+          setLegacyError("");
+        } else {
+          setLegacyProfile(null);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [guest, activeProfileId, profileRefreshKey]);
+
+  const handleLegacyUpgrade = useCallback(async () => {
+    if (!legacyProfile || legacyStatus === "working") return;
+    setLegacyStatus("working");
+    setLegacyError("");
+    try {
+      const result = await upgradeLegacyProfile(legacyProfile);
+      setLegacyResult(result);
+      setLegacyStatus("done");
+      // Profile data changed: refresh dependent views and drop any paused search.
+      handleProfileSaved();
+    } catch (err) {
+      setLegacyError(err instanceof Error ? err.message : "Could not upgrade your profile.");
+      setLegacyStatus("error");
+    }
+  }, [legacyProfile, legacyStatus, handleProfileSaved]);
+
+  const handleLegacyDismiss = useCallback(() => {
+    if (legacyProfile) snoozeLegacyLadder(legacyProfile.id);
+    setLegacyProfile(null);
+    setLegacyStatus("idle");
+    setLegacyResult(null);
+    setLegacyError("");
+  }, [legacyProfile]);
+
+  const handleLegacyReview = useCallback(() => {
+    if (!legacyProfile) return;
+    snoozeLegacyLadder(legacyProfile.id);
+    const id = legacyProfile.id;
+    setLegacyProfile(null);
+    setLegacyStatus("idle");
+    handleOpenEdit(id);
+  }, [legacyProfile, handleOpenEdit]);
+
+  const legacyTitlesToKeep = (legacyProfile?.job_titles ?? [])
+    .map((t) => (typeof t === "string" ? t.trim() : ""))
+    .filter(Boolean)
+    .slice(0, MAX_LADDER_TITLES);
+  const legacyRetiredTitleCount = surplusTitles(legacyProfile).length;
 
   return (
     <ProfileContext.Provider value={{ activeProfileId, setActiveProfileId }}>
@@ -193,6 +282,34 @@ export function DashboardLayout({ children, guest, onGuestSignUp }: { children: 
             onSaved={handleProfileSaved}
             onDelete={handleDeleteProfile}
             onClose={handleCloseModal}
+          />
+        )
+      )}
+
+      {legacyProfile && legacyProfile.id === activeProfileId && !editProfileId && (
+        isMobile ? (
+          <MobileLegacyProfilePopup
+            isOpen={true}
+            titles={legacyTitlesToKeep}
+            retiredTitleCount={legacyRetiredTitleCount}
+            status={legacyStatus}
+            result={legacyResult}
+            error={legacyError}
+            onUpgrade={handleLegacyUpgrade}
+            onReview={handleLegacyReview}
+            onDismiss={handleLegacyDismiss}
+          />
+        ) : (
+          <LegacyProfilePopup
+            isOpen={true}
+            titles={legacyTitlesToKeep}
+            retiredTitleCount={legacyRetiredTitleCount}
+            status={legacyStatus}
+            result={legacyResult}
+            error={legacyError}
+            onUpgrade={handleLegacyUpgrade}
+            onReview={handleLegacyReview}
+            onDismiss={handleLegacyDismiss}
           />
         )
       )}
