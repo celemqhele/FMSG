@@ -2,7 +2,7 @@
   "id": "pf-4-round-ladder_2026-10-26_20-08-09",
   "status": "INCOMPLETE",
   "created": "2026-10-26T18:08:09Z",
-  "updated": "2026-10-26T18:16:00Z",
+  "updated": "2026-10-26T19:10:00Z",
   "objective": "Reduce Persistent Finder from 5 search rounds to 4 (industry keyword on for rounds 1-2, off for rounds 3-4) and trim both career ladders from 5 rungs to 2 (title: main + secondary; industry: niche + main industry), including the ladder generator/prompts, onboarding flow, both profile editors and the PF marketing copy, then backfill existing profile data.",
   "plan": [
     "Rewrite industry ladder generator + prompts to emit 2 rungs (niche -> main industry)",
@@ -102,6 +102,40 @@
       "files": [],
       "done": true,
       "key_decision": "Do not claim the change is live: a push to production lands as a Preview deployment and the live domain keeps serving the previous build until promoted in the Vercel dashboard."
+    },
+    {
+      "step": 10,
+      "description": "Built the legacy-profile upgrade prompt: src/lib/legacy-profile.ts (detection + upgradeLegacyProfile), LegacyProfilePopup + MobileLegacyProfilePopup, mounted in dashboard-layout for every DashboardLayout surface, plus industry_step_3/4/5 = null in the three editor save payloads.",
+      "files": [
+        "src/lib/legacy-profile.ts",
+        "src/components/dashboard/legacy-profile-popup.tsx",
+        "src/components/dashboard/mobile/mobile-legacy-profile-popup.tsx",
+        "src/components/dashboard/dashboard-layout.tsx",
+        "src/components/dashboard/profile-onboarding-modal.tsx",
+        "src/components/dashboard/mobile/mobile-profile-onboarding-sheet.tsx",
+        "src/components/onboarding/onboarding-form.tsx"
+      ],
+      "done": true,
+      "key_decision": "Upgrade keeps the first two titles (exactly what searches already read), re-derives the rungs with the existing 2-rung generator and nulls the retired columns. The AI call is best-effort: on failure the existing rungs stay, so the flow can only improve a profile, never break it."
+    },
+    {
+      "step": 11,
+      "description": "Replayed the legacy predicate against live search_profiles (29 of 30 profiles flagged; 28 by title surplus, 28 by retired rungs, one profile had 12 titles), then verified the popup with a throwaway SSR preview route: idle and done states both rendered the expected copy. No headless browser was available (connect ECONNREFUSED 127.0.0.1:9222), so no screenshot was taken.",
+      "files": [
+        "recycle_bin/check_legacy_predicate.js",
+        "recycle_bin/legacy-preview-tmp/page.tsx"
+      ],
+      "done": true,
+      "key_decision": "Verification had to be SSR HTML inspection plus a data replay instead of a browser screenshot; the dev server and preview route were removed afterwards and .next was cleared because the dev type validator still referenced the deleted route."
+    },
+    {
+      "step": 12,
+      "description": "Committed as 827a328 'feat(profile): offer a one-click upgrade for profiles still on the old 5-rung ladder' and pushed to origin/production; documented the prompt in the existing search-pipeline context file.",
+      "files": [
+        ".opencode/context/search-pipeline/pf-4-round-plan_2026-10-26.md"
+      ],
+      "done": true,
+      "key_decision": "Kept the documentation in the same context file (same incident chain) instead of creating a new category folder."
     }
   ],
   "key_decisions": [
@@ -112,7 +146,12 @@
     "usedQueries is carried in the PF continuation token so a resume cannot re-run/re-bill a byte-identical query; duplicate rounds are skipped with a log line.",
     "Root cause of a harness failure: in PowerShell, \"$base?select=...\" inside double quotes parses as a variable named 'base?select', producing a URL of '=id,...' and an HTTP 000 from curl.exe. Use \"${base}?select=...\".",
     "PostgREST cannot SET a column from another column, so the backfill was a read-then-PATCH-per-id loop with the service-role key.",
-    "Known open risk: R3/R4 repeat R1/R2 titles without the industry keyword, so heavy seenUrls/history dedupe may make those rounds unproductive; if logs confirm, swap R4 to a third title rung."
+    "Known open risk: R3/R4 repeat R1/R2 titles without the industry keyword, so heavy seenUrls/history dedupe may make those rounds unproductive; if logs confirm, swap R4 to a third title rung.",
+    "A profile is 'legacy' when it has more than 2 job titles or any of industry_step_3/4/5 populated; 29 of 30 production profiles match.",
+    "The legacy prompt's upgrade path keeps the first two titles, regenerates the industry rungs via /api/suggest-industry-ladder, and nulls industry_step_3/4/5 so the prompt stops and the editor can no longer lose data silently.",
+    "Dismissing the prompt snoozes it per profile for 7 days in localStorage (fmsg_legacy_ladder_snoozed:<profileId>) rather than permanently.",
+    "All three profile editors now write industry_step_3/4/5 = null on save, so reviewing and saving a profile is an alternative upgrade path.",
+    "The browser tooling needs a DevTools endpoint on 127.0.0.1:9222; when it is absent, UI verification falls back to rendering the component in a throwaway route and inspecting the SSR HTML."
   ],
   "files_modified": [
     "src/lib/career-ladders.ts",
@@ -125,15 +164,36 @@
     "src/components/dashboard/pf-promo-popup.tsx",
     "src/components/dashboard/mobile/mobile-pf-promo-popup.tsx",
     ".opencode/context/search-pipeline/pf-4-round-plan_2026-10-26.md",
-    "recycle_bin/backfill_industry_step2.ps1"
+    "recycle_bin/backfill_industry_step2.ps1",
+    "src/lib/legacy-profile.ts",
+    "src/components/dashboard/legacy-profile-popup.tsx",
+    "src/components/dashboard/mobile/mobile-legacy-profile-popup.tsx",
+    "src/components/dashboard/dashboard-layout.tsx",
+    "src/components/dashboard/profile-onboarding-modal.tsx",
+    "src/components/dashboard/mobile/mobile-profile-onboarding-sheet.tsx",
+    "src/components/onboarding/onboarding-form.tsx"
   ],
   "background_tasks": [
     {
       "what": "Vercel deployment watch for commit 9ecfdc7",
       "command": "curl.exe -s \"https://api.github.com/repos/celemqhele/FMSG/deployments?per_page=6\" and \".../deployments/7339796797/statuses\"",
       "output_file": "recycle_bin/deployments_9ecfdc7.json, recycle_bin/deployments2.json, recycle_bin/deployments3.json, recycle_bin/status2.json, recycle_bin/dep_status.json",
-      "status": "2026-10-26T18:10:04Z Preview deployment for 9ecfdc7 on project fmsg (github deployment id 7339796797) reported state=success ('Deployment has completed'); fmsg-2 built the same SHA as Preview at 18:08:37Z. The Production environment still points at c15d524 (promoted 17:08:40Z), so the live domain does NOT serve the 4-round change until 9ecfdc7 is promoted to Production in the Vercel dashboard.",
+      "status": "superseded: 20d5749 (which contains 9ecfdc7) was promoted to Production on project fmsg at 2026-10-26T18:50:43Z, so the 4-round change went live then; the earlier Preview-only note was correct only until that promotion.",
       "expires": "one-off check; re-run the deployments query and look for a 'Production - fmsg' entry whose sha starts with 9ecfdc7"
+    },
+    {
+      "what": "Local dev server used for the throwaway legacy-popup preview",
+      "command": "Start-Process npm.cmd \"run dev\" (logs: recycle_bin/dev-server.log, recycle_bin/dev-server.err.log); curl.exe http://localhost:3000/legacy-preview-tmp",
+      "output_file": "recycle_bin/preview.html (idle state), recycle_bin/preview_done.html (done state), recycle_bin/dev-server.log",
+      "status": "stopped - node PID 20604 killed after the check; the temp route was moved to recycle_bin/legacy-preview-tmp/ and .next was deleted so stale dev route types do not break tsc",
+      "expires": "nothing left running"
+    },
+    {
+      "what": "Vercel deployment watch for commit 827a328 (legacy-profile prompt)",
+      "command": "curl.exe -s \"https://api.github.com/repos/celemqhele/FMSG/deployments?per_page=6\"",
+      "output_file": "recycle_bin/deployments_827a328.json",
+      "status": "2026-10-26T19:04:10Z Preview build for 827a328 on project fmsg reported state=success. Production was still on 20d5749 (the 4-round change), so the legacy-profile prompt needs its own promotion to Production in the Vercel dashboard.",
+      "expires": "one-off check"
     }
   ],
   "done": false,
