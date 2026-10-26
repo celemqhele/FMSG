@@ -42,6 +42,13 @@ Open [http://localhost:3000](http://localhost:3000).
 
 Migrations are in `supabase/migrations/`. Run them in order against your Supabase project via the SQL editor or Supabase CLI.
 
+## Recycle Bin / Restore
+When a file is "deleted", it is moved to `/recycle_bin`.
+
+| File Path | Description |
+|-----------|-------------|
+| - | - |
+
 ## Deploy
 
 Deployed on Vercel from the `production` branch.

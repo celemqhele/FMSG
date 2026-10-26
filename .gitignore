@@ -37,8 +37,11 @@ yarn-error.log*
 # vercel
 .vercel
 
-# supabase
-supabase/.temp/
+# recycle bin
+/recycle_bin
+
+# opencode local session/context/secrets (key lives here - keep out of git)
+.opencode/
 
 # vercel env files (contain live OIDC tokens)
 .env.vercel

@@ -30,19 +30,21 @@ Rules — reason like a recruiter, not a parser:
 job_titles: Generate a 5-step job title broadening ladder. CRITICAL: This ladder broadens LATERALLY through related specialties at the SAME seniority level — it never climbs the seniority hierarchy. Think of it like broadening through umbrellas: a niche role sits under a sub-umbrella that sits under an umbrella, and each step moves one umbrella outward while staying at the same level.
 
 Rules:
-- Step [0] = the candidate's exact current/most recent role, translated to industry-standard job board title.
-- Steps [1]-[3] = LATERAL moves at the SAME seniority level. Broaden into adjacent specialties that share overlapping skills but sit in different sub-domains. Same level of seniority, different flavour of the work. The candidate's CV qualifications should match these roles.
-- Step [4] = the broadest generic function-level description (e.g. "IT Professional", "Business Professional", "Engineering Professional").
-- NEVER include titles that represent seniority escalation: Manager, Senior, Lead, Principal, Director, VP, Head of, Chief, CISO, CTO, or any C-suite — unless the candidate already holds that exact seniority. A Penetration Tester does NOT broaden into Security Manager or CSO. They broaden into Cyber Security Analyst, SOC Analyst, Vulnerability Assessor.
+- FIRST, determine the candidate's TRUE seniority level from the ENTIRE CV (years of experience, scope of responsibility, portfolio ownership, team leadership/interim management, P&L/account ownership, strategic initiatives). Do NOT anchor solely on the most recent job title.
+- Step [0] = the candidate's most relevant/senior role from their career, translated to an industry-standard job board title AT THAT SENIORITY LEVEL. If they have held senior roles, Step [0] must reflect that seniority level.
+- Steps [1]-[3] = LATERAL moves at the EXACT SAME seniority level. Broaden into adjacent specialties that share overlapping skills but sit in different sub-domains. Same level of seniority, different flavour of the work. The candidate's CV qualifications should match these roles.
+- Step [4] = the broadest generic function-level description at the SAME seniority level if possible (e.g. "Senior Sales Professional", "Senior Business Professional"), or function-level if truly generic. Avoid dropping to junior generic titles if the candidate is clearly senior.
+- If the candidate IS senior (has owned portfolios, managed teams, done interim management, or has 5+ years of relevant senior experience), you MUST preserve that seniority level across ALL 5 steps. A senior Key Account Manager should broaden laterally to other senior-level titles (e.g., "Senior Business Development Manager", "Senior Client Relationship Manager"), not down to "Pharmaceutical Sales Representative", "Sales Professional", or similar junior/entry-level titles.
+- NEVER include titles that represent seniority escalation beyond what the candidate already holds. Only use "Senior", "Lead", "Principal", "Manager", "Director" etc if the candidate's experience justifies that level AND you are keeping it consistent across the ladder.
 - Each step must be a genuine, searchable job board title. Avoid compound titles.
 - The ladder should reflect what the candidate COULD do based on their actual experience — not a generic template.
-- Return exactly 5 titles.
+- Return exactly 5 titles, ALL at the same seniority band as the candidate's true level.
 
 Examples:
 ["Penetration Tester", "Cyber Security Analyst", "SOC Analyst", "Vulnerability Assessor", "IT Professional"]
 ["Software Engineer", "Backend Developer", "Full Stack Developer", "Platform Engineer", "IT Developer"]
 ["Data Analyst", "Business Intelligence Analyst", "Reporting Analyst", "Operations Analyst", "Business Professional"]
-["Graphic Designer", "UX Designer", "UI Designer", "Visual Designer", "Creative Professional"]
+["Senior Key Account Manager", "Senior Business Development Manager", "Senior Client Relationship Manager", "Senior Strategic Account Manager", "Senior Sales Professional"]
 
 job_types: Infer what work arrangement the candidate likely wants going forward based on their recent trajectory. Consider whether their recent roles were Remote, Hybrid, or On-site. If the CV shows a consistent pattern (e.g. all recent roles were Remote), list only that type. If it varies or is unclear, list the most common one. Return an array of 1-3 values from: "Remote", "Hybrid", "On-site".
 
