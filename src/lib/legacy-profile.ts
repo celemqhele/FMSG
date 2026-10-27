@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/client";
 
 /**
- * Legacy (5-rung) profile detection + one-click upgrade.
+ * Legacy (5-rung) profile detection + mandatory bulk upgrade.
  *
  * Until the 2026-10 ladder trim, a search profile stored a 5-step job title
  * ladder and a 5-step industry ladder. Matching now runs on 2 rungs per ladder
@@ -9,25 +9,23 @@ import { createClient } from "@/lib/supabase/client";
  * carries rungs 3-5 is "legacy": nothing reads those columns any more, and
  * saving the profile editor silently drops them.
  *
- * `upgradeLegacyProfile` is the repair path behind the dashboard prompt: keep
- * the top two titles, re-derive the industry rungs with the current 2-rung
- * generator (existing rungs are the fallback when the AI call fails), and null
- * the retired columns so the prompt never comes back.
+ * Every account that still has legacy profiles is walked through the upgrade
+ * once (it is not optional): each profile keeps its top two titles, gets its
+ * industry rungs re-derived by the current 2-rung generator and has the retired
+ * columns cleared. The AI call is best-effort — a profile whose call fails keeps
+ * the rungs it already had, so the pass can never leave a profile worse off.
  */
 
 /** How many rungs a modern title/industry ladder has. */
 export const MAX_LADDER_TITLES = 2;
 
-/** Industry ladder rungs retired by the 2-rung trim (columns left in the DB). */
-const RETIRED_INDUSTRY_STEPS = [3, 4, 5] as const;
-
-/** A dismissed prompt stays quiet for a week, then offers the upgrade again. */
-const SNOOZE_MS = 7 * 24 * 60 * 60 * 1000;
-
-const SNOOZE_PREFIX = "fmsg_legacy_ladder_snoozed:";
+/** Columns needed to detect and upgrade a legacy profile. */
+export const LEGACY_PROFILE_COLUMNS =
+  "id, name, job_titles, industry, industry_step_1, industry_step_2, industry_step_3, industry_step_4, industry_step_5, industry_step_1_taxonomy_id, industry_step_2_taxonomy_id";
 
 export interface LegacyLadderProfile {
   id: string;
+  name?: string | null;
   job_titles?: string[] | null;
   industry?: string | null;
   industry_step_1?: string | null;
@@ -40,6 +38,9 @@ export interface LegacyLadderProfile {
 export type LegacyUpgradeStatus = "idle" | "working" | "done" | "error";
 
 export interface LegacyUpgradeResult {
+  id: string;
+  /** Profile name for the progress/summary UI. */
+  name: string;
   /** Titles kept after the upgrade (at most {@link MAX_LADDER_TITLES}). */
   titles: string[];
   /** Titles that were retired by the trim. */
@@ -48,6 +49,19 @@ export interface LegacyUpgradeResult {
   rungs: string[];
   /** True when the rungs were re-derived by the AI generator. */
   ladderRebuilt: boolean;
+}
+
+export interface LegacyUpgradeProgress {
+  /** Profiles finished so far, including the one currently running. */
+  done: number;
+  total: number;
+  /** Name of the profile being upgraded right now. */
+  current: string;
+}
+
+export interface LegacyBulkResult {
+  upgraded: LegacyUpgradeResult[];
+  failed: Array<{ id: string; name: string; error: string }>;
 }
 
 function cleanTitles(titles: string[] | null | undefined): string[] {
@@ -69,34 +83,31 @@ export function surplusTitles(profile: LegacyLadderProfile | null | undefined): 
 export function isLegacyLadderProfile(profile: LegacyLadderProfile | null | undefined): boolean {
   if (!profile) return false;
   if (cleanTitles(profile.job_titles).length > MAX_LADDER_TITLES) return true;
-  return RETIRED_INDUSTRY_STEPS.some((step) => rungValue(profile, step).length > 0);
+  return ([3, 4, 5] as const).some((step) => rungValue(profile, step).length > 0);
 }
 
-/** True when the user dismissed the prompt for this profile within the snooze window. */
-export function isLegacyLadderSnoozed(profileId: string): boolean {
-  if (typeof window === "undefined") return false;
-  try {
-    const raw = window.localStorage.getItem(SNOOZE_PREFIX + profileId);
-    if (!raw) return false;
-    const at = Number(raw);
-    if (!Number.isFinite(at)) return false;
-    return Date.now() - at < SNOOZE_MS;
-  } catch {
-    return false;
-  }
+/** Every legacy profile belonging to the signed-in user (empty when signed out). */
+export async function fetchLegacyProfiles(): Promise<LegacyLadderProfile[]> {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return [];
+
+  const { data, error } = await supabase
+    .from("search_profiles")
+    .select(LEGACY_PROFILE_COLUMNS)
+    .eq("user_id", user.id)
+    .order("created_at");
+
+  if (error || !Array.isArray(data)) return [];
+  return (data as unknown as LegacyLadderProfile[]).filter(isLegacyLadderProfile);
 }
 
-/** Silence the prompt for this profile for one week. */
-export function snoozeLegacyLadder(profileId: string): void {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(SNOOZE_PREFIX + profileId, String(Date.now()));
-  } catch {
-    // Storage disabled (private mode) — the prompt simply shows again next load.
-  }
+interface SuggestedRung {
+  value: string;
+  taxonomyId: string | null;
 }
 
-async function suggestIndustryRungs(industry: string, titles: string[]): Promise<string[] | null> {
+async function suggestIndustryRungs(industry: string, titles: string[]): Promise<SuggestedRung[] | null> {
   const supabase = createClient();
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.access_token) return null;
@@ -109,13 +120,18 @@ async function suggestIndustryRungs(industry: string, titles: string[]): Promise
   if (!res.ok) return null;
 
   const json = await res.json().catch(() => null);
-  const steps: Array<{ value?: unknown }> = Array.isArray(json?.steps) ? json.steps : [];
-  const values = steps.map((s) => (typeof s?.value === "string" ? s.value.trim() : "")).filter(Boolean);
-  return values.length > 0 ? values : null;
+  const steps: Array<{ value?: unknown; taxonomy_id?: unknown }> = Array.isArray(json?.steps) ? json.steps : [];
+  const rungs = steps
+    .map((s) => ({
+      value: typeof s?.value === "string" ? s.value.trim() : "",
+      taxonomyId: typeof s?.taxonomy_id === "string" && s.taxonomy_id ? s.taxonomy_id : null,
+    }))
+    .filter((r) => r.value);
+  return rungs.length > 0 ? rungs : null;
 }
 
 /**
- * Rewrite a legacy profile onto the 2-rung ladder.
+ * Rewrite one legacy profile onto the 2-rung ladder.
  *
  * Never fails closed: if the AI ladder call returns nothing, the rungs already
  * on the profile are kept, so the profile always ends up with two usable rungs
@@ -125,8 +141,12 @@ export async function upgradeLegacyProfile(profile: LegacyLadderProfile): Promis
   const allTitles = cleanTitles(profile.job_titles);
   const titles = allTitles.slice(0, MAX_LADDER_TITLES);
   const retiredTitles = allTitles.slice(MAX_LADDER_TITLES);
+  const name = (profile.name ?? "").trim() || titles[0] || "Profile";
 
-  let rungs = [rungValue(profile, 1), rungValue(profile, 2)].filter(Boolean);
+  let rungs: SuggestedRung[] = [
+    { value: rungValue(profile, 1), taxonomyId: null },
+    { value: rungValue(profile, 2), taxonomyId: null },
+  ].filter((r) => r.value);
   let ladderRebuilt = false;
 
   const industry = (profile.industry ?? "").trim();
@@ -138,8 +158,8 @@ export async function upgradeLegacyProfile(profile: LegacyLadderProfile): Promis
     }
   }
 
-  const rung1 = rungs[0] ?? "";
-  const rung2 = rungs[1] ?? rung1;
+  const rung1 = rungs[0]?.value ?? "";
+  const rung2 = rungs[1]?.value ?? rung1;
 
   const supabase = createClient();
   const { error } = await supabase
@@ -148,15 +168,50 @@ export async function upgradeLegacyProfile(profile: LegacyLadderProfile): Promis
       job_titles: titles,
       industry_step_1: rung1,
       industry_step_2: rung2,
+      industry_step_1_taxonomy_id: rungs[0]?.taxonomyId ?? null,
+      industry_step_2_taxonomy_id: rungs[1]?.taxonomyId ?? null,
       // Retired rungs: nulled so the profile reads as modern and the prompt stops.
       industry_step_3: null,
       industry_step_4: null,
       industry_step_5: null,
+      industry_step_3_taxonomy_id: null,
+      industry_step_4_taxonomy_id: null,
+      industry_step_5_taxonomy_id: null,
       industry_ladder_generated_at: new Date().toISOString(),
     })
     .eq("id", profile.id);
 
   if (error) throw new Error(error.message);
 
-  return { titles, retiredTitles, rungs: [rung1, rung2], ladderRebuilt };
+  return { id: profile.id, name, titles, retiredTitles, rungs: [rung1, rung2], ladderRebuilt };
+}
+
+/**
+ * Upgrade every supplied profile in sequence, reporting progress before each
+ * one. A failing profile is recorded and skipped — the rest still run.
+ */
+export async function upgradeLegacyProfiles(
+  profiles: LegacyLadderProfile[],
+  onProgress?: (progress: LegacyUpgradeProgress) => void
+): Promise<LegacyBulkResult> {
+  const upgraded: LegacyUpgradeResult[] = [];
+  const failed: LegacyBulkResult["failed"] = [];
+
+  for (let i = 0; i < profiles.length; i++) {
+    const profile = profiles[i];
+    const label = (profile.name ?? "").trim() || cleanTitles(profile.job_titles)[0] || "Profile";
+    onProgress?.({ done: i + 1, total: profiles.length, current: label });
+
+    try {
+      upgraded.push(await upgradeLegacyProfile(profile));
+    } catch (err) {
+      failed.push({
+        id: profile.id,
+        name: label,
+        error: err instanceof Error ? err.message : "Upgrade failed.",
+      });
+    }
+  }
+
+  return { upgraded, failed };
 }
