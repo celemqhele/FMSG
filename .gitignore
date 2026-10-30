@@ -37,6 +37,11 @@ yarn-error.log*
 # vercel
 .vercel
 
+# FMSG Agents build artifacts
+src/apps/fmsg-agents/dist/
+src/apps/fmsg-agents/renderer/bundle.js
+src/apps/fmsg-agents/dist/electron/
+
 # recycle bin
 /recycle_bin
 

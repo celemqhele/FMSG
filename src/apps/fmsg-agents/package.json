@@ -1,0 +1,40 @@
+{
+  "name": "fmsg-agents",
+  "version": "1.0.0",
+  "description": "FMSG Agents — local agent app for automated job applications",
+  "main": "dist/electron-main.js",
+  "scripts": {
+    "build:main": "tsc electron-main.ts --declaration false --outDir dist",
+    "build:preload": "tsc preload.ts --declaration false --outDir dist",
+    "build:renderer": "esbuild renderer/index.tsx --bundle --minify --loader:.tsx=tsx --loader:.ts=ts --loader:.css=text --outfile=renderer/bundle.js --platform=browser --format=cjs",
+    "build:all": "npm run build:main && npm run build:preload && npm run build:renderer && electron-builder",
+    "dev": "npm run build:main && npm run build:preload && npm run build:renderer && electron .",
+    "start": "npm run build:all"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.108.2",
+    "electron-updater": "^6.3.0",
+    "keytar": "^7.9.0",
+    "playwright": "^1.49.0"
+  },
+  "devDependencies": {
+    "electron": "^34.0.0",
+    "electron-builder": "^26.0.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5"
+  },
+  "build": {
+    "appId": "com.fmsg.agents",
+    "productName": "FMSG Agents",
+    "directories": {
+      "output": "dist/electron"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "files": [
+      "dist/**/*",
+      "renderer/**/*"
+    ]
+  }
+}
