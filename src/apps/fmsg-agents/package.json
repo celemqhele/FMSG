@@ -32,9 +32,15 @@
     "win": {
       "target": "nsis"
     },
+    "nsis": {
+      "license": "legal/EULA.md",
+      "oneClick": true,
+      "perMachine": false
+    },
     "files": [
       "dist/**/*",
-      "renderer/**/*"
+      "renderer/**/*",
+      "legal/**/*"
     ]
   }
 }
