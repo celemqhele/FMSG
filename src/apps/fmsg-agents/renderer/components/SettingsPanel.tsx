@@ -6,6 +6,8 @@ export default function SettingsPanel() {
   const [provider, setProvider] = useState('openrouter');
   const [key, setKey] = useState('');
   const [isRunning, setIsRunning] = useState(false);
+  const [preventSleep, setPreventSleep] = useState(false);
+  const [batteryWarningShown, setBatteryWarningShown] = useState(false);
 
   const handleStart = () => {
     setIsRunning(true);
@@ -60,6 +62,24 @@ export default function SettingsPanel() {
             style={{ accentColor: '#4f8cff' }}
           />
           Auto-accept / Complete agent
+        </label>
+
+        <label className="toggle-label" style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+          <input
+            type="checkbox"
+            checked={preventSleep}
+            onChange={(e) => {
+              const enabled = e.target.checked;
+              setPreventSleep(enabled);
+              (window as any).electronAPI.setPreventSleep?.(enabled);
+              if (enabled && !batteryWarningShown) {
+                setBatteryWarningShown(true);
+                alert('WARNING: Prevent Sleep is ON. This keeps your screen active continuously, which will drain battery faster. Please ensure your laptop is plugged in or you have sufficient battery for the full agent run.');
+              }
+            }}
+            style={{ accentColor: '#e67e22' }}
+          />
+          Prevent PC from sleeping
         </label>
       </div>
 

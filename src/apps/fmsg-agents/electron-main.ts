@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, powerSaveBlocker } from 'electron';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { chromium } from 'playwright';
 import * as path from 'path';
@@ -79,6 +79,17 @@ ipcMain.handle('run-agent', async (_event, config: AgentConfig) => {
 ipcMain.handle('stop-agent', async () => {
   if (agentRunner) await agentRunner.stop();
   return { stopped: true };
+});
+
+ipcMain.handle('set-prevent-sleep', async (_event, enabled: boolean) => {
+  const id = (globalThis as any).__preventSleepId;
+  if (enabled && !id) {
+    (globalThis as any).__preventSleepId = powerSaveBlocker.start('prevent-app-suspension');
+  } else if (!enabled && id) {
+    powerSaveBlocker.stop(id);
+    (globalThis as any).__preventSleepId = null;
+  }
+  return { ok: true, enabled };
 });
 
 app.on('window-all-closed', () => {

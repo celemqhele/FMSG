@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   launchVisibleBrowser: (url: string) => ipcRenderer.invoke('launch-visible-browser', url),
   runAgent: (config: any) => ipcRenderer.invoke('run-agent', config),
   stopAgent: () => ipcRenderer.invoke('stop-agent'),
+  setPreventSleep: (enabled: boolean) => ipcRenderer.invoke('set-prevent-sleep', enabled),
 });
 
 declare global {
@@ -14,6 +15,7 @@ declare global {
       launchVisibleBrowser: (url: string) => Promise<any>;
       runAgent: (config: any) => Promise<any>;
       stopAgent: () => Promise<any>;
+      setPreventSleep: (enabled: boolean) => Promise<any>;
     };
   }
 }
