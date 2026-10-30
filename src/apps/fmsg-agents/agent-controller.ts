@@ -55,7 +55,7 @@ const CHECKLIST = [
   'Source of truth = profile only — never invent facts',
   'No fabricated metrics — every number must be from profile',
   'Sensitive data encrypted locally — only agent accesses',
-  'Unexpected sensitive info detected → navigate back, skip, log',
+  'Unexpected sensitive info detected → navigate back, continue finding relevant content, log',
   'CV matches job spec honestly (borrowed from FMSG CLIENT ASSIST CV MAKER)',
   'PF logic: >4 applications uses PF (4 rounds: industry ladder steps 1-2, then without industry)',
 ];
@@ -234,6 +234,19 @@ export class AgentRunner {
   private logStep(step: string, message: string) {
     this.state.lastStep = step;
     console.log(`[Agent] ${step}: ${message}`);
+  }
+
+  async handleUnexpectedSensitiveInfo(reason: string): Promise<void> {
+    // Navigate back immediately; do NOT skip the job. Continue finding relevant content.
+    if (this.page) {
+      try {
+        await this.page.goBack({ waitUntil: 'networkidle' });
+      } catch (e) {
+        // If back fails (no history), reload the job URL or close unexpected tab
+        console.warn('[Agent] Back navigation failed, attempting reload:', e);
+      }
+    }
+    this.logStep('Unexpected sensitive info', `Detected: ${reason}. Navigated back. Continuing to find relevant content.`);
   }
 
   async stop() {

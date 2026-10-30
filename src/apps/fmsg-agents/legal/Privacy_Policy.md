@@ -1,125 +1,116 @@
-# FMSG Agents — Privacy Policy
+PRIVACY POLICY
 
-**Effective Date:** 2026-10-30  
-**App:** FMSG Agents (Desktop `.exe`, Electron-based)  
-**Provider:** FMSG  
+FMSG AGENTS DESKTOP APPLICATION
 
----
+VERSION 1.0.0 — EFFECTIVE 2026-10-30
 
-## 1. Scope
-
-This Privacy Policy applies to the FMSG Agents desktop application (`.exe`, Electron framework, Playwright visible browser automation) only. It does **not** replace the FMSG website privacy policy (`findmesomejobs.co.za`). Where there is overlap (profile data, Supabase access), this policy specifies the **local agent's** processing rules.
+PROVIDER: FMSG (FIND ME SOME JOBS)
 
 ---
 
-## 2. What Data Is Processed by the Agent
+1. SCOPE
 
-### 2.1 Profile Data (`search_profiles`)
-- **Source:** Supabase (`https://nnebtygloqixibbjxsjr.supabase.co`, `public.search_profiles` table).
-- **Access method:** Service-role key (`SUPABASE_SERVICE_ROLE_KEY`, stored in `.opencode/supabase-access.env` — local-only, `.opencode/` is `.gitignored`).
-- **Data read:** `id`, `user_id`, `job_titles`, `location`, `industry`, `industry_step_1`, `industry_step_2`, `location_scope`, `cv_variations`.
-- **Processing:** Read-only. The agent uses this to build custom search queries and to derive role JSON for CV tailoring (borrowed from `FMSG CLIENT ASSIST` `CV MAKER` rules: profile is the single source of truth).
-- **Storage:** Not copied locally. Only the active profile data is held in memory during the agent run.
-
-### 2.2 Job Search and Results
-- **Source:** Job boards accessed via the visible Playwright browser (SerpAPI sources: Google Jobs, JSearch, Bing Jobs, Adzuna, etc.; Workday CXS; direct navigation to job URLs).
-- **Data read:** Job titles, company names, locations, job descriptions/specs, URLs.
-- **Processing:** Read by the agent to match against the profile's title ladder and industry ladder. If Persistent Finder (PF) is active (`batch > 4`), the agent runs 4 rounds: rounds 1-2 use the industry ladder (`industry_step_1`, `industry_step_2`); rounds 3-4 drop the industry keyword.
-- **Storage:** Job results (`job_results` table in Supabase) are inserted by the FMSG web pipeline, not by the agent. The agent logs match results in memory (live stream) — not persisted to disk by default.
-
-### 2.3 Login Credentials and Sensitive Data
-- **When required:** When the agent navigates to a site requiring login (LinkedIn, etc.), a popup appears. When the form asks for sensitive fields (national ID, salary expectation, payslip upload, qualification file), the encrypted entry popup appears.
-- **Storage location:** `%APPDATA%/fmsg-agents/secure/` (Windows) or the equivalent OS application data folder.
-- **Encryption method:** AES encryption with a key derived from the user's OS user credentials via `node-keytar` / Windows Credential Manager (`keytar` package).
-- **Access control:** Only the agent process can access these files. They are not accessible by other users or applications without the OS user password.
-- **Retention:**
-  - If you select **"Save securely"** (checkbox in the popup), the data is stored encrypted and reused for future applications.
-  - If you select **"Do not save"** (toggle), the data is entered once, used for the current application, and **not stored**. The agent will ask again for the next job.
-  - If you select **"Skip"**, no data is entered or stored; the job is skipped.
-- **Login confirmations:** If you choose **Sign Up** mode, the agent may open Gmail (visible browser) to confirm the email address if you are logged in. No email content is read or stored by the agent — only the confirmation action is performed.
-
-### 2.4 AI Provider Keys
-- **Storage:** OS keyring (`keytar`), locally encrypted.
-- **Usage:** Transmitted only to the selected AI provider endpoint (OpenRouter, Gemini) to generate CV content, ATS scores, or search expansions.
-- **Retention:** Stored until you delete or change the provider in settings. Not transmitted to any other service.
-
-### 2.5 Update and Version Checks
-- **Endpoint checked:** `https://findmesomejobs.co.za/api/agent-version` (Vercel endpoint, public, no authentication required).
-- **Data transmitted:** App version number only (`version` from `package.json`). No user profile data, no job results, no credentials.
-- **Response used:** `updateAvailable`, `type` (`security`, `feature`, `rules`, `combined`), `url` (optional download link for `.exe` or rules JSON).
-- **Rules download (`agent-rules.json`):** Fetched from Supabase Storage (service role). Contains the hardcoded checklist rules. No user-specific data in the rules file.
-
-### 2.6 Live Agent Log (LiveLog Panel)
-- **Content:** Step descriptions, checklist reiterations (`Source of truth = profile only`, `No fabricated metrics`, etc.), profile info, job titles, company names, application status.
-- **Storage:** Held in memory during the agent run. Not written to disk unless you manually export. If the `.exe` crashes, the live log is lost (it is not a log file — it is a runtime stream).
+1.1 THIS PRIVACY POLICY GOVERNS THE PROCESSING OF DATA BY THE FMSG AGENTS DESKTOP APPLICATION ("APP", ".EXE", "SOFTWARE") ONLY. IT DOES NOT SUPERSEDE THE PRIVACY POLICY GOVERNING THE FMSG WEB APPLICATION (FINDMESOMEJOBS.CO.ZA). WHERE OVERLAP EXISTS, THIS POLICY SPECIFIES THE LOCAL AGENT'S PROCESSING RULES.
 
 ---
 
-## 3. How Data Is Protected (Security)
+2. DATA PROCESSED
 
-### 3.1 Local-First Design
-- The agent is a **local `.exe`**. No hosting is required for the agent itself.
-- All sensitive storage (`%APPDATA%/fmsg-agents/secure/`) is **local only**.
-- The agent connects to Supabase only for:
-  1. Profile reads (`search_profiles`) — service role, same database as the web app.
-  2. Version checks (`api/agent-version`) — public endpoint.
-  3. Rules download (`agent-rules.json`) — Supabase Storage.
+2.1 PROFILE DATA (SEARCH_PROFILES)
+SOURCE: SUPABASE DATABASE (PROJECT REFERENCE: NNEBTYGLOQIXXIBBJXSJR, PUBLIC.SEARCH_PROFILES TABLE).
+ACCESS METHOD: SERVICE-ROLE KEY (SUPABASE_SERVICE_ROLE_KEY, STORED LOCALLY IN .OPENCODE/SUPABASE-ACCESS.ENV — GITIGNORED).
+DATA READ: ID, USER_ID, JOB_TITLES, LOCATION, INDUSTRY, INDUSTRY_STEP_1, INDUSTRY_STEP_2, LOCATION_SCOPE, CV_VARIATIONS.
+PROCESSING: READ-ONLY. USED FOR SEARCH QUERY GENERATION AND CV TAILORING (PROFILE AS SINGLE SOURCE OF TRUTH, PER FMSG CLIENT ASSIST CV MAKER RULES).
+STORAGE: NOT COPIED LOCALLY. HELD IN MEMORY ONLY DURING THE AGENT SESSION.
 
-### 3.2 Encryption Details
-- **Algorithm:** AES (implemented via `node-keytar` / `crypto` module in Electron main process).
-- **Key derivation:** Derived from the user's OS login credentials. If the OS user password changes, previously encrypted files may become inaccessible (the agent will prompt for re-entry if needed).
-- **File naming:** Encrypted files use random filenames (UUID-based) mapped to a local index. The index does not contain plaintext values.
+2.2 JOB SEARCH AND RESULTS
+SOURCE: JOB BOARDS ACCESSED VIA VISIBLE PLAYWRIGHT BROWSER (SERPAPI GOOGLE JOBS, JSEARCH, BING JOBS, ADZUNA, WORKDAY CXS, DIRECT NAVIGATION TO JOB URLS).
+DATA READ: JOB TITLES, COMPANY NAMES, LOCATIONS, SPECIFICATIONS, URLs.
+PROCESSING: READ BY THE AGENT TO MATCH AGAINST THE PROFILE'S TITLE LADDER AND INDUSTRY LADDER. PERSISTENT FINDER (PF) ACTIVATES WHEN BATCH SIZE EXCEEDS FOUR (4), EXECUTING FOUR (4) ROUNDS (INDUSTRY LADDER ROUNDS 1-2, FOLLOWED BY THE SAME TITLE LADDER WITHOUT INDUSTRY KEYWORD IN ROUNDS 3-4, PER DOCS/CAREER-LADDERS-PLAN.TXT AND SRC/LIB/CAREER-LADDERS.TS).
+STORAGE: JOB RESULTS ARE INSERTED INTO THE JOB_RESULTS TABLE BY THE FMSG WEB PIPELINE, NOT BY THE AGENT. THE AGENT LOGS MATCH RESULTS IN MEMORY (LIVE STREAM PANEL) — NOT PERSISTED TO DISK BY DEFAULT.
 
-### 3.3 Browser Automation Security
-- **Playwright visible mode:** The agent uses `chromium.launch({ headless: false, slowMo: 200 })`. You see every click, scroll, and navigation in a visible Chrome window.
-- **No hidden automation:** There is no invisible/headless mode for application steps. If a site blocks the visible browser (CAPTCHA, bot detection), the agent pauses, shows the login/sensitive popup, and applies the 10-minute timer.
-- **Anti-deviation guard:** The agent follows the hardcoded checklist (`agent-controller.ts`). It does not improvise actions. If a page requires unexpected interaction (e.g., a new form field not mentioned in the framework), the agent pauses and logs the deviation rather than proceeding blindly.
+2.3 LOGIN CREDENTIALS AND SENSITIVE DATA
+WHEN REQUIRED: WHEN THE AGENT NAVIGATES TO A SITE REQUIRING AUTHENTICATION, OR WHEN A FORM REQUESTS SENSITIVE FIELDS (NATIONAL IDENTIFICATION, SALARY EXPECTATION, PAYSLIP UPLOAD, QUALIFICATION FILE).
+STORAGE LOCATION: %APPDATA%/FMSG-AGENTS/SECURE/ (OR THE EQUIVALENT OPERATING SYSTEM APPLICATION DATA DIRECTORY).
+ENCRYPTION METHOD: AES ENCRYPTION WITH A KEY DERIVED FROM THE USER'S OPERATING SYSTEM CREDENTIALS VIA THE KEYTAR LIBRARY (NODE-KEYTAR / WINDOWS CREDENTIAL MANAGER).
+ACCESS CONTROL: ONLY THE AGENT PROCESS CAN ACCESS THESE FILES. ACCESS BY OTHER USERS OR APPLICATIONS REQUIRES THE OPERATING SYSTEM USER PASSWORD.
+RETENTION:
+(A) IF "SAVE SECURELY" IS SELECTED: DATA IS ENCRYPTED AND RETAINED FOR FUTURE APPLICATIONS.
+(B) IF "DO NOT SAVE" IS SELECTED: DATA IS ENTERED ONCE, USED FOR THE CURRENT APPLICATION, AND NOT RETAINED. THE AGENT SHALL PROMPT AGAIN FOR SUBSEQUENT JOBS.
+(C) IF "SKIP" IS SELECTED: NO DATA IS ENTERED OR STORED; THE JOB IS SKIPPED.
 
----
+2.4 AI PROVIDER KEYS
+STORAGE: OPERATING SYSTEM KEYRING (KEYTAR), LOCALLY ENCRYPTED.
+USAGE: TRANSMITTED ONLY TO THE SELECTED AI PROVIDER ENDPOINT FOR CV GENERATION, ATS SCORING, AND SEARCH EXPANSION.
+RETENTION: STORED UNTIL DELETED OR CHANGED BY THE USER IN THE SETTINGS PANEL. NOT TRANSMITTED TO ANY OTHER SERVICE.
 
-## 4. User Consent Requirements (Before Pressing Start)
+2.5 UPDATE AND VERSION CHECKS
+ENDPOINT: HTTPS://FINDMESOMEJOBS.CO.ZA/API/AGENT-VERSION (VERCEL ENDPOINT, PUBLIC, NO AUTHENTICATION REQUIRED).
+DATA TRANSMITTED: APP VERSION NUMBER ONLY (VERSION FROM PACKAGE.JSON: 1.0.0). NO USER PROFILE DATA, NO JOB RESULTS, NO CREDENTIALS, NO SENSITIVE DATA.
+RESPONSE DATA: UPDATEAVAILABLE (BOOLEAN), TYPE (SECURITY, FEATURE, RULES, COMBINED, NONE), URL (OPTIONAL DOWNLOAD LINK FOR .EXE OR RULES JSON).
+RULES DOWNLOAD (AGENT-RULES.JSON): FETCHED FROM SUPABASE STORAGE (SERVICE ROLE). CONTAINS THE HARDCODED CHECKLIST RULES. NO USER-SPECIFIC DATA IS INCLUDED IN THE RULES FILE.
 
-The settings panel (`SettingsPanel.tsx`) requires the following acknowledgments before the `Start` button activates:
-
-1. **Profile Access Acknowledged:** The App will read your `search_profiles` data.
-2. **AI Provider Key Provided:** A valid provider key is required (OpenRouter, Gemini, or other supported provider).
-3. **Local Encryption Acknowledged:** You understand that saved login/sensitive data is encrypted locally and that the agent process is the only access point.
-4. **Update Policy Acknowledged:** You understand that security updates are automatic; feature updates are optional with reminders.
-5. **AI Behavior Acknowledged:** You confirm that the agent uses your profile as the source of truth, does not fabricate achievements, and skips unexpected sensitive pages.
-
-These consent items are displayed in the App settings and must be checked/enabled before the agent starts.
-
----
-
-## 5. Third-Party Services
-
-The agent uses the following third-party services (no user-specific data is transmitted to them except what is explicitly described above):
-
-- **Supabase:** Profile reads, rules storage, job results (same `fmsg` database).
-- **Playwright / Chrome:** Browser automation (local only — Chrome runs on your device).
-- **SerpAPI / Search APIs:** Job search results (used by the FMSG web pipeline; the agent navigates to the job URLs directly).
-- **AI Provider (OpenRouter / Gemini / etc.):** CV scoring, ATS optimization, search expansion (key transmitted securely to provider endpoint).
-- **Vercel:** Update/version endpoint (`api/agent-version`).
+2.6 LIVE AGENT STREAM (LIVELOG PANEL)
+CONTENT: STEP DESCRIPTIONS, CHECKLIST REITERATIONS, PROFILE INFORMATION, JOB TITLES, COMPANY NAMES, APPLICATION STATUS.
+STORAGE: HELD IN MEMORY ONLY DURING THE AGENT SESSION. NOT WRITTEN TO DISK BY DEFAULT. IF THE .EXE TERMINATES (CRASH OR USER CLOSE), THE STREAM IS LOST (IT IS NOT A PERSISTENT LOG FILE — IT IS A RUNTIME STREAM).
 
 ---
 
-## 6. Changes to This Policy
+3. DATA PROTECTION
 
-This Privacy Policy is versioned (`v1.0.0`, matching the `.exe` version). Updates to the policy will be delivered as part of feature updates (optional download) or included in the rules download (`agent-rules.json`). If the policy changes, you will see a notification in the App settings on the next launch.
+3.1 LOCAL-FIRST ARCHITECTURE
+THE APP IS A LOCAL DESKTOP .EXE. NO HOSTING IS REQUIRED FOR THE AGENT. ALL SENSITIVE STORAGE IS LOCAL ONLY (%APPDATA%/FMSG-AGENTS/SECURE/). THE AGENT CONNECTS TO SUPABASE ONLY FOR: (A) PROFILE READS; (B) VERSION CHECKS; (C) RULES DOWNLOADS.
+
+3.2 ENCRYPTION SPECIFICATION
+ALGORITHM: AES (IMPLEMENTED VIA NODE-KEYTAR / CRYPTO MODULE IN THE ELECTRON MAIN PROCESS).
+KEY DERIVATION: DERIVED FROM THE USER'S OPERATING SYSTEM USER CREDENTIALS. IF THE OPERATING SYSTEM USER PASSWORD CHANGES, PREVIOUSLY ENCRYPTED FILES MAY BECOME INACCESSIBLE. THE AGENT SHALL PROMPT FOR RE-ENTRY IF DECRYPTION FAILS.
+FILENAME CONVENTION: RANDOM UUID-BASED FILENAMES. A LOCAL INDEX (NOT CONTAINING PLAINTEXT VALUES) MAPS FILENAMES TO DATA TYPES.
+
+3.3 BROWSER AUTOMATION SECURITY
+MODE: PLAYWRIGHT VISIBLE (HEADLESS: FALSE; SLOWMO: 200 MILLISECONDS). EVERY NAVIGATION, SCROLL, AND FORM INTERACTION OCCURS IN A VISIBLE CHROME WINDOW THAT THE USER CAN OBSERVE.
+ANTI-DEVIATION GUARD: THE AGENT FOLLOWS A HARDCODED CHECKLIST (AGENT-CONTROLLER.TS). ANY ACTION OUTSIDE THE CHECKLIST IS PREVENTED. IF A PAGE REQUIRES UNEXPECTED INTERACTION, THE AGENT LOGS THE DEVIATION RATHER THAN PROCEEDING BLINDLY.
+UNEXPECTED SENSITIVE CONTENT PROTOCOL: IF THE AGENT DETECTS CONTENT UNRELATED TO A JOB APPLICATION (EMAIL INBOXES, BANKING PAGES, MEDICAL DATA), THE AGENT SHALL NAVIGATE BACK TO THE PREVIOUS RELEVANT PAGE AND CONTINUE PROCESSING THE CURRENT JOB. THE AGENT SHALL NOT SKIP THE ENTIRE JOB IN THIS EVENT UNLESS THE USER EXPLICITLY SELECTS THE SKIP OPTION.
 
 ---
 
-## 7. Your Rights
+4. THIRD-PARTY SERVICES
 
-- **Access:** You can view your profile data by clicking the profile picker (`ProfileBar`).
-- **Correction:** If profile data is incorrect, edit it in the FMSG web app (`findmesomejobs.co.za`). The agent pulls fresh data on each start.
-- **Deletion:** Uninstalling the `.exe` removes the App. Encrypted local files (`%APPDATA%/fmsg-agents/secure/`) remain on your device until you manually delete them. There is no remote deletion mechanism (the agent is local-only).
-- **Export:** You can manually copy encrypted files from `%APPDATA%/fmsg-agents/secure/` for backup. They are encrypted and require the OS user password to decrypt.
+THE AGENT USES THE FOLLOWING THIRD-PARTY SERVICES. NO USER-SPECIFIC DATA IS TRANSMITTED TO ANY SERVICE EXCEPT AS EXPLICITLY DESCRIBED ABOVE:
+
+(A) SUPABASE: PROFILE READS, RULES STORAGE, JOB RESULTS (SAME FMSG DATABASE);
+(B) PLAYWRIGHT / CHROME: BROWSER AUTOMATION (LOCAL ONLY — CHROME RUNS ON THE USER'S DEVICE);
+(C) SERPAPI / SEARCH APIS: JOB SEARCH RESULTS (USED BY THE FMSG WEB PIPELINE; THE AGENT NAVIGATES DIRECTLY TO JOB URLS);
+(D) AI PROVIDER (OPENROUTER, GEMINI, OR EQUIVALENT): CV SCORING AND ATS OPTIMIZATION (API KEY ONLY, ENCRYPTED);
+(E) VERCEL: UPDATE/VERSION ENDPOINT (VERSION NUMBER ONLY, NO USER DATA).
 
 ---
 
-## 8. Contact
+5. USER CONSENT
 
-- **App Plan:** `docs/fmsg-agents-plan.md`
-- **Project:** FMSG — `production` branch (Vercel deployment: `fmsg`, `fmsg-2`)
-- **Audit Log:** `PRODUCTION_AUDIT.md`
+5.1 BEFORE INITIATING ANY AGENT SESSION, THE USER MUST EXPLICITLY ACKNOWLEDGE THE FOLLOWING CONSENT ITEMS IN THE APPLICATION SETTINGS PANEL:
+
+(A) PROFILE ACCESS: CONSENT TO READ SEARCH_PROFILES DATA FROM SUPABASE;
+(B) AI KEY: PROVISION OF A VALID AI PROVIDER KEY;
+(C) LOCAL ENCRYPTION: UNDERSTANDING THAT SAVED DATA IS ENCRYPTED LOCALLY AND ACCESSIBLE ONLY BY THE AGENT PROCESS;
+(D) AUTO-ACCEPT MODE: UNDERSTANDING THAT ENABLING AUTO-ACCEPT ALLOWS APPLICATION WITHOUT PER-STEP CONFIRMATION, BUT DOES NOT BYPASS LOGIN OR UNEXPECTED CONTENT DETECTION;
+(E) UPDATE POLICY: UNDERSTANDING THAT SECURITY UPDATES ARE AUTOMATIC AND FEATURE UPDATES ARE OPTIONAL WITH REMINDERS AFTER FIVE (5) SKIPS.
+
+5.2 THE START FUNCTION SHALL NOT EXECUTE UNTIL ALL CONSENT ACKNOWLEDGMENTS ARE RECORDED.
+
+---
+
+6. DATA SUBJECT RIGHTS
+
+6.1 ACCESS: THE USER MAY VIEW PROFILE DATA VIA THE PROFILE PICKER (PROFILEBAR COMPONENT) IN THE APPLICATION.
+
+6.2 CORRECTION: PROFILE DATA MUST BE EDITED IN THE FMSG WEB APPLICATION. THE AGENT PULLS FRESH DATA ON EACH START SESSION.
+
+6.3 DELETION: THE USER MAY DELETE ENCRYPTED LOCAL FILES MANUALLY FROM %APPDATA%/FMSG-AGENTS/SECURE/. THE NSIS UNINSTALLER REMOVES APPLICATION FILES BUT DOES NOT DELETE THE ENCRYPTED DATA FOLDER. THERE IS NO REMOTE DELETION MECHANISM.
+
+6.4 EXPORT: THE USER MAY COPY ENCRYPTED FILES FROM THE LOCAL DATA FOLDER FOR BACKUP. THE FILES REQUIRE THE USER'S OPERATING SYSTEM PASSWORD FOR DECRYPTION.
+
+---
+
+7. CHANGES TO THIS POLICY
+
+THIS PRIVACY POLICY IS VERSIONED (V1.0.0) WITH THE .EXE. CHANGES SHALL BE DELIVERED AS PART OF FEATURE UPDATES OR INCLUDED IN THE RULES DOWNLOAD (AGENT-RULES.JSON). THE USER SHALL BE NOTIFIED IN THE APPLICATION SETTINGS ON THE NEXT LAUNCH IF THE POLICY HAS BEEN UPDATED.

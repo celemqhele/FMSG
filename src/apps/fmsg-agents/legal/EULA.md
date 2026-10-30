@@ -1,132 +1,160 @@
-# FMSG Agents — End User License Agreement (EULA)
+END USER LICENSE AGREEMENT
 
-**Effective Date:** 2026-10-30  
-**App:** FMSG Agents (Desktop `.exe`, Electron-based)  
-**Version:** 1.0.0  
-**Developer / Provider:** FMSG (Find Me Some Jobs) — South African job matching SaaS  
+FMSG AGENTS DESKTOP APPLICATION
 
----
+VERSION 1.0.0 — EFFECTIVE 2026-10-30
 
-## 1. Acceptance
-
-By installing, running, or using the FMSG Agents `.exe` (the "App"), you agree to this EULA. If you do not agree, do not install or run the App. This EULA applies to the binary compiled by `electron-builder` (NSIS installer, `FMSG Agents Setup 1.0.0.exe`) and all updates delivered via the Vercel endpoint (`/api/agent-version`).
+PROVIDER: FMSG (FIND ME SOME JOBS) — SOUTH AFRICAN JOB MATCHING SAAS
 
 ---
 
-## 2. What the App Is
+1. ACCEPTANCE OF TERMS
 
-FMSG Agents is a **specialised local desktop agent** — not a generic AI assistant, not a chat bot, not a web browser replacement. Its sole purpose is:
+1.1 THIS END USER LICENSE AGREEMENT ("AGREEMENT") IS A LEGALLY BINDING CONTRACT BETWEEN THE USER ("YOU", "USER") AND THE PROVIDER ("FMSG", "PROVIDER", "US") GOVERNING THE INSTALLATION, ACCESS, AND USE OF THE FMSG AGENTS DESKTOP APPLICATION ("APP", "SOFTWARE", ".EXE").
 
-1. Read your FMSG profile (`search_profiles`, pulled via Supabase service-role key — same login as the web app).
-2. Find job openings (custom search queries written by the agent; if batch > 4 applications, the agent uses **Persistent Finder / PF** — 4 rounds: industry ladder steps 1-2, then same titles without industry).
-3. Read job specifications (visible Playwright Chrome browser, `slowMo: 200` ms — one step at a time).
-4. Tailor a CV using your profile as the **single source of truth** (borrowed pipeline from `FMSG CLIENT ASSIST` `CV MAKER`: profile-first, no fabricated metrics, ATS scan, `.docx` + `.pdf` output).
-5. Apply on your behalf.
+1.2 BY DOWNLOADING, INSTALLING, OR EXECUTING THE APP, YOU ACKNOWLEDGE THAT YOU HAVE READ, UNDERSTOOD, AND AGREE TO BE BOUND BY THIS AGREEMENT. IF YOU DO NOT AGREE TO ALL TERMS HEREIN, YOU MUST NOT INSTALL, ACCESS, OR USE THE APP.
 
-Nothing else. The agent will not access your email inbox, bank accounts, medical records, or any page unrelated to a job application. If it encounters unexpected sensitive information, it **immediately navigates back and skips that job** (logged in the live stream).
+1.3 THIS AGREEMENT APPLIES TO THE BINARY DISTRIBUTED VIA THE NSIS INSTALLER (FMSG AGENTS SETUP 1.0.0.EXE) AND TO ALL SUBSEQUENT UPDATES DELIVERED THROUGH THE VERCEL ENDPOINT (/API/AGENT-VERSION), INCLUDING SECURITY PATCHES, FEATURE UPDATES, AND RULES FILES (AGENT-RULES.JSON).
 
 ---
 
-## 3. What You Must Consent To Before Using
+2. SCOPE AND PURPOSE OF THE APP
 
-Before pressing **Start**, you must agree to all of the following. These are displayed in the App settings and must be acknowledged:
+2.1 THE APP IS A SPECIALISED LOCAL DESKTOP AGENT DESIGNED EXCLUSIVELY FOR AUTOMATED JOB APPLICATION ASSISTANCE. IT IS NOT A GENERAL-PURPOSE ARTIFICIAL INTELLIGENCE SYSTEM, NOT A CHAT INTERFACE, AND NOT A WEB BROWSER SUBSTITUTE.
 
-- **Profile Access:** The App reads your `search_profiles` data from Supabase (`https://nnebtygloqixibbjxsjr.supabase.co`) using the service-role key. This is the same database used by the FMSG website (`findmesomejobs.co.za`).
-- **AI Provider Key:** You must provide an AI provider key (e.g., OpenRouter, Gemini). The key is stored securely in your OS keyring (`keytar`) and selectable later; it is never transmitted except to the AI provider endpoint.
-- **Local Encryption:** Any saved login credentials, ID numbers, salary expectations, payslips, or qualification files are stored in `%APPDATA%/fmsg-agents/secure/` (Windows) or the equivalent OS application data folder. They are encrypted with a key derived from your OS user credentials. Only this agent process can access them.
-- **Login Handling:** When the agent hits a site requiring login (LinkedIn, etc.), a popup appears stating: "Everything will not leave the device." You can choose:
-  - **Log In:** Provide username/email + password. You are then asked **Save securely?** If yes, the credential is encrypted locally. If no, it is used once and not saved.
-  - **Sign Up:** The agent can either create the account using your email (confirming via Gmail if you are logged in) or you can provide login details manually.
-  - **Skip:** Skip the job and move to the next.
-  - **Do Not Save Toggle:** For one-time entries (e.g., a salary figure or payslip upload), you can select "Do not save" — the agent enters it once and never stores it. It will ask again for the next job.
-- **10-Minute Timeout:** Every login / sensitive entry popup has a countdown timer at the bottom (`MM:SS`). If you do not respond within **10 minutes (600 seconds)**, the popup closes automatically, the job is skipped, and the agent continues to the next job.
-- **Auto-Accept / Complete Agent Mode:** If you enable the toggle, the agent applies without asking per step. **This does NOT bypass login requirements or unexpected sensitive info detection.** Login popups and skip logic are always required regardless of this toggle.
-- **Updates:**
-  - **Security updates / Combined updates (security + rules):** Auto-downloaded from the Vercel endpoint (`https://findmesomejobs.co.za/api/agent-version`). The App restarts automatically.
-  - **Feature updates:** Optional popup: "Update now" / "Update later". If you skip, a reminder appears after the **5th launch**.
-  - **Rules updates (`agent-rules.json`):** Downloaded from Supabase Storage on launch/update. Applied without restart (loaded on next agent start).
+2.2 THE APP PERFORMS THE FOLLOWING FUNCTIONS ONLY:
 
----
+(A) READS THE USER'S FMSG PROFILE FROM THE SEARCH_PROFILES TABLE (SUPABASE SERVICE-ROLE ACCESS, IDENTICAL AUTHENTICATION TO THE FMSG WEB APPLICATION);
 
-## 4. Data Collection and Processing (Privacy Summary)
+(B) GENERATES CUSTOM SEARCH QUERIES FOR JOB OPENINGS; IF THE BATCH SIZE EXCEEDS FOUR (4) APPLICATIONS, THE AGENT ACTIVATES PERSISTENT FINDER (PF) MODE, EXECUTING FOUR (4) ROUNDS (INDUSTRY LADDER STEPS 1-2, FOLLOWED BY THE SAME TITLE LADDER WITHOUT INDUSTRY KEYWORD);
 
-| Data Type | Where It Goes | How It's Protected | User Consent Required |
-|-----------|---------------|-------------------|----------------------|
-| FMSG profile (`search_profiles`) | Supabase (`service_role` read) | Read-only; same auth as web app | Implicit (user already logged in) |
-| Job search queries | Agent writes custom query locally | Not transmitted separately; used in visible browser navigation | No extra consent |
-| Job specs (scraped from URLs) | Visible Playwright browser reads pages directly | No storage of full specs locally (only match results logged) | No extra consent |
-| Login credentials (LinkedIn, etc.) | Encrypted in `%APPDATA%/fmsg-agents/secure/` (local only) | AES encryption with OS-derived key (`keytar` / Windows Credential Manager) | Explicit (Save? checkbox) |
-| ID numbers, salary expectations, payslips, qualifications | Same encrypted local folder | Same encryption; "Do not save" option available | Explicit (entry + save toggle) |
-| AI provider key (OpenRouter, Gemini) | Stored in OS keyring; transmitted only to AI endpoint | `keytar` encryption; never logged | Explicit (entered in settings) |
-| Agent run log (live stream, checklist, steps) | Stored temporarily in memory; not persisted by default | Not saved to disk unless user explicitly exports | No extra consent |
-| Update/version check | `GET` to Vercel endpoint (`api/agent-version`) | Standard HTTPS; no user data transmitted | No extra consent |
+(C) NAVIGATES TO JOB LISTINGS VIA A VISIBLE PLAYWRIGHT BROWSER SESSION (HEADLESS: FALSE; SLOWMO: 200 MILLISECONDS);
 
-**What is NOT collected:**
-- Your email inbox contents (agent skips email pages).
-- Your bank account details (agent skips banking pages unrelated to applications).
-- Your medical records (agent skips health/medical pages).
-- Any page that is not a job application form or a direct link to a job spec.
+(D) READS JOB SPECIFICATIONS AND MATCHES THEM AGAINST THE USER'S PROFILE USING THE PROFILE AS THE SINGLE SOURCE OF TRUTH;
 
-If the agent detects unexpected sensitive content (email inbox, bank info, medical data, etc.), it **immediately navigates back** (`browser.history.back()` or tab close), skips that job, logs the violation in the live stream, and continues to the next job. Repeated unexpected access (3+ skips for the same reason) logs a warning but does not abort the batch.
+(E) TAILORS A CURRICULUM VITAE USING THE CV MAKER PIPELINE (PROFILE-FIRST SOURCE RULES, ATS SCORING, HONEST CEILING ONLY, .DOCX AND .PDF OUTPUT);
+
+(F) SUBMITS APPLICATIONS ON THE USER'S BEHALF, SUBJECT TO THE CONSENT REQUIREMENTS IN SECTION 4.
+
+2.3 THE APP SHALL NOT ACCESS ANY DATA OR SYSTEMS OUTSIDE THE SCOPE DEFINED IN SECTION 2.2. IF THE AGENT ENCOUNTERS CONTENT NOT RELEVANT TO A JOB APPLICATION (INCLUDING, WITHOUT LIMITATION, EMAIL INBOXES, BANKING INTERFACES, OR MEDICAL RECORDS), THE AGENT SHALL NAVIGATE BACK TO THE PREVIOUS RELEVANT PAGE AND CONTINUE PROCESSING THE CURRENT JOB. THE AGENT SHALL NOT SKIP THE JOB IN THIS EVENT UNLESS THE USER EXPLICITLY SELECTS THE SKIP OPTION.
 
 ---
 
-## 5. AI Behavior (How the Agent Acts)
+3. USER CONSENT AND ACKNOWLEDGMENTS
 
-The agent follows a **hardcoded checklist** that is always visible in the Live Log panel and reiterated aloud before every action. The checklist includes:
+3.1 THE USER MUST EXPLICITLY ACKNOWLEDGE AND CONSENT TO EACH OF THE FOLLOWING BEFORE INITIATING ANY AGENT SESSION (THE "START" FUNCTION SHALL NOT EXECUTE UNTIL ALL ACKNOWLEDGMENTS ARE RECORDED):
 
-- Source of truth = profile only (borrowed from `FMSG CLIENT ASSIST` `AGENTS.md`).
-- No fabricated metrics (no invented salary, no made-up achievements, no placeholder names/phones).
-- Sensitive data encrypted; unexpected access → back + skip.
-- CV pipeline: profile-first (`CV MAKER` rules), ATS scan (`ats-score.js` logic embedded), honest ceiling only (no keyword stuffing, no fabricated achievements).
-- PF logic: if batch > 4, agent uses Persistent Finder (4 rounds: industry ladder + title ladder, then without industry keyword).
+(A) PROFILE ACCESS: THE USER CONSENTS TO THE APP READING THE USER'S SEARCH_PROFILES DATA FROM THE SUPABASE DATABASE (PROJECT REFERENCE: NNEBTYGLOQIXXIBBJXSJR);
 
-The agent does **not** improvise. It reads rules from `agent-rules.json` (downloaded from Supabase Storage) and combines them with the hardcoded checklist. Any deviation is prevented by the checklist reiteration mechanism.
+(B) AI PROVIDER KEY: THE USER HAS PROVIDED A VALID API KEY FOR THE SELECTED AI PROVIDER (OPENROUTER, GEMINI, OR EQUIVALENT). THE KEY IS STORED IN THE OPERATING SYSTEM KEYRING (KEYTAR) AND TRANSMITTED ONLY TO THE PROVIDER ENDPOINT;
 
----
+(C) LOCAL ENCRYPTION: THE USER UNDERSTANDS THAT SAVED LOGIN CREDENTIALS AND SENSITIVE DATA ARE STORED IN %APPDATA%/FMSG-AGENTS/SECURE/ (OR THE EQUIVALENT OPERATING SYSTEM APPLICATION DATA DIRECTORY) USING AES ENCRYPTION WITH A KEY DERIVED FROM THE USER'S OPERATING SYSTEM CREDENTIALS. ONLY THE AGENT PROCESS CAN ACCESS THESE FILES;
 
-## 6. User Responsibilities
+(D) AUTO-ACCEPT MODE: THE USER UNDERSTANDS THAT ENABLING AUTO-ACCEPT (COMPLETE AGENT MODE) ALLOWS THE AGENT TO APPLY WITHOUT CONFIRMATION PER STEP. THIS MODE DOES NOT BYPASS LOGIN REQUIREMENTS OR UNEXPECTED SENSITIVE INFORMATION DETECTION;
 
-- You must provide accurate profile data in FMSG (`search_profiles`). The agent uses your profile as the single source of truth. If your profile is incomplete or out of date, the agent will work with what is present (it may ask you to fill gaps via the automatic probe mechanism — max 2 priority gaps per round).
-- You must provide a valid AI provider key. Without it, the agent cannot generate CV variations or score applications.
-- You are responsible for any login credentials you choose to save. If your device is compromised, the encrypted files could theoretically be accessed by a determined attacker with your OS user password. For maximum security, use the **"Do not save"** toggle.
-- You acknowledge that job applications submitted by the agent are made in your name and with your profile information. You are responsible for the content of those applications.
+(E) UPDATE POLICY: THE USER UNDERSTANDS THAT SECURITY UPDATES ARE APPLIED AUTOMATICALLY; FEATURE UPDATES ARE OPTIONAL WITH REMINDERS AFTER FIVE (5) SKIPPED NOTIFICATIONS; RULES FILES ARE APPLIED WITHOUT RESTART.
+
+3.2 EACH ACKNOWLEDGMENT SHALL BE DISPLAYED IN THE APPLICATION SETTINGS PANEL AND MUST BE ACTIVATED (CHECKBOX OR SELECTION) BEFORE THE AGENT SESSION MAY COMMENCE.
 
 ---
 
-## 7. Updates and Patches
+4. LOGIN AND SENSITIVE DATA HANDLING
 
-- **Security updates:** Auto-installed. The App checks the Vercel endpoint on launch. If a security patch is available (`update.type === 'security'` or `'combined'`), the App downloads and applies it, then restarts.
-- **Feature updates:** Optional. You will see a popup: "Update now" / "Update later". If you skip, the reminder reappears after the **5th launch**.
-- **Rules updates (`agent-rules.json`):** Applied on download; loaded on next agent start (no restart required).
+4.1 WHEN THE AGENT NAVIGATES TO A SITE REQUIRING AUTHENTICATION (INCLUDING, WITHOUT LIMITATION, LINKEDIN), A LOGIN POPUP SHALL APPEAR. THE POPUP SHALL STATE PLAINLY:
+
+(A) THE SITE REQUIRING LOGIN;
+(B) THE REASON (E.G., "LINKEDIN REQUIRES LOGIN TO SUBMIT APPLICATIONS");
+(C) THAT ALL DATA ENTERED SHALL NOT LEAVE THE USER'S DEVICE.
+
+4.2 THE LOGIN POPUP SHALL PROVIDE THREE (3) OPTIONS:
+
+(A) LOG IN: THE USER MAY ENTER A USERNAME OR EMAIL ADDRESS AND A PASSWORD. FOLLOWING SUBMISSION, THE USER SHALL BE PROMPTED WITH A "SAVE SECURELY?" OPTION. IF SELECTED, THE CREDENTIAL SHALL BE ENCRYPTED AND STORED LOCALLY. IF NOT SELECTED, THE CREDENTIAL SHALL BE USED ONCE AND NOT RETAINED;
+
+(B) SIGN UP: THE AGENT MAY CREATE AN ACCOUNT USING THE USER'S PROVIDED EMAIL ADDRESS, WITH CONFIRMATION VIA GMAIL IF THE USER IS LOGGED IN, OR WITH MANUALLY PROVIDED LOGIN DETAILS. THE SAME ENCRYPTION AND RETENTION OPTIONS APPLY;
+
+(C) SKIP: THE USER MAY SKIP THE CURRENT JOB. THE AGENT SHALL PROCEED TO THE NEXT JOB IN THE BATCH.
+
+4.3 A COUNTDOWN TIMER (FORMATTED AS MM:SS, INITIAL VALUE 600 SECONDS) SHALL BE DISPLAYED AT THE BOTTOM OF EVERY LOGIN AND SENSITIVE ENTRY POPUP. IF THE USER DOES NOT RESPOND WITHIN TEN (10) MINUTES, THE POPUP SHALL CLOSE AUTOMATICALLY, THE CURRENT JOB SHALL BE SKIPPED, AND THE AGENT SHALL CONTINUE WITH THE NEXT JOB IN THE SEQUENCE.
+
+4.4 WHEN A FORM REQUIRES SENSITIVE DATA (INCLUDING, WITHOUT LIMITATION, NATIONAL IDENTIFICATION NUMBERS, SALARY EXPECTATIONS, PAYSLIP UPLOADS, OR QUALIFICATION FILES), AN ENCRYPTED ENTRY POPUP SHALL APPEAR. THE USER SHALL HAVE THE FOLLOWING OPTIONS:
+
+(A) ENTER THE DATA AND SELECT "SAVE SECURELY FOR FUTURE APPLICATIONS" (ENCRYPTED STORAGE);
+(B) ENTER THE DATA AND SELECT "DO NOT SAVE" (ONE-TIME USE, NOT RETAINED); OR
+(C) SKIP THE DATA OR SKIP THE JOB.
+
+4.5 IF THE AGENT DETECTS CONTENT UNRELATED TO A JOB APPLICATION (INCLUDING, WITHOUT LIMITATION, EMAIL INBOXES, BANKING INTERFACES, OR MEDICAL RECORDS), THE AGENT SHALL NAVIGATE BACK TO THE PREVIOUS RELEVANT PAGE, LOG THE EVENT IN THE LIVE STREAM, AND CONTINUE PROCESSING THE CURRENT JOB. THE AGENT SHALL NOT SKIP THE ENTIRE JOB IN THIS EVENT UNLESS THE USER EXPLICITLY SELECTS THE SKIP OPTION.
 
 ---
 
-## 8. Termination
+5. DATA PROTECTION AND SECURITY
 
-You can stop the agent at any time using the **Stop** button in the settings panel or by closing the `.exe` window. When the agent stops:
-- The visible Playwright browser is closed.
-- Any active login/sensitive popups are dismissed (they have a 10-minute auto-skip timer that continues independently).
-- No data is lost (encrypted local files remain; live log is in memory only and is not persisted).
+5.1 ALL SENSITIVE DATA SHALL BE STORED LOCALLY ONLY, ENCRYPTED WITH AES, USING A KEY DERIVED FROM THE USER'S OPERATING SYSTEM CREDENTIALS VIA THE KEYTAR LIBRARY.
 
----
+5.2 THE APP SHALL NOT TRANSMIT PROFILE DATA, JOB RESULTS, LOGIN CREDENTIALS, OR SENSITIVE DATA TO ANY SERVER EXCEPT:
 
-## 9. Limitation of Liability
+(A) THE SUPABASE DATABASE (PROFILE READS ONLY, SERVICE ROLE);
+(B) THE SELECTED AI PROVIDER ENDPOINT (ENCRYPTED API KEY ONLY, FOR CV GENERATION AND ATS SCORING);
+(C) THE VERCEL UPDATE ENDPOINT (VERSION NUMBER ONLY, NO USER DATA).
 
-FMSG Agents is provided **"as is"** without warranty of any kind. The App is a framework for automated job applications based on your existing FMSG profile. It does not guarantee job offers, interview invitations, or application responses. The accuracy of CV tailoring depends entirely on the accuracy and completeness of your FMSG profile. The App uses third-party APIs (SerpAPI for job results, Playwright for browser automation, your chosen AI provider for scoring) — any downtime or rate limits from those services may affect the agent's performance.
-
-FMSG is not responsible for:
-- Any job application submitted incorrectly due to outdated profile data.
-- Any job application rejected due to missing qualifications or gaps in your profile.
-- Any action taken by a job board (LinkedIn, etc.) in response to automated applications (e.g., account restrictions, CAPTCHA challenges).
-- Any loss of saved encrypted credentials if your OS user account is compromised.
+5.3 THE LIVE AGENT STREAM SHALL BE HELD IN MEMORY ONLY DURING THE AGENT SESSION. IT SHALL NOT BE PERSISTED TO DISK BY DEFAULT. THE USER MAY MANUALLY EXPORT THE STREAM IF REQUIRED.
 
 ---
 
-## 10. Contact and Updates
+6. AI BEHAVIOR AND LIMITATIONS
 
-- **Project:** FMSG (Find Me Some Jobs) — AI-powered South African job matching SaaS
-- **Repo:** `fmsg` (`production` branch, `beta` branch rules apply)
-- **Plan reference:** `docs/fmsg-agents-plan.md`
-- **Audit log:** See `PRODUCTION_AUDIT.md` for full list of issues found and fixed
-- **Deployment note:** Pushes to `production` land as Preview (`Preview – fmsg`) on Vercel; promotion to Production (`Production – fmsg`) is required in the Vercel dashboard before the live domain (`findmesomejobs.co.za`) serves the new build.
+6.1 THE AGENT FOLLOWS A HARD-CODED CHECKLIST THAT SHALL BE DISPLAYED IN THE LIVE LOG AND REITERATED BEFORE EVERY ACTION. THE CHECKLIST INCLUDES, WITHOUT LIMITATION:
+
+(A) SOURCE OF TRUTH = PROFILE ONLY;
+(B) NO FABRICATED METRICS;
+(C) SENSITIVE DATA ENCRYPTED LOCALLY;
+(D) UNEXPECTED SENSITIVE CONTENT DETECTED → NAVIGATE BACK, CONTINUE, LOG;
+(E) CV MATCHES JOB SPEC HONESTLY (BORROWED FROM FMSG CLIENT ASSIST CV MAKER PIPELINE);
+(F) PERSISTENT FINDER LOGIC: BATCH > 4 APPLICATIONS ACTIVATES FOUR (4) ROUNDS.
+
+6.2 THE AGENT SHALL NOT IMPROVISE ACTIONS OUTSIDE THE CHECKLIST. ANY DEVIATION SHALL BE PREVENTED BY THE CHECKLIST REITERATION MECHANISM.
+
+6.3 THE AGENT DOES NOT GUARANTEE JOB OFFERS, INTERVIEW INVITATIONS, OR APPLICATION RESPONSES. THE ACCURACY OF CV TAILORING DEPENDS ENTIRELY ON THE COMPLETENESS AND ACCURACY OF THE USER'S FMSG PROFILE.
+
+---
+
+7. UPDATES AND PATCHES
+
+7.1 SECURITY UPDATES SHALL BE APPLIED AUTOMATICALLY UPON LAUNCH. THE APP SHALL CHECK THE VERCEL ENDPOINT, DOWNLOAD THE PATCH, AND RESTART WITHOUT ADDITIONAL USER CONFIRMATION.
+
+7.2 FEATURE UPDATES SHALL BE OPTIONAL. THE USER SHALL BE PRESENTED WITH AN "UPDATE NOW" OR "UPDATE LATER" OPTION. IF THE USER SELECTS "UPDATE LATER" FIVE (5) CONSECUTIVE TIMES, A REMINDER SHALL BE DISPLAYED.
+
+7.3 RULES FILES (AGENT-RULES.JSON) SHALL BE DOWNLOADED FROM SUPABASE STORAGE ON LAUNCH. THEY SHALL BE LOADED WITHOUT REQUIRING AN APP RESTART, BUT SHALL TAKE EFFECT ON THE NEXT AGENT START SESSION.
+
+---
+
+8. TERMINATION AND DATA DELETION
+
+8.1 THE USER MAY STOP THE AGENT AT ANY TIME USING THE STOP BUTTON IN THE SETTINGS PANEL. THE VISIBLE BROWSER SHALL BE CLOSED. ANY ACTIVE POPUPS SHALL BE DISMISSED (THEY SHALL CONTINUE THEIR INDEPENDENT TEN-MINUTE TIMER UNTIL CLOSURE).
+
+8.2 UNINSTALLING THE APP VIA THE NSIS UNINSTALLER SHALL REMOVE THE APPLICATION FILES. THE ENCRYPTED LOCAL DATA FOLDER (%APPDATA%/FMSG-AGENTS/SECURE/) SHALL NOT BE DELETED BY THE UNINSTALLER. THE USER MUST MANUALLY DELETE THIS FOLDER IF COMPLETE DATA REMOVAL IS DESIRED.
+
+8.3 THERE IS NO REMOTE DATA DELETION MECHANISM. BECAUSE THE APP IS A LOCAL DESKTOP APPLICATION WITH NO SERVER-SIDE USER ACCOUNT FOR THE AGENT ITSELF, DATA PERSISTENCE IS ENTIRELY LOCAL.
+
+---
+
+9. LIMITATION OF LIABILITY
+
+9.1 THE APP IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT.
+
+9.2 THE PROVIDER SHALL NOT BE LIABLE FOR ANY LOSS OR DAMAGE ARISING FROM THE USE OF THE APP, INCLUDING BUT NOT LIMITED TO INCORRECT JOB APPLICATIONS DUE TO OUTDATED PROFILE DATA, REJECTION OF APPLICATIONS DUE TO PROFILE GAPS, JOB BOARD RESTRICTIONS ON AUTOMATED APPLICATIONS, OR COMPROMISE OF THE USER'S OPERATING SYSTEM ACCOUNT.
+
+---
+
+10. GOVERNING LAW
+
+10.1 THIS AGREEMENT SHALL BE GOVERNED BY AND CONSTRUED IN ACCORDANCE WITH THE LAWS OF THE REPUBLIC OF SOUTH AFRICA.
+
+---
+
+11. CONTACT AND REFERENCES
+
+PROVIDER: FMSG (FIND ME SOME JOBS)
+PROJECT REPOSITORY: FMSG (PRODUCTION BRANCH, VERCEL PROJECTS: FMSG, FMSG-2)
+APP PLAN: DOCS/FMSG-AGENTS-PLAN.MD
+PRODUCTION AUDIT LOG: PRODUCTION_AUDIT.MD
+DEPLOYMENT NOTE: PUSHES TO THE PRODUCTION BRANCH LAND AS PREVIEW DEPLOYMENTS (PREVIEW — FMSG). PROMOTION TO PRODUCTION (PRODUCTION — FMSG) IN THE VERCEL DASHBOARD IS REQUIRED FOR THE LIVE DOMAIN TO SERVE THE NEW BUILD.
