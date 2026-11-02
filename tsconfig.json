@@ -30,5 +30,5 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules", "recycle_bin"]
+  "exclude": ["node_modules", "recycle_bin", "src/apps/fmsg-agents"]
 }
