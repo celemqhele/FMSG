@@ -28,7 +28,7 @@ export const SUPABASE_ANON_KEY =
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5uZWJ0eWdsb3FpeGliYmp4c2pyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3MDAwNTUsImV4cCI6MjA5NzI3NjA1NX0.6pv9o3rdfBMZeyctFetwRTwbUoMOCL2pJkLoTs3WKjk';
 
 export const WEB_BASE_URL =
-  process.env.FMSG_WEB_URL || 'https://findmesomejobs.co.za';
+  process.env.FMSG_WEB_URL || 'https://www.findmesomejobs.co.za';
 
 export const UPDATE_BUCKET = 'agent-updates';
 
