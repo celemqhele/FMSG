@@ -37,10 +37,14 @@ yarn-error.log*
 # vercel
 .vercel
 
-# FMSG Agents build artifacts
+# FMSG Agents build artifacts & local diagnostic logs
+src/apps/fmsg-agents/node_modules/
 src/apps/fmsg-agents/dist/
 src/apps/fmsg-agents/renderer/bundle.js
 src/apps/fmsg-agents/dist/electron/
+src/apps/fmsg-agents/logs/
+src/apps/fmsg-agents/.dev-diag-flag.json
+src/apps/fmsg-agents/keys/
 
 # recycle bin
 /recycle_bin

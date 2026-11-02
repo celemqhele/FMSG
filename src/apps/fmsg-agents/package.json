@@ -1,15 +1,15 @@
 {
   "name": "fmsg-agents",
-  "version": "1.0.0",
-  "description": "FMSG Agents — local agent app for automated job applications",
+  "version": "0.6.0",
+  "author": "FMSG (Find Me Some Jobs)",
+  "description": "FMSG Agents - desktop assistant for automated job applications",
   "main": "dist/electron-main.js",
   "scripts": {
-    "build:main": "tsc electron-main.ts --declaration false --outDir dist",
-    "build:preload": "tsc preload.ts --declaration false --outDir dist",
+    "build:main": "tsc -p tsconfig.main.json",
+    "build:preload": "tsc -p tsconfig.main.json",
     "build:renderer": "esbuild renderer/index.tsx --bundle --minify --loader:.tsx=tsx --loader:.ts=ts --loader:.css=text --outfile=renderer/bundle.js --platform=browser --format=cjs",
-    "build:all": "npm run build:main && npm run build:preload && npm run build:renderer && electron-builder",
-    "dev": "npm run build:main && npm run build:preload && npm run build:renderer && electron .",
-    "start": "npm run build:all"
+    "build:code": "npm run build:main && npm run build:renderer",
+    "build:all": "npm run build:main && npm run build:renderer && electron-builder"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.2",
@@ -30,17 +30,37 @@
       "output": "dist/electron"
     },
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "installer/icon.ico"
     },
     "nsis": {
-      "license": "legal/EULA.md",
-      "oneClick": true,
-      "perMachine": false
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": false,
+      "allowToChangeInstallationDirectory": false,
+      "license": "legal/LICENSE.txt",
+      "include": "installer/installer.nsh",
+      "installerHeader": "installer/installerHeader.bmp",
+      "installerSidebar": "installer/installerSidebar.bmp",
+      "uninstallerSidebar": "installer/installerSidebar.bmp",
+      "installerIcon": "installer/icon.ico",
+      "uninstallerIcon": "installer/icon.ico",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "FMSG Agents",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false
     },
     "files": [
       "dist/**/*",
-      "renderer/**/*",
-      "legal/**/*"
+      "!dist/electron/**",
+      "renderer/index.html",
+      "renderer/design-system.css",
+      "renderer/bundle.js",
+      "legal/**/*",
+      "!logs/**",
+      "!.dev-diag-flag.json",
+      "!scripts/**"
     ]
   }
 }

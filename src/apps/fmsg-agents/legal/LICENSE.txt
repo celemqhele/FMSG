@@ -1,0 +1,53 @@
+FMSG AGENTS DESKTOP APPLICATION - LICENSE AGREEMENT AND TERMS
+
+VERSION 0.6.0 - EFFECTIVE 2026-11-02
+PROVIDER: FMSG (FIND ME SOME JOBS) - https://findmesomejobs.co.za
+
+IMPORTANT: PLEASE READ THIS AGREEMENT CAREFULLY BEFORE INSTALLING OR USING FMSG AGENTS. BY ACCEPTING THIS AGREEMENT AND INSTALLING THE APPLICATION, YOU AGREE TO BE BOUND BY THE END USER LICENSE AGREEMENT, TERMS OF SERVICE, AND PRIVACY POLICY BELOW.
+
+========================================================================
+PART I - END USER LICENSE AGREEMENT (EULA)
+========================================================================
+
+1. ACCEPTANCE OF TERMS
+1.1 This End User License Agreement ("Agreement") is a binding contract between the user ("You", "User") and FMSG ("Provider", "We", "Us") governing the installation, access, and use of the FMSG Agents desktop application ("Application", "Software").
+1.2 By installing, accessing, or using the Application, You acknowledge that You have read, understood, and agree to be bound by this Agreement, together with our Terms of Service and Privacy Policy. If You do not agree, do not install or use the Application.
+
+2. SCOPE AND PURPOSE OF THE APPLICATION
+2.1 The Application is a local desktop assistant designed exclusively for automated job search and job application assistance on behalf of the User.
+2.2 The Application reads Your job search profile under Your authenticated account session, generates targeted search queries, navigates to job listings in a visible browser window on Your computer, prepares tailored CV documents strictly from Your existing profile facts, and submits applications according to Your confirmation settings.
+2.3 If the Application encounters content unrelated to a job application, it navigates back to the previous relevant page and continues processing the current job rather than skipping the job, unless You choose to skip.
+
+3. ACCOUNT AUTHENTICATION AND LOCAL DATA SECURITY
+3.1 A valid FMSG account is required. Your session credentials and any saved site credentials are encrypted locally on Your computer using operating system data protection.
+3.2 When a job site requires sign-in or sensitive information, the Application displays a prompt with a ten (10) minute countdown timer allowing You to enter the data once, save it encrypted locally, or skip.
+
+4. BILLING AND SPEND CONTROLS
+4.1 The Application supports bundle plan rates and progressive pay-as-you-go billing.
+4.2 In pay-as-you-go mode, the monthly cost cap defaults to R0 until configured by the User. Rates are reserved before each job, deducted only upon a completed application, and refunded if an application is skipped or fails. When Your cost cap is reached, the Application pauses safely.
+
+5. SOFTWARE UPDATES
+5.1 The Application checks for cryptographically signed software updates and verifies them before installation. Updates never interrupt an active application batch in progress.
+
+6. TERMINATION AND UNINSTALLATION
+6.1 You may stop an active run at any time or uninstall the Application using the provided uninstaller, which allows You to choose whether to keep or remove Your locally stored data.
+
+7. DISCLAIMER OF WARRANTIES AND LIMITATION OF LIABILITY
+7.1 The Application is provided "as is" without warranty of any kind. The Provider does not guarantee job offers or interview invitations and shall not be liable for indirect, incidental, or consequential damages to the maximum extent permitted by South African law.
+
+========================================================================
+PART II - TERMS OF SERVICE SUMMARY
+========================================================================
+
+1. You must be at least 18 years old to create an account and use the Application.
+2. You agree to maintain accurate and truthful information in Your FMSG profile. The Application uses Your profile as the sole source of truth and never fabricates metrics or qualifications.
+3. These Terms are governed by the laws of the Republic of South Africa.
+
+========================================================================
+PART III - PRIVACY POLICY SUMMARY
+========================================================================
+
+1. Account and Profile Data: Read under Your authenticated session solely to match jobs and tailor Your CV documents.
+2. Local Encryption: Saved credentials and session tokens are encrypted locally on Your device using operating system protection.
+3. Installation Key: A random non-roaming device key is generated on first run solely to authenticate and decrypt software updates. It contains no personal data and is independent of Your user account.
+4. Deletion: You may sign out at any time or remove all local data during uninstallation.

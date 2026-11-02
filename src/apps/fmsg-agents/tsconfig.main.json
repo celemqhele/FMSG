@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "commonjs",
+    "lib": ["ES2020", "DOM"],
+    "strict": false,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "outDir": "dist",
+    "rootDir": "."
+  },
+  "include": [
+    "config.ts",
+    "logger.ts",
+    "device-key.ts",
+    "update-manager.ts",
+    "browser-resolver.ts",
+    "session-manager.ts",
+    "agent-controller.ts",
+    "electron-main.ts",
+    "preload.ts"
+  ],
+  "exclude": ["node_modules", "dist", "renderer"]
+}

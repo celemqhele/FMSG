@@ -23,6 +23,9 @@ const DEFAULTS: Record<string, { windowMs: number; max: number }> = {
   tailor:       { windowMs: 60_000, max: 3 },
   "change-plan": { windowMs: 3_600_000, max: 3 },
   "job-results": { windowMs: 60_000, max: 20 },
+  "agent-ai":    { windowMs: 60_000, max: 90 },
+  "agent-tools": { windowMs: 60_000, max: 40 },
+  "agent-billing": { windowMs: 60_000, max: 10 },
 };
 
 export function checkRateLimit(
