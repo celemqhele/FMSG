@@ -11,7 +11,7 @@
 
 **Still required:** Migration 039 has not been applied to Supabase, so review-status writes stay local until it is.
 
-Active work: **Founder observability/runtime initiative (2026-11-03)** — five blueprints + five Pro assignments created and queued: Run Setup modal redesign (`TASK-20261103-005`), Run workspace preview-dominant layout (`TASK-20261103-006`), live-preview active-page tracking (`TASK-20261103-007`), independent agent profiles + CV (`TASK-20261103-008`), Ubuntu runtime feasibility (`TASK-20261103-009`). No release, version bump or installer rebuild authorised for any of them. See `docs/blueprints/BLUEPRINT-20261103-004..008` and `docs/context/fmsg-agents-observability-profiles-runtime_2026-11-03.md`. **Status:** `TASK-20261103-006` is `PENDING_REVIEW` (implemented, EOT filed — see Changed/Removed below); the other four remain `PENDING`.
+Active work: **Founder observability/runtime initiative (2026-11-03)** — five blueprints + five Pro assignments created and queued: Run Setup modal redesign (`TASK-20261103-005`), Run workspace preview-dominant layout (`TASK-20261103-006`), live-preview active-page tracking (`TASK-20261103-007`), independent agent profiles + CV (`TASK-20261103-008`), Ubuntu runtime feasibility (`TASK-20261103-009`). No release, version bump or installer rebuild authorised for any of them. See `docs/blueprints/BLUEPRINT-20261103-004..008` and `docs/context/fmsg-agents-observability-profiles-runtime_2026-11-03.md`. **Status:** `TASK-20261103-006` is `APPROVED` (Argon review 2026-11-03T21:05+02:00) and archived; the other four remain `PENDING`.
 
 **Priority change (2026-11-03):** the `search_profiles.cv_file_path` defect prevents every run on released v0.10.0 and is now the top functional priority. Hotfix blueprint `BLUEPRINT-20261103-009` + assignment `TASK-20261103-010` created (`PENDING`, awaiting founder authorisation). Revised sequence: 010 → 008 → 007 → 005/006 → 009. Founder-facing migration guide prepared: `docs/SUPABASE_MIGRATION_040_APPLICATION_GUIDE.md`.
 
@@ -31,7 +31,7 @@ Active work: **Founder observability/runtime initiative (2026-11-03)** — five 
 - **Dead side-by-side run-workspace CSS** (`TASK-20261103-006`): `.live-feed-root`, `.matrix-log-column`, `.matrix-log-header`, `.matrix-log-heading`, `.matrix-log-title`, `.matrix-log-meta`, `.matrix-counter`, `.matrix-live-dot` (+ `.running`/`.idle`), `.agent-action-row`, `.agent-primary-action`, `.agent-action-hint`, `.live-viewport-column`, `.viewport-footer`, `.viewport-footer span`, `.viewport-footer-actions` and `.viewport-window-icon`. Superseded by the `.run-tab*`, `.run-panel*`, `.run-workspace-*`, `.run-status-*`, `.run-history-*` and `.viewport-toolbar-*` rules; no other screen referenced them (grep-verified before deletion).
 
 ### Fixed
-- *(none yet — root causes diagnosed, fixes not yet implemented)*
+- **Run workspace wasted-space defect** (`TASK-20261103-006`, approved): the page shell now fills the workspace, the live preview is the dominant full-canvas tab, and the streamed frame is centred — all three root causes diagnosed in `BLUEPRINT-20261103-005` are fixed. *(Remaining diagnosed root causes — Run Setup modal cramping, `cv_file_path` run-start failure, active-page tracking — are still open under their own tasks.)*
 
 ### Relevant Files
 - `docs/blueprints/BLUEPRINT-20261103-004..008`
