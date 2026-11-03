@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-11-03T11:31:39.611Z",
+  "timestamp": "2026-11-03T18:26:17.414Z",
   "total": 29,
   "failed": 0,
   "results": [
@@ -105,12 +105,12 @@
     {
       "name": "Terms shows the current app version (ST-12)",
       "pass": true,
-      "detail": "expected 0.9.0"
+      "detail": "expected 0.10.0"
     },
     {
       "name": "Notifications never show a stale version (NT-01)",
       "pass": true,
-      "detail": "Notifications Clear all Close You're on FMSG Agents v0.9.0 1"
+      "detail": "Notifications Clear all Close You're on FMSG Agents v0.10.0 "
     },
     {
       "name": "Opening notifications clears the unread badge (NT-03)",

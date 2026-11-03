@@ -112,6 +112,14 @@ const PIPELINE_STEPS: Array<{
   { key: 'complete', label: 'Complete', phases: ['completed'] },
 ];
 
+type RunWorkspaceTab = 'preview' | 'pipeline' | 'history';
+
+const RUN_TABS: Array<{ id: RunWorkspaceTab; label: string }> = [
+  { id: 'preview', label: 'Live Browser Preview' },
+  { id: 'pipeline', label: 'Execution Pipeline' },
+  { id: 'history', label: 'History & Logs' },
+];
+
 function formatCountdown(sec: number): string {
   const clamped = Math.max(0, Math.floor(sec));
   const m = Math.floor(clamped / 60);
@@ -247,6 +255,96 @@ export function ProfilePicker({
   );
 }
 
+/**
+ * Shared activity feed for the Execution Pipeline and History & Logs tabs.
+ * Rendered only inside the active tab, so exactly one live region and one
+ * scroll container exist at a time; the entries themselves live in the parent,
+ * so switching tabs never clears the log.
+ */
+function ActivityFeed({
+  entries,
+  activeEntry,
+  profiles,
+  profileTitle,
+  onOpenLaunchModal,
+  scrollRef,
+  onScroll,
+}: {
+  entries: MatrixLogEntry[];
+  activeEntry?: MatrixLogEntry;
+  profiles: any[];
+  profileTitle: string;
+  onOpenLaunchModal?: () => void;
+  scrollRef: React.RefObject<HTMLDivElement | null>;
+  onScroll: () => void;
+}) {
+  return (
+    <div
+      className="matrix-log-scroll"
+      ref={scrollRef}
+      onScroll={onScroll}
+      aria-live="polite"
+    >
+      {entries.length === 0 ? (
+        <div className="matrix-empty">
+          <p className="matrix-empty-title">No active run right now</p>
+          <p className="matrix-empty-body">
+            {profiles.length === 0
+              ? 'Add a search profile on the FMSG website, then click Refresh in Profiles.'
+              : `Discover live postings for ${profileTitle}, tailor your CV highlights, and watch Chrome fill applications in real time.`}
+          </p>
+          {onOpenLaunchModal && (
+            <button
+              type="button"
+              className="btn btn-primary"
+              style={{ marginTop: 12 }}
+              onClick={onOpenLaunchModal}
+            >
+              Configure &amp; Start Run
+            </button>
+          )}
+        </div>
+      ) : (
+        entries.map((entry) => (
+          <div
+            key={entry.id}
+            className={`matrix-log-row ${entry.status} ${
+              entry.id === activeEntry?.id ? 'current' : ''
+            }`}
+          >
+            <span className={`matrix-dot ${entry.status}`} />
+            <div className="matrix-log-body">
+              <div className="matrix-log-text">{entry.label}</div>
+              {entry.sublabel && (
+                <div className="matrix-log-sub">{entry.sublabel}</div>
+              )}
+              {(entry.company || entry.jobTitle) && (
+                <div className="matrix-log-tags">
+                  {entry.jobTitle && <span>{entry.jobTitle}</span>}
+                  {entry.company && <span>{entry.company}</span>}
+                  {entry.location && (
+                    <span>{formatLocationZA(entry.location)}</span>
+                  )}
+                  {entry.matchScore != null && (
+                    <span className="matrix-score">
+                      {entry.matchScore}% match
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+            <span className="matrix-log-time">
+              {entry.jobIndex && entry.totalJobs
+                ? `${entry.jobIndex}/${entry.totalJobs}`
+                : entry.timestamp}
+            </span>
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
 export default function LiveLog({
   profile,
   profiles = [],
@@ -281,6 +379,7 @@ export default function LiveLog({
   const feedPausedRef = useRef(false);
   const [attention, setAttention] = useState<AttentionPrompt | null>(null);
   const [secondsLeft, setSecondsLeft] = useState<number>(600);
+  const [tab, setTab] = useState<RunWorkspaceTab>('preview');
 
   const [vaultUser, setVaultUser] = useState('');
   const [vaultPass, setVaultPass] = useState('');
@@ -362,6 +461,8 @@ export default function LiveLog({
         setVaultUser('');
         setVaultPass('');
         setSaveToVault(false);
+        // A blocking prompt must never be invisible: bring its tab to the front.
+        setTab('preview');
         setAttention({
           id: event.id,
           kind: event.kind || 'info',
@@ -585,16 +686,35 @@ export default function LiveLog({
 
   return (
     <div className="run-page-shell">
-      {/* Page Header (RN-01, RN-02) */}
-      <header className="billing-header run-page-header">
-        <div>
+      {/* Compact workspace header: identity, status, batch chip, run controls */}
+      <header className="run-workspace-header">
+        <div className="run-workspace-heading">
           <h1 className="billing-title">Run</h1>
-          <p className="billing-subtitle">
-            Monitor live browser automation and step in whenever a job posting
-            needs your input.
+          <p className="run-workspace-subtitle">
+            Watch the agent work — step in only when a posting needs you.
           </p>
         </div>
-        <div className="run-header-controls">
+
+        <div className="run-workspace-actions">
+          <span
+            className={`run-status-chip ${
+              isPaused ? 'paused' : isRunning ? 'running' : 'idle'
+            }`}
+          >
+            <span className="run-status-dot" aria-hidden="true" />
+            {isPaused
+              ? 'Run paused'
+              : isRunning
+                ? 'Live run'
+                : entries.length
+                  ? 'Run complete'
+                  : 'Ready to start'}
+          </span>
+          <span className="run-status-meta">
+            {stats.applied} applied
+            {stats.skipped > 0 ? ` · ${stats.skipped} skipped` : ''}
+          </span>
+          <span className="run-batch-chip">Batch target: {batchSize} jobs</span>
           {onProfileChange && (
             <ProfilePicker
               profiles={profiles}
@@ -602,38 +722,76 @@ export default function LiveLog({
               onProfileChange={onProfileChange}
             />
           )}
+          {isRunning ? (
+            <div className="live-run-control-group">
+              <button
+                type="button"
+                className="btn btn-secondary run-header-btn"
+                onClick={isPaused ? onResumeAgent : onPauseAgent}
+              >
+                {isPaused ? 'Resume Run' : 'Pause Run'}
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary run-header-btn"
+                onClick={onStopAgent}
+              >
+                Stop Run
+              </button>
+              <button
+                type="button"
+                className="btn btn-danger run-header-btn"
+                onClick={onEmergencyStopAgent || onStopAgent}
+              >
+                Emergency Stop
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="btn btn-primary run-header-btn"
+              onClick={onOpenLaunchModal}
+            >
+              Start Applying ({batchSize} jobs)
+            </button>
+          )}
         </div>
       </header>
 
-      <div className="live-feed-root">
-        {/* LEFT / CENTER: Live Run Pipeline, Current Job Card & Activity */}
-        <section className="matrix-log-column">
-          {/* Status Strip */}
-          <div className="matrix-log-header">
-            <div className="matrix-log-heading">
-              <span
-                className={`matrix-live-dot ${
-                  isPaused ? 'paused' : isRunning ? 'running' : 'idle'
-                }`}
-              />
-              <span className="matrix-log-title">
-                {isPaused
-                  ? 'Run Paused'
-                  : isRunning
-                    ? 'Live Run in Progress'
-                    : entries.length
-                      ? 'Run Complete'
-                      : 'Ready to Start'}
-              </span>
-              <span className="matrix-counter">
-                {stats.applied} applied
-                {stats.skipped > 0 ? ` · ${stats.skipped} skipped` : ''}
-              </span>
-            </div>
-            <span className="status-pill-sm neutral">
-              Batch target: {batchSize} jobs
-            </span>
-          </div>
+      {/* Tab strip — the workspace is tabbed so the preview owns the canvas */}
+      <div
+        className="run-tabstrip"
+        role="tablist"
+        aria-label="Run workspace sections"
+      >
+        {RUN_TABS.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            role="tab"
+            aria-selected={tab === item.id}
+            className={`run-tab ${tab === item.id ? 'active' : ''}`}
+            onClick={() => setTab(item.id)}
+          >
+            {item.label}
+          </button>
+        ))}
+        <span className="run-tabstrip-hint">
+          {isPaused
+            ? 'Paused — click Resume Run to continue from this posting'
+            : isRunning
+              ? activeEntry?.label || 'Working'
+              : 'No screenshots needed'}
+        </span>
+      </div>
+
+      {tab === 'pipeline' && (
+        <section
+          id="run-panel-pipeline"
+          role="tabpanel"
+          aria-label="Execution Pipeline"
+          className="run-panel"
+        >
 
           {/* Determinate Run Progress Bar */}
           <div className="live-run-progress-wrap">
@@ -725,133 +883,72 @@ export default function LiveLog({
                   </div>
                 )}
 
-              <div
-                className="matrix-log-scroll"
-                ref={scrollRef}
+              <ActivityFeed
+                entries={entries}
+                activeEntry={activeEntry}
+                profiles={profiles}
+                profileTitle={profileTitle}
+                onOpenLaunchModal={onOpenLaunchModal}
+                scrollRef={scrollRef}
                 onScroll={handleScroll}
-                aria-live="polite"
-              >
-                {entries.length === 0 ? (
-                  <div className="matrix-empty">
-                    <p className="matrix-empty-title">No active run right now</p>
-                    <p className="matrix-empty-body">
-                      {profiles.length === 0
-                        ? 'Add a search profile on the FMSG website, then click Refresh in Profiles.'
-                        : `Discover live postings for ${profileTitle}, tailor your CV highlights, and watch Chrome fill applications in real time.`}
-                    </p>
-                    {onOpenLaunchModal && (
-                      <button
-                        type="button"
-                        className="btn btn-primary"
-                        style={{ marginTop: 12 }}
-                        onClick={onOpenLaunchModal}
-                      >
-                        Configure &amp; Start Run
-                      </button>
-                    )}
-                  </div>
-                ) : (
-                  entries.map((entry) => (
-                    <div
-                      key={entry.id}
-                      className={`matrix-log-row ${entry.status} ${
-                        entry.id === activeEntry?.id ? 'current' : ''
-                      }`}
-                    >
-                      <span className={`matrix-dot ${entry.status}`} />
-                      <div className="matrix-log-body">
-                        <div className="matrix-log-text">{entry.label}</div>
-                        {entry.sublabel && (
-                          <div className="matrix-log-sub">{entry.sublabel}</div>
-                        )}
-                        {(entry.company || entry.jobTitle) && (
-                          <div className="matrix-log-tags">
-                            {entry.jobTitle && <span>{entry.jobTitle}</span>}
-                            {entry.company && <span>{entry.company}</span>}
-                            {entry.location && (
-                              <span>{formatLocationZA(entry.location)}</span>
-                            )}
-                            {entry.matchScore != null && (
-                              <span className="matrix-score">
-                                {entry.matchScore}% match
-                              </span>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                      <span className="matrix-log-time">
-                        {entry.jobIndex && entry.totalJobs
-                          ? `${entry.jobIndex}/${entry.totalJobs}`
-                          : entry.timestamp}
-                      </span>
-                    </div>
-                  ))
-                )}
-              </div>
+              />
             </div>
           </div>
+        </section>
+      )}
 
-          {/* Bottom Run Controls */}
-          <div className="agent-action-row">
-            {isRunning ? (
-              <div className="live-run-control-group">
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={isPaused ? onResumeAgent : onPauseAgent}
-                >
-                  {isPaused ? 'Resume Run' : 'Pause Run'}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={onStopAgent}
-                >
-                  Stop Run
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-danger"
-                  onClick={onEmergencyStopAgent || onStopAgent}
-                >
-                  Emergency Stop
-                </button>
-              </div>
-            ) : (
-              <button
-                type="button"
-                className="btn btn-primary agent-primary-action"
-                onClick={onOpenLaunchModal}
-              >
-                Start Applying ({batchSize} jobs)
-              </button>
-            )}
-            <span className="agent-action-hint">
-              {isPaused
-                ? 'Paused — click Resume Run to continue from this posting'
-                : isRunning
-                  ? activeEntry?.label || 'Working — the live view is on the right'
-                  : 'No screenshots needed'}
-            </span>
+      {tab === 'history' && (
+        <section
+          id="run-panel-history"
+          role="tabpanel"
+          aria-label="History and Logs"
+          className="run-panel run-panel-history"
+        >
+          <div className="run-history-summary">
+            <div className="run-history-stat">
+              <span className="run-history-value">{stats.applied}</span>
+              <span className="run-history-label">Applied</span>
+            </div>
+            <div className="run-history-stat">
+              <span className="run-history-value">{stats.skipped}</span>
+              <span className="run-history-label">Skipped</span>
+            </div>
+            <div className="run-history-stat">
+              <span className="run-history-value">{batchSize}</span>
+              <span className="run-history-label">Batch target</span>
+            </div>
+            <div className="run-history-stat">
+              <span className="run-history-value">{progressPct}%</span>
+              <span className="run-history-label">Run progress</span>
+            </div>
+          </div>
+          <div className="run-history-feed">
+            <ActivityFeed
+              entries={entries}
+              activeEntry={activeEntry}
+              profiles={profiles}
+              profileTitle={profileTitle}
+              onOpenLaunchModal={onOpenLaunchModal}
+              scrollRef={scrollRef}
+              onScroll={handleScroll}
+            />
           </div>
         </section>
+      )}
 
-        {/* RIGHT: Real Browser Preview Monitor (Dark Windows-Native Bezel) */}
-        <section className="live-viewport-column">
+      {tab === 'preview' && (
+        <section
+          id="run-panel-preview"
+          role="tabpanel"
+          aria-label="Live Browser Preview"
+          className="run-panel run-panel-preview"
+        >
           <div className="live-viewport-monitor">
             <div className="viewport-browser-bar">
-              <span className="viewport-window-icon" aria-hidden="true">
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  <rect x="2" y="4" width="20" height="16" rx="2" />
-                  <line x1="2" y1="9" x2="22" y2="9" />
-                </svg>
+              <span className="viewport-traffic-dots" aria-hidden="true">
+                <span className="viewport-traffic-dot" />
+                <span className="viewport-traffic-dot" />
+                <span className="viewport-traffic-dot" />
               </span>
               <div className="viewport-url-pill">
                 <svg
@@ -877,6 +974,51 @@ export default function LiveLog({
               <span className={`viewport-live-badge ${badgeState}`}>
                 {badgeLabel}
               </span>
+              <div className="viewport-toolbar-actions">
+                {isRunning && (
+                  <button
+                    type="button"
+                    className="viewport-footer-link viewport-footer-open-browser"
+                    onClick={openInChrome}
+                    title="Bring the automation Chrome window to the front"
+                  >
+                    <svg
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.4"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                      <polyline points="15 3 21 3 21 9" />
+                      <line x1="10" y1="14" x2="21" y2="3" />
+                    </svg>
+                    Open in Chrome
+                  </button>
+                )}
+                {isRunning && preview && (
+                  <button
+                    type="button"
+                    className="viewport-toolbar-btn"
+                    onClick={toggleFeed}
+                  >
+                    {feedPaused ? 'Resume feed' : 'Pause feed'}
+                  </button>
+                )}
+                {preview && (
+                  <button
+                    type="button"
+                    className="viewport-toolbar-btn"
+                    onClick={clearPreview}
+                  >
+                    Clear preview
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className="viewport-body">
@@ -1062,61 +1204,8 @@ export default function LiveLog({
               )}
             </div>
           </div>
-
-          <div className="viewport-footer">
-            <span>
-              {activeEntry
-                ? `${PHASE_LABEL[activeEntry.phase] || 'Working'} · ${activeEntry.label}`
-                : 'Local Chrome automation · FMSG job discovery & CV tailoring'}
-            </span>
-            <div className="viewport-footer-actions">
-              {isRunning && (
-                <button
-                  type="button"
-                  className="viewport-footer-link viewport-footer-open-browser"
-                  onClick={openInChrome}
-                  title="Bring the automation Chrome window to the front"
-                >
-                  <svg
-                    width="12"
-                    height="12"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2.4"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden="true"
-                  >
-                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                    <polyline points="15 3 21 3 21 9" />
-                    <line x1="10" y1="14" x2="21" y2="3" />
-                  </svg>
-                  Open in Chrome
-                </button>
-              )}
-              {isRunning && preview && (
-                <button
-                  type="button"
-                  className="viewport-footer-link"
-                  onClick={toggleFeed}
-                >
-                  {feedPaused ? 'Resume feed' : 'Pause feed'}
-                </button>
-              )}
-              {preview && (
-                <button
-                  type="button"
-                  className="viewport-footer-link"
-                  onClick={clearPreview}
-                >
-                  Clear preview
-                </button>
-              )}
-            </div>
-          </div>
         </section>
-      </div>
+      )}
     </div>
   );
 }
