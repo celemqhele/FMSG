@@ -29,6 +29,12 @@ import {
 } from './session-manager';
 import { launchVisibleAutomationBrowser } from './browser-resolver';
 import { logBrowserAutomation, logEvent } from './logger';
+import {
+  findMatchingSecretForUrl,
+  fillSecretOnVerifiedDomain,
+  loadScreeningRules,
+  normalizeSecretKeyName,
+} from './secret-vault';
 
 export interface BillingConfig {
   mode: 'bundle' | 'pay-as-you-go';
@@ -44,12 +50,51 @@ export interface BillingState {
   costCap: number;
 }
 
+export const AGENT_BUNDLE_PLANS = [
+  {
+    tier: 'Starter' as const,
+    name: 'Starter Pack',
+    applications: 10,
+    priceZar: 349,
+    perAppZar: 35,
+    discountPct: 12,
+    graceApps: 1,
+  },
+  {
+    tier: 'Lite' as const,
+    name: 'Lite',
+    applications: 25,
+    priceZar: 749,
+    perAppZar: 30,
+    discountPct: 25,
+    graceApps: 2,
+  },
+  {
+    tier: 'Standard' as const,
+    name: 'Standard',
+    applications: 60,
+    priceZar: 1499,
+    perAppZar: 25,
+    discountPct: 38,
+    graceApps: 6,
+    popular: true,
+  },
+  {
+    tier: 'Power' as const,
+    name: 'Power',
+    applications: 150,
+    priceZar: 3299,
+    perAppZar: 22,
+    discountPct: 45,
+    graceApps: 15,
+  },
+];
+
 export const BILLING_TIERS = [
-  { rate: 3700, threshold: 50000, label: 'trial' },
-  { rate: 3500, threshold: 100000, label: 'tier-1' },
-  { rate: 3000, threshold: 200000, label: 'tier-2' },
-  { rate: 2500, threshold: 350000, label: 'tier-3' },
-  { rate: 2200, threshold: 500000, label: 'tier-4-max' },
+  { rate: 4000, threshold: 4000, label: 'stage-1-first-charge' },
+  { rate: 4000, threshold: 10000, label: 'stage-2-after-1-payment' },
+  { rate: 4000, threshold: 25000, label: 'stage-3-after-3-payments' },
+  { rate: 4000, threshold: 50000, label: 'stage-4-max-after-6-payments' },
 ];
 
 export interface AgentConfig {
@@ -131,12 +176,18 @@ export type AgentEvent =
       title: string;
       message: string;
       job?: DiscoveredJob;
+      secretKeyName?: string;
+      allowedDomain?: string;
+      countdownSeconds?: number;
     }
   | { type: 'run-done'; applied: number; skipped: number; total: number };
 
 export interface AgentRuntime {
   emit: (event: AgentEvent) => void;
-  requestAttention: (event: Omit<Extract<AgentEvent, { type: 'attention' }>, 'type' | 'id'>, signal: AbortSignal) => Promise<'continue' | 'skip'>;
+  requestAttention: (
+    event: Omit<Extract<AgentEvent, { type: 'attention' }>, 'type' | 'id'>,
+    signal: AbortSignal
+  ) => Promise<'continue' | 'skip'>;
 }
 
 export const CHECKLIST = [
@@ -288,6 +339,8 @@ export class AgentRunner {
   private discovered: DiscoveredJob[] = [];
   private modelTurns = 0;
   private modelAvailable = true;
+  private paused = false;
+  private pauseWaiters: Array<() => void> = [];
 
   constructor(config: AgentConfig, runtime?: AgentRuntime) {
     this.config = config;
@@ -304,6 +357,39 @@ export class AgentRunner {
 
   isRunning(): boolean {
     return this.state.running;
+  }
+
+  isPaused(): boolean {
+    return this.paused;
+  }
+
+  pause(): void {
+    if (!this.state.running || this.paused) return;
+    this.paused = true;
+    this.phase('paused', 'Run paused', 'Click Resume whenever you are ready to continue.');
+  }
+
+  resume(): void {
+    if (!this.paused) return;
+    this.paused = false;
+    const waiters = this.pauseWaiters.splice(0, this.pauseWaiters.length);
+    for (const w of waiters) {
+      try {
+        w();
+      } catch {
+        // ignore
+      }
+    }
+    this.phase('applying', 'Resumed run', 'Continuing from the current posting.');
+  }
+
+  private async waitIfPaused(): Promise<void> {
+    if (!this.paused || this.abort.signal.aborted) return;
+    await new Promise<void>((resolve) => {
+      const done = () => resolve();
+      this.pauseWaiters.push(done);
+      this.abort.signal.addEventListener('abort', done, { once: true });
+    });
   }
 
   getState(): AgentState {
@@ -360,12 +446,21 @@ export class AgentRunner {
     kind: 'login' | 'captcha' | 'sensitive' | 'submit' | 'info',
     title: string,
     message: string,
-    job?: DiscoveredJob
+    job?: DiscoveredJob,
+    extra?: { secretKeyName?: string; allowedDomain?: string }
   ): Promise<'continue' | 'skip'> {
     if (!this.runtime) return 'skip';
     logEvent('agent_attention', kind, { title });
     return this.runtime.requestAttention(
-      { kind, title, message, job },
+      {
+        kind,
+        title,
+        message,
+        job,
+        secretKeyName: extra?.secretKeyName,
+        allowedDomain: extra?.allowedDomain,
+        countdownSeconds: 600,
+      },
       this.abort.signal
     );
   }
@@ -658,6 +753,25 @@ export class AgentRunner {
     if (/salary|remuneration|package|ctc/.test(label))
       return p.desired_salary ? String(p.desired_salary) : null;
     if (/cover letter|motivation|why do you want|message/.test(label)) return null;
+
+    // Match user's saved Answer Bank entries
+    try {
+      const bank = loadScreeningRules();
+      for (const entry of bank.answers || []) {
+        if (entry.askEachTime) continue;
+        const qWords = entry.question
+          .toLowerCase()
+          .replace(/[^a-z0-9 ]/g, ' ')
+          .split(/\s+/)
+          .filter((w) => w.length > 3);
+        if (qWords.length > 0 && qWords.some((w) => label.includes(w))) {
+          return entry.answer;
+        }
+      }
+    } catch {
+      // ignore
+    }
+
     return null;
   }
 
@@ -983,22 +1097,24 @@ export class AgentRunner {
       (config?.billingConfig?.mode === 'bundle' ? 10000 : 0);
 
     const billing: BillingState = {
-      currentRate: 3700,
-      currentThreshold: 50000,
+      currentRate: 4000, // R40 pure pay-as-you-go
+      currentThreshold: 4000, // First charge at R40
       consecutiveSuccess: 0,
       spentThisMonth: 0,
       costCap: Math.round(defaultCapRands * 100),
     };
 
-    if (config?.billingConfig?.mode === 'bundle') {
+    if (config?.billingConfig?.mode === 'bundle' || config?.billingConfig?.tier) {
       const tierRates: Record<string, number> = {
-        Starter: 3500,
-        Lite: 3000,
-        Standard: 2500,
-        Power: 2200,
+        Starter: 3500, // R35/app
+        Lite: 3000, // R30/app
+        Standard: 2500, // R25/app
+        Power: 2200, // R22/app
       };
-      billing.currentRate = tierRates[config.billingConfig.tier || 'Starter'] ?? 3700;
-      billing.currentThreshold = 200000;
+      if (config?.billingConfig?.mode === 'bundle') {
+        billing.currentRate = tierRates[config.billingConfig.tier || 'Starter'] ?? 3500;
+        billing.currentThreshold = 50000;
+      }
     }
 
     this.billing = billing;
@@ -1008,18 +1124,14 @@ export class AgentRunner {
 
   private checkProgressiveTier(): BillingState {
     if (!this.billing) return this.initBilling(this.config);
-    if (this.billing.consecutiveSuccess >= 5) {
-      this.billing.currentRate = 2200;
-      this.billing.currentThreshold = 500000;
+    if (this.billing.consecutiveSuccess >= 6) {
+      this.billing.currentThreshold = 50000; // R500 max threshold after 6 payments
     } else if (this.billing.consecutiveSuccess >= 3) {
-      this.billing.currentRate = 2500;
-      this.billing.currentThreshold = 350000;
-    } else if (this.billing.consecutiveSuccess >= 2) {
-      this.billing.currentRate = 3000;
-      this.billing.currentThreshold = 200000;
+      this.billing.currentThreshold = 25000; // R250 after 3 payments
     } else if (this.billing.consecutiveSuccess >= 1) {
-      this.billing.currentRate = 3500;
-      this.billing.currentThreshold = 100000;
+      this.billing.currentThreshold = 10000; // R100 after 1 payment
+    } else {
+      this.billing.currentThreshold = 4000; // R40 first charge
     }
     return this.billing;
   }
@@ -1155,7 +1267,10 @@ export class AgentRunner {
   // ── one job ───────────────────────────────────────────────────────────────
 
   private async processJob(job: DiscoveredJob, index: number, total: number) {
-    const rateCents = this.billing?.currentRate ?? 3700;
+    await this.waitIfPaused();
+    if (this.abort.signal.aborted) return;
+
+    const rateCents = this.billing?.currentRate ?? 4000;
     if (!this.reserveCredits(rateCents)) return;
 
     this.phase(
@@ -1189,21 +1304,69 @@ export class AgentRunner {
     const fields = await this.detectFields();
     const analysis = await this.analysePage(job, text, fields);
 
-    // ── sign-in wall ──────────────────────────────────────────────────────
+    // ── sign-in wall (try local domain-locked fill_secret(KEY_NAME) first) ──
     if (analysis.pageType === 'login_required') {
+      const pageUrl = this.page?.url() || job.url;
+      const host = hostOf(pageUrl);
+      const suggestedKey = normalizeSecretKeyName(host.split('.')[0] || 'SITE');
+      const matchedSecret = await findMatchingSecretForUrl(pageUrl);
+
+      if (matchedSecret && this.page) {
+        this.phase(
+          'applying',
+          `Filling saved login (${matchedSecret.keyName})`,
+          `Domain verified: ${matchedSecret.allowedDomain} — password stays in local Credential Manager`,
+          job,
+          index + 1,
+          total
+        );
+        const fillRes = await fillSecretOnVerifiedDomain(
+          this.page,
+          matchedSecret.keyName
+        );
+        if (fillRes.ok && fillRes.filledPassword) {
+          await this.screenshot(
+            `Signed in on ${matchedSecret.allowedDomain} via ${matchedSecret.keyName}`,
+            job
+          );
+          const refreshedAfterSecret = await this.detectFields();
+          const afterText = await this.page
+            .evaluate(() => document.body?.innerText ?? '')
+            .catch(() => text);
+          const reanalysisAfterSecret = await this.analysePage(
+            job,
+            trimText(afterText, MAX_PAGE_TEXT),
+            refreshedAfterSecret
+          );
+          if (reanalysisAfterSecret.pageType !== 'login_required') {
+            await this.tailor(job, reanalysisAfterSecret, index, total);
+            await this.applyAndConfirm(
+              job,
+              refreshedAfterSecret,
+              reanalysisAfterSecret,
+              index,
+              total,
+              rateCents
+            );
+            return;
+          }
+        }
+      }
+
       this.phase(
         'paused',
         'Sign-in needed',
-        `The application on ${hostOf(job.url)} needs an account`,
+        `The application on ${host} needs an account (${suggestedKey})`,
         job,
         index + 1,
         total
       );
       const answer = await this.attention(
         'login',
-        `Sign in on ${hostOf(job.url)}`,
-        'Chrome is open on the real page. Sign in there, then choose Continue and the agent will finish this application.',
-        job
+        `Sign in on ${host}`,
+        `Sign in directly in the open Chrome window, or save ${suggestedKey} in your local Windows Credential Manager vault so future runs autofill this domain automatically.`,
+        job,
+        { secretKeyName: suggestedKey, allowedDomain: host }
       );
       if (answer === 'skip') {
         this.results.push({

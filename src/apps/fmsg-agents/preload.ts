@@ -43,6 +43,9 @@ const api = {
     ipcRenderer.invoke('launch-visible-browser', url),
   runAgent: (config: any) => ipcRenderer.invoke('run-agent', config),
   stopAgent: () => ipcRenderer.invoke('stop-agent'),
+  pauseAgent: () => ipcRenderer.invoke('pause-agent'),
+  resumeAgent: () => ipcRenderer.invoke('resume-agent'),
+  emergencyStopAgent: () => ipcRenderer.invoke('emergency-stop-agent'),
   getAgentState: () => ipcRenderer.invoke('get-agent-state'),
   onAgentEvent: (callback: (event: any) => void) => {
     const listener = (_event: any, payload: any) => callback(payload);
@@ -72,6 +75,29 @@ const api = {
     ipcRenderer.invoke('get-legal-document', { doc }),
   openExternalUrl: (url: string) =>
     ipcRenderer.invoke('open-external-url', { url }),
+  minimizeWindow: () => ipcRenderer.invoke('window-minimize'),
+  maximizeWindow: () => ipcRenderer.invoke('window-maximize'),
+  closeWindow: () => ipcRenderer.invoke('window-close'),
+  listSiteSecrets: () => ipcRenderer.invoke('secrets-list'),
+  saveSiteSecret: (payload: {
+    siteLabel: string;
+    allowedDomain: string;
+    username: string;
+    password: string;
+    keyName?: string;
+  }) => ipcRenderer.invoke('secrets-save', payload),
+  deleteSiteSecret: (keyName: string) =>
+    ipcRenderer.invoke('secrets-delete', { keyName }),
+  getScreeningRules: () => ipcRenderer.invoke('rules-get'),
+  saveScreeningRules: (rules: any) => ipcRenderer.invoke('rules-save', rules),
+  getAgentPrefs: () => ipcRenderer.invoke('agent-prefs-get'),
+  saveAgentPrefs: (prefs: any) => ipcRenderer.invoke('agent-prefs-save', prefs),
+  listSavedJobs: () => ipcRenderer.invoke('saved-jobs-list'),
+  deleteSavedJob: (id: string) =>
+    ipcRenderer.invoke('saved-jobs-delete', { id }),
+  sendDeleteAccountCode: () => ipcRenderer.invoke('account-send-delete-code'),
+  confirmDeleteAccount: (code: string) =>
+    ipcRenderer.invoke('account-confirm-delete', { code }),
   logUIEvent: (action: string, target: string, meta?: Record<string, any>) =>
     ipcRenderer.invoke('log-ui-event', { action, target, meta }),
   logRendererError: (message: string, stack?: string, meta?: Record<string, any>) =>

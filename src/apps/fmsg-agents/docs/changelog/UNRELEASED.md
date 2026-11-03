@@ -6,7 +6,7 @@
 
 ## Status
 
-No unreleased changes — all changes up to and including **`v0.6.0`** have been promoted to [`2026-11-02_v0.6.0_live-agent-engine-and-paystack-billing.md`](./2026-11-02_v0.6.0_live-agent-engine-and-paystack-billing.md).
+No unreleased changes - all changes up to and including **`v0.7.0`** have been promoted to [`2026-11-03_v0.7.0_mockup-redesign-secret-vault-and-bundles.md`](./2026-11-03_v0.7.0_mockup-redesign-secret-vault-and-bundles.md).
 
 ---
 

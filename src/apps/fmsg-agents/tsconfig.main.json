@@ -18,6 +18,7 @@
     "update-manager.ts",
     "browser-resolver.ts",
     "session-manager.ts",
+    "secret-vault.ts",
     "agent-controller.ts",
     "electron-main.ts",
     "preload.ts"

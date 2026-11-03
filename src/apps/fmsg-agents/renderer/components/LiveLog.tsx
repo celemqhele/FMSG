@@ -1,11 +1,17 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useDialog } from './DialogSystem';
 
 /**
- * Live Feed — the agent's real work, as it happens.
+ * Live Run & Browser Preview (v0.7.0)
  *
- * Every row, caption and screenshot in this view comes from the running agent
- * in the main process (`agent-event` IPC). Nothing here is simulated: if the
- * agent opened LinkedIn, the preview is a screenshot of that LinkedIn page.
+ * - Renders real `agent-event` IPC steps from `AgentRunner`
+ * - Vertical 6-stage pipeline (Finding jobs -> Filtering -> Tailoring -> Applying -> Monitoring -> Complete)
+ * - Active job card with match % badge and progress bar
+ * - Pause / Resume, Stop, and Emergency Stop controls
+ * - Real Playwright JPEG screenshot monitor (`page.screenshot`) in a dark bezel
+ * - "Needs You" modal with a live 10:00 (600s) SVG countdown ring that expires
+ *   into `skip` (never auto-submits) and supports saving a domain-locked
+ *   `SITE_PASSWORD` into Windows Credential Manager (`secret-vault.ts`).
  */
 
 export type StepPhase =
@@ -35,12 +41,16 @@ export interface MatrixLogEntry {
   salary?: string;
 }
 
-interface AttentionPrompt {
+export interface AttentionPrompt {
   id: string;
   kind: 'login' | 'captcha' | 'sensitive' | 'submit' | 'info';
   title: string;
   message: string;
   company?: string;
+  jobTitle?: string;
+  secretKeyName?: string;
+  allowedDomain?: string;
+  countdownSeconds?: number;
 }
 
 interface LiveLogProps {
@@ -49,11 +59,15 @@ interface LiveLogProps {
   selectedProfileId?: string;
   onProfileChange?: (id: string) => void;
   isRunning: boolean;
+  isPaused?: boolean;
   batchSize: number;
   appliedCount?: number;
   skippedCount?: number;
   onOpenLaunchModal?: () => void;
   onStopAgent?: () => void;
+  onPauseAgent?: () => void;
+  onResumeAgent?: () => void;
+  onEmergencyStopAgent?: () => void;
 }
 
 function nowLabel(): string {
@@ -76,19 +90,37 @@ function hostOf(url?: string): string {
 
 const PHASE_LABEL: Record<StepPhase, string> = {
   searching: 'Searching',
-  found: 'Shortlisting',
+  found: 'Filtering',
   reading: 'Reading',
   tailoring: 'Tailoring',
   applying: 'Applying',
   confirming: 'Confirming',
-  completed: 'Done',
+  completed: 'Complete',
   paused: 'Paused',
   error: 'Stopped',
 };
 
-/* ── animated profile picker (Apple-style spring menu) ───────────────────── */
+const PIPELINE_STEPS: Array<{
+  key: string;
+  label: string;
+  phases: StepPhase[];
+}> = [
+  { key: 'finding', label: 'Finding jobs', phases: ['searching'] },
+  { key: 'filtering', label: 'Filtering', phases: ['found', 'reading'] },
+  { key: 'tailoring', label: 'Tailoring', phases: ['tailoring'] },
+  { key: 'applying', label: 'Applying', phases: ['applying'] },
+  { key: 'monitoring', label: 'Monitoring', phases: ['confirming'] },
+  { key: 'complete', label: 'Complete', phases: ['completed'] },
+];
 
-function ProfilePicker({
+function formatCountdown(sec: number): string {
+  const clamped = Math.max(0, Math.floor(sec));
+  const m = Math.floor(clamped / 60);
+  const s = clamped % 60;
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+export function ProfilePicker({
   profiles,
   selectedProfileId,
   onProfileChange,
@@ -163,7 +195,7 @@ function ProfilePicker({
                 role="option"
                 aria-selected={active}
                 className={`profile-picker-item ${active ? 'active' : ''}`}
-                style={{ animationDelay: `${index * 22}ms` }}
+                style={{ animationDelay: `${index * 20}ms` }}
                 onClick={() => {
                   onProfileChange(p.id);
                   setOpen(false);
@@ -178,8 +210,8 @@ function ProfilePicker({
                 {active && (
                   <svg
                     className="profile-picker-check"
-                    width="14"
-                    height="14"
+                    width="13"
+                    height="13"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
@@ -199,20 +231,24 @@ function ProfilePicker({
   );
 }
 
-/* ── main view ───────────────────────────────────────────────────────────── */
-
 export default function LiveLog({
   profile,
   profiles = [],
   selectedProfileId,
   onProfileChange,
   isRunning,
+  isPaused = false,
   batchSize,
   appliedCount,
   skippedCount,
   onOpenLaunchModal,
   onStopAgent,
+  onPauseAgent,
+  onResumeAgent,
+  onEmergencyStopAgent,
 }: LiveLogProps) {
+  const { showToast } = useDialog();
+
   const [entries, setEntries] = useState<MatrixLogEntry[]>([]);
   const [screenshot, setScreenshot] = useState<{
     dataUrl: string;
@@ -220,11 +256,20 @@ export default function LiveLog({
     host: string;
   } | null>(null);
   const [attention, setAttention] = useState<AttentionPrompt | null>(null);
+  const [secondsLeft, setSecondsLeft] = useState<number>(600);
+
+  // Optional local Credential Manager save inside the Needs You modal
+  const [vaultUser, setVaultUser] = useState('');
+  const [vaultPass, setVaultPass] = useState('');
+  const [saveToVault, setSaveToVault] = useState(false);
+  const [savingVault, setSavingVault] = useState(false);
+
   const [stats, setStats] = useState({
     applied: appliedCount ?? 0,
     skipped: skippedCount ?? 0,
     total: 0,
   });
+
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const pinnedRef = useRef(true);
 
@@ -272,12 +317,24 @@ export default function LiveLog({
       }
 
       if (event.type === 'attention') {
+        setSecondsLeft(
+          typeof event.countdownSeconds === 'number'
+            ? event.countdownSeconds
+            : 600
+        );
+        setVaultUser('');
+        setVaultPass('');
+        setSaveToVault(false);
         setAttention({
           id: event.id,
           kind: event.kind || 'info',
-          title: event.title || 'Your attention is needed',
+          title: event.title || 'Needs You',
           message: event.message || '',
           company: event.job?.company,
+          jobTitle: event.job?.title,
+          secretKeyName: event.secretKeyName,
+          allowedDomain: event.allowedDomain,
+          countdownSeconds: event.countdownSeconds || 600,
         });
         return;
       }
@@ -298,7 +355,6 @@ export default function LiveLog({
     return unsubscribe;
   }, [pushEntry]);
 
-  // A run that ends (stopped, or finished) should never leave a spinner behind.
   useEffect(() => {
     if (isRunning) return;
     setAttention(null);
@@ -315,6 +371,78 @@ export default function LiveLog({
     if (node) node.scrollTop = node.scrollHeight;
   }, [entries]);
 
+  const answerAttention = useCallback(
+    async (answer: 'continue' | 'skip') => {
+      const current = attention;
+      if (!current) return;
+
+      // If user opted to save login to local Credential Manager before continuing
+      if (
+        answer === 'continue' &&
+        current.kind === 'login' &&
+        saveToVault &&
+        vaultUser.trim() &&
+        vaultPass &&
+        current.allowedDomain
+      ) {
+        setSavingVault(true);
+        try {
+          const res = await window.electronAPI?.saveSiteSecret?.({
+            siteLabel: current.company || current.allowedDomain,
+            allowedDomain: current.allowedDomain,
+            username: vaultUser.trim(),
+            password: vaultPass,
+            keyName: current.secretKeyName,
+          });
+          if (res?.ok) {
+            showToast(
+              `Saved ${res.meta?.keyName || current.secretKeyName} to Windows Credential Manager.`,
+              'success'
+            );
+          }
+        } catch {
+          // ignore
+        } finally {
+          setSavingVault(false);
+          setVaultPass('');
+        }
+      }
+
+      setAttention(null);
+      window.electronAPI
+        ?.respondAgentAttention?.(current.id, answer)
+        .catch(() => {});
+
+      pushEntry({
+        id: `answer_${Date.now()}`,
+        phase: answer === 'skip' ? 'paused' : 'applying',
+        label: answer === 'skip' ? 'Skipped this posting' : 'Continuing run',
+        sublabel: current?.company
+          ? `${current.company} — ${answer === 'skip' ? 'skipped safely' : 'resumed'}`
+          : undefined,
+        status: 'active',
+        timestamp: nowLabel(),
+      });
+    },
+    [attention, pushEntry, saveToVault, showToast, vaultPass, vaultUser]
+  );
+
+  // 10:00 countdown timer — expires strictly into `skip`, NEVER `continue`/submit
+  useEffect(() => {
+    if (!attention) return;
+    const timer = window.setInterval(() => {
+      setSecondsLeft((prev) => {
+        if (prev <= 1) {
+          window.clearInterval(timer);
+          answerAttention('skip');
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [attention, answerAttention]);
+
   const handleScroll = () => {
     const node = scrollRef.current;
     if (!node) return;
@@ -323,63 +451,76 @@ export default function LiveLog({
   };
 
   const activeEntry = useMemo(
-    () => [...entries].reverse().find((e) => e.status === 'active'),
+    () => [...entries].reverse().find((e) => e.status === 'active') || entries[entries.length - 1],
     [entries]
   );
 
-  const answerAttention = (answer: 'continue' | 'skip') => {
-    const current = attention;
-    setAttention(null);
-    if (current) {
-      window.electronAPI
-        ?.respondAgentAttention?.(current.id, answer)
-        .catch(() => {});
+  const currentJobEntry = useMemo(
+    () =>
+      [...entries]
+        .reverse()
+        .find((e) => Boolean(e.jobTitle || e.company)),
+    [entries]
+  );
+
+  const activePipelineIdx = useMemo(() => {
+    if (!activeEntry) return isRunning ? 0 : -1;
+    const idx = PIPELINE_STEPS.findIndex((s) =>
+      s.phases.includes(activeEntry.phase)
+    );
+    return idx >= 0 ? idx : 0;
+  }, [activeEntry, isRunning]);
+
+  const progressPct = useMemo(() => {
+    if (currentJobEntry?.jobIndex && currentJobEntry?.totalJobs) {
+      return Math.min(
+        100,
+        Math.round((currentJobEntry.jobIndex / currentJobEntry.totalJobs) * 100)
+      );
     }
-    pushEntry({
-      id: `answer_${Date.now()}`,
-      phase: answer === 'skip' ? 'paused' : 'applying',
-      label: answer === 'skip' ? 'Skipped this posting' : 'Continuing',
-      sublabel: current?.company
-        ? `${current.company} — ${answer === 'skip' ? 'moved on' : 'you handled it'}`
-        : undefined,
-      status: 'active',
-      timestamp: nowLabel(),
-    });
-  };
+    if (activePipelineIdx >= 0) {
+      return Math.min(100, Math.round(((activePipelineIdx + 1) / 6) * 100));
+    }
+    return 0;
+  }, [activePipelineIdx, currentJobEntry]);
 
   const profileTitle =
     (profile?.job_titles || [])[0] || profile?.name || 'your saved profile';
 
-  const attentionLabel =
-    attention?.kind === 'login'
-      ? "I've signed in"
-      : attention?.kind === 'captcha'
-        ? "I've completed it"
-        : attention?.kind === 'sensitive'
-          ? "I've filled it in"
-          : attention?.kind === 'submit'
-            ? 'Submit now'
-            : 'Continue';
+  const totalCountdown = attention?.countdownSeconds || 600;
+  const ringRadius = 28;
+  const ringCircumference = 2 * Math.PI * ringRadius;
+  const ringOffset =
+    ringCircumference * (1 - Math.max(0, secondsLeft) / totalCountdown);
 
   return (
     <div className="live-feed-root">
-      {/* LEFT: activity stream */}
+      {/* LEFT / CENTER: Live Run Pipeline, Current Job Card & Activity */}
       <section className="matrix-log-column">
+        {/* Top Progress Header */}
         <div className="matrix-log-header">
           <div className="matrix-log-heading">
             <span
-              className={`matrix-live-dot ${isRunning ? 'running' : 'idle'}`}
+              className={`matrix-live-dot ${
+                isPaused ? 'paused' : isRunning ? 'running' : 'idle'
+              }`}
             />
             <span className="matrix-log-title">
-              {isRunning ? 'Agent working' : entries.length ? 'Run finished' : 'Ready'}
+              {isPaused
+                ? 'Run Paused'
+                : isRunning
+                  ? 'Live Run in Progress'
+                  : entries.length
+                    ? 'Run Complete'
+                    : 'Ready to Run'}
             </span>
-          </div>
-
-          <div className="matrix-log-meta">
             <span className="matrix-counter">
               {stats.applied} applied
               {stats.skipped > 0 ? ` · ${stats.skipped} skipped` : ''}
             </span>
+          </div>
+
+          <div className="matrix-log-meta">
             {onProfileChange && (
               <ProfilePicker
                 profiles={profiles}
@@ -390,97 +531,200 @@ export default function LiveLog({
           </div>
         </div>
 
-        <div
-          className="matrix-log-scroll"
-          ref={scrollRef}
-          onScroll={handleScroll}
-        >
-          {entries.length === 0 ? (
-            <div className="matrix-empty">
-              <p className="matrix-empty-title">Nothing running yet</p>
-              <p className="matrix-empty-body">
-                {profiles.length === 0
-                  ? 'Add a search profile on the FMSG website, then refresh profiles here.'
-                  : `The agent will search live postings for ${profileTitle}, read each one, and show you the browser as it works.`}
-              </p>
-            </div>
-          ) : (
-            entries.map((entry) => (
-              <div
-                key={entry.id}
-                className={`matrix-log-row ${entry.status} ${
-                  entry.id === activeEntry?.id ? 'current' : ''
-                }`}
-              >
-                <span className={`matrix-dot ${entry.status}`} />
-                <div className="matrix-log-body">
-                  <div className="matrix-log-text">{entry.label}</div>
-                  {entry.sublabel && (
-                    <div className="matrix-log-sub">{entry.sublabel}</div>
-                  )}
-                  {(entry.company || entry.jobTitle) && (
-                    <div className="matrix-log-tags">
-                      {entry.jobTitle && <span>{entry.jobTitle}</span>}
-                      {entry.company && <span>{entry.company}</span>}
-                      {entry.location && <span>{entry.location}</span>}
-                      {entry.matchScore != null && (
-                        <span className="matrix-score">{entry.matchScore}% fit</span>
-                      )}
-                    </div>
-                  )}
-                </div>
-                <span className="matrix-log-time">
-                  {entry.jobIndex && entry.totalJobs
-                    ? `${entry.jobIndex}/${entry.totalJobs}`
-                    : entry.timestamp}
-                </span>
-              </div>
-            ))
-          )}
+        {/* Determinate Run Progress Bar */}
+        <div className="live-run-progress-wrap">
+          <div className="live-run-progress-labels">
+            <span>Progress</span>
+            <span>
+              {currentJobEntry?.jobIndex && currentJobEntry?.totalJobs
+                ? `Job ${currentJobEntry.jobIndex} of ${currentJobEntry.totalJobs} (${progressPct}%)`
+                : isRunning
+                  ? `${progressPct}%`
+                  : 'Idle'}
+            </span>
+          </div>
+          <div className="live-run-progress-track">
+            <div
+              className="live-run-progress-fill"
+              style={{ width: `${isRunning || entries.length ? Math.max(6, progressPct) : 0}%` }}
+            />
+          </div>
         </div>
 
+        {/* Middle Split: 6-Step Pipeline + Current Job Card + Activity Stream */}
+        <div className="live-run-middle-grid">
+          {/* 6-Step Vertical Stepper */}
+          <div className="live-run-stepper">
+            {PIPELINE_STEPS.map((step, idx) => {
+              const done =
+                activePipelineIdx > idx ||
+                (!isRunning && entries.length > 0 && activeEntry?.phase === 'completed');
+              const current = isRunning && activePipelineIdx === idx;
+              return (
+                <div
+                  key={step.key}
+                  className={`pipeline-step-row ${
+                    done ? 'done' : current ? 'current' : 'upcoming'
+                  }`}
+                >
+                  <span className="pipeline-step-indicator">
+                    {done ? '✓' : idx + 1}
+                  </span>
+                  <span className="pipeline-step-label">{step.label}</span>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Current Job Card + Scrollable Activity Log */}
+          <div className="live-run-center-col">
+            {currentJobEntry && (currentJobEntry.jobTitle || currentJobEntry.company) && (
+              <div className="current-job-spotlight">
+                <div className="current-job-spotlight-top">
+                  <div className="current-job-badge">
+                    {(currentJobEntry.company || 'JOB').slice(0, 4).toUpperCase()}
+                  </div>
+                  <div className="current-job-meta">
+                    <div className="current-job-title">
+                      {currentJobEntry.jobTitle || 'Active Posting'}
+                    </div>
+                    <div className="current-job-sub">
+                      {[
+                        currentJobEntry.company,
+                        currentJobEntry.location,
+                        currentJobEntry.salary,
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </div>
+                  </div>
+                  {currentJobEntry.matchScore != null && (
+                    <span className="current-job-score">
+                      {currentJobEntry.matchScore}% Match
+                    </span>
+                  )}
+                </div>
+                <div className="current-job-status-line">
+                  {activeEntry?.label || 'Processing posting…'}
+                </div>
+              </div>
+            )}
+
+            <div
+              className="matrix-log-scroll"
+              ref={scrollRef}
+              onScroll={handleScroll}
+              aria-live="polite"
+            >
+              {entries.length === 0 ? (
+                <div className="matrix-empty">
+                  <p className="matrix-empty-title">No active run right now</p>
+                  <p className="matrix-empty-body">
+                    {profiles.length === 0
+                      ? 'Add a search profile on the FMSG website, then click Refresh in Profiles.'
+                      : `Click Start Applying to discover live postings for ${profileTitle}, tailor your CV, and watch the browser work in real time.`}
+                  </p>
+                </div>
+              ) : (
+                entries.map((entry) => (
+                  <div
+                    key={entry.id}
+                    className={`matrix-log-row ${entry.status} ${
+                      entry.id === activeEntry?.id ? 'current' : ''
+                    }`}
+                  >
+                    <span className={`matrix-dot ${entry.status}`} />
+                    <div className="matrix-log-body">
+                      <div className="matrix-log-text">{entry.label}</div>
+                      {entry.sublabel && (
+                        <div className="matrix-log-sub">{entry.sublabel}</div>
+                      )}
+                      {(entry.company || entry.jobTitle) && (
+                        <div className="matrix-log-tags">
+                          {entry.jobTitle && <span>{entry.jobTitle}</span>}
+                          {entry.company && <span>{entry.company}</span>}
+                          {entry.location && <span>{entry.location}</span>}
+                          {entry.matchScore != null && (
+                            <span className="matrix-score">
+                              {entry.matchScore}% fit
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    <span className="matrix-log-time">
+                      {entry.jobIndex && entry.totalJobs
+                        ? `${entry.jobIndex}/${entry.totalJobs}`
+                        : entry.timestamp}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Bottom Run Controls: Pause / Stop / Emergency Stop (or Start Applying) */}
         <div className="agent-action-row">
           {isRunning ? (
-            <button
-              type="button"
-              className="btn btn-danger agent-primary-action"
-              onClick={onStopAgent}
-            >
-              Stop agent
-            </button>
+            <div className="live-run-control-group">
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={isPaused ? onResumeAgent : onPauseAgent}
+              >
+                {isPaused ? '▶ Resume' : '⏸ Pause'}
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={onStopAgent}
+              >
+                ■ Stop
+              </button>
+              <button
+                type="button"
+                className="btn btn-danger"
+                onClick={onEmergencyStopAgent || onStopAgent}
+              >
+                ⊗ Emergency Stop
+              </button>
+            </div>
           ) : (
             <button
               type="button"
               className="btn btn-primary agent-primary-action"
               onClick={onOpenLaunchModal}
             >
-              Launch agent · {batchSize} jobs
+              Start Applying · {batchSize} jobs
             </button>
           )}
           <span className="agent-action-hint">
-            {isRunning
-              ? activeEntry?.label || 'Starting up…'
-              : 'A visible Chrome window opens on your machine'}
+            {isPaused
+              ? 'Paused — click Resume to continue from this posting'
+              : isRunning
+                ? activeEntry?.label || 'Working in visible Chrome window…'
+                : 'Opens a visible Chrome window on your PC'}
           </span>
         </div>
       </section>
 
-      {/* RIGHT: real browser preview */}
+      {/* RIGHT: Real Browser Preview Monitor (Dark Bezel) */}
       <section className="live-viewport-column">
         <div className="live-viewport-monitor">
           <div className="viewport-browser-bar">
             <div className="viewport-traffic-dots">
               <span
                 className="viewport-traffic-dot"
-                style={{ background: '#ff5f57' }}
+                style={{ background: '#ef4444' }}
               />
               <span
                 className="viewport-traffic-dot"
-                style={{ background: '#febc2e' }}
+                style={{ background: '#f59e0b' }}
               />
               <span
                 className="viewport-traffic-dot"
-                style={{ background: '#28c840' }}
+                style={{ background: '#22c55e' }}
               />
             </div>
             <div className="viewport-url-pill">
@@ -489,8 +733,8 @@ export default function LiveLog({
                 height="11"
                 viewBox="0 0 24 24"
                 fill="none"
-                stroke="#64748b"
-                strokeWidth="2.4"
+                stroke="#94a3b8"
+                strokeWidth="2.2"
                 strokeLinecap="round"
                 strokeLinejoin="round"
               >
@@ -503,8 +747,10 @@ export default function LiveLog({
                   : 'Live browser preview'}
               </span>
             </div>
-            <span className="viewport-live-badge">
-              {isRunning ? 'LIVE' : 'IDLE'}
+            <span
+              className={`viewport-live-badge ${isRunning ? 'live' : 'idle'}`}
+            >
+              {isPaused ? 'PAUSED' : isRunning ? 'LIVE' : 'IDLE'}
             </span>
           </div>
 
@@ -522,8 +768,8 @@ export default function LiveLog({
               <div className="viewport-idle">
                 <div className="viewport-idle-mark">
                   <svg
-                    width="26"
-                    height="26"
+                    width="24"
+                    height="24"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
@@ -538,43 +784,134 @@ export default function LiveLog({
                   </svg>
                 </div>
                 <p className="viewport-idle-title">
-                  {isRunning ? 'Opening the first page…' : 'Your browser, mirrored here'}
+                  {isRunning
+                    ? 'Opening first job posting…'
+                    : 'Live Browser Viewport'}
                 </p>
                 <p className="viewport-idle-body">
                   {isRunning
-                    ? 'The agent screenshots each page it opens, so you can follow along.'
-                    : 'When a run starts, this pane shows a real screenshot of the page the agent is on — job boards, application forms and confirmations included.'}
+                    ? 'Each page the agent opens in Chrome is captured and mirrored here automatically.'
+                    : 'When a run starts, real screenshots of each job posting, form, and confirmation receipt appear in this dark viewport.'}
                 </p>
               </div>
             )}
 
+            {/* NEEDS YOU MODAL WITH 10:00 SVG COUNTDOWN RING */}
             {attention && (
-              <div className="viewport-attention-popup" role="dialog">
-                <div className="attention-head">
-                  <span className={`attention-kind ${attention.kind}`} />
-                  <div>
-                    <p className="attention-title">{attention.title}</p>
-                    {attention.company && (
-                      <p className="attention-company">{attention.company}</p>
-                    )}
+              <div
+                className="needs-you-overlay"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="needs-you-title"
+              >
+                <div className="needs-you-card">
+                  <div className="needs-you-header">
+                    <div>
+                      <span className="needs-you-eyebrow">NEEDS YOU</span>
+                      <h4 id="needs-you-title" className="needs-you-title">
+                        {attention.title}
+                      </h4>
+                      {(attention.jobTitle || attention.company) && (
+                        <div className="needs-you-sub">
+                          {[attention.jobTitle, attention.company]
+                            .filter(Boolean)
+                            .join(' · ')}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 10:00 SVG Countdown Ring */}
+                    <div
+                      className="needs-you-ring-wrap"
+                      title="When the timer hits 00:00, this posting is skipped safely (never auto-submitted)"
+                    >
+                      <svg width="68" height="68" viewBox="0 0 68 68">
+                        <circle
+                          cx="34"
+                          cy="34"
+                          r={ringRadius}
+                          fill="none"
+                          stroke="rgba(148, 163, 184, 0.18)"
+                          strokeWidth="4.5"
+                        />
+                        <circle
+                          cx="34"
+                          cy="34"
+                          r={ringRadius}
+                          fill="none"
+                          stroke={secondsLeft < 60 ? '#ef4444' : '#203eea'}
+                          strokeWidth="4.5"
+                          strokeLinecap="round"
+                          strokeDasharray={ringCircumference}
+                          strokeDashoffset={ringOffset}
+                          transform="rotate(-90 34 34)"
+                        />
+                      </svg>
+                      <div className="needs-you-ring-text">
+                        <strong>{formatCountdown(secondsLeft)}</strong>
+                        <span>to skip</span>
+                      </div>
+                    </div>
                   </div>
-                </div>
-                <p className="attention-message">{attention.message}</p>
-                <div className="attention-actions">
-                  <button
-                    type="button"
-                    className="btn btn-primary attention-continue"
-                    onClick={() => answerAttention('continue')}
-                  >
-                    {attentionLabel}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-secondary attention-skip"
-                    onClick={() => answerAttention('skip')}
-                  >
-                    Skip
-                  </button>
+
+                  <p className="needs-you-message">{attention.message}</p>
+
+                  {/* Optional Local Credential Manager Save on Login Walls */}
+                  {attention.kind === 'login' && attention.allowedDomain && (
+                    <div className="needs-you-vault-box">
+                      <label className="checkbox-label" style={{ fontSize: '11.5px' }}>
+                        <input
+                          type="checkbox"
+                          checked={saveToVault}
+                          onChange={(e) => setSaveToVault(e.target.checked)}
+                        />
+                        <span>
+                          Save <strong>{attention.secretKeyName}</strong> in local
+                          Windows Credential Manager for{' '}
+                          <strong>{attention.allowedDomain}</strong> (never sent to
+                          AI or server)
+                        </span>
+                      </label>
+
+                      {saveToVault && (
+                        <div className="needs-you-vault-inputs">
+                          <input
+                            type="text"
+                            className="field-input"
+                            placeholder={`Email / username for ${attention.allowedDomain}`}
+                            value={vaultUser}
+                            onChange={(e) => setVaultUser(e.target.value)}
+                          />
+                          <input
+                            type="password"
+                            className="field-input"
+                            placeholder={`Password (${attention.secretKeyName})`}
+                            value={vaultPass}
+                            onChange={(e) => setVaultPass(e.target.value)}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="needs-you-actions">
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      disabled={savingVault}
+                      onClick={() => answerAttention('continue')}
+                    >
+                      {savingVault ? 'Saving & Continuing…' : 'Save and Continue'}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      disabled={savingVault}
+                      onClick={() => answerAttention('skip')}
+                    >
+                      Skip This Job
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -585,7 +922,7 @@ export default function LiveLog({
           <span>
             {activeEntry
               ? `${PHASE_LABEL[activeEntry.phase] || 'Working'} · ${activeEntry.label}`
-              : 'Everything the agent does stays on this computer'}
+              : 'Browser automation runs locally in Chrome; job search & AI ranking use FMSG'}
           </span>
           {screenshot && (
             <button

@@ -71,6 +71,15 @@ import {
   AgentEvent,
   AgentRuntime,
 } from './agent-controller';
+import {
+  listSiteSecretsMeta,
+  saveSiteSecret,
+  deleteSiteSecret,
+  loadScreeningRules,
+  saveScreeningRules,
+  loadAgentPrefs,
+  saveAgentPrefs,
+} from './secret-vault';
 
 installProcessDiagnosticHooks();
 
@@ -183,7 +192,8 @@ function createWindow(): void {
     minWidth: 960,
     minHeight: 640,
     title: 'FMSG Agents',
-    backgroundColor: '#0b0b14',
+    backgroundColor: '#040613',
+    frame: false,
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -414,6 +424,26 @@ ipcMain.handle('stop-agent', async () => {
   resolveAllAttention('skip');
   if (agentRunner) await agentRunner.stop();
   return { stopped: true };
+});
+
+// IPC: Pause / Resume / Emergency Stop agent
+ipcMain.handle('pause-agent', async () => {
+  logIPC('pause-agent', 'handle');
+  if (agentRunner) agentRunner.pause();
+  return { ok: true, paused: true };
+});
+
+ipcMain.handle('resume-agent', async () => {
+  logIPC('resume-agent', 'handle');
+  if (agentRunner) agentRunner.resume();
+  return { ok: true, paused: false };
+});
+
+ipcMain.handle('emergency-stop-agent', async () => {
+  logIPC('emergency-stop-agent', 'handle');
+  resolveAllAttention('skip');
+  if (agentRunner) await agentRunner.stop();
+  return { ok: true, stopped: true };
 });
 
 // IPC: Answer a pending attention prompt (continue or skip)
@@ -804,6 +834,148 @@ ipcMain.handle('set-prevent-sleep', async (_event, enabled: boolean) => {
   }
   return { enabled };
 });
+
+// IPC: Custom frameless title bar window controls
+ipcMain.handle('window-minimize', async () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.minimize();
+  }
+  return { ok: true };
+});
+
+ipcMain.handle('window-maximize', async () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow.isMaximized()) {
+      mainWindow.unmaximize();
+    } else {
+      mainWindow.maximize();
+    }
+    return { ok: true, maximized: mainWindow.isMaximized() };
+  }
+  return { ok: false, maximized: false };
+});
+
+ipcMain.handle('window-close', async () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.close();
+  }
+  return { ok: true };
+});
+
+// IPC: Local Credential Manager Secret Vault (never returns password values)
+ipcMain.handle('secrets-list', async () => {
+  logIPC('secrets-list', 'handle');
+  const items = await listSiteSecretsMeta();
+  return { ok: true, items };
+});
+
+ipcMain.handle(
+  'secrets-save',
+  async (
+    _event,
+    payload: {
+      siteLabel: string;
+      allowedDomain: string;
+      username: string;
+      password: string;
+      keyName?: string;
+    }
+  ) => {
+    logIPC('secrets-save', 'handle', {
+      site_label: payload?.siteLabel,
+      allowed_domain: payload?.allowedDomain,
+    });
+    return saveSiteSecret(payload);
+  }
+);
+
+ipcMain.handle('secrets-delete', async (_event, payload: { keyName: string }) => {
+  logIPC('secrets-delete', 'handle', { key_name: payload?.keyName });
+  return deleteSiteSecret(payload?.keyName || '');
+});
+
+// IPC: Rules & Answer Bank + Persistent Agent Preferences (Cost Cap defaults to R0)
+ipcMain.handle('rules-get', async () => {
+  return { ok: true, rules: loadScreeningRules() };
+});
+
+ipcMain.handle('rules-save', async (_event, payload: any) => {
+  const saved = saveScreeningRules(payload || {});
+  return { ok: true, rules: saved };
+});
+
+ipcMain.handle('agent-prefs-get', async () => {
+  return { ok: true, prefs: loadAgentPrefs() };
+});
+
+ipcMain.handle('agent-prefs-save', async (_event, payload: any) => {
+  const saved = saveAgentPrefs(payload || {});
+  return { ok: true, prefs: saved };
+});
+
+// IPC: Applications Tracker & History (from shared public.saved_jobs under RLS)
+ipcMain.handle('saved-jobs-list', async () => {
+  const token = getActiveSessionAccessToken();
+  const user = getActiveSessionUser();
+  if (!token || !user?.id) {
+    return { ok: false, jobs: [] };
+  }
+  try {
+    const supabase = createAnonSupabaseClient(token);
+    const { data, error } = await supabase
+      .from('saved_jobs')
+      .select(
+        'id, profile_id, job_title, company, location, estimated_salary, match_score, match_summary, job_url, full_spec, created_at'
+      )
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(200);
+    if (error) return { ok: false, jobs: [], error: error.message };
+    return { ok: true, jobs: data || [] };
+  } catch (err: any) {
+    return { ok: false, jobs: [], error: err?.message };
+  }
+});
+
+ipcMain.handle('saved-jobs-delete', async (_event, payload: { id: string }) => {
+  const token = getActiveSessionAccessToken();
+  const user = getActiveSessionUser();
+  if (!token || !user?.id || !payload?.id) {
+    return { ok: false };
+  }
+  try {
+    const supabase = createAnonSupabaseClient(token);
+    const { error } = await supabase
+      .from('saved_jobs')
+      .delete()
+      .eq('id', payload.id)
+      .eq('user_id', user.id);
+    return { ok: !error };
+  } catch {
+    return { ok: false };
+  }
+});
+
+// IPC: Account deletion (website parity: send code + confirm delete)
+ipcMain.handle('account-send-delete-code', async () => {
+  logIPC('account-send-delete-code', 'handle');
+  return authedWebRequest('/api/auth/send-delete-code', { method: 'POST' });
+});
+
+ipcMain.handle(
+  'account-confirm-delete',
+  async (_event, payload: { code: string }) => {
+    logIPC('account-confirm-delete', 'handle');
+    const res = await authedWebRequest('/api/delete-account', {
+      method: 'DELETE',
+      body: { code: payload?.code },
+    });
+    if (res.ok) {
+      await logoutUser();
+    }
+    return res;
+  }
+);
 
 // IPC: Renderer UI & error logging
 ipcMain.handle(

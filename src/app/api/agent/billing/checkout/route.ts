@@ -23,7 +23,25 @@ const PAYSTACK_SECRET_KEY =
 const WEB_BASE_URL =
   process.env.NEXT_PUBLIC_SITE_URL || "https://findmesomejobs.co.za";
 
-const PURCHASABLE = new Set(["Seeker", "Hunter", "Pro"]);
+const AGENT_PLAN_PRICES: Record<string, number> = {
+  Starter: 34900,
+  Lite: 74900,
+  Standard: 149900,
+  Power: 329900,
+  Seeker: PLAN_PRICES.Seeker ?? 9900,
+  Hunter: PLAN_PRICES.Hunter ?? 24900,
+  Pro: PLAN_PRICES.Pro ?? 49900,
+};
+
+const PURCHASABLE = new Set([
+  "Starter",
+  "Lite",
+  "Standard",
+  "Power",
+  "Seeker",
+  "Hunter",
+  "Pro",
+]);
 
 export async function POST(request: NextRequest) {
   const authHeader = request.headers
@@ -77,7 +95,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unknown plan." }, { status: 400 });
   }
 
-  const amount = PLAN_PRICES[plan];
+  const amount = AGENT_PLAN_PRICES[plan];
   if (!amount || amount <= 0) {
     return NextResponse.json({ error: "Plan price is unavailable." }, { status: 500 });
   }

@@ -54,7 +54,7 @@ export default function UpdateProgress({
   onSkipOptional,
 }: UpdateProgressProps) {
   const clampedPct = Math.max(0, Math.min(100, Math.round(percent)));
-  const cleanCurrent = (currentVersion || '0.6.0').replace(/^v/i, '');
+  const cleanCurrent = (currentVersion || '').replace(/^v/i, '');
   const cleanTarget = (
     targetVersion ||
     manifest?.version ||
