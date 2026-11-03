@@ -350,6 +350,14 @@ export class AgentRunner {
   private lastFrameHost = '';
   private fallbackTimer?: ReturnType<typeof setInterval>;
 
+  // Active-page tracking (TASK-20261103-007): the preview and the automation
+  // follow whichever page the browser is actually using. New tabs/popups
+  // promote themselves; a closed active page falls back to the previous one.
+  // The switch chain serialises stop/start so screencasts never interleave.
+  private pageOrder: Page[] = [];
+  private activeTargetId = '';
+  private switchChain: Promise<void> = Promise.resolve();
+
   constructor(config: AgentConfig, runtime?: AgentRuntime) {
     this.config = config;
     this.runtime = runtime;
@@ -457,6 +465,105 @@ export class AgentRunner {
   // A read-only view of the automation surface. Frames exist only in memory and
   // in the `agent-event` IPC payload: never written to disk, never logged.
 
+  // Follows every page the context creates (popups, target=_blank tabs).
+  // Newest-created-wins: the site moved the action there, so both the
+  // automation page and the screencast switch to it. Close handling falls
+  // back to the most recent remaining page and never leaves a stale stream.
+  private trackPages(context: BrowserContext): void {
+    this.pageOrder = this.page ? [this.page] : [];
+
+    const attachCloseHandler = (page: Page) => {
+      page.on('close', () => {
+        this.pageOrder = this.pageOrder.filter((p) => p !== page);
+        if (this.page !== page) return;
+
+        const fallback = this.pageOrder[this.pageOrder.length - 1];
+        if (!fallback) {
+          this.page = undefined;
+          this.switchChain = this.switchChain
+            .then(() => this.handleAllPagesClosed())
+            .catch(() => undefined);
+          return;
+        }
+        this.page = fallback;
+        this.switchChain = this.switchChain
+          .then(() =>
+            this.switchToPage(
+              fallback,
+              'Previous tab closed — preview follows the remaining page'
+            )
+          )
+          .catch(() => undefined);
+      });
+    };
+
+    // The launch page matters as much as any later one: its close event must
+    // be handled too, or the preview would stay silently attached to it.
+    this.pageOrder.forEach(attachCloseHandler);
+
+    context.on('page', (page) => {
+      this.pageOrder.push(page);
+      page.setDefaultTimeout(20_000);
+      attachCloseHandler(page);
+
+      this.page = page;
+      this.switchChain = this.switchChain
+        .then(() => this.switchToPage(page, 'Switched to a new browser tab'))
+        .catch(() => undefined);
+    });
+  }
+
+  private async handleAllPagesClosed(): Promise<void> {
+    await this.stopScreencast();
+    this.activeTargetId = '';
+    this.phase(
+      'paused',
+      'Browser window closed',
+      'All automation pages were closed — start a new run when ready.'
+    );
+  }
+
+  private async switchToPage(page: Page, label: string): Promise<void> {
+    this.activeTargetId = '';
+    if (!this.state.running || this.paused || !this.screencasting) {
+      // Idle/paused/fallback: move the automation page, streaming re-attaches
+      // on the next start/resume (startScreencast always binds this.page).
+      return;
+    }
+    await this.stopScreencast();
+    await this.startScreencast();
+    if (this.state.running && !this.paused) {
+      this.phase(
+        'reading',
+        label,
+        'The preview now shows the page the browser is actually using.'
+      );
+      await this.screenshot(
+        `Opened ${hostOf(page.url()) || 'a new tab'} — ${label.toLowerCase()}`,
+        undefined,
+        45
+      );
+    }
+  }
+
+  // Resolves the CDP target of the ACTIVE page (never "the first page").
+  // The active page's URL always wins when it is known; the remembered target
+  // id is the fallback (it can briefly lag while a fresh tab is still blank).
+  private resolveActivePageTarget(targetInfos: any[]): any | undefined {
+    const pages = (targetInfos || []).filter((t: any) => t?.type === 'page');
+    if (!pages.length) return undefined;
+    const activeUrl = this.page?.url();
+    if (activeUrl && activeUrl !== 'about:blank') {
+      const byUrl = pages.find((t: any) => t.url === activeUrl);
+      if (byUrl) return byUrl;
+    }
+    if (this.activeTargetId) {
+      const byId = pages.find((t: any) => t.targetId === this.activeTargetId);
+      if (byId) return byId;
+    }
+    return pages[0];
+  }
+
   private currentHost(): string {
     try {
       const raw = this.page?.url();
@@ -476,6 +583,31 @@ export class AgentRunner {
     try {
       const cdp = await this.context.newCDPSession(this.page);
       this.cdp = cdp;
+
+      // Refresh the active target id from the BROWSER session: the page-level
+      // CDP session cannot serve the Target domain in modern Chrome (it is
+      // DevTools-internal), so we resolve by URL from Target.getTargets.
+      try {
+        if (!this.browserCdp) {
+          this.browserCdp = await this.browser!.newBrowserCDPSession();
+        }
+        const { targetInfos } = (await this.browserCdp.send(
+          'Target.getTargets'
+        )) as any;
+        const pages = (targetInfos || []).filter(
+          (t: any) => t?.type === 'page'
+        );
+        const url = this.page?.url();
+        const match =
+          url && url !== 'about:blank'
+            ? pages.find((t: any) => t.url === url)
+            : undefined;
+        // Keep the previous id while a fresh tab is still blank; the URL-first
+        // resolver ignores stale ids as soon as the real URL is known.
+        this.activeTargetId = match?.targetId || this.activeTargetId;
+      } catch {
+        this.activeTargetId = '';
+      }
 
       cdp.on('Page.screencastFrame', (frame: any) => {
         // Acknowledge every frame — acknowledged or not, Chrome stalls the
@@ -575,9 +707,7 @@ export class AgentRunner {
       const { targetInfos } = (await this.browserCdp.send(
         'Target.getTargets'
       )) as any;
-      const pageTarget = (targetInfos || []).find(
-        (target: any) => target?.type === 'page'
-      );
+      const pageTarget = this.resolveActivePageTarget(targetInfos);
 
       if (pageTarget?.targetId) {
         const { windowId, bounds } = (await this.browserCdp.send(
@@ -638,9 +768,7 @@ export class AgentRunner {
       const { targetInfos } = (await this.browserCdp.send(
         'Target.getTargets'
       )) as any;
-      const pageTarget = (targetInfos || []).find(
-        (target: any) => target?.type === 'page'
-      );
+      const pageTarget = this.resolveActivePageTarget(targetInfos);
       if (!pageTarget?.targetId) return false;
 
       // A minimized window cannot be raised without being restored first.
@@ -1394,6 +1522,13 @@ export class AgentRunner {
     if (!rulesStr) logEvent('agent_rules', 'default_rules_used');
 
     this.browser = await launchVisibleAutomationBrowser({ slowMo: 120 });
+    this.browser.on('disconnected', () => {
+      // Chrome died or was closed externally: never leave a stale stream.
+      this.screencasting = false;
+      this.cdp = undefined;
+      this.activeTargetId = '';
+      this.clearFallbackStills();
+    });
     const context = await this.browser.newContext({
       viewport: { width: 1360, height: 820 },
       userAgent:
@@ -1403,6 +1538,7 @@ export class AgentRunner {
     this.context = context;
     this.page = await context.newPage();
     this.page.setDefaultTimeout(20_000);
+    this.trackPages(context);
     this.state.checklistVisible = true;
     logBrowserAutomation('browser_launched', { viewport: '1360x820', slowMo: 120 });
 
@@ -1960,5 +2096,8 @@ export class AgentRunner {
     }
     this.page = undefined;
     this.context = undefined;
+    this.pageOrder = [];
+    this.activeTargetId = '';
+    this.switchChain = Promise.resolve();
   }
 }
