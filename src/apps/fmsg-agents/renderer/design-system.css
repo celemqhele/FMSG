@@ -3795,96 +3795,252 @@ select.select-input:focus {
   font-size: 12px;
 }
 
-/* Run Setup Modal (Screen #6) */
+/* Run Setup Modal (Screen #6) — content-first two-column layout
+   (TASK-20261103-005 / BLUEPRINT-20261103-004). The container is sized from
+   the content it carries: 896px wide, 7/12 controls + 5/12 cost summary,
+   comfortable spacing, and no nested scroll region other than the profile
+   dropdown menu (a bounded list of profiles). */
 .run-setup-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
+  align-items: flex-start;
+  gap: 16px;
 }
 
 .run-setup-title {
   margin: 2px 0 0;
-  font-size: 16px;
+  font-size: 20px;
   font-weight: 700;
+  letter-spacing: -0.02em;
 }
 
 .run-setup-grid {
   display: grid;
-  grid-template-columns: 1fr 1.35fr 1fr;
-  gap: 14px;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  gap: 24px;
+  align-items: stretch;
 }
 
 .run-setup-col {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 18px;
+  min-width: 0;
+}
+
+.run-setup-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
 }
 
 .run-setup-label {
-  font-size: 12px;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
   font-weight: 600;
   color: #94a3b8;
 }
 
-.run-setup-profile-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  max-height: 220px;
-  overflow-y: auto;
+/* Target profile dropdown (replaces the old 220px nested-scroll list). */
+.run-setup-profile-select {
+  position: relative;
 }
 
-.run-setup-profile-card {
+.run-setup-profile-trigger {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  border-radius: 10px;
+  gap: 12px;
+  width: 100%;
+  min-height: 56px;
+  padding: 8px 12px;
+  border-radius: 12px;
   border: 1px solid #1c2238;
   background: #0a0d1c;
   color: #f1f5f9;
+  font-family: var(--font-sans);
   text-align: left;
   cursor: pointer;
+  transition:
+    border-color 0.16s ease,
+    background 0.16s ease;
 }
 
-.run-setup-profile-card.active {
-  border-color: #203eea;
-  background: rgba(32, 62, 234, 0.16);
+.run-setup-profile-trigger:hover {
+  border-color: rgba(96, 165, 250, 0.5);
 }
 
-.run-setup-avatar {
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  background: #203eea;
-  color: #ffffff;
+.run-setup-profile-trigger.open {
+  border-color: rgba(96, 165, 250, 0.65);
+  background: #0d1224;
+}
+
+.run-setup-profile-trigger-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.run-setup-profile-trigger-text strong {
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.run-setup-profile-trigger-text span {
   font-size: 12px;
+  color: #94a3b8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.run-setup-profile-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: linear-gradient(140deg, #4f63f2 0%, #5b2fc4 55%, #7c3aed 100%);
+  color: #ffffff;
+  font-size: 13px;
   font-weight: 700;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
 }
 
-.run-setup-profile-text strong {
-  display: block;
+.run-setup-profile-chevron {
+  flex-shrink: 0;
+  opacity: 0.7;
+  transition: transform 0.2s ease;
+}
+
+.run-setup-profile-trigger.open .run-setup-profile-chevron {
+  transform: rotate(180deg);
+}
+
+.run-setup-profile-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 60;
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 6px;
+  border-radius: 12px;
+  border: 1px solid rgba(96, 165, 250, 0.32);
+  background: #0b0e1f;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.65);
+}
+
+.run-setup-profile-option {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 30px 9px 10px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: #cbd5e1;
+  font-family: var(--font-sans);
+  text-align: left;
+  cursor: pointer;
+}
+
+.run-setup-profile-option:hover {
+  background: #141829;
+}
+
+.run-setup-profile-option.active {
+  background: rgba(32, 62, 234, 0.18);
+  color: #ffffff;
+}
+
+.run-setup-profile-option-avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid rgba(96, 165, 250, 0.28);
+  background: rgba(79, 99, 242, 0.24);
+  color: #dbeafe;
+  font-size: 11px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.run-setup-profile-option-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1;
+  min-width: 0;
+}
+
+.run-setup-profile-option-title {
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.run-setup-profile-option-meta {
   font-size: 12px;
+  color: #94a3b8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.run-setup-profile-text span {
+.run-setup-profile-check {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  color: #60a5fa;
+}
+
+.run-setup-profile-empty {
+  padding: 12px;
   font-size: 12px;
   color: #94a3b8;
 }
 
+/* Control rhythm inside the modal: taller presets, roomier autonomy cards. */
+.run-setup-modal .batch-preset-grid {
+  margin: 0;
+  gap: 10px;
+}
+
+.run-setup-modal .batch-preset-btn {
+  height: 40px;
+  font-size: 13px;
+}
+
 .autonomy-mode-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
 }
 
 .autonomy-card {
-  padding: 8px;
-  border-radius: 10px;
+  min-height: 84px;
+  padding: 12px;
+  border-radius: 12px;
   border: 1px solid #1c2238;
   background: #0a0d1c;
   color: #cbd5e1;
@@ -3892,7 +4048,7 @@ select.select-input:focus {
   cursor: pointer;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
 }
 
 .autonomy-card.active {
@@ -3902,13 +4058,13 @@ select.select-input:focus {
 }
 
 .autonomy-card strong {
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .autonomy-card span {
   font-size: 12px;
   color: #94a3b8;
-  line-height: 1.3;
+  line-height: 1.35;
 }
 
 .run-setup-slider-box {
@@ -3919,6 +4075,11 @@ select.select-input:focus {
   border: 1px solid #1c2238;
 }
 
+.run-setup-modal .run-setup-slider-box {
+  margin-top: 0;
+  padding: 12px 14px;
+}
+
 .run-setup-slider-top {
   display: flex;
   justify-content: space-between;
@@ -3927,9 +4088,32 @@ select.select-input:focus {
   margin-bottom: 4px;
 }
 
+.run-setup-modal .run-setup-slider-top {
+  margin-bottom: 8px;
+}
+
+.run-setup-summary-col {
+  /* The cost card stretches to the full height of the controls column. */
+  align-self: stretch;
+}
+
+.run-setup-summary-col .run-setup-field {
+  flex: 1;
+}
+
 .run-setup-cost-box {
   padding: 12px;
   border-radius: 10px;
+  background: #0a0d1c;
+  border: 1px solid #1c2238;
+}
+
+.run-setup-modal .run-setup-cost-box {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  padding: 18px;
+  border-radius: 14px;
   background: #0a0d1c;
   border: 1px solid #1c2238;
 }
@@ -3940,10 +4124,20 @@ select.select-input:focus {
   color: #ffffff;
 }
 
+.run-setup-cost-number {
+  font-size: 34px;
+  font-weight: 750;
+  line-height: 1.05;
+}
+
 .run-setup-cost-sub {
   font-size: 12px;
   color: #94a3b8;
   margin-top: 2px;
+}
+
+.run-setup-modal .run-setup-cost-sub {
+  margin-top: 4px;
 }
 
 .run-setup-divider {
@@ -3952,16 +4146,47 @@ select.select-input:focus {
   margin: 8px 0;
 }
 
+.run-setup-modal .run-setup-divider {
+  margin: 16px 0 4px;
+}
+
 .run-setup-stat-row {
   display: flex;
   justify-content: space-between;
+  gap: 12px;
   font-size: 12px;
   color: #94a3b8;
   margin-top: 4px;
 }
 
+.run-setup-modal .run-setup-stat-row {
+  font-size: 13px;
+  margin-top: 9px;
+}
+
 .run-setup-stat-row strong {
   color: #f1f5f9;
+}
+
+.run-setup-stat-row-total {
+  padding-top: 10px;
+  margin-top: 12px;
+  border-top: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.run-setup-stat-row-total strong {
+  font-size: 15px;
+}
+
+.run-setup-limit-note {
+  margin: auto 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.28);
+  font-size: 12px;
+  line-height: 1.35;
+  color: #fcd34d;
 }
 
 /* Applications Tracker, Detail & Review Queue */
@@ -4868,46 +5093,65 @@ select.select-input:focus {
   .site-secrets-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
+
+/* Run Setup modal: stack the two columns below 1024px so the controls keep
+   comfortable widths and the cost card becomes a two-column stat strip
+   (TASK-20261103-005 / BLUEPRINT-20261103-004 §6.7 — two columns at ≥1024px). */
+@media (max-width: 1023px) {
   .run-setup-grid {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+    grid-template-columns: minmax(0, 1fr);
+    gap: 18px;
   }
+
   .run-setup-summary-col {
-    grid-column: 1 / -1;
+    grid-column: auto;
   }
-  .run-setup-cost-box {
+
+  .run-setup-modal .run-setup-cost-box {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 4px 16px;
+    gap: 4px 18px;
     align-items: center;
-    padding: 10px 12px;
   }
-  .run-setup-cost-big,
-  .run-setup-cost-sub,
-  .run-setup-divider {
+
+  .run-setup-modal .run-setup-cost-big,
+  .run-setup-modal .run-setup-cost-sub,
+  .run-setup-modal .run-setup-divider,
+  .run-setup-modal .run-setup-stat-row-total,
+  .run-setup-modal .run-setup-limit-note {
     grid-column: 1 / -1;
   }
-  .run-setup-profile-list {
-    max-height: 150px;
+
+  .run-setup-modal .run-setup-limit-note {
+    margin: 10px 0 0;
   }
-  .run-setup-slider-box {
-    margin-top: 4px;
+
+  .run-setup-cost-number {
+    font-size: 28px;
   }
-  .run-setup-cost-box {
-    padding: 8px 12px;
+}
+
+/* Only genuinely narrow windows stack the autonomy cards; the 960px app
+   minimum keeps three readable 200px+ cards across (TASK-20261103-005). */
+@media (max-width: 900px) {
+  .run-setup-modal .autonomy-mode-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
-  .run-setup-cost-big {
-    font-size: 14px;
+
+  .run-setup-modal .autonomy-card {
+    min-height: 0;
   }
-  .run-setup-cost-sub {
-    display: none;
-  }
-  .run-setup-divider {
-    margin: 6px 0;
+}
+
+@media (max-width: 640px) {
+  .run-setup-modal .batch-preset-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 /* ============================================================================
- * Phase 1A — Trust, Copy, Accessibility & Modal Shell (audit remediation)
+ * Phase 1A - Trust, Copy, Accessibility & Modal Shell (audit remediation)
  * ============================================================================ */
 
 /* Styled custom checkboxes (AU-10, ST-08) */
@@ -5802,17 +6046,28 @@ select.select-input:focus {
 
 /* Run Setup Modal Footer (RS-03) */
 .modal-card.run-setup-modal {
-  max-width: 740px;
-  width: 94%;
+  /* Content-first envelope: wide enough for two comfortable columns and tall
+     enough that the body rarely needs to scroll (TASK-20261103-005). */
+  max-width: 896px;
+  width: 100%;
   padding: 0;
   display: flex;
   flex-direction: column;
-  max-height: calc(100vh - 72px);
+  max-height: min(92vh, calc(100vh - 48px));
   overflow: hidden;
 }
 
-.run-setup-header {
-  margin-bottom: 0;
+.run-setup-modal .run-setup-header {
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.run-setup-modal .modal-shell-body {
+  padding: 18px 24px 22px;
+}
+
+.run-setup-modal .run-setup-footer {
+  padding: 16px 24px 18px;
 }
 
 .run-setup-footer {

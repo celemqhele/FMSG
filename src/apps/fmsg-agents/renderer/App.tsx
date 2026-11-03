@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { DialogProvider, useDialog } from './components/DialogSystem';
 import LiveLog from './components/LiveLog';
 import HomeView from './views/HomeView';
@@ -133,6 +133,9 @@ function AppInner() {
   const [showLaunchModal, setShowLaunchModal] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState<1 | 2 | 3 | 4>(1);
+  // Run Setup modal: target-profile dropdown (presentation state only).
+  const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
+  const profileSelectRef = useRef<HTMLDivElement | null>(null);
 
   // Billing state — Cost cap defaults strictly to R0 per user requirement
   const [costCap, setCostCap] = useState(0);
@@ -271,6 +274,34 @@ function AppInner() {
   useEffect(() => {
     if (appVersion) setActiveAppVersion(appVersion);
   }, [appVersion]);
+
+  // Run Setup modal: dismiss the profile dropdown on outside click or Escape,
+  // and never leave it open behind a closed modal.
+  useEffect(() => {
+    if (!profileDropdownOpen) return;
+    const onDocClick = (event: MouseEvent) => {
+      if (!profileSelectRef.current?.contains(event.target as Node)) {
+        setProfileDropdownOpen(false);
+      }
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setProfileDropdownOpen(false);
+    };
+    document.addEventListener('mousedown', onDocClick);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDocClick);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [profileDropdownOpen]);
+
+  // Run Setup modal: a dropdown left open must not reappear on the next open,
+  // so the open path resets it — an effect watching `showLaunchModal` would
+  // call setState synchronously from an effect body (react-hooks/set-state-in-effect).
+  const openRunSetup = useCallback(() => {
+    setProfileDropdownOpen(false);
+    setShowLaunchModal(true);
+  }, []);
 
   // One-time, version-aware welcome notification (NT-01, NT-04): shown once per
   // installed version, never a hardcoded stale string, never an internal memo.
@@ -1285,7 +1316,7 @@ function AppInner() {
               <button
                 type="button"
                 className="btn btn-primary sidebar-launch-btn"
-                onClick={() => setShowLaunchModal(true)}
+                onClick={openRunSetup}
               >
                 <span aria-hidden="true">⚡</span>
                 {!sidebarCollapsed && <span>Run Controls</span>}
@@ -1365,7 +1396,7 @@ function AppInner() {
               billingMode={billingMode}
               bundleTier={bundleTier}
               emailVerified={user?.emailVerified !== false}
-              onStartApplying={() => setShowLaunchModal(true)}
+              onStartApplying={openRunSetup}
               onNavigate={setCurrentView}
               onOpenJobDetail={(job) => {
                 setSelectedDetailJob(job);
@@ -1386,7 +1417,7 @@ function AppInner() {
               batchSize={batchSize}
               appliedCount={appliedCount}
               skippedCount={skippedCount}
-              onOpenLaunchModal={() => setShowLaunchModal(true)}
+              onOpenLaunchModal={openRunSetup}
               onStopAgent={handleStopAgent}
               onPauseAgent={handlePauseAgent}
               onResumeAgent={handleResumeAgent}
@@ -1567,175 +1598,270 @@ function AppInner() {
               </button>
             </div>
 
-            <div className="modal-shell-body">
+            <div className="modal-shell-body run-setup-body">
               <div className="run-setup-grid">
-                {/* Left Column: Select Profile */}
+                {/* LEFT COLUMN (7/12): profile, batch size, autonomy, daily cap */}
                 <div className="run-setup-col">
-                  <div className="run-setup-label">
-                    Select profile{' '}
-                    <span className="run-setup-count">
-                      {profiles.length} available
-                    </span>
-                  </div>
-                  <div className="run-setup-profile-list">
-                    {profiles.length === 0 ? (
-                      <div className="card-nested" style={{ padding: 12 }}>
-                        <div style={{ fontSize: '12px', color: '#94a3b8' }}>
-                          No profiles loaded yet.
-                        </div>
-                      </div>
-                    ) : (
-                      profiles.map((p: any) => {
-                        const active = p.id === selectedProfileId;
-                        return (
-                          <button
-                            key={p.id}
-                            type="button"
-                            className={`run-setup-profile-card ${
-                              active ? 'active' : ''
-                            }`}
-                            aria-pressed={active}
-                            onClick={() => setSelectedProfileId(p.id)}
-                          >
-                            <span className="run-setup-avatar" aria-hidden="true">
-                              {(p.name || 'P').slice(0, 1).toUpperCase()}
-                            </span>
-                            <div className="run-setup-profile-text">
-                              <strong>{formatProfileName(p.name)}</strong>
-                              <span>
-                                {(p.job_titles || [])[0] ||
-                                  p.industry ||
-                                  'General'}
-                                {!p.cv_storage_path && (
-                                  <em className="run-setup-no-cv">
-                                    {' '}
-                                    · No CV
-                                  </em>
-                                )}
-                              </span>
+                  <div className="run-setup-field">
+                    <div className="run-setup-label">
+                      Target profile
+                      <span className="run-setup-count">
+                        {profiles.length} available
+                      </span>
+                    </div>
+                    <div className="run-setup-profile-select" ref={profileSelectRef}>
+                      <button
+                        type="button"
+                        className={`run-setup-profile-trigger ${
+                          profileDropdownOpen ? 'open' : ''
+                        }`}
+                        aria-haspopup="listbox"
+                        aria-expanded={profileDropdownOpen}
+                        aria-label={`Target profile: ${
+                          formatProfileName(selectedProfile?.name) ||
+                          'none selected'
+                        }`}
+                        onClick={() => setProfileDropdownOpen((v) => !v)}
+                      >
+                        <span
+                          className="run-setup-profile-avatar"
+                          aria-hidden="true"
+                        >
+                          {(selectedProfile?.name || 'P')
+                            .slice(0, 2)
+                            .toUpperCase()}
+                        </span>
+                        <span className="run-setup-profile-trigger-text">
+                          <strong>
+                            {formatProfileName(selectedProfile?.name) ||
+                              (profiles.length === 0
+                                ? 'No profiles loaded yet'
+                                : 'Select a profile')}
+                          </strong>
+                          <span>
+                            {(selectedProfile?.job_titles || [])[0] ||
+                              selectedProfile?.industry ||
+                              'General'}
+                            {selectedProfile && !selectedProfile.cv_storage_path
+                              ? ' · No CV'
+                              : ''}
+                          </span>
+                        </span>
+                        <svg
+                          className="run-setup-profile-chevron"
+                          width="14"
+                          height="14"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2.4"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          aria-hidden="true"
+                        >
+                          <polyline points="6 9 12 15 18 9" />
+                        </svg>
+                      </button>
+
+                      {profileDropdownOpen && (
+                        <div
+                          className="run-setup-profile-menu"
+                          role="listbox"
+                          aria-label="Choose target profile"
+                        >
+                          {profiles.length === 0 ? (
+                            <div className="run-setup-profile-empty">
+                              No profiles loaded yet.
                             </div>
-                          </button>
-                        );
-                      })
-                    )}
-                  </div>
-                </div>
-
-                {/* Center Column: Batch Size, Autonomy Mode, Daily Cap Slider */}
-                <div className="run-setup-col">
-                  <div className="run-setup-label">Batch size</div>
-                  <div className="batch-preset-grid">
-                    {[10, 25, 50, 100].map((preset) => (
-                      <button
-                        key={preset}
-                        type="button"
-                        onClick={() => setBatchSize(preset)}
-                        className={`batch-preset-btn ${
-                          batchSize === preset ? 'selected' : ''
-                        }`}
-                        aria-pressed={batchSize === preset}
-                      >
-                        {preset}
-                      </button>
-                    ))}
-                  </div>
-
-                  <div
-                    className="run-setup-label"
-                    style={{ marginTop: 10 }}
-                  >
-                    Autonomy mode
-                  </div>
-                  <div className="autonomy-mode-grid">
-                    {[
-                      {
-                        id: 'full-auto' as const,
-                        title: 'Full auto',
-                        desc: 'Tailor CV & submit automatically',
-                      },
-                      {
-                        id: 'approve-each' as const,
-                        title: 'Approve each',
-                        desc: 'Pause for your review before submit',
-                      },
-                      {
-                        id: 'aggressive' as const,
-                        title: 'Fast batch',
-                        desc: 'Prioritize rapid multi-board apply',
-                      },
-                    ].map((m) => (
-                      <button
-                        key={m.id}
-                        type="button"
-                        className={`autonomy-card ${
-                          autonomyMode === m.id ? 'active' : ''
-                        }`}
-                        aria-pressed={autonomyMode === m.id}
-                        onClick={() => {
-                          setAutonomyMode(m.id);
-                          window.electronAPI
-                            ?.saveAgentPrefs?.({ autonomyMode: m.id })
-                            .catch(() => {});
-                        }}
-                      >
-                        <strong>{m.title}</strong>
-                        <span>{m.desc}</span>
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className="run-setup-slider-box">
-                    <div className="run-setup-slider-top">
-                      <label htmlFor="daily-cap-slider">
-                        Daily cap: {dailyCapApps} applications
-                      </label>
-                      <span>Range 1–100</span>
+                          ) : (
+                            profiles.map((p: any) => {
+                              const active = p.id === selectedProfileId;
+                              return (
+                                <button
+                                  key={p.id}
+                                  type="button"
+                                  role="option"
+                                  aria-selected={active}
+                                  className={`run-setup-profile-option ${
+                                    active ? 'active' : ''
+                                  }`}
+                                  onClick={() => {
+                                    setSelectedProfileId(p.id);
+                                    setProfileDropdownOpen(false);
+                                  }}
+                                >
+                                  <span
+                                    className="run-setup-profile-option-avatar"
+                                    aria-hidden="true"
+                                  >
+                                    {(p.name || 'P').slice(0, 2).toUpperCase()}
+                                  </span>
+                                  <span className="run-setup-profile-option-body">
+                                    <span className="run-setup-profile-option-title">
+                                      {formatProfileName(p.name)}
+                                    </span>
+                                    <span className="run-setup-profile-option-meta">
+                                      {(p.job_titles || [])[0] ||
+                                        p.industry ||
+                                        'General'}
+                                      {!p.cv_storage_path && (
+                                        <em className="run-setup-no-cv">
+                                          {' '}
+                                          · No CV
+                                        </em>
+                                      )}
+                                    </span>
+                                  </span>
+                                  {active && (
+                                    <span
+                                      className="run-setup-profile-check"
+                                      aria-hidden="true"
+                                    >
+                                      <svg
+                                        width="14"
+                                        height="14"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        strokeWidth="2.6"
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                      >
+                                        <polyline points="20 6 9 17 4 12" />
+                                      </svg>
+                                    </span>
+                                  )}
+                                </button>
+                              );
+                            })
+                          )}
+                        </div>
+                      )}
                     </div>
-                    <input
-                      id="daily-cap-slider"
-                      type="range"
-                      min={1}
-                      max={100}
-                      value={dailyCapApps}
-                      onChange={(e) =>
-                        setDailyCapApps(parseInt(e.target.value, 10) || 25)
-                      }
-                      style={{ width: '100%', accentColor: '#203eea' }}
-                    />
+                  </div>
+
+                  <div className="run-setup-field">
+                    <div className="run-setup-label">Batch size</div>
+                    <div className="batch-preset-grid">
+                      {[10, 25, 50, 100].map((preset) => (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => setBatchSize(preset)}
+                          className={`batch-preset-btn ${
+                            batchSize === preset ? 'selected' : ''
+                          }`}
+                          aria-pressed={batchSize === preset}
+                        >
+                          {preset}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="run-setup-field">
+                    <div className="run-setup-label">Autonomy mode</div>
+                    <div className="autonomy-mode-grid">
+                      {[
+                        {
+                          id: 'full-auto' as const,
+                          title: 'Full auto',
+                          desc: 'Tailor CV & submit automatically',
+                        },
+                        {
+                          id: 'approve-each' as const,
+                          title: 'Approve each',
+                          desc: 'Pause for your review before submit',
+                        },
+                        {
+                          id: 'aggressive' as const,
+                          title: 'Fast batch',
+                          desc: 'Prioritize rapid multi-board apply',
+                        },
+                      ].map((m) => (
+                        <button
+                          key={m.id}
+                          type="button"
+                          className={`autonomy-card ${
+                            autonomyMode === m.id ? 'active' : ''
+                          }`}
+                          aria-pressed={autonomyMode === m.id}
+                          onClick={() => {
+                            setAutonomyMode(m.id);
+                            window.electronAPI
+                              ?.saveAgentPrefs?.({ autonomyMode: m.id })
+                              .catch(() => {});
+                          }}
+                        >
+                          <strong>{m.title}</strong>
+                          <span>{m.desc}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="run-setup-field">
+                    <div className="run-setup-slider-box">
+                      <div className="run-setup-slider-top">
+                        <label htmlFor="daily-cap-slider">
+                          Daily cap: {dailyCapApps} applications
+                        </label>
+                        <span>Range 1–100</span>
+                      </div>
+                      <input
+                        id="daily-cap-slider"
+                        type="range"
+                        min={1}
+                        max={100}
+                        value={dailyCapApps}
+                        onChange={(e) =>
+                          setDailyCapApps(parseInt(e.target.value, 10) || 25)
+                        }
+                        style={{ width: '100%', accentColor: '#203eea' }}
+                      />
+                    </div>
                   </div>
                 </div>
 
-                {/* Right Column: Est. Cost & Start Button */}
+                {/* RIGHT COLUMN (5/12): estimated cost breakdown card */}
                 <div className="run-setup-col run-setup-summary-col">
-                  <div className="run-setup-label">Estimated cost</div>
-                  <div className="run-setup-cost-box">
-                    <div className="run-setup-cost-big">
-                      {Math.min(batchSize, dailyCapApps)} applications
-                    </div>
-                    <div className="run-setup-cost-sub">
-                      {formatZar(perAppRateZar, { perApplication: true })}{' '}
-                      (job searches included)
-                    </div>
-                    <div className="run-setup-divider" />
-                    <div className="run-setup-stat-row">
-                      <span>Billing mode</span>
-                      <strong>
-                        {billingMode === 'bundle'
-                          ? `${bundleTier} Plan`
-                          : 'Pay-As-You-Go'}
-                      </strong>
-                    </div>
-                    <div className="run-setup-stat-row">
-                      <span>Spend cap</span>
-                      <strong>{formatZar(costCap)}</strong>
-                    </div>
-                    <div className="run-setup-stat-row">
-                      <span>Estimated run cost</span>
-                      <strong>
-                        {formatZar(
-                          Math.min(batchSize, dailyCapApps) * perAppRateZar
-                        )}
-                      </strong>
+                  <div className="run-setup-field">
+                    <div className="run-setup-label">Estimated cost</div>
+                    <div className="run-setup-cost-box">
+                      <div className="run-setup-cost-big">
+                        <span className="run-setup-cost-number">
+                          {Math.min(batchSize, dailyCapApps)}
+                        </span>{' '}
+                        applications
+                      </div>
+                      <div className="run-setup-cost-sub">
+                        {formatZar(perAppRateZar, { perApplication: true })}{' '}
+                        (job searches included)
+                      </div>
+                      <div className="run-setup-divider" />
+                      <div className="run-setup-stat-row">
+                        <span>Billing mode</span>
+                        <strong>
+                          {billingMode === 'bundle'
+                            ? `${bundleTier} Plan`
+                            : 'Pay-As-You-Go'}
+                        </strong>
+                      </div>
+                      <div className="run-setup-stat-row">
+                        <span>Spend cap</span>
+                        <strong>{formatZar(costCap)}</strong>
+                      </div>
+                      <div className="run-setup-stat-row run-setup-stat-row-total">
+                        <span>Estimated run cost</span>
+                        <strong>
+                          {formatZar(
+                            Math.min(batchSize, dailyCapApps) * perAppRateZar
+                          )}
+                        </strong>
+                      </div>
+                      <p className="run-setup-limit-note">
+                        Execution will cap at {formatZar(costCap)}.
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -1798,7 +1924,7 @@ function AppInner() {
               ?.saveAgentPrefs?.({ onboardingCompleted: true })
               .catch(() => {});
             setBatchSize(5);
-            setShowLaunchModal(true);
+            openRunSetup();
           }}
         />
       )}
