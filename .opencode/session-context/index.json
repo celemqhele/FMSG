@@ -6,7 +6,7 @@
       "file": "sessions/fmsg-agents-audit-remediation_2026-11-03_14-00-00_INCOMPLETE.json",
       "status": "INCOMPLETE",
       "created": "2026-11-03T14:00:00Z",
-      "updated": "2026-11-03T14:00:00Z",
+      "updated": "2026-11-03T12:06:06.030Z",
       "tags": [
         "fmsg-agents",
         "audit-remediation",
@@ -22,7 +22,7 @@
         "installer",
         "ota"
       ],
-      "summary": "Executed the independent UI/UX audit remediation (Phase 0 -> Phase 2). Validated the plan against the repo first: download_url already existed (real bugs were Supabase credentials on external hosts and a 30s timeout), saved_jobs had no RLS UPDATE policy, App.tsx was 3,040 lines. Built the Phase 0 foundation (ui:shots with a stale-bundle guard, ui:a11y, 29-check ui:flows, test:main, content/token lints) and reproduced the audit exactly. Shipped v0.7.2 (renderer trust/accessibility/modal shell: honest approve/skip/undo, focus ring, 7.35:1 muted text, 12px minimum, Run Setup 54->622 at 960x640, legal docs at the running version, billing clarity, en-ZA formats, Account route), v0.8.0 (installer: Migration 039 review_status/archived_at + RLS UPDATE, saved-jobs-update-status/archive IPC, version-chip fix with 3/3 main tests, external download_url auth/timeout fix, backed-up 12-row profile cleanup, built Setup 0.8.0.exe) and v0.9.0 (7 font sizes, 4 radii, 0 layout !important, 1200px width, 64px icon rail, sortable/paginated Applications with CSV export, view extraction). Gates: tsc clean, axe 0, 29/29 flows incl 100-row table, strict token pass, 4-size pass with 0 clipping. Open: Migration 039 is NOT applied (42703), and no release has been uploaded - both need explicit approval; clean-VM installer test outstanding.",
+      "summary": "Executed the independent UI/UX audit remediation (Phase 0 -> Phase 2). Validated the plan against the repo first: download_url already existed (real bugs were Supabase credentials on external hosts and a 30s timeout), saved_jobs had no RLS UPDATE policy, App.tsx was 3,040 lines. Built the Phase 0 foundation (ui:shots with a stale-bundle guard, ui:a11y, 29-check ui:flows, test:main, content/token lints) and reproduced the audit exactly. Shipped v0.7.2 (renderer trust/accessibility/modal shell: honest approve/skip/undo, focus ring, 7.35:1 muted text, 12px minimum, Run Setup 54->622 at 960x640, legal docs at the running version, billing clarity, en-ZA formats, Account route), v0.8.0 (installer: Migration 039 review_status/archived_at + RLS UPDATE, saved-jobs-update-status/archive IPC, version-chip fix with 3/3 main tests, external download_url auth/timeout fix, backed-up 12-row profile cleanup, built Setup 0.8.0.exe) and v0.9.0 (7 font sizes, 4 radii, 0 layout !important, 1200px width, 64px icon rail, sortable/paginated Applications with CSV export, view extraction). Gates: tsc clean, axe 0, 29/29 flows incl 100-row table, strict token pass, 4-size pass with 0 clipping. Published v0.9.0 to stable+beta (signature and artifact hashes verified; a client probe reports available 0.9.0 from 0.7.1) and built Setup 0.9.0.exe. Open: Migration 039 is NOT applied (42703) and the installed main process is still 0.7.1, so review-status IPC needs the 0.9.0 installer; clean-VM test outstanding.",
       "embedding": null
     },
     {
