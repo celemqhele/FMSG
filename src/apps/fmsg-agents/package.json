@@ -7,9 +7,13 @@
   "scripts": {
     "build:main": "tsc -p tsconfig.main.json",
     "build:preload": "tsc -p tsconfig.main.json",
-    "build:renderer": "esbuild renderer/index.tsx --bundle --minify --loader:.tsx=tsx --loader:.ts=ts --loader:.css=text --outfile=renderer/bundle.js --platform=browser --format=cjs",
+    "build:renderer": "esbuild renderer/index.tsx --bundle --minify --loader:.tsx=tsx --loader:.ts=ts --loader:.css=text --loader:.md=text --outfile=renderer/bundle.js --platform=browser --format=cjs",
     "build:code": "npm run build:main && npm run build:renderer",
-    "build:all": "npm run build:main && npm run build:renderer && electron-builder"
+    "build:all": "npm run build:main && npm run build:renderer && electron-builder",
+    "ui:shots": "node tests/ui/shots.cjs",
+    "ui:a11y": "node tests/ui/a11y.cjs",
+    "lint:content": "node scripts/lint-content.cjs",
+    "lint:tokens": "node scripts/lint-tokens.cjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.2",
@@ -60,7 +64,8 @@
       "legal/**/*",
       "!logs/**",
       "!.dev-diag-flag.json",
-      "!scripts/**"
+      "!scripts/**",
+      "!tests/**"
     ]
   }
 }

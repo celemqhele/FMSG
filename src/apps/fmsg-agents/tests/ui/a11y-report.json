@@ -1,0 +1,594 @@
+{
+  "timestamp": "2026-11-03T09:57:27.662Z",
+  "totalCritical": 1,
+  "totalSerious": 5,
+  "focusAudit": {
+    "checkedCount": 10,
+    "invisibleCount": 10,
+    "samples": [
+      {
+        "tag": "button",
+        "text": "Tour",
+        "outline": "auto 1px rgb(16, 16, 16)",
+        "boxShadow": "none",
+        "visibleFocusRing": false
+      },
+      {
+        "tag": "button",
+        "text": "1",
+        "outline": "auto 1px rgb(16, 16, 16)",
+        "boxShadow": "none",
+        "visibleFocusRing": false
+      },
+      {
+        "tag": "button",
+        "text": "─",
+        "outline": "auto 1px rgb(16, 16, 16)",
+        "boxShadow": "none",
+        "visibleFocusRing": false
+      },
+      {
+        "tag": "button",
+        "text": "□",
+        "outline": "auto 1px rgb(16, 16, 16)",
+        "boxShadow": "none",
+        "visibleFocusRing": false
+      },
+      {
+        "tag": "button",
+        "text": "✕",
+        "outline": "auto 1px rgb(16, 16, 16)",
+        "boxShadow": "none",
+        "visibleFocusRing": false
+      },
+      {
+        "tag": "button",
+        "text": "Home",
+        "outline": "auto 1px rgb(16, 16, 16)",
+        "boxShadow": "none",
+        "visibleFocusRing": false
+      },
+      {
+        "tag": "button",
+        "text": "Run",
+        "outline": "auto 1px rgb(16, 16, 16)",
+        "boxShadow": "none",
+        "visibleFocusRing": false
+      },
+      {
+        "tag": "button",
+        "text": "Applications2",
+        "outline": "auto 1px rgb(16, 16, 16)",
+        "boxShadow": "none",
+        "visibleFocusRing": false
+      },
+      {
+        "tag": "button",
+        "text": "Review1",
+        "outline": "auto 1px rgb(16, 16, 16)",
+        "boxShadow": "none",
+        "visibleFocusRing": false
+      },
+      {
+        "tag": "button",
+        "text": "Profiles",
+        "outline": "auto 1px rgb(16, 16, 16)",
+        "boxShadow": "none",
+        "visibleFocusRing": false
+      }
+    ]
+  },
+  "screens": [
+    {
+      "screen": "login",
+      "critical": 0,
+      "serious": 1,
+      "moderate": 1,
+      "minor": 0,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "count": 4,
+          "nodes": [
+            {
+              "target": [
+                ".segmented-toggle-btn[role=\"tab\"][type=\"button\"]:nth-child(2)"
+              ],
+              "html": "<button type=\"button\" role=\"tab\" aria-selected=\"false\" class=\"segmented-toggle-btn \">Sign Up</button>",
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 4.05 (foreground color: #64748b, background color: #0a0d1c, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".auth-options-row > .link-btn[type=\"button\"]"
+              ],
+              "html": "<button type=\"button\" class=\"link-btn\">Forgot password?</button>",
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 2.63 (foreground color: #203eea, background color: #0e111a, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".auth-footer > .link-btn[type=\"button\"]"
+              ],
+              "html": "<button type=\"button\" class=\"link-btn\">Sign up on FMSG</button>",
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 2.63 (foreground color: #203eea, background color: #0e111a, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".auth-version-tag"
+              ],
+              "html": "<div class=\"auth-version-tag\">v0.7.1</div>",
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.96 (foreground color: #64748b, background color: #0e111a, font size: 8.6pt (11.5px), font weight: normal). Expected contrast ratio of 4.5:1"
+            }
+          ]
+        },
+        {
+          "id": "region",
+          "impact": "moderate",
+          "description": "Ensure all page content is contained by landmarks",
+          "help": "All page content should be contained by landmarks",
+          "count": 8,
+          "nodes": [
+            {
+              "target": [
+                "h1"
+              ],
+              "html": "<h1 class=\"auth-title\">FMSG Agents</h1>",
+              "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks"
+            },
+            {
+              "target": [
+                ".segmented-toggle"
+              ],
+              "html": "<div class=\"segmented-toggle\" role=\"tablist\"><button type=\"button\" role=\"tab\" aria-selected=\"true\" class=\"segmented-toggle-btn active\">Log I",
+              "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks"
+            },
+            {
+              "target": [
+                ".form-group:nth-child(1)"
+              ],
+              "html": "<div class=\"form-group\"><label for=\"login-email\" class=\"field-label\">Email</label><div class=\"field-input-wrap\"><input id=\"login-email\" auto",
+              "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks"
+            },
+            {
+              "target": [
+                "label[for=\"login-password\"]"
+              ],
+              "html": "<label for=\"login-password\" class=\"field-label\">Password</label>",
+              "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks"
+            },
+            {
+              "target": [
+                "#login-password"
+              ],
+              "html": "<input id=\"login-password\" autocomplete=\"current-password\" placeholder=\"Enter your password\" class=\"field-input \" required=\"\" type=\"password",
+              "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "screen": "signup",
+      "critical": 0,
+      "serious": 1,
+      "moderate": 1,
+      "minor": 0,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "count": 5,
+          "nodes": [
+            {
+              "target": [
+                ".segmented-toggle-btn[role=\"tab\"][type=\"button\"]:nth-child(1)"
+              ],
+              "html": "<button type=\"button\" role=\"tab\" aria-selected=\"false\" class=\"segmented-toggle-btn \">Log In</button>",
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 4.05 (foreground color: #64748b, background color: #0a0d1c, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".checkbox-label:nth-child(1) > span > .link-btn[type=\"button\"]"
+              ],
+              "html": "<button type=\"button\" class=\"link-btn\">Terms of Service</button>",
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 2.63 (foreground color: #203eea, background color: #0e111a, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".checkbox-label:nth-child(2) > span > .link-btn[type=\"button\"]"
+              ],
+              "html": "<button type=\"button\" class=\"link-btn\">Privacy Policy</button>",
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 2.63 (foreground color: #203eea, background color: #0e111a, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".auth-footer > .link-btn[type=\"button\"]"
+              ],
+              "html": "<button type=\"button\" class=\"link-btn\">Sign up on FMSG</button>",
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 2.63 (foreground color: #203eea, background color: #0e111a, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".auth-version-tag"
+              ],
+              "html": "<div class=\"auth-version-tag\">v0.7.1</div>",
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.96 (foreground color: #64748b, background color: #0e111a, font size: 8.6pt (11.5px), font weight: normal). Expected contrast ratio of 4.5:1"
+            }
+          ]
+        },
+        {
+          "id": "region",
+          "impact": "moderate",
+          "description": "Ensure all page content is contained by landmarks",
+          "help": "All page content should be contained by landmarks",
+          "count": 9,
+          "nodes": [
+            {
+              "target": [
+                "h1"
+              ],
+              "html": "<h1 class=\"auth-title\">FMSG Agents</h1>",
+              "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks"
+            },
+            {
+              "target": [
+                ".segmented-toggle"
+              ],
+              "html": "<div class=\"segmented-toggle\" role=\"tablist\"><button type=\"button\" role=\"tab\" aria-selected=\"false\" class=\"segmented-toggle-btn \">Log In</bu",
+              "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks"
+            },
+            {
+              "target": [
+                ".auth-row-two"
+              ],
+              "html": "<div class=\"auth-row-two\">",
+              "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks"
+            },
+            {
+              "target": [
+                "form > .form-group:nth-child(2)"
+              ],
+              "html": "<div class=\"form-group\"><label for=\"signup-email\" class=\"field-label\">Email</label><input id=\"signup-email\" autocomplete=\"email\" placeholder",
+              "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks"
+            },
+            {
+              "target": [
+                "label[for=\"signup-password\"]"
+              ],
+              "html": "<label for=\"signup-password\" class=\"field-label\">Password</label>",
+              "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "screen": "home",
+      "critical": 0,
+      "serious": 0,
+      "moderate": 1,
+      "minor": 0,
+      "violations": [
+        {
+          "id": "heading-order",
+          "impact": "moderate",
+          "description": "Ensure the order of headings is semantically correct",
+          "help": "Heading levels should only increase by one",
+          "count": 1,
+          "nodes": [
+            {
+              "target": [
+                ".bento-card:nth-child(1) > .bento-card-head > h3"
+              ],
+              "html": "<h3>Last 7 days</h3>",
+              "failureSummary": "Fix any of the following:\n  Heading order invalid"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "screen": "run-setup-modal",
+      "critical": 1,
+      "serious": 1,
+      "moderate": 1,
+      "minor": 0,
+      "violations": [
+        {
+          "id": "aria-dialog-name",
+          "impact": "serious",
+          "description": "Ensure every ARIA dialog and alertdialog node has an accessible name",
+          "help": "ARIA dialog and alertdialog nodes should have an accessible name",
+          "count": 1,
+          "nodes": [
+            {
+              "target": [
+                ".modal-card"
+              ],
+              "html": "<div class=\"modal-card run-setup-modal\" role=\"dialog\" aria-modal=\"true\">",
+              "failureSummary": "Fix any of the following:\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist or references elements that are empty\n  Element has no title attribute"
+            }
+          ]
+        },
+        {
+          "id": "heading-order",
+          "impact": "moderate",
+          "description": "Ensure the order of headings is semantically correct",
+          "help": "Heading levels should only increase by one",
+          "count": 1,
+          "nodes": [
+            {
+              "target": [
+                ".bento-card:nth-child(1) > .bento-card-head > h3"
+              ],
+              "html": "<h3>Last 7 days</h3>",
+              "failureSummary": "Fix any of the following:\n  Heading order invalid"
+            }
+          ]
+        },
+        {
+          "id": "label",
+          "impact": "critical",
+          "description": "Ensure every form element has a label",
+          "help": "Form elements must have labels",
+          "count": 1,
+          "nodes": [
+            {
+              "target": [
+                "input"
+              ],
+              "html": "<input min=\"1\" max=\"100\" type=\"range\" value=\"25\" style=\"width: 100%; accent-color: rgb(32, 62, 234);\">",
+              "failureSummary": "Fix any of the following:\n  Element does not have an implicit (wrapped) <label>\n  Element does not have an explicit <label>\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist or references elements that are empty\n  Element has no title attribute\n  Element has no placeholder attribute\n  Element's default semantics were not overridden with role=\"none\" or role=\"presentation\""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "screen": "run",
+      "critical": 0,
+      "serious": 1,
+      "moderate": 1,
+      "minor": 0,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "count": 9,
+          "nodes": [
+            {
+              "target": [
+                ".pipeline-step-row.upcoming:nth-child(1) > .pipeline-step-label"
+              ],
+              "html": "<span class=\"pipeline-step-label\">Finding jobs</span>",
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 4.05 (foreground color: #64748b, background color: #0a0d1c, font size: 8.6pt (11.5px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".pipeline-step-row.upcoming:nth-child(2) > .pipeline-step-label"
+              ],
+              "html": "<span class=\"pipeline-step-label\">Filtering</span>",
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 4.05 (foreground color: #64748b, background color: #0a0d1c, font size: 8.6pt (11.5px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".pipeline-step-row.upcoming:nth-child(3) > .pipeline-step-label"
+              ],
+              "html": "<span class=\"pipeline-step-label\">Tailoring</span>",
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 4.05 (foreground color: #64748b, background color: #0a0d1c, font size: 8.6pt (11.5px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".pipeline-step-row.upcoming:nth-child(4) > .pipeline-step-label"
+              ],
+              "html": "<span class=\"pipeline-step-label\">Applying</span>",
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 4.05 (foreground color: #64748b, background color: #0a0d1c, font size: 8.6pt (11.5px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".pipeline-step-row.upcoming:nth-child(5) > .pipeline-step-label"
+              ],
+              "html": "<span class=\"pipeline-step-label\">Monitoring</span>",
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 4.05 (foreground color: #64748b, background color: #0a0d1c, font size: 8.6pt (11.5px), font weight: normal). Expected contrast ratio of 4.5:1"
+            }
+          ]
+        },
+        {
+          "id": "page-has-heading-one",
+          "impact": "moderate",
+          "description": "Ensure that the page, or at least one of its frames contains a level-one heading",
+          "help": "Page should contain a level-one heading",
+          "count": 1,
+          "nodes": [
+            {
+              "target": [
+                "html"
+              ],
+              "html": "<html lang=\"en\">",
+              "failureSummary": "Fix all of the following:\n  Page must have a level-one heading"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "screen": "applications",
+      "critical": 0,
+      "serious": 0,
+      "moderate": 1,
+      "minor": 1,
+      "violations": [
+        {
+          "id": "empty-table-header",
+          "impact": "minor",
+          "description": "Ensure table headers have discernible text",
+          "help": "Table header text should not be empty",
+          "count": 1,
+          "nodes": [
+            {
+              "target": [
+                "th:nth-child(7)"
+              ],
+              "html": "<th></th>",
+              "failureSummary": "Fix any of the following:\n  Element does not have text that is visible to screen readers"
+            }
+          ]
+        },
+        {
+          "id": "page-has-heading-one",
+          "impact": "moderate",
+          "description": "Ensure that the page, or at least one of its frames contains a level-one heading",
+          "help": "Page should contain a level-one heading",
+          "count": 1,
+          "nodes": [
+            {
+              "target": [
+                "html"
+              ],
+              "html": "<html lang=\"en\">",
+              "failureSummary": "Fix all of the following:\n  Page must have a level-one heading"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "screen": "review",
+      "critical": 0,
+      "serious": 0,
+      "moderate": 2,
+      "minor": 0,
+      "violations": [
+        {
+          "id": "heading-order",
+          "impact": "moderate",
+          "description": "Ensure the order of headings is semantically correct",
+          "help": "Heading levels should only increase by one",
+          "count": 1,
+          "nodes": [
+            {
+              "target": [
+                "h4"
+              ],
+              "html": "<h4>Head of Operations</h4>",
+              "failureSummary": "Fix any of the following:\n  Heading order invalid"
+            }
+          ]
+        },
+        {
+          "id": "page-has-heading-one",
+          "impact": "moderate",
+          "description": "Ensure that the page, or at least one of its frames contains a level-one heading",
+          "help": "Page should contain a level-one heading",
+          "count": 1,
+          "nodes": [
+            {
+              "target": [
+                "html"
+              ],
+              "html": "<html lang=\"en\">",
+              "failureSummary": "Fix all of the following:\n  Page must have a level-one heading"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "screen": "profiles",
+      "critical": 0,
+      "serious": 0,
+      "moderate": 1,
+      "minor": 0,
+      "violations": [
+        {
+          "id": "page-has-heading-one",
+          "impact": "moderate",
+          "description": "Ensure that the page, or at least one of its frames contains a level-one heading",
+          "help": "Page should contain a level-one heading",
+          "count": 1,
+          "nodes": [
+            {
+              "target": [
+                "html"
+              ],
+              "html": "<html lang=\"en\">",
+              "failureSummary": "Fix all of the following:\n  Page must have a level-one heading"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "screen": "billing",
+      "critical": 0,
+      "serious": 0,
+      "moderate": 1,
+      "minor": 0,
+      "violations": [
+        {
+          "id": "page-has-heading-one",
+          "impact": "moderate",
+          "description": "Ensure that the page, or at least one of its frames contains a level-one heading",
+          "help": "Page should contain a level-one heading",
+          "count": 1,
+          "nodes": [
+            {
+              "target": [
+                "html"
+              ],
+              "html": "<html lang=\"en\">",
+              "failureSummary": "Fix all of the following:\n  Page must have a level-one heading"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "screen": "settings",
+      "critical": 0,
+      "serious": 1,
+      "moderate": 1,
+      "minor": 0,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "count": 1,
+          "nodes": [
+            {
+              "target": [
+                ".site-secret-actions > .btn-danger.btn"
+              ],
+              "html": "<button type=\"button\" class=\"btn btn-danger\" style=\"height: 28px; font-size: 11.5px;\">Forget</button>",
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.76 (foreground color: #ffffff, background color: #ef4444, font size: 8.6pt (11.5px), font weight: normal). Expected contrast ratio of 4.5:1"
+            }
+          ]
+        },
+        {
+          "id": "page-has-heading-one",
+          "impact": "moderate",
+          "description": "Ensure that the page, or at least one of its frames contains a level-one heading",
+          "help": "Page should contain a level-one heading",
+          "count": 1,
+          "nodes": [
+            {
+              "target": [
+                "html"
+              ],
+              "html": "<html lang=\"en\">",
+              "failureSummary": "Fix all of the following:\n  Page must have a level-one heading"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

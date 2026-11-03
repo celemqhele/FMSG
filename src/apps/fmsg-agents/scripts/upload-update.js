@@ -102,8 +102,18 @@ function main() {
   const updateType = typeFlagIdx !== -1 && process.argv[typeFlagIdx + 1] ? process.argv[typeFlagIdx + 1] : 'security';
   const channel = process.argv.includes('--beta') ? 'beta' : 'stable';
   const requiresInstaller = process.argv.includes('--requires-installer');
+  const dryRun = process.argv.includes('--dry-run');
   const changelogFlagIdx = process.argv.indexOf('--changelog-file');
   const installerFlagIdx = process.argv.indexOf('--installer');
+  const installerUrlFlagIdx = process.argv.indexOf('--installer-url');
+  const installerDownloadUrl =
+    installerUrlFlagIdx !== -1 && process.argv[installerUrlFlagIdx + 1]
+      ? process.argv[installerUrlFlagIdx + 1].trim()
+      : undefined;
+
+  if (installerDownloadUrl && !installerDownloadUrl.startsWith('https://')) {
+    throw new Error(`--installer-url must be an https:// URL (got ${installerDownloadUrl})`);
+  }
 
   // A release that changes the Electron main process, the preload IPC contract or
   // bundles a native module cannot be delivered as a renderer-only bundle swap:
@@ -140,6 +150,7 @@ function main() {
       rel: `installer/FMSG-Agents-Setup-${version}.exe`,
       type: 'installer',
       mime: 'application/octet-stream',
+      downloadUrl: installerDownloadUrl,
     });
   }
 
@@ -167,6 +178,7 @@ function main() {
       size_bytes,
       sha256,
       type: art.type,
+      ...(art.downloadUrl ? { download_url: art.downloadUrl } : {}),
     });
   }
 
@@ -195,11 +207,25 @@ function main() {
   }
 
   const manifestTempPath = path.join(REPO_ROOT, 'recycle_bin', `manifest.${channel}.sig.json`);
+  fs.mkdirSync(path.dirname(manifestTempPath), { recursive: true });
   fs.writeFileSync(manifestTempPath, JSON.stringify(signedManifest, null, 2), 'utf8');
+
+  if (dryRun) {
+    console.log(
+      `[Release Dry-Run] Signed & verified manifest.${channel}.sig.json for v${version} (${fileEntries.length} files, requires_installer=${requiresInstaller})`
+    );
+    return;
+  }
 
   const serviceKey = readServiceKeyFromLocalEnv();
 
   for (const art of artifacts) {
+    if (art.downloadUrl) {
+      console.log(
+        `[Release] External download_url configured for ${art.rel} -> ${art.downloadUrl} (skipping bucket upload)`
+      );
+      continue;
+    }
     const remotePath = `v${version}/${art.rel}`;
     uploadViaCurl(serviceKey, remotePath, art.local, art.mime);
     console.log(`[Release] Uploaded ${remotePath}`);
