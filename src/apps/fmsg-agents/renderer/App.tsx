@@ -295,6 +295,18 @@ function AppInner() {
     };
   }, [profileDropdownOpen]);
 
+  // Run Setup modal: Escape closes the dialog, matching the "Close (Esc)"
+  // tooltip on its close button. While the profile dropdown is open the effect
+  // above owns Escape (it closes the menu only), so this handler stays off.
+  useEffect(() => {
+    if (!showLaunchModal || profileDropdownOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setShowLaunchModal(false);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [showLaunchModal, profileDropdownOpen]);
+
   // Run Setup modal: a dropdown left open must not reappear on the next open,
   // so the open path resets it — an effect watching `showLaunchModal` would
   // call setState synchronously from an effect body (react-hooks/set-state-in-effect).

@@ -76,8 +76,8 @@ function buildMockScript() {
   const authed = params.get('auth') === '1';
   const legalDocs = ${docs};
   const profiles = [
-    { id:'p1', name:'Nomkhosi Mpungose 1', job_titles:['Service Delivery Manager','Client Success Manager'], industry:'Critical Digital Infrastructure', location:'Gauteng South Africa', cv_file_path:'u1/cv.pdf' },
-    { id:'p2', name:'Medard Yamba', job_titles:['Customer Success Manager'], industry:'Financial Technology', location:'Pretoria South Africa' }
+    { id:'p1', name:'Nomkhosi Mpungose 1', target_job_title:'Service Delivery Manager', job_titles:['Service Delivery Manager','Client Success Manager'], industry:'Critical Digital Infrastructure', location:'Gauteng South Africa', cv_storage_path:'u1/p1/9f2c1a4b.pdf' },
+    { id:'p2', name:'Medard Yamba', target_job_title:'Customer Success Manager', job_titles:['Customer Success Manager'], industry:'Financial Technology', location:'Pretoria South Africa', cv_storage_path:null }
   ];
   let jobs = [
     { id:'j1', profile_id:'p1', job_title:'Senior Service Delivery Manager', company:'Deloitte', location:'Johannesburg, Gauteng', estimated_salary:'R65 000 pm', match_score:92, review_status:'applied', match_summary:'Applied via FMSG Agents on 2 Nov 2026.', job_url:'https://example.com/1', full_spec:'Lead managed services.', created_at:'2026-11-02T08:00:00Z' },
