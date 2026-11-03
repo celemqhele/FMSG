@@ -8,6 +8,15 @@
  * 3. Constructs and signs the canonical release manifest (Ed25519)
  * 4. Verifies the signature against the built-in public key in dist/config.js before uploading
  * 5. Uploads the signed manifest and artifacts to the private 'agent-updates' bucket via curl.exe
+ *
+ * Usage:
+ *   node scripts/upload-update.js --version 0.7.0 --min-supported 0.6.0 --type required \
+ *     [--changelog-file <path>] [--beta]
+ *
+ *   Add --requires-installer (and optionally --installer <path>) for any release that
+ *   changes the Electron main process, the preload IPC contract, or ships a native
+ *   module. Without it the manifest is a renderer-only bundle swap and the installed
+ *   app would keep running its old main process against the new renderer.
  */
 
 const fs = require('fs');
@@ -93,7 +102,14 @@ function main() {
   const updateType = typeFlagIdx !== -1 && process.argv[typeFlagIdx + 1] ? process.argv[typeFlagIdx + 1] : 'security';
   const channel = process.argv.includes('--beta') ? 'beta' : 'stable';
   const requiresInstaller = process.argv.includes('--requires-installer');
+  const changelogFlagIdx = process.argv.indexOf('--changelog-file');
+  const installerFlagIdx = process.argv.indexOf('--installer');
 
+  // A release that changes the Electron main process, the preload IPC contract or
+  // bundles a native module cannot be delivered as a renderer-only bundle swap:
+  // the running (old) main process would not know the new channels. Those releases
+  // must set requires_installer and ship the NSIS installer, which the updater runs
+  // silently as `<installer> /S /UPDATE` (handled by installer/installer.nsh).
   const artifacts = [
     {
       local: path.join(APP_ROOT, 'renderer', 'bundle.js'),
@@ -108,6 +124,37 @@ function main() {
       mime: 'text/css',
     },
   ];
+
+  if (requiresInstaller) {
+    const installerPath =
+      installerFlagIdx !== -1 && process.argv[installerFlagIdx + 1]
+        ? path.resolve(process.argv[installerFlagIdx + 1])
+        : path.join(
+            APP_ROOT,
+            'dist',
+            'electron',
+            `FMSG Agents Setup ${version}.exe`
+          );
+    artifacts.push({
+      local: installerPath,
+      rel: `installer/FMSG-Agents-Setup-${version}.exe`,
+      type: 'installer',
+      mime: 'application/octet-stream',
+    });
+  }
+
+  let changelog = [];
+  if (changelogFlagIdx !== -1 && process.argv[changelogFlagIdx + 1]) {
+    const changelogPath = path.resolve(process.argv[changelogFlagIdx + 1]);
+    if (!fs.existsSync(changelogPath)) {
+      throw new Error(`Changelog file not found: ${changelogPath}`);
+    }
+    changelog = fs
+      .readFileSync(changelogPath, 'utf8')
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+  }
 
   const fileEntries = [];
   for (const art of artifacts) {
@@ -135,12 +182,7 @@ function main() {
     withdrawn_versions: [],
     rollout_percentage: 100,
     released_at: new Date().toISOString(),
-    changelog: [
-      'Live agent engine powered by FMSG AI proxy, Google Jobs discovery, and real browser screenshots',
-      'Refined Apple-dense layout, compact floating dock indicator, and animated profile selector',
-      'Manual monthly spend cap input and hosted Paystack card checkout with automatic plan verification',
-      'Device-bound encrypted & Ed25519-signed update verification with automatic rollback',
-    ],
+    changelog,
     files: fileEntries,
   };
 

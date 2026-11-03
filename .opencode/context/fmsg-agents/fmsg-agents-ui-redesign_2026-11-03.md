@@ -2,7 +2,7 @@
 
 This file records the redesign of FMSG Agents from the v0.6.0 UI to the mockup sheet: what was decided, what was built, and what was shipped. The full spec is in [`docs/design/DESIGN_SYSTEM.md`](../../../docs/design/DESIGN_SYSTEM.md) (sections 0–9, including the coverage matrix in §8b and decisions in §8c), and the mockup copy is in [`docs/design/reference/screens-sheet.jpg`](../../../docs/design/reference/screens-sheet.jpg).
 
-**Status:** built, versioned as `0.7.0`, signed OTA manifests uploaded for `stable` and `beta`, assembled into a commit and tagged. The user still has to do the visual pass in the installed app ("I want to see the full update") before agentic-search testing starts.
+**Status:** built, versioned as `0.7.0`, installer built and tagged, but **delivered by installer, not OTA** — the 92 MB `FMSG Agents Setup 0.7.0.exe` is rejected by the Supabase storage file size limit, and a renderer-only OTA is not valid for a release that changes the main process. The published manifests were left on `0.6.0`. The user still has to do the visual pass in the installed app ("I want to see the full update") before agentic-search testing starts.
 
 ## Problem
 
@@ -46,10 +46,26 @@ Full detail in [`src/apps/fmsg-agents/docs/changelog/2026-11-03_v0.7.0_mockup-re
 - `npx eslint` on the three agent billing routes: clean.
 - esbuild renderer bundle: clean (temporary artifact moved to `recycle_bin/bundle-test-v070.js`).
 - `npm run build:all`: installer `dist/electron/FMSG Agents Setup 0.7.0.exe` built, `keytar` native rebuild included.
-- `scripts/upload-update.js --version 0.7.0 --min-supported 0.6.0 --type required` for `stable` and again with `--beta`: both manifests re-signed and uploaded; `manifest.stable.sig.json` verified to read `"version": "0.7.0"`, `"min_supported_version": "0.6.0"`.
+- `scripts/upload-update.js --version 0.7.0 --min-supported 0.6.0 --type required` for `stable` and again with `--beta`: both manifests were signed and uploaded, then `manifest.stable.sig.json` was read back — but that manifest was a **renderer-only bundle swap**, which is wrong for this release (see below). Both channels were subsequently rewritten back to the real `v0.6.0` artifacts (hashes recomputed from the files still in `v0.6.0/renderer/`, re-signed, verified) and read back as `version 0.6.0`, `requires_installer: false`, `withdrawn: false`.
+
+## Why `0.7.0` is installer-only
+
+This release changes the Electron main process, the preload IPC contract and bundles a native module (`keytar`). A renderer-only bundle swap would leave the installed main process answering none of the new channels (`window-*`, `pause-agent`, `resume-agent`, `emergency-stop-agent`, `secrets-*`, `rules-*`, `agent-prefs-*`, `saved-jobs-*`), and the window would keep its OS frame while the renderer drew a title bar inside it.
+
+The correct path — `requires_installer: true` plus an `installer/FMSG-Agents-Setup-<version>.exe` entry, which `installer/installer.nsh` runs as `/S /UPDATE` — is implemented in `update-manager.ts` and now supported by `scripts/upload-update.js --requires-installer`. It fails at upload time: the 92 MB exe is rejected with `HTTP 413 EntityTooLarge` ("The object exceeded the maximum allowed size") because of the project's Supabase storage file size limit. Nothing was ever published in a half-updated state: the installer upload aborted before the manifest was rewritten.
+
+**Also found:** `%LOCALAPPDATA%\fmsg-agents\updates\install-state.json` on this machine reads `installed_version: 0.5.0`, `active_slot_version: 0.6.0`, `backup_slot_version: 0.5.1`, and `%LOCALAPPDATA%\Programs\FMSG Agents\resources\app.asar` dates from the `0.5.0` installer (2026-11-01). So every main-process change since `0.5.0` — the live agent engine, Paystack IPC, and the entire `0.7.0` main/IPC surface — has never actually run in the installed app; only the renderer has been updating. `active_slot_version` is a renderer version, not the version of the running main process.
+
+Installing `dist/electron/FMSG Agents Setup 0.7.0.exe` once fixes the main process; after that, renderer-only releases can keep going out over OTA.
+
+## Verification performed (continued)
+
+- `npm run build:all` succeeded with `keytar` rebuilt for Electron 34 and produced `dist/electron/FMSG Agents Setup 0.7.0.exe` (92,404,819 bytes) plus its `.blockmap`.
 
 ## Still open
 
+- **The `0.7.0` installer has to be run once.** OTA cannot deliver it (see above). The exe is at `src/apps/fmsg-agents/dist/electron/FMSG Agents Setup 0.7.0.exe`; silent form is `"...\FMSG Agents Setup 0.7.0.exe" /S /UPDATE`, which also relaunches the app.
+- **Raising the Supabase storage file size limit** (Project Settings → Storage) is the prerequisite for installer-handoff OTA on every future release that touches the main process. Until then, keep publishing renderer-only manifests and expect to run an installer whenever `electron-main.ts`, `preload.ts`, `package.json` deps or a native module changes.
 - **Visual pass by the user.** No app screenshots exist on this machine and the browser tool cannot drive Electron, so the redesign has not been eyeballed by anyone. This is the gate before agentic-search testing.
 - **Vercel promotion.** A push to `production` lands as a **Preview**; the live domain keeps the previous build until that deployment is promoted in the Vercel dashboard. Check `https://api.github.com/repos/celemqhele/FMSG/deployments` (`environment` reads `Preview – fmsg` vs `Production – fmsg`). The repo is connected to two projects (`fmsg`, `fmsg-2`), each building every commit as a Preview.
 - **Billing mechanics not implemented yet:** the automatic renewal method (Paystack recurring vs other), graceful-stop resume-after-payment wiring, and the carry-over/stacking accounting. The UI and the R0 cost cap exist; the ledger behind them does not.

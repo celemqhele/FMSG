@@ -6,7 +6,7 @@
       "file": "sessions/fmsg-agents-v0.7.0-redesign_2026-11-03_02-00-00_INCOMPLETE.json",
       "status": "INCOMPLETE",
       "created": "2026-11-03T00:00:00Z",
-      "updated": "2026-11-03T01:05:00Z",
+      "updated": "2026-11-03T01:40:00Z",
       "tags": [
         "fmsg-agents",
         "v0.7.0",
@@ -24,7 +24,7 @@
         "ota",
         "vercel-preview"
       ],
-      "summary": "Shipped FMSG Agents v0.7.0: frameless window with a 36px custom title bar, left sidebar replacing the bottom dock, and every screen on the mockup sheet (Home dashboard, Run setup, Live Run, Needs You countdown, Applications tracker, Detail & replay, Review queue, Profiles, Rules & Answer Bank, Billing, Settings, onboarding, empty/error). Added secret-vault.ts (keytar + AES-256-GCM fallback, domain-locked fill_secret, blurred password inputs before screenshots), pause/resume with vault-first sign-in and Answer Bank lookups, and agent-only application bundles (Starter/Lite/Standard/Power) with a cost cap defaulting to R0 and a plan whitelist that keeps desktop pricing separate from website pricing. tsc (3 configs), eslint and esbuild clean; build:all produced FMSG Agents Setup 0.7.0.exe; signed stable+beta OTA manifests uploaded and read back to verify version 0.7.0 / min_supported 0.6.0; committed ba60675, tagged v0.7.0, pushed to production. Vercel built it as Preview only and the live domain still serves the old plans route, so promotion is pending; the visual pass in the installed app is still outstanding.",
+      "summary": "Built and shipped FMSG Agents v0.7.0: frameless window with a 36px custom title bar, left sidebar replacing the bottom dock, and every screen on the mockup sheet (Home dashboard, Run setup, Live Run, Needs You countdown, Applications tracker, Detail & replay, Review queue, Profiles, Rules & Answer Bank, Billing, Settings, onboarding, empty/error). Added secret-vault.ts (keytar + AES-256-GCM fallback, domain-locked fill_secret, blurred password inputs before screenshots), pause/resume with vault-first sign-in and Answer Bank lookups, and agent-only application bundles (Starter/Lite/Standard/Power) with a cost cap defaulting to R0 and a plan whitelist separating desktop pricing from website pricing. tsc (3 configs), eslint and esbuild clean; build:all produced FMSG Agents Setup 0.7.0.exe; committed ba60675, tagged v0.7.0, pushed to production (Vercel built it as Preview only, promotion pending). Delivery finding: the 0.7.0 manifest the uploader produces is renderer-only, but this release changes main/preload/keytar, so it cannot go over OTA - installer-handoff needs an installer entry the storage limit rejects (HTTP 413 on the 92 MB exe). Both published manifests were therefore restored to the real v0.6.0 artifacts, and the installed app (installed_version 0.5.0, active_slot_version 0.6.0 - i.e. main process still from the 0.5.0 installer) needs a one-time run of the 0.7.0 Setup exe. Visual pass by the user still outstanding.",
       "embedding": null
     },
     {

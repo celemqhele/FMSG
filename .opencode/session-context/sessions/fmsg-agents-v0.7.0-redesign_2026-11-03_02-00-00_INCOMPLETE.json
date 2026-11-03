@@ -121,6 +121,34 @@
       "files": [],
       "done": true,
       "key_decision": "No Vercel API token exists on this machine (.opencode/supabase-access.env holds only Supabase keys, no env var, no token in .vercel), so promotion must be done in the Vercel dashboard by the owner."
+    },
+    {
+      "step": 13,
+      "description": "Found that the 0.7.0 manifest the uploader produced was a renderer-only bundle swap (files: renderer/bundle.js + renderer/design-system.css only), which cannot deliver the new main process or the new IPC channels. Extended scripts/upload-update.js with --requires-installer / --installer and --changelog-file, and replaced the hardcoded v0.6.0 changelog array.",
+      "files": ["src/apps/fmsg-agents/scripts/upload-update.js"],
+      "done": true,
+      "key_decision": "installer-handoff (requires_installer: true + installer/installer.nsh running it as /S /UPDATE) is the only correct OTA mode for a release that touches electron-main.ts, preload.ts or a native module."
+    },
+    {
+      "step": 14,
+      "description": "Re-ran the uploader with --requires-installer: renderer files uploaded, then the 92 MB installer was rejected with HTTP 413 EntityTooLarge ('The object exceeded the maximum allowed size'). The manifest was never rewritten, so nothing half-broken was published.",
+      "files": [],
+      "done": true,
+      "key_decision": "The Supabase project's storage file size limit blocks installer-handoff OTA; raising it in Project Settings is the prerequisite, and it cannot be done over the REST API."
+    },
+    {
+      "step": 15,
+      "description": "Rewrote manifest.stable.sig.json and manifest.beta.sig.json back to the real v0.6.0 artifacts (downloaded v0.6.0/renderer files, recomputed sha256/size, signed, self-verified, uploaded) and read both back to confirm version 0.6.0, requires_installer false, withdrawn false.",
+      "files": ["recycle_bin/restore-060/restore-manifest.js"],
+      "done": true,
+      "key_decision": "Restoring the exact previous published state is safer than withdrawing 0.7.0: a withdrawn manifest would make any later 0.7.0 install think its own version was pulled and roll back."
+    },
+    {
+      "step": 16,
+      "description": "Checked the installed app on this machine: %LOCALAPPDATA%\\fmsg-agents\\updates\\install-state.json reads installed_version 0.5.0 / active_slot_version 0.6.0 / backup 0.5.1, and %LOCALAPPDATA%\\Programs\\FMSG Agents\\resources\\app.asar is dated from the 0.5.0 installer. Every main-process change since 0.5.0 has never run in the installed app — only the renderer has been auto-updating.",
+      "files": [],
+      "done": true,
+      "key_decision": "active_slot_version is a renderer version, not the running main-process version; a one-time installer run is required for 0.7.0 and for anything that changes main/preload/native deps."
     }
   ],
   "key_decisions": [
@@ -130,6 +158,8 @@
     "Cost cap defaults to R0 for every account and a run started at R0 routes the user to Billing with an explicit consent prompt instead of charging silently.",
     "Agent bundle pricing is separated from website pricing by a plan-name whitelist inside /api/agent/billing/{checkout,verify}; the public site plan list is untouched.",
     "Deploy caveat confirmed again: a push to production produces Preview deployments only, and the live API keeps serving the previous build until the deployment is promoted in Vercel.",
+    "Root cause of the OTA problem: the uploader only ever emitted renderer-only manifests, so no main-process code has reached the installed app since the 0.5.0 installer. Fixed 0.7.0 by making it installer-only and restoring the published manifests to 0.6.0 rather than shipping a renderer that calls IPC the running main process does not have.",
+    "Installer-handoff OTA is implemented in update-manager.ts and now in the uploader, but blocked by the Supabase storage file size limit (HTTP 413 on the 92 MB exe). Raising it in Project Settings → Storage is a prerequisite for future main-process releases.",
     "Background task: no watcher or dev server was left running. The only pending external state is the Vercel promotion for ba60675, which is dashboard-only because no Vercel token exists locally."
   ],
   "files_modified": [
