@@ -188,7 +188,7 @@ No version bump in this task. This work (main process + preload + DB) will requi
 
 ## 17. Explicit instructions and restrictions
 
-- Delegation (per Argon's 2026-11-03 corrective-directive review): DB architecture, migration design, storage/RLS security, CV handling, IPC and the run pipeline remain with Pro. Isolated `tests/ui` harness updates and the founder-facing DDL application procedure document **may be delegated to Flash** within the boundaries recorded in the assignment file. Delegation is optional.
+- Delegation (per Argon's 2026-11-03 corrective-directive review, revised 2026-11-03T20:10:00+02:00): DB architecture, migration design, storage/RLS security, CV handling, IPC and the run pipeline remain with Pro. Isolated `tests/ui` harness updates for the creation form and card CV states **may be delegated to Flash** within the boundaries recorded in the assignment file. (The founder-facing DDL guide was drafted by Argon directly — `docs/SUPABASE_MIGRATION_040_APPLICATION_GUIDE.md` — and is no longer a delegation candidate.)
 - Database architecture decisions beyond this blueprint require Argon approval (SOP §3.1).
 - Do not apply DDL to production Supabase yourself; DDL application is the founder's step (dashboard SQL editor or Management API token).
 - Do not delete/modify website rows, objects, or migrations. Do not auto-clear the founder's existing website profiles.
