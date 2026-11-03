@@ -683,18 +683,220 @@ select.select-input:focus {
   }
 }
 
-.update-screen-card {
+/* Feature-update screen — a full-width page, not a small centred card.
+ * Content flows with the `.auth-viewport` / `.update-modal-backdrop` scroll
+ * containers; there is deliberately no inner scroll region. */
+.update-screen-page {
   width: 100%;
-  max-width: 430px;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 24px 0 32px;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  animation: fadeSlideUp 0.22s var(--ease-out);
+}
+
+/* Transient states: a centred splash, not a left-aligned fragment of a page. */
+.update-screen-page.is-hero {
+  max-width: 560px;
+  margin: auto;
+  padding: 0;
+  align-items: center;
+  text-align: center;
+}
+
+.update-screen-page.is-hero .update-page-section {
+  align-items: center;
+  text-align: center;
+  width: 100%;
+}
+
+.update-screen-page.is-hero .update-page-text {
+  max-width: 52ch;
+}
+
+.update-screen-page.is-hero .update-page-progress,
+.update-screen-page.is-hero .update-page-progress-meta {
+  max-width: 420px;
+}
+
+.update-page-section {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+}
+
+.update-page-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.update-page-mark {
+  flex-shrink: 0;
+}
+
+.update-page-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.update-page-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.update-page-subtitle {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.update-page-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+  max-width: 70ch;
+}
+
+.update-page-tag {
+  margin-top: 22px;
+}
+
+.update-page-progress {
+  width: 100%;
+  max-width: 620px;
+  margin-top: 16px;
+}
+
+.update-page-progress-meta {
+  max-width: 620px;
+}
+
+.update-page-note {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+/* The changelog is normal flowing content: no max-height, no inner scrollbar.
+ * Long lists read as two columns on wide windows and one column when narrow. */
+.update-changelog {
+  padding: 18px 20px;
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+}
+
+.update-changelog-label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+
+.update-changelog-list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+  columns: 2;
+  column-gap: 36px;
+}
+
+.update-changelog-list li {
+  margin-bottom: 6px;
+  break-inside: avoid;
+  overflow-wrap: anywhere;
+}
+
+.update-page-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+/* The update page reuses the auth viewport backdrop but not the small card. */
+.update-screen-page .auth-logo-mark {
+  margin-left: 0;
+  margin-right: 0;
+}
+
+/* Modal variant: a dialog shell that scrolls as a page instead of clipping.
+ * The compound selector is required — the later `.modal-backdrop` rule in this
+ * file would otherwise win on `align-items` and re-centre the overflow. */
+.modal-backdrop.update-modal-backdrop {
+  align-items: safe center;
+  justify-content: center;
+  overflow-y: auto;
+}
+
+.update-modal-backdrop .update-screen-page {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 30px 32px 28px;
   background: var(--bg-card);
   border: 1px solid var(--border-card);
   border-radius: var(--radius-xl);
-  padding: 44px 40px;
   box-shadow: var(--shadow-popup);
-  text-align: center;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+}
+
+.update-modal-backdrop .update-screen-page.is-hero {
+  max-width: 470px;
+  padding: 36px 32px 30px;
+}
+
+@media (max-width: 1100px) {
+  .update-screen-page {
+    max-width: 100%;
+    gap: 16px;
+  }
+}
+
+@media (max-width: 720px) {
+  .update-screen-page {
+    padding: 0 0 16px;
+  }
+
+  .update-page-header {
+    gap: 10px;
+    padding-bottom: 14px;
+  }
+
+  .update-page-title {
+    font-size: 17px;
+  }
+
+  .update-changelog {
+    padding: 14px 14px;
+  }
+
+  .update-changelog-list {
+    columns: 1;
+    column-gap: 0;
+  }
+
+  .update-page-actions {
+    justify-content: stretch;
+  }
+
+  .update-page-actions .btn {
+    flex: 1;
+  }
 }
 
 .update-loader-wrap {
@@ -1520,6 +1722,106 @@ select.select-input:focus {
 
 .viewport-footer-link:hover {
   color: #bfdbfe;
+}
+
+/* "Open in Chrome" sits with the other footer controls but keeps a visible
+   affordance: it acts outside the app window, unlike Pause/Clear. */
+.viewport-footer-open-browser {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(96, 165, 250, 0.28);
+  background: rgba(96, 165, 250, 0.1);
+  color: #cbd5e1;
+  transition:
+    border-color 0.18s ease,
+    background 0.18s ease,
+    color 0.18s ease;
+}
+
+.viewport-footer-open-browser:hover {
+  border-color: rgba(96, 165, 250, 0.6);
+  background: rgba(96, 165, 250, 0.18);
+  color: #ffffff;
+}
+
+.viewport-footer-open-browser:focus-visible {
+  outline: 2px solid rgba(96, 165, 250, 0.75);
+  outline-offset: 2px;
+}
+
+/* Live screencast stage: overlay strip keeps the current pipeline step paired
+   with what the browser is actually showing (BP-003 §5.3). */
+.viewport-shot-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+}
+
+.viewport-shot-stage .viewport-shot {
+  min-width: 0;
+}
+
+.viewport-overlay-strip {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  right: 10px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(6, 9, 22, 0.8);
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  backdrop-filter: blur(6px);
+  font-size: 11px;
+  line-height: 1.2;
+  color: #e2e8f0;
+  max-width: calc(100% - 20px);
+  pointer-events: none;
+}
+
+.viewport-overlay-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.viewport-stream-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: #64748b;
+}
+
+.viewport-stream-dot.is-live {
+  background: #22c55e;
+  animation: streamPulse 1.6s ease-out infinite;
+}
+
+@keyframes streamPulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.6);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgba(34, 197, 94, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
+  }
+}
+
+.viewport-footer-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
 }
 
 @keyframes shotIn {
@@ -3637,64 +3939,189 @@ select.select-input:focus {
 /* Profiles Grid & Rules/Answer Bank */
 .profiles-card-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 14px;
 }
 
-.profile-grid-card {
+/* Centred SaaS profile card — Avatar → Name → CV status → action footer. */
+.profile-card {
+  position: relative;
   display: flex;
-  align-items: flex-start;
+  flex-direction: column;
+  align-items: center;
   gap: 10px;
-  padding: 12px 14px;
-  border-radius: 10px;
+  padding: 22px 18px 14px;
+  border-radius: 14px;
   border: 1px solid #1c2238;
-  background: #0e111a;
+  background:
+    radial-gradient(
+      120% 80% at 50% 0%,
+      rgba(32, 62, 234, 0.1) 0%,
+      rgba(32, 62, 234, 0) 62%
+    ),
+    #0e111a;
   color: #f1f5f9;
-  text-align: left;
+  text-align: center;
   cursor: pointer;
+  transition:
+    border-color 0.18s ease,
+    background 0.18s ease,
+    transform 0.18s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.18s ease;
 }
 
-.profile-grid-card.active {
-  border-color: #203eea;
-  background: rgba(32, 62, 234, 0.14);
+.profile-card:hover {
+  border-color: rgba(96, 165, 250, 0.42);
+  transform: translateY(-2px);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.42);
 }
 
-.profile-grid-avatar {
-  width: 34px;
-  height: 34px;
+.profile-card:focus-visible {
+  outline: 2px solid rgba(96, 165, 250, 0.75);
+  outline-offset: 2px;
+}
+
+.profile-card.is-active {
+  border-color: rgba(96, 165, 250, 0.72);
+  background:
+    radial-gradient(
+      120% 80% at 50% 0%,
+      rgba(32, 62, 234, 0.34) 0%,
+      rgba(32, 62, 234, 0.06) 60%
+    ),
+    #101429;
+  box-shadow:
+    0 0 0 1px rgba(96, 165, 250, 0.22),
+    0 16px 34px rgba(6, 12, 40, 0.55);
+}
+
+.profile-card-avatar {
+  width: 76px;
+  height: 76px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #203eea 0%, #5028bf 100%);
+  background: linear-gradient(140deg, #4f63f2 0%, #5b2fc4 55%, #7c3aed 100%);
   color: #ffffff;
-  font-size: 12px;
+  font-size: 26px;
   font-weight: 700;
+  letter-spacing: 0.02em;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  box-shadow:
+    0 10px 24px rgba(40, 34, 160, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16);
 }
 
-.profile-grid-body {
-  flex: 1;
-  min-width: 0;
+.profile-card-name {
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: #ffffff;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.profile-grid-top {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 13px;
-}
-
-.profile-grid-roles {
+.profile-card-cv {
   font-size: 12px;
-  color: #cbd5e1;
-  margin-top: 3px;
+  line-height: 1.3;
+  margin-top: -2px;
 }
 
-.profile-grid-meta {
+.profile-card-cv.missing {
+  color: #e3c97a;
+}
+
+.profile-card-cv.has-cv {
+  color: #86efac;
+}
+
+.profile-card-hint {
   font-size: 12px;
+  line-height: 1.4;
   color: #94a3b8;
-  margin-top: 4px;
+  max-width: 220px;
+}
+
+.profile-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.profile-card-active-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  height: 32px;
+  border-radius: 999px;
+  background: rgba(34, 197, 94, 0.16);
+  border: 1px solid rgba(34, 197, 94, 0.45);
+  color: #86efac;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.profile-card-select {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 32px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  background: rgba(148, 163, 184, 0.08);
+  color: #cbd5e1;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.profile-card:hover .profile-card-select {
+  border-color: rgba(96, 165, 250, 0.55);
+  color: #e2e8f0;
+}
+
+.profile-card.create-new {
+  border-style: dashed;
+  border-color: rgba(148, 163, 184, 0.28);
+  background: rgba(148, 163, 184, 0.04);
+}
+
+.profile-card.create-new:hover {
+  border-color: rgba(96, 165, 250, 0.55);
+}
+
+.create-new-avatar {
+  background: rgba(148, 163, 184, 0.14);
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  color: #cbd5e1;
+  box-shadow: none;
+}
+
+@media (max-width: 720px) {
+  .profiles-card-grid {
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 10px;
+  }
+
+  .profile-card {
+    padding: 18px 12px 12px;
+  }
+
+  .profile-card-avatar {
+    width: 64px;
+    height: 64px;
+    font-size: 22px;
+  }
 }
 
 .rules-bank-layout {
@@ -4745,31 +5172,10 @@ select.select-input:focus {
   flex-wrap: wrap;
 }
 
-.profile-grid-card {
-  position: relative;
-}
-
 .tag-active {
   background: rgba(32, 62, 234, 0.24);
   border-color: rgba(96, 165, 250, 0.5);
   color: #bfdbfe;
-}
-
-.profile-grid-facts {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  margin-top: 6px;
-  font-size: 12px;
-  color: #cbd5e1;
-}
-
-.profile-cv-ok {
-  color: #86efac;
-}
-
-.profile-cv-missing {
-  color: #fde68a;
 }
 
 .salary-input-row {
@@ -4952,10 +5358,10 @@ select.select-input:focus {
 .profile-picker-menu {
   position: absolute;
   top: 40px;
-  left: 0;
+  right: 0;
   z-index: 40;
-  min-width: 320px;
-  max-width: 420px;
+  width: 360px;
+  max-width: calc(100vw - 32px);
   background: #0b0e1f;
   border: 1px solid rgba(96, 165, 250, 0.32);
   border-radius: 10px;
@@ -4965,10 +5371,11 @@ select.select-input:focus {
 
 .profile-picker-item {
   display: flex;
+  flex-direction: row;
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 8px 10px;
+  padding: 8px 26px 8px 10px;
   border: none;
   border-radius: 10px;
   background: transparent;
@@ -5001,6 +5408,57 @@ select.select-input:focus {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Identity-led picker: avatar + name, matching the profile cards. */
+.profile-picker-avatar {
+  position: relative;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: linear-gradient(140deg, #4f63f2 0%, #5b2fc4 55%, #7c3aed 100%);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.profile-picker-presence {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #34d399;
+  border: 2px solid #0a0d1c;
+}
+
+.profile-picker-item-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(79, 99, 242, 0.24);
+  border: 1px solid rgba(96, 165, 250, 0.28);
+  color: #dbeafe;
+  font-size: 11px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.profile-picker-item-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+  text-align: left;
 }
 
 /* Dark Windows-native browser preview bezel (RN-06, RN-07, GS-14) */

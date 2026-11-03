@@ -367,6 +367,21 @@ ipcMain.handle('launch-visible-browser', async (_event, url: string) => {
   }
 });
 
+// IPC: bring the automation Chrome window to the foreground (E-003-A)
+ipcMain.handle('agent-focus-browser', async () => {
+  logIPC('agent-focus-browser', 'handle', {});
+  try {
+    if (!agentRunner || !agentRunner.isRunning()) {
+      return { ok: false, error: 'No run in progress' };
+    }
+    const ok = await agentRunner.focusAutomationBrowser();
+    return ok ? { ok: true } : { ok: false, error: 'No browser window found' };
+  } catch (e: any) {
+    logIPC('agent-focus-browser', 'error', { error: e.message });
+    return { ok: false, error: e.message || 'Could not focus browser' };
+  }
+});
+
 // IPC: Run agent
 ipcMain.handle('run-agent', async (_event, config: AgentConfig) => {
   logIPC('run-agent', 'handle', {

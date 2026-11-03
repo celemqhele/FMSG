@@ -20,7 +20,8 @@
  * reports.
  */
 
-import { Browser, Page } from 'playwright';
+import { Browser, BrowserContext, CDPSession, Page } from 'playwright';
+import { BrowserWindow } from 'electron';
 import { WEB_BASE_URL } from './config';
 import {
   createAnonSupabaseClient,
@@ -169,6 +170,13 @@ export type AgentEvent =
       totalJobs?: number;
     }
   | { type: 'screenshot'; dataUrl: string; caption: string; job?: DiscoveredJob }
+  | {
+      type: 'browser-frame';
+      dataUrl: string;
+      ts: number;
+      host?: string;
+      caption?: string;
+    }
   | {
       type: 'attention';
       id: string;
@@ -342,6 +350,16 @@ export class AgentRunner {
   private paused = false;
   private pauseWaiters: Array<() => void> = [];
 
+  // Live screenshot streaming (CDP Page.startScreencast). Frames are view-only,
+  // never persisted, and never passed through the logger.
+  private context?: BrowserContext;
+  private cdp?: CDPSession;
+  private browserCdp?: CDPSession;
+  private screencasting = false;
+  private lastFrameAt = 0;
+  private lastFrameHost = '';
+  private fallbackTimer?: ReturnType<typeof setInterval>;
+
   constructor(config: AgentConfig, runtime?: AgentRuntime) {
     this.config = config;
     this.runtime = runtime;
@@ -366,6 +384,7 @@ export class AgentRunner {
   pause(): void {
     if (!this.state.running || this.paused) return;
     this.paused = true;
+    void this.stopScreencast(true);
     this.phase('paused', 'Run paused', 'Click Resume whenever you are ready to continue.');
   }
 
@@ -380,6 +399,7 @@ export class AgentRunner {
         // ignore
       }
     }
+    void this.startScreencast();
     this.phase('applying', 'Resumed run', 'Continuing from the current posting.');
   }
 
@@ -439,6 +459,224 @@ export class AgentRunner {
       });
     } catch (err: any) {
       logBrowserAutomation('screenshot_failed', { error: err?.message });
+    }
+  }
+
+  // ── live streaming (CDP Page.startScreencast) ─────────────────────────────
+  //
+  // A read-only view of the automation surface. Frames exist only in memory and
+  // in the `agent-event` IPC payload: never written to disk, never logged.
+
+  private currentHost(): string {
+    try {
+      const raw = this.page?.url();
+      if (!raw || raw === 'about:blank') return this.lastFrameHost;
+      const host = new URL(raw).host;
+      return host || this.lastFrameHost;
+    } catch {
+      return this.lastFrameHost;
+    }
+  }
+
+  private async startScreencast(): Promise<void> {
+    if (!this.page || !this.context || this.screencasting || this.paused) return;
+
+    this.lastFrameHost = this.currentHost();
+
+    try {
+      const cdp = await this.context.newCDPSession(this.page);
+      this.cdp = cdp;
+
+      cdp.on('Page.screencastFrame', (frame: any) => {
+        // Acknowledge every frame — acknowledged or not, Chrome stalls the
+        // stream when a frame is left unacknowledged.
+        try {
+          cdp.send('Page.screencastFrameAck', { sessionId: frame?.sessionId }).catch(
+            () => undefined
+          );
+        } catch {
+          // ignore
+        }
+
+        if (typeof frame?.data !== 'string' || frame.data.length === 0) return;
+
+        // Throttle to <= 10 fps regardless of how often Chrome paints.
+        const now = Date.now();
+        if (now - this.lastFrameAt < 100) return;
+        this.lastFrameAt = now;
+
+        this.lastFrameHost = this.currentHost();
+        this.emit({
+          type: 'browser-frame',
+          dataUrl: `data:image/jpeg;base64,${frame.data}`,
+          ts: now,
+          host: this.lastFrameHost,
+          caption: this.state.lastStep,
+        });
+      });
+
+      await cdp.send('Page.startScreencast', {
+        format: 'jpeg',
+        quality: 55,
+        maxWidth: 960,
+        maxHeight: 540,
+        everyNthFrame: 2,
+      });
+
+      this.screencasting = true;
+      this.clearFallbackStills();
+      logBrowserAutomation('screencast_started', { max_fps: 10 });
+      void this.placeAutomationWindowBehindApp();
+    } catch (err: any) {
+      this.screencasting = false;
+      this.cdp = undefined;
+      logBrowserAutomation('screencast_failed', { error: err?.message });
+      this.startFallbackStills();
+    }
+  }
+
+  private async stopScreencast(finalFrame = false): Promise<void> {
+    this.clearFallbackStills();
+
+    const cdp = this.cdp;
+    this.cdp = undefined;
+    this.screencasting = false;
+    this.lastFrameAt = 0;
+
+    if (cdp) {
+      try {
+        await cdp.send('Page.stopScreencast');
+      } catch {
+        // ignore
+      }
+      try {
+        await cdp.detach();
+      } catch {
+        // ignore
+      }
+    }
+
+    // Leave the preview on the last known state instead of going blank.
+    if (finalFrame) await this.screenshot('', undefined, 45);
+  }
+
+  private startFallbackStills(): void {
+    if (this.fallbackTimer) return;
+    this.fallbackTimer = setInterval(() => {
+      if (!this.state.running || this.paused || this.screencasting) return;
+      void this.screenshot('', undefined, 45);
+    }, 2000);
+    logBrowserAutomation('screencast_fallback', { cadence_ms: 2000 });
+  }
+
+  private clearFallbackStills(): void {
+    if (!this.fallbackTimer) return;
+    clearInterval(this.fallbackTimer);
+    this.fallbackTimer = undefined;
+  }
+
+  private async placeAutomationWindowBehindApp(): Promise<void> {
+    try {
+      if (!this.browser) return;
+      if (!this.browserCdp) {
+        this.browserCdp = await this.browser.newBrowserCDPSession();
+      }
+
+      const { targetInfos } = (await this.browserCdp.send(
+        'Target.getTargets'
+      )) as any;
+      const pageTarget = (targetInfos || []).find(
+        (target: any) => target?.type === 'page'
+      );
+
+      if (pageTarget?.targetId) {
+        const { windowId, bounds } = (await this.browserCdp.send(
+          'Browser.getWindowForTarget',
+          { targetId: pageTarget.targetId }
+        )) as any;
+
+        // Keep Chrome in a normal (never minimized) state: minimized windows
+        // throttle rendering and stall screencast frames.
+        await this.browserCdp.send('Browser.setWindowBounds', {
+          windowId,
+          bounds: {
+            windowState: 'normal',
+            left: bounds?.left,
+            top: bounds?.top,
+            width: bounds?.width,
+            height: bounds?.height,
+          },
+        });
+      }
+
+      logBrowserAutomation('automation_window_normal', {});
+    } catch (err: any) {
+      logBrowserAutomation('automation_window_failed', { error: err?.message });
+    }
+
+    this.focusAppWindow();
+  }
+
+  private focusAppWindow(): void {
+    try {
+      // After Chrome launches it takes focus; hand it straight back so the app
+      // remains the user's primary surface and the live preview is what they see.
+      const wins = BrowserWindow.getAllWindows();
+      const target = wins.find((win) => win && !win.isDestroyed());
+      if (!target) return;
+      if (target.isMinimized()) target.restore();
+      target.show();
+      target.focus();
+    } catch {
+      // Window cosmetics must never break a run.
+    }
+  }
+
+  /**
+   * Brings the automation Chrome window to the foreground on demand.
+   * Read-only with respect to the run: it restores a minimized window, raises
+   * the page target and returns. No navigation, no data transfer beyond the
+   * boolean result, and the screencast keeps streaming.
+   */
+  async focusAutomationBrowser(): Promise<boolean> {
+    try {
+      if (!this.browser) return false;
+      if (!this.browserCdp) {
+        this.browserCdp = await this.browser.newBrowserCDPSession();
+      }
+
+      const { targetInfos } = (await this.browserCdp.send(
+        'Target.getTargets'
+      )) as any;
+      const pageTarget = (targetInfos || []).find(
+        (target: any) => target?.type === 'page'
+      );
+      if (!pageTarget?.targetId) return false;
+
+      // A minimized window cannot be raised without being restored first.
+      const { windowId, bounds } = (await this.browserCdp.send(
+        'Browser.getWindowForTarget',
+        { targetId: pageTarget.targetId }
+      )) as any;
+      if (bounds?.windowState && bounds.windowState !== 'normal') {
+        await this.browserCdp.send('Browser.setWindowBounds', {
+          windowId,
+          bounds: { windowState: 'normal' },
+        });
+      }
+
+      // Raises the tab and, with it, the Chrome window.
+      await this.browserCdp.send('Target.activateTarget', {
+        targetId: pageTarget.targetId,
+      });
+
+      logBrowserAutomation('automation_window_focused', {});
+      return true;
+    } catch (err: any) {
+      logBrowserAutomation('automation_window_focus_failed', {
+        error: err?.message,
+      });
+      return false;
     }
   }
 
@@ -1184,10 +1422,15 @@ export class AgentRunner {
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
       locale: 'en-ZA',
     });
+    this.context = context;
     this.page = await context.newPage();
     this.page.setDefaultTimeout(20_000);
     this.state.checklistVisible = true;
     logBrowserAutomation('browser_launched', { viewport: '1360x820', slowMo: 120 });
+
+    // Stream the automation surface into the app instead of leaving the user
+    // watching the external Chrome window.
+    await this.startScreencast();
   }
 
   async runBatch(profileId: string) {
@@ -1707,6 +1950,16 @@ export class AgentRunner {
     } catch {
       // ignore
     }
+
+    await this.stopScreencast();
+
+    try {
+      await this.browserCdp?.detach();
+    } catch {
+      // ignore
+    }
+    this.browserCdp = undefined;
+
     if (this.browser) {
       try {
         await this.browser.close();
@@ -1715,5 +1968,7 @@ export class AgentRunner {
       }
       this.browser = undefined;
     }
+    this.page = undefined;
+    this.context = undefined;
   }
 }

@@ -2012,67 +2012,83 @@ function ProfilesAndRulesView({
         <div className="profiles-card-grid">
           {profiles.map((p: any) => {
             const active = selectedProfileId === p.id;
+            const hasCv = Boolean(p.cv_file_path);
             return (
               <button
                 key={p.id}
                 type="button"
                 onClick={() => onSelect(p.id)}
-                className={`profile-grid-card ${active ? 'active' : ''}`}
+                className={`profile-card ${active ? 'is-active' : ''}`}
                 aria-pressed={active}
               >
-                <div className="profile-grid-avatar" aria-hidden="true">
+                <span className="profile-card-avatar" aria-hidden="true">
                   {(p.name || 'P').slice(0, 2).toUpperCase()}
-                </div>
-                <div className="profile-grid-body">
-                  <div className="profile-grid-top">
-                    <strong>{formatProfileName(p.name)}</strong>
-                    <span
-                      className={`tag ${active ? 'tag-active' : ''}`}
-                    >
-                      {active ? '✓ Active' : 'Select'}
+                </span>
+                <span className="profile-card-name">
+                  {formatProfileName(p.name)}
+                </span>
+                <span
+                  className={`profile-card-cv ${hasCv ? 'has-cv' : 'missing'}`}
+                >
+                  {hasCv ? 'CV attached' : 'No CV on file'}
+                </span>
+                <span className="profile-card-footer">
+                  {active ? (
+                    <span className="profile-card-active-pill">
+                      <svg
+                        width="13"
+                        height="13"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.8"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                      >
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                      Active Profile
                     </span>
-                  </div>
-                  <div className="profile-grid-roles">
-                    {(p.job_titles || []).slice(0, 3).join(' · ') ||
-                      'No titles set'}
-                  </div>
-                  <div className="profile-grid-meta">
-                    {p.industry || 'General'} ·{' '}
-                    {formatLocationZA(p.location, 'South Africa')}
-                  </div>
-                  <div className="profile-grid-facts">
-                    {p.desired_salary ? (
-                      <span>Expected: {p.desired_salary}</span>
-                    ) : null}
-                    {p.cv_file_path ? (
-                      <span className="profile-cv-ok">CV attached</span>
-                    ) : (
-                      <span className="profile-cv-missing">No CV on file</span>
-                    )}
-                  </div>
-                </div>
+                  ) : (
+                    <span className="profile-card-select">Select</span>
+                  )}
+                </span>
               </button>
             );
           })}
 
           <button
             type="button"
-            className="profile-grid-card create-new"
+            className="profile-card create-new"
             onClick={() =>
               window.electronAPI?.openExternalUrl(
                 'https://www.findmesomejobs.co.za/dashboard'
               )
             }
           >
-            <div className="profile-grid-avatar" aria-hidden="true">
-              +
-            </div>
-            <div className="profile-grid-body">
-              <strong>Create / Edit Profile on FMSG</strong>
-              <div className="profile-grid-meta">
-                Opens your FMSG web dashboard, then click Refresh here.
-              </div>
-            </div>
+            <span
+              className="profile-card-avatar create-new-avatar"
+              aria-hidden="true"
+            >
+              <svg
+                width="26"
+                height="26"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+            </span>
+            <span className="profile-card-name">Create/Edit Profile</span>
+            <span className="profile-card-hint">
+              Opens your FMSG web dashboard, then click Refresh here.
+            </span>
           </button>
         </div>
       ) : (

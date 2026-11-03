@@ -47,6 +47,7 @@ const api = {
   resumeAgent: () => ipcRenderer.invoke('resume-agent'),
   emergencyStopAgent: () => ipcRenderer.invoke('emergency-stop-agent'),
   getAgentState: () => ipcRenderer.invoke('get-agent-state'),
+  focusAutomationBrowser: () => ipcRenderer.invoke('agent-focus-browser'),
   onAgentEvent: (callback: (event: any) => void) => {
     const listener = (_event: any, payload: any) => callback(payload);
     ipcRenderer.on('agent-event', listener);

@@ -122,6 +122,12 @@ export function scrubString(input: string): string {
     /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g,
     (match) => `<REDACTED_EMAIL:len=${match.length}>`
   );
+  // Redact inline image payloads — live screencast frames are view-only and
+  // must never be persisted to the log file.
+  out = out.replace(
+    /data:image\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=]+/gi,
+    '<REDACTED_IMAGE_DATA>'
+  );
   return out;
 }
 
@@ -144,7 +150,10 @@ export function sanitizeMetadata(obj: any, depth = 0): any {
     const out: Record<string, any> = {};
     for (const [k, v] of Object.entries(obj)) {
       const isLengthOrCountField = /(_len|_length|_count)$/i.test(k) && typeof v === 'number';
-      if (!isLengthOrCountField && SECRET_KEY_REGEX.test(k)) {
+      const isImagePayloadKey = /^(dataUrl|data_url|frame|frameData|screencastFrame)$/i.test(k);
+      if (!isLengthOrCountField && isImagePayloadKey && typeof v === 'string') {
+        out[k] = `<REDACTED_IMAGE_DATA:len=${v.length}>`;
+      } else if (!isLengthOrCountField && SECRET_KEY_REGEX.test(k)) {
         const len = v === null || v === undefined ? 0 : String(v).length;
         out[k] = `<REDACTED_SECRET:len=${len}>`;
       } else if (!isLengthOrCountField && PII_KEY_REGEX.test(k)) {

@@ -1,0 +1,5 @@
+Live browser view in the Run screen - watch Chrome fill applications in real time, no screenshots needed
+Open in Chrome button in the live preview - raise the automation browser on demand
+Redesigned profile cards - centred initials avatar, name, CV status and a green Active Profile pill
+Cleaner profile picker - identity-led chip with presence dot and clearer menu rows
+Full-width update screen - long update notes now flow like a normal page instead of a small scroll box

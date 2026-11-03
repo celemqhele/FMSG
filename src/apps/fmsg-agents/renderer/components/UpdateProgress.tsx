@@ -61,78 +61,43 @@ export default function UpdateProgress({
     cleanCurrent
   ).replace(/^v/i, '');
 
+  // The transient states (checking / downloading / installing) are a centred
+  // splash; the optional-feature prompt is a document-style page whose content
+  // flows and scrolls at page level.
+  const isDocumentPage = phase === 'optional-prompt';
+
   const cardContent = (
     <div
-      className="update-screen-card"
+      className={`update-screen-page ${isDocumentPage ? 'is-page' : 'is-hero'}`}
       role="dialog"
       aria-modal={mode === 'modal'}
       aria-live="polite"
     >
       {/* STATE 1: CHECKING */}
       {phase === 'checking' && (
-        <>
+        <section className="update-page-section">
           <BrandedOrbitalLoader />
-          <h2
-            style={{
-              fontSize: '18px',
-              fontWeight: 700,
-              color: 'var(--text-primary)',
-              margin: '0 0 8px 0',
-              letterSpacing: '-0.02em',
-            }}
-          >
-            Checking for Updates
-          </h2>
-          <p
-            style={{
-              fontSize: '13px',
-              color: 'var(--text-secondary)',
-              margin: 0,
-              lineHeight: 1.55,
-            }}
-          >
+          <h2 className="update-page-title">Checking for Updates</h2>
+          <p className="update-page-text">
             Verifying installation security and checking for the latest release...
           </p>
-          <div className="auth-version-tag" style={{ marginTop: '24px' }}>
-            v{cleanCurrent}
-          </div>
-        </>
+          <div className="auth-version-tag update-page-tag">v{cleanCurrent}</div>
+        </section>
       )}
 
       {/* STATE 2: DOWNLOADING */}
       {phase === 'downloading' && (
-        <>
-          <div
-            className="auth-logo-mark"
-            style={{ marginBottom: '18px' }}
-            aria-hidden="true"
-          >
+        <section className="update-page-section">
+          <div className="auth-logo-mark update-page-mark" aria-hidden="true">
             FM
           </div>
-          <h2
-            style={{
-              fontSize: '18px',
-              fontWeight: 700,
-              color: 'var(--text-primary)',
-              margin: '0 0 6px 0',
-              letterSpacing: '-0.02em',
-            }}
-          >
-            Downloading Update v{cleanTarget}
-          </h2>
-          <p
-            style={{
-              fontSize: '13px',
-              color: 'var(--text-secondary)',
-              margin: '0 0 8px 0',
-              lineHeight: 1.5,
-            }}
-          >
+          <h2 className="update-page-title">Downloading Update v{cleanTarget}</h2>
+          <p className="update-page-text">
             Downloading and verifying signed release package...
           </p>
 
           <div
-            className="update-progress-track"
+            className="update-progress-track update-page-progress"
             role="progressbar"
             aria-valuenow={clampedPct}
             aria-valuemin={0}
@@ -144,7 +109,7 @@ export default function UpdateProgress({
             />
           </div>
 
-          <div className="update-progress-meta">
+          <div className="update-progress-meta update-page-progress-meta">
             <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
               {clampedPct}%
             </span>
@@ -153,134 +118,62 @@ export default function UpdateProgress({
             </span>
           </div>
 
-          <div className="auth-version-tag" style={{ marginTop: '22px' }}>
+          <div className="auth-version-tag update-page-tag">
             v{cleanCurrent} &rarr; v{cleanTarget}
           </div>
-        </>
+        </section>
       )}
 
       {/* STATE 3: INSTALLING */}
       {phase === 'installing' && (
-        <>
+        <section className="update-page-section">
           <BrandedOrbitalLoader />
-          <h2
-            style={{
-              fontSize: '18px',
-              fontWeight: 700,
-              color: 'var(--text-primary)',
-              margin: '0 0 8px 0',
-              letterSpacing: '-0.02em',
-            }}
-          >
-            Installing new updates
-          </h2>
-          <p
-            style={{
-              fontSize: '13px',
-              color: 'var(--text-secondary)',
-              margin: 0,
-              lineHeight: 1.55,
-            }}
-          >
+          <h2 className="update-page-title">Installing new updates</h2>
+          <p className="update-page-text">
             Applying verified update v{cleanTarget}. FMSG Agents will reopen
             automatically...
           </p>
-          <div className="auth-version-tag" style={{ marginTop: '24px' }}>
+          <div className="auth-version-tag update-page-tag">
             v{cleanCurrent} &rarr; v{cleanTarget}
           </div>
-        </>
+        </section>
       )}
 
       {/* STATE 4: OPTIONAL FEATURE UPDATE PROMPT */}
       {phase === 'optional-prompt' && (
-        <div style={{ width: '100%', textAlign: 'left' }}>
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '12px',
-              marginBottom: '16px',
-            }}
-          >
-            <div className="auth-logo-mark" style={{ margin: 0 }}>
+        <>
+          <header className="update-page-header">
+            <div className="auth-logo-mark update-page-mark" aria-hidden="true">
               FM
             </div>
-            <div>
-              <h2
-                style={{
-                  fontSize: '18px',
-                  fontWeight: 700,
-                  color: 'var(--text-primary)',
-                  margin: 0,
-                }}
-              >
-                New Feature Update Available
-              </h2>
-              <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+            <div className="update-page-heading">
+              <h2 className="update-page-title">New Feature Update Available</h2>
+              <div className="update-page-subtitle">
                 v{cleanCurrent} &rarr; v{cleanTarget}
                 {totalBytes > 0 ? ` (${formatBytes(totalBytes)})` : ''}
               </div>
             </div>
-          </div>
+          </header>
 
           {manifest?.changelog && manifest.changelog.length > 0 && (
-            <div
-              className="card-nested"
-              style={{
-                marginBottom: '20px',
-                maxHeight: '140px',
-                overflowY: 'auto',
-              }}
-            >
-              <div
-                style={{
-                  fontSize: '12px',
-                  fontWeight: 600,
-                  color: 'var(--text-muted)',
-                  textTransform: 'uppercase',
-                  marginBottom: '6px',
-                }}
-              >
-                What&apos;s New
-              </div>
-              <ul
-                style={{
-                  margin: 0,
-                  paddingLeft: '18px',
-                  fontSize: '13px',
-                  color: 'var(--text-secondary)',
-                  lineHeight: 1.5,
-                }}
-              >
+            <section className="update-changelog" aria-label="What's new">
+              <div className="update-changelog-label">What&apos;s New</div>
+              <ul className="update-changelog-list">
                 {manifest.changelog.map((item: string, idx: number) => (
-                  <li key={idx} style={{ marginBottom: '4px' }}>
-                    {item}
-                  </li>
+                  <li key={idx}>{item}</li>
                 ))}
               </ul>
-            </div>
+            </section>
           )}
 
           {deferred ? (
-            <p
-              style={{
-                fontSize: '13px',
-                color: 'var(--text-secondary)',
-                marginBottom: '18px',
-              }}
-            >
+            <p className="update-page-note">
               An application batch is currently running. This update will wait
               until your batch finishes.
             </p>
           ) : null}
 
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'flex-end',
-              gap: '10px',
-            }}
-          >
+          <footer className="update-page-actions">
             {onSkipOptional && (
               <button
                 type="button"
@@ -299,14 +192,16 @@ export default function UpdateProgress({
                 Update Now
               </button>
             )}
-          </div>
-        </div>
+          </footer>
+        </>
       )}
     </div>
   );
 
   if (mode === 'modal') {
-    return <div className="modal-backdrop">{cardContent}</div>;
+    return (
+      <div className="modal-backdrop update-modal-backdrop">{cardContent}</div>
+    );
   }
 
   return <div className="auth-viewport">{cardContent}</div>;

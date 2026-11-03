@@ -1,6 +1,6 @@
 TERMS OF SERVICE
 FMSG AGENTS DESKTOP APPLICATION
-VERSION 0.9.0 - EFFECTIVE 2026-11-03
+VERSION 0.10.0 - EFFECTIVE 2026-11-03
 PROVIDER: FMSG (FIND ME SOME JOBS)
 
 ------------------------------------------------------------------------

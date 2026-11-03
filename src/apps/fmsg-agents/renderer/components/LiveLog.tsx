@@ -161,13 +161,15 @@ export function ProfilePicker({
         className={`profile-picker-trigger ${open ? 'open' : ''}`}
         aria-haspopup="listbox"
         aria-expanded={open}
-        aria-label="Active search profile"
+        aria-label={`Active search profile: ${formatProfileName(selected?.name)}`}
         onClick={() => setOpen((v) => !v)}
       >
-        <span className="profile-picker-dot" aria-hidden="true" />
+        <span className="profile-picker-avatar" aria-hidden="true">
+          {(selected?.name || 'P').slice(0, 2).toUpperCase()}
+          <span className="profile-picker-presence" />
+        </span>
         <span className="profile-picker-text">
-          {selected?.name ? `${formatProfileName(selected.name)} · ` : ''}
-          {titleOf(selected)}
+          {formatProfileName(selected?.name) || 'Select profile'}
         </span>
         <svg
           className="profile-picker-chevron"
@@ -206,11 +208,19 @@ export function ProfilePicker({
                   setOpen(false);
                 }}
               >
-                <span className="profile-picker-item-title">
-                  {formatProfileName(p.name)} — {titleOf(p)}
+                <span className="profile-picker-item-avatar" aria-hidden="true">
+                  {(p.name || 'P').slice(0, 2).toUpperCase()}
                 </span>
-                <span className="profile-picker-item-meta">
-                  {formatLocationZA(p.location || p.location_scope)}
+                <span className="profile-picker-item-body">
+                  <span className="profile-picker-item-title">
+                    {formatProfileName(p.name)}
+                  </span>
+                  <span className="profile-picker-item-meta">
+                    {titleOf(p)}
+                    {p.location || p.location_scope
+                      ? ` · ${formatLocationZA(p.location || p.location_scope)}`
+                      : ''}
+                  </span>
                 </span>
                 {active && (
                   <svg
@@ -256,11 +266,19 @@ export default function LiveLog({
   const { showToast } = useDialog();
 
   const [entries, setEntries] = useState<MatrixLogEntry[]>([]);
-  const [screenshot, setScreenshot] = useState<{
+  const [still, setStill] = useState<{
     dataUrl: string;
     caption: string;
     host: string;
   } | null>(null);
+  const [frame, setFrame] = useState<{
+    dataUrl: string;
+    host: string;
+    ts: number;
+    caption?: string;
+  } | null>(null);
+  const [feedPaused, setFeedPaused] = useState(false);
+  const feedPausedRef = useRef(false);
   const [attention, setAttention] = useState<AttentionPrompt | null>(null);
   const [secondsLeft, setSecondsLeft] = useState<number>(600);
 
@@ -315,8 +333,19 @@ export default function LiveLog({
         return;
       }
 
+      if (event.type === 'browser-frame' && event.dataUrl) {
+        if (feedPausedRef.current) return;
+        setFrame({
+          dataUrl: event.dataUrl,
+          host: event.host || '',
+          ts: event.ts || Date.now(),
+          caption: event.caption,
+        });
+        return;
+      }
+
       if (event.type === 'screenshot' && event.dataUrl) {
-        setScreenshot({
+        setStill({
           dataUrl: event.dataUrl,
           caption: event.caption || 'Live browser view',
           host: hostOf(event.job?.url),
@@ -482,6 +511,53 @@ export default function LiveLog({
     );
     return idx >= 0 ? idx : 0;
   }, [activeEntry, isRunning]);
+
+  // Live preview: the newest screencast frame wins; a milestone still is the
+  // fallback when streaming is unavailable. Only the latest image is kept.
+  const preview = frame ?? still;
+  const previewHost = frame?.host || still?.host || '';
+  const isStreaming = Boolean(frame) && !feedPaused && isRunning && !isPaused;
+  const badgeState =
+    feedPaused || isPaused ? 'paused' : isRunning && frame ? 'live' : 'idle';
+  const badgeLabel = feedPaused
+    ? 'Feed paused'
+    : isPaused
+      ? 'Paused'
+      : isRunning
+        ? frame
+          ? 'Live'
+          : 'Starting'
+        : 'Standby';
+
+  const toggleFeed = useCallback(() => {
+    setFeedPaused((prev) => !prev);
+  }, []);
+
+  useEffect(() => {
+    feedPausedRef.current = feedPaused;
+  }, [feedPaused]);
+
+  const clearPreview = useCallback(() => {
+    setStill(null);
+    setFrame(null);
+  }, []);
+
+  // Brings the automation Chrome window to the front on demand. The IPC call is
+  // a bare boolean round-trip: no navigation, no data, feed unaffected.
+  const openInChrome = useCallback(() => {
+    const api = window.electronAPI as any;
+    if (!api?.focusAutomationBrowser) return;
+    api
+      .focusAutomationBrowser()
+      .then((res: any) => {
+        if (res && res.ok === false) {
+          showToast(res.error || 'Could not bring Chrome to the front.', 'info');
+        }
+      })
+      .catch(() => {
+        showToast('Could not bring Chrome to the front.', 'info');
+      });
+  }, [showToast]);
 
   const progressPct = useMemo(() => {
     if (currentJobEntry?.jobIndex && currentJobEntry?.totalJobs) {
@@ -754,8 +830,8 @@ export default function LiveLog({
               {isPaused
                 ? 'Paused — click Resume Run to continue from this posting'
                 : isRunning
-                  ? activeEntry?.label || 'Working in visible Chrome window…'
-                  : 'Opens a visible Chrome window on your PC'}
+                  ? activeEntry?.label || 'Working — the live view is on the right'
+                  : 'No screenshots needed'}
             </span>
           </div>
         </section>
@@ -793,29 +869,43 @@ export default function LiveLog({
                   <path d="M7 11V7a5 5 0 0 1 10 0v4" />
                 </svg>
                 <span>
-                  {screenshot?.host
-                    ? `https://${screenshot.host}`
+                  {previewHost
+                    ? `https://${previewHost}`
                     : 'Chrome Automation Preview'}
                 </span>
               </div>
-              <span
-                className={`viewport-live-badge ${
-                  isPaused ? 'paused' : isRunning ? 'live' : 'idle'
-                }`}
-              >
-                {isPaused ? 'Paused' : isRunning ? 'Live' : 'Standby'}
+              <span className={`viewport-live-badge ${badgeState}`}>
+                {badgeLabel}
               </span>
             </div>
 
             <div className="viewport-body">
-              {screenshot ? (
+              {preview ? (
                 <div className="viewport-shot-wrap">
-                  <img
-                    className="viewport-shot"
-                    src={screenshot.dataUrl}
-                    alt={screenshot.caption}
-                  />
-                  <div className="viewport-caption">{screenshot.caption}</div>
+                  <div className="viewport-shot-stage">
+                    <img
+                      className="viewport-shot"
+                      src={preview.dataUrl}
+                      alt={frame ? 'Live browser view' : still?.caption || 'Browser view'}
+                    />
+                    <div className="viewport-overlay-strip">
+                      <span
+                        className={`viewport-stream-dot ${
+                          isStreaming ? 'is-live' : 'is-idle'
+                        }`}
+                        aria-hidden="true"
+                      />
+                      <span className="viewport-overlay-text">
+                        {activeEntry?.label ||
+                          frame?.caption ||
+                          still?.caption ||
+                          'Live browser view'}
+                      </span>
+                    </div>
+                  </div>
+                  {!frame && still?.caption && (
+                    <div className="viewport-caption">{still.caption}</div>
+                  )}
                 </div>
               ) : (
                 <div className="viewport-idle">
@@ -843,8 +933,8 @@ export default function LiveLog({
                   </p>
                   <p className="viewport-idle-body">
                     {isRunning
-                      ? 'Each page the agent opens in Chrome is captured and mirrored here automatically.'
-                      : 'When a run starts, real screenshots of each job posting, form, and confirmation receipt appear here.'}
+                      ? 'The agent’s browser is mirrored here continuously — no screenshots needed.'
+                      : 'When a run starts, the browser the agent is using streams here live, paired with the current pipeline step.'}
                   </p>
                 </div>
               )}
@@ -979,15 +1069,51 @@ export default function LiveLog({
                 ? `${PHASE_LABEL[activeEntry.phase] || 'Working'} · ${activeEntry.label}`
                 : 'Local Chrome automation · FMSG job discovery & CV tailoring'}
             </span>
-            {screenshot && (
-              <button
-                type="button"
-                className="viewport-footer-link"
-                onClick={() => setScreenshot(null)}
-              >
-                Clear preview
-              </button>
-            )}
+            <div className="viewport-footer-actions">
+              {isRunning && (
+                <button
+                  type="button"
+                  className="viewport-footer-link viewport-footer-open-browser"
+                  onClick={openInChrome}
+                  title="Bring the automation Chrome window to the front"
+                >
+                  <svg
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.4"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                    <polyline points="15 3 21 3 21 9" />
+                    <line x1="10" y1="14" x2="21" y2="3" />
+                  </svg>
+                  Open in Chrome
+                </button>
+              )}
+              {isRunning && preview && (
+                <button
+                  type="button"
+                  className="viewport-footer-link"
+                  onClick={toggleFeed}
+                >
+                  {feedPaused ? 'Resume feed' : 'Pause feed'}
+                </button>
+              )}
+              {preview && (
+                <button
+                  type="button"
+                  className="viewport-footer-link"
+                  onClick={clearPreview}
+                >
+                  Clear preview
+                </button>
+              )}
+            </div>
           </div>
         </section>
       </div>
