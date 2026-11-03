@@ -273,10 +273,11 @@ export async function loadProfile(profileId: string, sessionToken?: string) {
   }
 
   const supabase = createAnonSupabaseClient(token);
+  // Interim derivation — replaced by agent_profiles (TASK-20261103-008).
   const { data, error } = await supabase
     .from('search_profiles')
     .select(
-      'id, user_id, name, job_titles, location, industry, industry_step_1, industry_step_2, location_scope, cv_variations, cv_file_path'
+      'id, user_id, name, job_titles, location, industry, industry_step_1, industry_step_2, location_scope, cv_variations'
     )
     .eq('id', profileId)
     .eq('user_id', user.id)
@@ -1257,8 +1258,16 @@ export class AgentRunner {
 
     const token = getActiveSessionAccessToken();
     const userId = getActiveSessionUser()?.id;
+    // Interim derivation — replaced by agent_profiles (TASK-20261103-008).
+    const variations = Array.isArray(this.searchProfile?.cv_variations)
+      ? this.searchProfile.cv_variations
+      : [];
     const path: string =
-      this.searchProfile?.cv_file_path || this.accountProfile?.cv_file_path || '';
+      (variations[0] &&
+        typeof variations[0].file_path === 'string' &&
+        variations[0].file_path) ||
+      this.accountProfile?.cv_file_path ||
+      '';
     if (!token || !userId || !path) return false;
 
     try {

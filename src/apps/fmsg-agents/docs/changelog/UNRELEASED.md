@@ -13,7 +13,7 @@
 
 Active work: **Founder observability/runtime initiative (2026-11-03)** — five blueprints + five Pro assignments created and queued: Run Setup modal redesign (`TASK-20261103-005`), Run workspace preview-dominant layout (`TASK-20261103-006`), live-preview active-page tracking (`TASK-20261103-007`), independent agent profiles + CV (`TASK-20261103-008`), Ubuntu runtime feasibility (`TASK-20261103-009`). No release, version bump or installer rebuild authorised for any of them. See `docs/blueprints/BLUEPRINT-20261103-004..008` and `docs/context/fmsg-agents-observability-profiles-runtime_2026-11-03.md`. **Status:** `TASK-20261103-006` is `APPROVED` (Argon review 2026-11-03T21:05+02:00) and archived; the other four remain `PENDING`.
 
-**Priority change (2026-11-03):** the `search_profiles.cv_file_path` defect prevents every run on released v0.10.0 and is now the top functional priority. Hotfix blueprint `BLUEPRINT-20261103-009` + assignment `TASK-20261103-010` created (`PENDING`, awaiting founder authorisation). Revised sequence: 010 → 008 → 007 → 005/006 → 009. Founder-facing migration guide prepared: `docs/SUPABASE_MIGRATION_040_APPLICATION_GUIDE.md`.
+**Priority change (2026-11-03):** the `search_profiles.cv_file_path` defect prevents every run on released v0.10.0 and is now the top functional priority. Hotfix blueprint `BLUEPRINT-20261103-009` + assignment `TASK-20261103-010` — founder-authorised 2026-11-03 and implemented (see Fixed). Revised sequence: 010 → 008 → 007 → 005/006 → 009. Founder-facing migration guide prepared: `docs/SUPABASE_MIGRATION_040_APPLICATION_GUIDE.md`.
 
 ---
 
@@ -32,6 +32,7 @@ Active work: **Founder observability/runtime initiative (2026-11-03)** — five 
 
 ### Fixed
 - **Run workspace wasted-space defect** (`TASK-20261103-006`, approved): the page shell now fills the workspace, the live preview is the dominant full-canvas tab, and the streamed frame is centred — all three root causes diagnosed in `BLUEPRINT-20261103-005` are fixed. *(Remaining diagnosed root causes — Run Setup modal cramping, `cv_file_path` run-start failure, active-page tracking — are still open under their own tasks.)*
+- **Run-start failure on released v0.10.0** (hotfix `TASK-20261103-010`, blueprint `BLUEPRINT-20261103-009`): `loadProfile` no longer selects the dropped `search_profiles.cv_file_path` column; the CV path for form attachments now derives from `cv_variations` (the migration-009 replacement) with the account-profile fallback; the Profiles-screen CV badge reads `cv_variations` presence instead of the dead column. Both sites carry "replaced by TASK-20261103-008" markers — interim correction, superseded by the independent `agent_profiles` architecture. No website schema, website code, IPC surface or dependency changed.
 
 ### Relevant Files
 - `docs/blueprints/BLUEPRINT-20261103-004..008`

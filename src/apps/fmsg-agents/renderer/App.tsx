@@ -2012,7 +2012,9 @@ function ProfilesAndRulesView({
         <div className="profiles-card-grid">
           {profiles.map((p: any) => {
             const active = selectedProfileId === p.id;
-            const hasCv = Boolean(p.cv_file_path);
+            // Interim predicate — replaced by agent_profiles (TASK-20261103-008).
+            const hasCv =
+              Array.isArray(p?.cv_variations) && p.cv_variations.length > 0;
             return (
               <button
                 key={p.id}
