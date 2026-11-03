@@ -6,7 +6,7 @@
       "file": "sessions/fmsg-agents-v0.7.0-redesign_2026-11-03_02-00-00_INCOMPLETE.json",
       "status": "INCOMPLETE",
       "created": "2026-11-03T00:00:00Z",
-      "updated": "2026-11-03T01:40:00Z",
+      "updated": "2026-11-03T02:22:22.916Z",
       "tags": [
         "fmsg-agents",
         "v0.7.0",
@@ -22,9 +22,15 @@
         "bundles",
         "cost-cap",
         "ota",
-        "vercel-preview"
+        "vercel-preview",
+        "v0.7.1",
+        "visual-fidelity",
+        "type-scale",
+        "empty-states",
+        "context-reorg",
+        "agents-md-routing"
       ],
-      "summary": "Built and shipped FMSG Agents v0.7.0: frameless window with a 36px custom title bar, left sidebar replacing the bottom dock, and every screen on the mockup sheet (Home dashboard, Run setup, Live Run, Needs You countdown, Applications tracker, Detail & replay, Review queue, Profiles, Rules & Answer Bank, Billing, Settings, onboarding, empty/error). Added secret-vault.ts (keytar + AES-256-GCM fallback, domain-locked fill_secret, blurred password inputs before screenshots), pause/resume with vault-first sign-in and Answer Bank lookups, and agent-only application bundles (Starter/Lite/Standard/Power) with a cost cap defaulting to R0 and a plan whitelist separating desktop pricing from website pricing. tsc (3 configs), eslint and esbuild clean; build:all produced FMSG Agents Setup 0.7.0.exe; committed ba60675, tagged v0.7.0, pushed to production (Vercel built it as Preview only, promotion pending). Delivery finding: the 0.7.0 manifest the uploader produces is renderer-only, but this release changes main/preload/keytar, so it cannot go over OTA - installer-handoff needs an installer entry the storage limit rejects (HTTP 413 on the 92 MB exe). Both published manifests were therefore restored to the real v0.6.0 artifacts, and the installed app (installed_version 0.5.0, active_slot_version 0.6.0 - i.e. main process still from the 0.5.0 installer) needs a one-time run of the 0.7.0 Setup exe. Visual pass by the user still outstanding.",
+      "summary": "Built and shipped FMSG Agents v0.7.0: frameless window with a 36px custom title bar, left sidebar replacing the bottom dock, and every screen on the mockup sheet (Home dashboard, Run setup, Live Run, Needs You countdown, Applications tracker, Detail & replay, Review queue, Profiles, Rules & Answer Bank, Billing, Settings, onboarding, empty/error). Added secret-vault.ts (keytar + AES-256-GCM fallback, domain-locked fill_secret, blurred password inputs before screenshots), pause/resume with vault-first sign-in and Answer Bank lookups, and agent-only application bundles (Starter/Lite/Standard/Power) with a cost cap defaulting to R0 and a plan whitelist separating desktop pricing from website pricing. tsc (3 configs), eslint and esbuild clean; build:all produced FMSG Agents Setup 0.7.0.exe; committed ba60675, tagged v0.7.0, pushed to production (Vercel built it as Preview only, promotion pending). Delivery finding: the 0.7.0 manifest the uploader produces is renderer-only, but this release changes main/preload/keytar, so it cannot go over OTA - installer-handoff needs an installer entry the storage limit rejects (HTTP 413 on the 92 MB exe). Both published manifests were therefore restored to the real v0.6.0 artifacts, and the installed app (installed_version 0.5.0, active_slot_version 0.6.0 - i.e. main process still from the 0.5.0 installer) needs a one-time run of the 0.7.0 Setup exe. Visual pass by the user still outstanding. Follow-up: shipped FMSG Agents v0.7.1, a renderer-only visual-fidelity patch. Compared the running app against the 18 individual mockups and found the body scale was right but display type was half the mockup size; restored only the display hierarchy (hero 26px, screen titles 22px, card head 14.5px, section 13.5px, onboarding 22px), rebuilt the Home hero as a two-column banner with three feature rows, made quick-action tiles horizontal so the dashboard fits 1360x860 without scrolling, replaced the fake-loading empty widgets with a shared EmptyState component, removed the duplicate Start Applying CTA from the sidebar footer, and fixed the wrapped plan line and the empty-review title. tsc (both configs) and build:all clean; published v0.7.1 to the agent-updates bucket over OTA (stable, min_supported 0.7.0, requires_installer false) and applied it in-app (active_slot_version 0.7.1). Two distribution lessons: the OTA changelog must be a plain-text bullet file because the uploader copies lines verbatim, and the version chip can lag one release after an installer upgrade because verifyStartupSlotHealth only re-syncs active_slot_version when Slot-Active exists - deferred to v0.7.2 since the fix is a main-process change and installer-handoff OTA is still blocked by the Supabase 413 size limit. Also moved all FMSG Agents context files into src/apps/fmsg-agents/docs/context/ (in-repo, tracked), added a task-to-context routing table to AGENTS.md, committed 504237d and pushed production plus tag v0.7.1.",
       "embedding": null
     },
     {

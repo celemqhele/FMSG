@@ -2,8 +2,8 @@
   "id": "fmsg-agents-v0.7.0-redesign_2026-11-03_02-00-00",
   "status": "INCOMPLETE",
   "created": "2026-11-03T00:00:00Z",
-  "updated": "2026-11-03T01:05:00Z",
-  "objective": "Redesign the FMSG Agents desktop UI to the mockup sheet as a single v0.7.0 release, shipping the agreed secrets/autofill and application-bundle billing changes in the same update, then push it live so installed apps auto-update over OTA.",
+  "updated": "2026-11-03T02:22:04.539Z",
+  "objective": "Redesign the FMSG Agents desktop UI to the mockup sheet as a single v0.7.0 release, shipping the agreed secrets/autofill and application-bundle billing changes in the same update, then push it live so installed apps auto-update over OTA. Follow-up in the same session: ship v0.7.1, a renderer-only visual-fidelity patch that closes the gap between the shipped 0.7.0 UI and the 18 individual mockups, publish it to Supabase over OTA, and move the FMSG Agents context files into the sub-project with task-based routing instructions in AGENTS.md.",
   "plan": [
     "Record the design spec, mockup copy and screen-coverage audit (docs/design/DESIGN_SYSTEM.md)",
     "Add the local secret vault, rules/answer bank and agent preferences (secret-vault.ts)",
@@ -20,28 +20,39 @@
     {
       "step": 1,
       "description": "Wrote docs/design/DESIGN_SYSTEM.md (tokens, 16 screen specs, coverage matrix, 14 phases) and copied the mockup sheet to docs/design/reference/screens-sheet.jpg.",
-      "files": ["docs/design/DESIGN_SYSTEM.md", "docs/design/reference/screens-sheet.jpg"],
+      "files": [
+        "docs/design/DESIGN_SYSTEM.md",
+        "docs/design/reference/screens-sheet.jpg"
+      ],
       "done": true,
       "key_decision": "Spec first so sizing, palette and screen coverage were agreed before any code moved; the sheet is layout/mood only because it is a generated image."
     },
     {
       "step": 2,
       "description": "Created secret-vault.ts: keytar-backed Credential Manager storage with an AES-256-GCM fallback, key-name normalisation (LINKEDIN_PASSWORD, _2 suffix for extra accounts), one-domain-per-name lock, fillSecretOnVerifiedDomain that re-checks the live page hostname and blurs password inputs before screenshots, plus screening rules, answer bank and agent prefs (costCap defaults to 0).",
-      "files": ["src/apps/fmsg-agents/secret-vault.ts", "src/apps/fmsg-agents/tsconfig.main.json"],
+      "files": [
+        "src/apps/fmsg-agents/secret-vault.ts",
+        "src/apps/fmsg-agents/tsconfig.main.json"
+      ],
       "done": true,
       "key_decision": "One fill_secret(name) tool instead of free-form scripts so a password can never be read back by the renderer, the model, or the logs."
     },
     {
       "step": 3,
       "description": "agent-controller.ts: added pause()/resume()/waitIfPaused(), vault-first sign-in handling carrying secretKeyName/allowedDomain/countdownSeconds on attention events, Answer Bank lookup in field mapping, R40 PAYG with 40/100/250/500 thresholds and bundle rates R35/R30/R25/R22.",
-      "files": ["src/apps/fmsg-agents/agent-controller.ts"],
+      "files": [
+        "src/apps/fmsg-agents/agent-controller.ts"
+      ],
       "done": true,
       "key_decision": "Pausing between postings (not mid-page) keeps the same run resumable after payment without re-navigating."
     },
     {
       "step": 4,
       "description": "electron-main.ts: frame:false + #040613 background, window-minimize/maximize/close, pause/resume/emergency-stop, secrets-*, rules-*, agent-prefs-*, saved-jobs-list/delete, account delete-code/confirm; preload.ts exposes all of it.",
-      "files": ["src/apps/fmsg-agents/electron-main.ts", "src/apps/fmsg-agents/preload.ts"],
+      "files": [
+        "src/apps/fmsg-agents/electron-main.ts",
+        "src/apps/fmsg-agents/preload.ts"
+      ],
       "done": true,
       "key_decision": "Emergency stop resolves every pending attention as skip, so it can never submit an application."
     },
@@ -97,14 +108,18 @@
     {
       "step": 9,
       "description": "Verification: npx tsc -p tsconfig.json --noEmit, npx tsc -p tsconfig.main.json --noEmit, repo-root npx tsc --noEmit, eslint on the three billing routes, and a plain esbuild renderer bundle all clean. npm run build:all produced dist/electron/FMSG Agents Setup 0.7.0.exe with the keytar native rebuild.",
-      "files": ["src/apps/fmsg-agents/dist/electron/FMSG Agents Setup 0.7.0.exe"],
+      "files": [
+        "src/apps/fmsg-agents/dist/electron/FMSG Agents Setup 0.7.0.exe"
+      ],
       "done": true,
       "key_decision": "build:all, not build:renderer alone: electron-builder is what rebuilds keytar for Electron 34, and without it the vault would silently fall back to the AES file."
     },
     {
       "step": 10,
       "description": "Uploaded signed OTA manifests for 0.7.0 (min-supported 0.6.0, type required) to the stable and beta channels, then downloaded manifest.stable.sig.json back and confirmed version 0.7.0 / min_supported_version 0.6.0.",
-      "files": ["src/apps/fmsg-agents/scripts/upload-update.js"],
+      "files": [
+        "src/apps/fmsg-agents/scripts/upload-update.js"
+      ],
       "done": true,
       "key_decision": "Verified the manifest by reading it back out of storage rather than trusting the uploader's own output."
     },
@@ -125,7 +140,9 @@
     {
       "step": 13,
       "description": "Found that the 0.7.0 manifest the uploader produced was a renderer-only bundle swap (files: renderer/bundle.js + renderer/design-system.css only), which cannot deliver the new main process or the new IPC channels. Extended scripts/upload-update.js with --requires-installer / --installer and --changelog-file, and replaced the hardcoded v0.6.0 changelog array.",
-      "files": ["src/apps/fmsg-agents/scripts/upload-update.js"],
+      "files": [
+        "src/apps/fmsg-agents/scripts/upload-update.js"
+      ],
       "done": true,
       "key_decision": "installer-handoff (requires_installer: true + installer/installer.nsh running it as /S /UPDATE) is the only correct OTA mode for a release that touches electron-main.ts, preload.ts or a native module."
     },
@@ -139,7 +156,9 @@
     {
       "step": 15,
       "description": "Rewrote manifest.stable.sig.json and manifest.beta.sig.json back to the real v0.6.0 artifacts (downloaded v0.6.0/renderer files, recomputed sha256/size, signed, self-verified, uploaded) and read both back to confirm version 0.6.0, requires_installer false, withdrawn false.",
-      "files": ["recycle_bin/restore-060/restore-manifest.js"],
+      "files": [
+        "recycle_bin/restore-060/restore-manifest.js"
+      ],
       "done": true,
       "key_decision": "Restoring the exact previous published state is safer than withdrawing 0.7.0: a withdrawn manifest would make any later 0.7.0 install think its own version was pulled and roll back."
     },
@@ -153,7 +172,9 @@
     {
       "step": 17,
       "description": "Ran the installer silently (\"FMSG Agents Setup 0.7.0.exe\" /S /UPDATE): exit code 0, installed asar refreshed to the 0.7.0 build (27,363,990 bytes), app relaunched. Post-install state: installed_version 0.7.0, active_slot_version 0.7.0, pending_health_check false, Slot-Active auto-cleared so it boots the packaged renderer, last_check_status 'Up to date' against the restored 0.6.0 manifest.",
-      "files": ["src/apps/fmsg-agents/dist/electron/FMSG Agents Setup 0.7.0.exe"],
+      "files": [
+        "src/apps/fmsg-agents/dist/electron/FMSG Agents Setup 0.7.0.exe"
+      ],
       "done": true,
       "key_decision": "verifyStartupSlotHealth clears a superseded Slot-Active when installed_version != APP_VERSION, which is exactly what moves the app off the stale 0.6.0 renderer slot and onto the 0.7.0 packaged bundle."
     },
@@ -163,6 +184,90 @@
       "files": [],
       "done": true,
       "key_decision": "Grepping the installed asar for the new module and channel names is the only local proof that the running main process is 0.7.0; install-state alone can be set by the slot logic."
+    },
+    {
+      "step": 19,
+      "description": "Compared the shipped 0.7.0 build against the 18 individually-rendered mockups and captured 9 live screens with a DPI-aware PrintWindow harness. Measured finding: body text was already at ~85% of the mockup size, but display type was roughly half (hero 18px vs ~36px, screen titles 17px vs ~28-30px), so every screen read flat. Two earlier findings were retracted as harness artefacts (the hero was smaller than the mockup, and the dashboard did not actually scroll - the capture had been cropped at 125% scaling).",
+      "files": [
+        "recycle_bin/shot.ps1",
+        "recycle_bin/shots/*"
+      ],
+      "done": true,
+      "key_decision": "Only the display scale was wrong; the compact body/secondary/label/caption sizes were already correct and were left untouched, which keeps the 11px minimum and the non-large-text feel."
+    },
+    {
+      "step": 20,
+      "description": "Implemented the fixes in App.tsx and design-system.css: new shared EmptyState component (default/compact/inline), Home hero rebuilt as a two-column grid with three feature rows, horizontal quick-action tiles, real empty states on Home widgets / Applications / Review, sidebar footer CTA gated behind isRunning, sidebar plan line ellipsised, Review title reads \"Review Queue\" at zero, and the display type scale raised (hero 26px, .billing-title 22px, card head 14.5px, section title 13.5px, onboarding title 22px).",
+      "files": [
+        "src/apps/fmsg-agents/renderer/App.tsx",
+        "src/apps/fmsg-agents/renderer/design-system.css"
+      ],
+      "done": true,
+      "key_decision": "Dashboard widgets use the inline empty-state variant with no action button, so the page keeps exactly one primary CTA (the hero) instead of the three \"Start a run\" buttons the first attempt produced."
+    },
+    {
+      "step": 21,
+      "description": "Bumped to 0.7.1 in config.ts and package.json, wrote the release log, added the INDEX row and reset UNRELEASED, then built the installer with npm run build:all (dist/electron/FMSG Agents Setup 0.7.1.exe, 92,405,843 bytes) and installed it with /S /UPDATE (installed_version 0.7.1).",
+      "files": [
+        "src/apps/fmsg-agents/config.ts",
+        "src/apps/fmsg-agents/package.json",
+        "src/apps/fmsg-agents/docs/changelog/2026-11-03_v0.7.1_visual-fidelity-pass.md",
+        "src/apps/fmsg-agents/docs/changelog/INDEX.md",
+        "src/apps/fmsg-agents/docs/changelog/UNRELEASED.md",
+        "src/apps/fmsg-agents/dist/electron/FMSG Agents Setup 0.7.1.exe"
+      ],
+      "done": true,
+      "key_decision": "0.7.1 touches only the renderer, so unlike 0.7.0 it is OTA-eligible and was uploaded without --requires-installer."
+    },
+    {
+      "step": 22,
+      "description": "Published the OTA to the agent-updates bucket (stable, min_supported 0.7.0, type recommended, requires_installer false) and read the manifest back through the private object endpoint: version=0.7.1 requires_installer=False withdrawn=False. The first upload passed the markdown release log as --changelog-file, which rendered the \"# v0.7.1\" header and \"## Added\" headings inside the update card; it was re-uploaded with a plain-text .ota.txt bullet file. Applied in-app via Update Now: install-state.json then read installed_version 0.7.1 / active_slot_version 0.7.1 / backup_slot_version 0.7.0 and the titlebar chip showed v0.7.1.",
+      "files": [
+        "src/apps/fmsg-agents/docs/changelog/2026-11-03_v0.7.1_visual-fidelity-pass.ota.txt",
+        "src/apps/fmsg-agents/scripts/upload-update.js"
+      ],
+      "done": true,
+      "key_decision": "upload-update.js copies every non-empty line of --changelog-file verbatim, so OTA notes must be a plain-text bullet list; re-uploading the same version re-hashes and re-signs the manifest, which made the corrective upload safe."
+    },
+    {
+      "step": 23,
+      "description": "Found and deferred a real bug: after the installer upgrade install-state.json read installed_version 0.7.1 but active_slot_version 0.7.0, so the version chip kept showing v0.7.0 until the OTA advanced the slot. verifyStartupSlotHealth (~update-manager.ts:736-780) only re-syncs active_slot_version inside if (fs.existsSync(activeDir)), and Slot-Active did not exist. Logged in UNRELEASED.md as the open bug carried into 0.7.2 with the fix direction.",
+      "files": [
+        "src/apps/fmsg-agents/update-manager.ts",
+        "src/apps/fmsg-agents/docs/changelog/UNRELEASED.md"
+      ],
+      "done": true,
+      "key_decision": "The fix is a main-process change, which would make the release installer-only - and installer-handoff OTA is still blocked by the Supabase storage 413 on the 92 MB exe - so it was deferred rather than bundled into a renderer patch."
+    },
+    {
+      "step": 24,
+      "description": "Reorganised context: moved agent-framework-v0.3.0, agent-release-v0.6.0 and fmsg-agents-ui-redesign out of .opencode/context/fmsg-agents/ into src/apps/fmsg-agents/docs/context/, added a new follow-up file fmsg-agents-visual-fidelity_2026-11-03.md for the 0.7.1 pass, fixed every cross-reference (the moved files, the v0.2.0/v0.3.0/v0.4.0 backfilled changelogs, the ecosystem architecture index) and repaired two links that were already one directory level short. Also added a task-to-context routing table to AGENTS.md and removed the fmsg-agents/ category from .opencode/context/.",
+      "files": [
+        "src/apps/fmsg-agents/docs/context/agent-framework-v0.3.0_2026-10-30.md",
+        "src/apps/fmsg-agents/docs/context/agent-release-v0.6.0_2026-11-02.md",
+        "src/apps/fmsg-agents/docs/context/fmsg-agents-ui-redesign_2026-11-03.md",
+        "src/apps/fmsg-agents/docs/context/fmsg-agents-visual-fidelity_2026-11-03.md",
+        "src/apps/fmsg-agents/docs/changelog/2026-10-30_v0.2.0_early-prototype-ui-and-billing-stub.md",
+        "src/apps/fmsg-agents/docs/changelog/2026-10-30_v0.3.0_semver-framework-and-ota-skeleton.md",
+        "src/apps/fmsg-agents/docs/changelog/2026-10-31_v0.4.0_website-parity-auth-and-device-ota.md",
+        "docs/context/FMSG_ECOSYSTEM_ARCHITECTURE.md",
+        "AGENTS.md"
+      ],
+      "done": true,
+      "key_decision": "Agent context now lives inside the sub-project and is tracked normally, so it no longer needs git add -f and can be found by Glob/Grep (.opencode/ is hidden and gitignored)."
+    },
+    {
+      "step": 25,
+      "description": "Verified with npx tsc -p tsconfig.json and tsconfig.main.json (both clean) plus a transcript of the renderer build, committed 504237d on production (17 files, 742 insertions, 120 deletions; the three context files recorded as renames), created and pushed the annotated tag v0.7.1 and pushed the branch. Vercel will build this as a Preview only; no website code changed, so nothing needs promoting for the agent work.",
+      "files": [
+        "AGENTS.md",
+        "src/apps/fmsg-agents/docs/context",
+        "src/apps/fmsg-agents/docs/changelog",
+        "src/apps/fmsg-agents/renderer/App.tsx",
+        "src/apps/fmsg-agents/renderer/design-system.css"
+      ],
+      "done": true,
+      "key_decision": "The commit is docs plus renderer only, so the website build is unaffected and the live domain keeps serving the previous build until someone promotes it - that is acceptable here."
     }
   ],
   "key_decisions": [
@@ -174,7 +279,15 @@
     "Deploy caveat confirmed again: a push to production produces Preview deployments only, and the live API keeps serving the previous build until the deployment is promoted in Vercel.",
     "Root cause of the OTA problem: the uploader only ever emitted renderer-only manifests, so no main-process code has reached the installed app since the 0.5.0 installer. Fixed 0.7.0 by making it installer-only and restoring the published manifests to 0.6.0 rather than shipping a renderer that calls IPC the running main process does not have.",
     "Installer-handoff OTA is implemented in update-manager.ts and now in the uploader, but blocked by the Supabase storage file size limit (HTTP 413 on the 92 MB exe). Raising it in Project Settings → Storage is a prerequisite for future main-process releases.",
-    "Background task: no watcher or dev server was left running. The only pending external state is the Vercel promotion for ba60675, which is dashboard-only because no Vercel token exists locally."
+    "Background task: no watcher or dev server was left running. The only pending external state is the Vercel promotion for ba60675, which is dashboard-only because no Vercel token exists locally.",
+    "Root cause of the flat UI: 0.7.0 matched the mockups' design language but not its proportions - body text was ~85% of mockup size while display type was ~50%, so hierarchy was inverted. Restoring only the display scale fixed it without losing the compact feel.",
+    "A page should expose one primary CTA; the sidebar footer button now renders only during an active run (\"Run Controls\") and the hero owns the idle CTA.",
+    "Dashboard widget empty states use the inline variant with no action so widgets keep their height and the page keeps a single primary CTA.",
+    "0.7.1 is renderer-only and therefore OTA-eligible: published with --requires-installer absent, min_supported 0.7.0, type recommended.",
+    "OTA changelogs must be plain-text bullet files - upload-update.js copies non-empty lines verbatim, so markdown headings leak into the update card.",
+    "Version-chip bug (active_slot_version stale after installer upgrade when Slot-Active is absent) is deferred to 0.7.2 because the fix lives in the main process and would force an installer-only release, which the Supabase 413 storage limit currently blocks.",
+    "FALSE-FINDING RULE: at 125% Windows scaling an un-DPI-aware capture crops to ~80% of the window. Measure CSS pixels before \"fixing\" a layout that a screenshot says is broken.",
+    "FMSG Agents context now lives in src/apps/fmsg-agents/docs/context/ (in-repo, tracked normally) and AGENTS.md maps each task type to the one chain worth reading, so agent incidents no longer mix with website context."
   ],
   "files_modified": [
     "src/apps/fmsg-agents/renderer/App.tsx",
@@ -199,7 +312,14 @@
     "docs/design/DESIGN_SYSTEM.md",
     "docs/design/reference/screens-sheet.jpg",
     ".opencode/context/fmsg-agents/fmsg-agents-ui-redesign_2026-11-03.md",
-    "AGENTS.md"
+    "AGENTS.md",
+    "src/apps/fmsg-agents/docs/changelog/2026-11-03_v0.7.1_visual-fidelity-pass.md",
+    "src/apps/fmsg-agents/docs/changelog/2026-11-03_v0.7.1_visual-fidelity-pass.ota.txt",
+    "src/apps/fmsg-agents/docs/context/agent-framework-v0.3.0_2026-10-30.md",
+    "src/apps/fmsg-agents/docs/context/agent-release-v0.6.0_2026-11-02.md",
+    "src/apps/fmsg-agents/docs/context/fmsg-agents-ui-redesign_2026-11-03.md",
+    "src/apps/fmsg-agents/docs/context/fmsg-agents-visual-fidelity_2026-11-03.md",
+    "docs/context/FMSG_ECOSYSTEM_ARCHITECTURE.md"
   ],
   "done": false,
   "user_confirmed": false,
