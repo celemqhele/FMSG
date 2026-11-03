@@ -62,9 +62,9 @@ Type scale collapsed to 7 sizes, radii to 4 families, **0 layout `!important`** 
 
 ## Still open
 
-- **Apply Migration 039** in the Supabase SQL editor, statement by statement, then run its verification queries and `select pg_notification_queue_usage();`. Until then approvals are local-only.
-- **Publish** `v0.7.2`, `v0.8.0` (installer) and `v0.9.0` — none were uploaded; distribution is a product-owner decision.
-- **Clean-VM installer test** for `0.8.0` and the `0.7.x → 0.8.0 → 0.9.0` upgrade path.
+- **Apply Migration 039** in the Supabase SQL editor, statement by statement, then run its verification queries and `select pg_notification_queue_usage();`. Until then approvals are local-only even though the UI is correct.
+- **Main-process alignment.** The `0.9.0` renderer was published to both channels and applied over the installed `0.7.1` main process. Review-status IPC needs `0.8.0+`, so run `dist/electron/FMSG Agents Setup 0.9.0.exe` once; the installer clears the OTA slot and the next update check re-applies `0.9.0`.
+- **Clean-VM installer test** for `0.9.0` and the `0.7.x → 0.9.0` upgrade path.
 - **Phase 3 residuals:** invoices/cancellation wiring against Paystack (UI is present), device/session management with real data, motion/density tokens, and an external WCAG 2.2 AA audit (never claim certification before it).
 - **`App.tsx` still contains** `ProfilesAndRulesView`, `OnboardingWizardModal`, `AccountView` and the three modals.
 
