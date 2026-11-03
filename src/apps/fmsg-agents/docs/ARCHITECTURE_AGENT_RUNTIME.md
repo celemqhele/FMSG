@@ -114,16 +114,15 @@ Exactly the existing `attention` mechanism, now with the guest as the source of 
 
 ## 8. Staged plan (folds into TASK-20261103-009 Phases 2–3)
 
-1. **Phase 2 (needs today's founder approvals):** prototype per the host report — WSL2/Docker path first, then full VM — prove same-session streaming, CV transfer, visible typing, measurements.
+1. **Phase 2 (needs today's founder approvals):** prototype per the host report — WSL2/Docker path first, then full VM — prove same-session streaming, CV transfer, visible typing, measurements. *(Phase 2 measured: 30 fps / 92 ms / 3.2 GB — validated.)*
 2. **Inkling action SOP** — separate deliverable (grammar, validation, fallback ladder, nuance playbook) — blueprint-worthy; built against the guest runner.
 3. **Runtime Bridge + VM Manager** — bounded API spec first, then implementation.
-4. **Distribution design** — installer-embedded vs signed first-run download (versioned, checksummed, resumable); resource-check UX (report says 16 GB RAM is workable but the app must detect and explain).
+4. **Distribution — DECIDED (founder, 2026-11-03): the runtime is embedded in our own native installer.** The user downloads only FMSG Agents; the app handles everything else. A multi-GB installer is accepted and expected for agent software — **storage is not a limiter of options**. Concretely: the installer carries the FMSG app + the embedded hypervisor (QEMU) + the signed appliance image (compressed qcow2, ~2–4 GB class). The app's first-run flow auto-provisions: detects virtualisation → (with user consent, UAC-elevated) enables WHPX if absent and explains the one-time restart → resumes provisioning after reboot → starts the VM. Users never touch WSL2/Docker/manual downloads. Runtime-image updates ride installer-handoff releases (or a later signed runtime-update channel).
 5. **Appliance build** — reproducible scripts (documented package list; never hand-stripped desktops).
 6. **Migration path:** CDP fallback stays until the runtime is validated on real runs.
 
 ## 9. Open decisions (founder)
 
-- Confirm the architecture direction (this memo) — then Phase 2 approvals from `docs/HOST_PREREQUISITES_REPORT_2026-11-03.md` unblock the first prototype.
-- Hypervisor choice when we reach it: VirtualBox (install, drivers) vs QEMU+WHPX (enable feature + restart) — measured evidence will inform, but your preference for the restart requirement matters.
-- Distribution model: installer-embedded runtime vs first-run download.
-- Inkling SOP ownership: this is documentation + prompt engineering — after the runner contract exists it is guide-writable (delegable per the resource-aware policy).
+- **Hypervisor (product):** per the installer-embedding decision, the product default is **QEMU+WHPX** — redistributable (GPL), no driver installs, embeds cleanly inside our installer; the one-time WHPX enable + restart is a guided, consent-gated app step. VirtualBox remains a prototype convenience only. (G2 of the Phase-2 analysis resolves this way; founder confirmation recorded here.)
+- **Full Ubuntu Desktop VM reference (G3):** now **optional** — the appliance stack is already validated by the WSL2 measurements and is the product path; the full-desktop row in the comparison table can be skipped unless the founder wants the data point.
+- **App-only updates:** the v0.10.0 OTA-channel blocker (Supabase 413 / GitHub Releases) remains relevant only for app-code releases; the runtime no longer depends on it.

@@ -32,12 +32,11 @@ The lightweight appliance-class stack (Ubuntu 22.04 LTS rootfs, Xvfb + openbox +
 ## 3. Next-stage plan
 
 1. **KasmVNC measurement in the existing guest** (guest-only additive install; no host change, no founder gate) — same matrix as the protocol, then a side-by-side stream-quality table (noVNC vs KasmVNC).
-2. **Full Ubuntu Desktop VM (reference implementation)** — requires founder decisions G2/G3 below.
-3. **Appliance build** (reproducible minimal image from the WSL2-validated stack), **Runtime Bridge** (bounded API, loopback/vsock), **stream integration into the Run canvas**, **Inkling action SOP** (delegable), **distribution design** — each staged as before.
+2. **Appliance + VM stage** — distribution DECIDED by the founder (2026-11-03): the runtime ships **inside our own native installer**; the user downloads only FMSG Agents and the app handles everything. Multi-GB installer accepted — storage is not a limiter. Product hypervisor therefore **QEMU+WHPX** (redistributable, driverless, embeds in the installer; one-time guided, consent-gated WHPX enable + restart). VirtualBox remains a prototype convenience only.
+3. **Appliance build** (reproducible minimal image from the WSL2-validated stack), **Runtime Bridge** (bounded API, loopback/vsock), **stream integration into the Run canvas**, **Inkling action SOP** (delegable), **installer integration** (QEMU + signed appliance image + first-run auto-provisioning flow) — each staged as before.
 
-## 4. Founder gates for the VM stage (when you're ready)
+## 4. Founder gates
 
-- **G2 — Hypervisor choice:** **VirtualBox** (install, admin; usually no restart — fastest prototype path) **vs QEMU+WHPX** (enable `HypervisorPlatform`, admin + **restart**; cleaner to embed in the shipped product later — no drivers, GPL-redistributable). Recommendation: **VirtualBox now for the prototype**, revisit QEMU at product-embedding time.
-- **G3 — Ubuntu 26.04.1 LTS Desktop ISO download (~6 GB)** for the reference VM.
-
-No host feature, driver or download happens until G2/G3 are ticked.
+- **G2 — Hypervisor: RESOLVED by the installer-embedding decision → QEMU+WHPX for the product.** For the prototype VM stage, VirtualBox remains available (install, admin; usually no restart) if a quick reference VM is wanted before the QEMU path is built.
+- **G3 — Full Ubuntu 26.04.1 Desktop ISO (~6 GB): now OPTIONAL.** The appliance stack is validated; the desktop-VM comparison row can be skipped unless the founder wants the data point.
+- The one-time **WHPX enable + restart** becomes a guided in-app step at product build time — surfaced with consent, never silent.
