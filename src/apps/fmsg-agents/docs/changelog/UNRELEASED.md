@@ -11,14 +11,14 @@
 
 **Still required:** Migration 039 has not been applied to Supabase, so review-status writes stay local until it is.
 
-Active work: **Phase 3 (`v1.0.0`)** — invoices/cancellation wiring, device/session management, motion & density, external accessibility audit.
+Active work: **Founder observability/runtime initiative (2026-11-03)** — five blueprints + five Pro assignments created and queued (`PENDING`): Run Setup modal redesign (`TASK-20261103-005`), Run workspace preview-dominant layout (`TASK-20261103-006`), live-preview active-page tracking (`TASK-20261103-007`), independent agent profiles + CV (`TASK-20261103-008`), Ubuntu runtime feasibility (`TASK-20261103-009`). No release, version bump or installer rebuild authorised for any of them. See `docs/blueprints/BLUEPRINT-20261103-004..008` and `docs/context/fmsg-agents-observability-profiles-runtime_2026-11-03.md`.
 
 ---
 
 ## Next change
 
 ### Added
-- *(none yet)*
+- **Governance/documentation (no app-code change):** five implementation blueprints for the founder's 2026-11-03 requests — `BLUEPRINT-20261103-004` (Run Setup modal, content-first two-column redesign; root cause: 740px three-column container-first sizing + nested 220px profile scrollbox), `BLUEPRINT-20261103-005` (Run workspace, tabbed preview-dominant layout; root cause: `.run-page-shell` never fills `.workspace-main` + 40%-fixed log column + top-anchored letterboxed image), `BLUEPRINT-20261103-006` (independent `agent_profiles` table + private `agent-cvs` bucket; root cause of the `cv_file_path` error: migration 009 dropped the column while `agent-controller.ts` still selects it), `BLUEPRINT-20261103-007` (live-preview active-page tracking; root cause: screencast CDP session attached once to the launch page, no `context.on('page')`), `BLUEPRINT-20261103-008` (Ubuntu runtime feasibility, staged with founder gates). Corresponding Pro assignments `TASK-20261103-005..009` are `PENDING` in `logs/EOT/deepseekprodelegation/` (local-only working state).
 
 ### Changed
 - *(none yet)*
@@ -27,10 +27,11 @@ Active work: **Phase 3 (`v1.0.0`)** — invoices/cancellation wiring, device/ses
 - *(none yet)*
 
 ### Fixed
-- *(none yet)*
+- *(none yet — root causes diagnosed, fixes not yet implemented)*
 
 ### Relevant Files
-- *(none yet)*
+- `docs/blueprints/BLUEPRINT-20261103-004..008`
+- `docs/context/fmsg-agents-observability-profiles-runtime_2026-11-03.md`
 
 ### Infrastructure Changes
-- *(none yet)*
+- *(none yet — migration 040 (`agent_profiles`) is designed but not applied; application is a founder-gated step)*
