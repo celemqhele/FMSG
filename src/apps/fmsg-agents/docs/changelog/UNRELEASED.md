@@ -6,7 +6,21 @@
 
 ## Status
 
-No unreleased changes - all changes up to and including **`v0.7.0`** have been promoted to [`2026-11-03_v0.7.0_mockup-redesign-secret-vault-and-bundles.md`](./2026-11-03_v0.7.0_mockup-redesign-secret-vault-and-bundles.md).
+No unreleased changes - all changes up to and including **`v0.7.1`** have been promoted to [`2026-11-03_v0.7.1_visual-fidelity-pass.md`](./2026-11-03_v0.7.1_visual-fidelity-pass.md).
+
+---
+
+## Open Bug Carried Into `v0.7.2` — Version chip lags one release after an installer upgrade
+
+**Observed:** 2026-11-03, `v0.7.0` → `v0.7.1`. After running `FMSG Agents Setup 0.7.1.exe /S /UPDATE`, `install-state.json` read `installed_version 0.7.1` but `active_slot_version 0.7.0`, so the titlebar/Settings chip (`get-startup-status` → `appVersion`) still displayed `v0.7.0` until an OTA landed and advanced the slot to `0.7.1`.
+
+**Cause:** `verifyStartupSlotHealth` in `update-manager.ts` (~lines 736–780) re-syncs `active_slot_version` after a binary upgrade only inside `if (fs.existsSync(activeDir))`. When the previous release's renderer slot had already been consumed/cleared, `Slot-Active` does not exist, the whole branch is skipped, and the stale value survives.
+
+**Why it was not fixed in `v0.7.1`:** the fix is in the Electron main process, which would make that release installer-only — and installer-handoff OTA is still blocked by the Supabase storage size limit (`HTTP 413 EntityTooLarge` on the 92 MB exe). A renderer patch had to stay renderer-only to be deliverable.
+
+**Fix direction for `v0.7.2`:** in the `state.installed_version !== APP_VERSION` branch, set `state.active_slot_version = APP_VERSION` unconditionally (and clear `activeDir` only when it exists), then persist. Verify by installing a build over a slot-less state and checking the chip without any OTA.
+
+**Detail:** `src/apps/fmsg-agents/docs/context/fmsg-agents-visual-fidelity_2026-11-03.md` (section "Deferred to `0.7.2`").
 
 ---
 
@@ -29,24 +43,3 @@ No unreleased changes - all changes up to and including **`v0.7.0`** have been p
 
 ### Infrastructure Changes
 - *(none yet)*
-
----
-
-## 2026-11-03 (after `v0.7.0`)
-
-### Added
-- `scripts/upload-update.js` gained `--requires-installer` (plus optional
-  `--installer <path>`) and `--changelog-file <path>`. Before this, the uploader
-  always emitted a renderer-only manifest and a hardcoded `v0.6.0` changelog, so a
-  release that changed the main process or the preload IPC contract could be
-  published in a form that leaves the installed app running its old main process
-  against the new renderer.
-
-### Infrastructure Changes
-- `v0.7.0` is **installer-only**: `manifest.stable.sig.json` and
-  `manifest.beta.sig.json` were rewritten back to the real `v0.6.0` artifacts after
-  the `v0.7.0` upload. Uploading the installer is blocked by the project's storage
-  file size limit (`HTTP 413 EntityTooLarge` on the 92 MB
-  `FMSG Agents Setup 0.7.0.exe`). Raising that limit in Supabase is a prerequisite
-  for installer-handoff OTA.
-

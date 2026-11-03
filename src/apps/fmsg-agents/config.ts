@@ -5,7 +5,7 @@
  * No server secrets or service_role keys exist anywhere in client code.
  */
 
-export const APP_VERSION = '0.7.0';
+export const APP_VERSION = '0.7.1';
 
 export function semverToCode(version: string): number {
   const clean = version.replace(/^v/i, '').split('-')[0];

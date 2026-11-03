@@ -1,8 +1,8 @@
 # FMSG Agents UI/UX Redesign — v0.7.0 Shipped (mockup shell, secret vault, bundles)
 
-This file records the redesign of FMSG Agents from the v0.6.0 UI to the mockup sheet: what was decided, what was built, and what was shipped. The full spec is in [`docs/design/DESIGN_SYSTEM.md`](../../../docs/design/DESIGN_SYSTEM.md) (sections 0–9, including the coverage matrix in §8b and decisions in §8c), and the mockup copy is in [`docs/design/reference/screens-sheet.jpg`](../../../docs/design/reference/screens-sheet.jpg).
+This file records the redesign of FMSG Agents from the v0.6.0 UI to the mockup sheet: what was decided, what was built, and what was shipped. The full spec is in [`docs/design/DESIGN_SYSTEM.md`](../../../../../docs/design/DESIGN_SYSTEM.md) (sections 0–9, including the coverage matrix in §8b and decisions in §8c), and the mockup copy is in [`docs/design/reference/screens-sheet.jpg`](../../../../../docs/design/reference/screens-sheet.jpg).
 
-**Status:** built, versioned as `0.7.0`, installer built and tagged, but **delivered by installer, not OTA** — the 92 MB `FMSG Agents Setup 0.7.0.exe` is rejected by the Supabase storage file size limit, and a renderer-only OTA is not valid for a release that changes the main process. The published manifests were left on `0.6.0`. The user still has to do the visual pass in the installed app ("I want to see the full update") before agentic-search testing starts.
+**Status:** built, versioned as `0.7.0`, installer built and tagged, but **delivered by installer, not OTA** — the 92 MB `FMSG Agents Setup 0.7.0.exe` is rejected by the Supabase storage file size limit, and a renderer-only OTA is not valid for a release that changes the main process. The published manifests were left on `0.6.0`. The user still has to do the visual pass in the installed app ("I want to see the full update") before agentic-search testing starts. **Update (2026-11-03):** that visual pass happened, and it produced the `v0.7.1` patch recorded in [`fmsg-agents-visual-fidelity_2026-11-03.md`](./fmsg-agents-visual-fidelity_2026-11-03.md) — renderer-only, so it went out over OTA instead of needing an installer.
 
 ## Problem
 
@@ -25,7 +25,7 @@ The v0.6.0 desktop UI was built from a rough idea and reads as unpolished to the
 
 ## What shipped in `v0.7.0`
 
-Full detail in [`src/apps/fmsg-agents/docs/changelog/2026-11-03_v0.7.0_mockup-redesign-secret-vault-and-bundles.md`](../../../src/apps/fmsg-agents/docs/changelog/2026-11-03_v0.7.0_mockup-redesign-secret-vault-and-bundles.md). The short version:
+Full detail in [`src/apps/fmsg-agents/docs/changelog/2026-11-03_v0.7.0_mockup-redesign-secret-vault-and-bundles.md`](../changelog/2026-11-03_v0.7.0_mockup-redesign-secret-vault-and-bundles.md). The short version:
 
 - **Shell:** frameless window, custom title bar, sidebar, all sheet screens (Home, Run setup, Live Run, Needs You, Applications, Detail & replay, Review queue, Profiles, Rules & Answer Bank, Billing, Settings, Account, onboarding, empty/error).
 - **Secrets:** new `src/apps/fmsg-agents/secret-vault.ts` — keytar with an AES-256-GCM fallback, name normalisation, domain lock, `fillSecretOnVerifiedDomain` re-checks the live `page.url()` hostname and blurs password inputs before screenshots. Plus persistent screening rules and Answer Bank, and `agent-prefs` with `costCap` defaulting to 0.
@@ -79,8 +79,9 @@ Note: the unpacked `0.6.0` renderer still sits in `Slot-Backup` (`%LOCALAPPDATA%
 
 ## Related
 
-- [`docs/design/DESIGN_SYSTEM.md`](../../../docs/design/DESIGN_SYSTEM.md) — redesign spec, phases, coverage matrix
-- [`src/apps/fmsg-agents/docs/changelog/2026-11-03_v0.7.0_mockup-redesign-secret-vault-and-bundles.md`](../../../src/apps/fmsg-agents/docs/changelog/2026-11-03_v0.7.0_mockup-redesign-secret-vault-and-bundles.md) — release log
-- [`src/apps/fmsg-agents/docs/changelog/INDEX.md`](../../../src/apps/fmsg-agents/docs/changelog/INDEX.md) — version index and regression playbook
-- [`docs/context/FMSG_AGENTS_SUBPROJECT.md`](../../../docs/context/FMSG_AGENTS_SUBPROJECT.md) — sub-project architecture
-- [`.opencode/context/supabase-access/supabase-direct-access_2026-10-17.md`](../supabase-access/supabase-direct-access_2026-10-17.md) — the `curl.exe` workflow used to verify the uploaded OTA manifests
+- [`docs/design/DESIGN_SYSTEM.md`](../../../../../docs/design/DESIGN_SYSTEM.md) — redesign spec, phases, coverage matrix
+- [`src/apps/fmsg-agents/docs/changelog/2026-11-03_v0.7.0_mockup-redesign-secret-vault-and-bundles.md`](../changelog/2026-11-03_v0.7.0_mockup-redesign-secret-vault-and-bundles.md) — release log
+- [`src/apps/fmsg-agents/docs/changelog/INDEX.md`](../changelog/INDEX.md) — version index and regression playbook
+- [`docs/context/FMSG_AGENTS_SUBPROJECT.md`](../../../../../docs/context/FMSG_AGENTS_SUBPROJECT.md) — sub-project architecture
+- [`.opencode/context/supabase-access/supabase-direct-access_2026-10-17.md`](../../../../../.opencode/context/supabase-access/supabase-direct-access_2026-10-17.md) — the `curl.exe` workflow used to verify the uploaded OTA manifests
+- [`fmsg-agents-visual-fidelity_2026-11-03.md`](./fmsg-agents-visual-fidelity_2026-11-03.md) — follow-up `v0.7.1` visual-fidelity pass (the mockups had been matched in language but not in hierarchy)

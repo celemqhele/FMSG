@@ -1,0 +1,6 @@
+Larger, bolder headings so screens match the mockups again.
+Home banner rebuilt: your profile on the left, three highlights on the right.
+Quick action tiles are now horizontal, so the dashboard fits without scrolling.
+Real empty states on Home, Applications and Review — no more empty bar boxes.
+One Start Applying button (the sidebar duplicate is gone).
+The sidebar plan line no longer wraps.

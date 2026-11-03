@@ -52,12 +52,32 @@ When the user asks to "create a job post", "post a job", "add a job", or "write 
 
 Context files live in `.opencode/context/`, grouped into category folders. Each category is a **string of related incidents**: a feature/topic plus every later problem that relates to it (e.g. a flow, then follow-up bugs on that flow). These are the curated knowledge layer; the automated per-session JSON log lives separately under `.opencode/session-context/` (see Session Context Protocol below).
 
+**Exception — FMSG Agents context lives in the sub-project, not here:** `src/apps/fmsg-agents/docs/context/`. The desktop app has its own architecture, release cadence and OTA rules, and its incidents were polluting the website context tree. Do not create new FMSG Agents context files under `.opencode/context/`.
+
+### Which context files to read (route by task)
+
+Read **one** chain — the one that matches the task — plus `docs/context/FMSG_ECOSYSTEM_ARCHITECTURE.md` when the task crosses subsystems. Reading every chain wastes context and buries the relevant incident.
+
+| Task is about… | Read first | Then (if the first file points there) |
+|---|---|---|
+| FMSG Agents UI, screens, design system, renderer CSS | `src/apps/fmsg-agents/docs/context/fmsg-agents-visual-fidelity_2026-11-03.md` | `src/apps/fmsg-agents/docs/context/fmsg-agents-ui-redesign_2026-11-03.md` |
+| FMSG Agents release, version bump, OTA manifest, installer | `src/apps/fmsg-agents/docs/changelog/INDEX.md` | `src/apps/fmsg-agents/docs/context/agent-release-v0.6.0_2026-11-02.md` → `agent-framework-v0.3.0_2026-10-30.md` |
+| FMSG Agents auth, zero-PII device key, Paystack billing, live runner | `src/apps/fmsg-agents/docs/context/agent-release-v0.6.0_2026-11-02.md` | `docs/context/FMSG_AGENTS_SUBPROJECT.md` |
+| Website search pipeline (`/api/search`) | `.opencode/context/search-pipeline/` | `docs/context/FMSG_ECOSYSTEM_ARCHITECTURE.md` |
+| ATS / AI scoring, pgvector fusion | `.opencode/context/ats-scoring/` | — |
+| Job boards, job cards, board SEO pages | `.opencode/context/job-boards/` | — |
+| Supabase SQL, storage, auth admin, DDL verification | `.opencode/context/supabase-access/` | — |
+| Branding / Google Business Profile assets | `.opencode/context/branding/` | — |
+| Architecture, past decisions, known gaps (any subsystem) | `docs/context/FMSG_ECOSYSTEM_ARCHITECTURE.md` | `docs/context/DECISIONS_LOG.md`, `docs/context/KNOWN_ISSUES_AND_GAPS.md` |
+| A specific FMSG Agents bug / regression | `src/apps/fmsg-agents/docs/changelog/INDEX.md` (find `vGOOD`..`vBAD`) | that version's file only |
+
 ### IMPORTANT: finding context files
-The Glob/Grep file tools SKIP hidden/dot-directories, so `.opencode/context/` is invisible to them (`glob(".opencode/context/**/*.md")` returns nothing). To list/search context files you MUST use the shell or the Read tool instead:
+The Glob/Grep file tools SKIP hidden/dot-directories, so `.opencode/context/` is invisible to them (`glob(".opencode/context/**/*.md")` returns nothing). To list/search website context files you MUST use the shell or the Read tool instead:
 ```powershell
 Get-ChildItem -Recurse -Filter *.md -Path ".opencode\context" | Select-Object FullName
 Get-ChildItem -Recurse -Filter *.md -Path ".opencode\context" | Select-String -Pattern "keyword" -SimpleMatch
 ```
+`src/apps/fmsg-agents/docs/context/` and `docs/context/` are **not** hidden, so normal Glob/Grep works there.
 
 ### Category folders
 - ats-scoring/ — deterministic ATS scoring pipeline (scoring engine swap, Vercel logging, pgvector RRF fusion, spec dedup)
@@ -65,7 +85,8 @@ Get-ChildItem -Recurse -Filter *.md -Path ".opencode\context" | Select-String -P
 - job-boards/ — static job cards & board pages (card posts/removals lifecycle, detail pages + SEO, board navigation/global page)
 - supabase-access/ — direct Supabase SQL/data operations (curl.exe workflow, storage/auth admin, DDL verification & PostgREST schema-cache traps, schema gotchas)
 - branding/ — Google Business Profile images and other brand assets
-- fmsg-agents/ — FMSG Agents desktop application (auth, zero-PII device key, signed OTA updates, futuristic GUI, live LLM/Playwright runner, Paystack billing)
+
+> FMSG Agents context is **not** here — it lives in `src/apps/fmsg-agents/docs/context/` (see the exception above and the routing table).
 
 ### Committed Architecture & Sub-Project Context (`docs/context/`)
 In addition to `.opencode/context/`, the repository tracks four canonical context documents in `docs/context/` that **every session must read first**:
@@ -73,6 +94,13 @@ In addition to `.opencode/context/`, the repository tracks four canonical contex
 - `docs/context/FMSG_AGENTS_SUBPROJECT.md` — FMSG Agents desktop sub-project architecture, IPC, OTA engine, and release workflow.
 - `docs/context/DECISIONS_LOG.md` — Dated log of architectural decisions, prototype mistakes (`v0.1.0`–`v0.5.1`), and production fixes (`v0.6.0`).
 - `docs/context/KNOWN_ISSUES_AND_GAPS.md` — Full component audit table, known external dependencies, and production promotion checklist.
+
+### FMSG Agents Context (`src/apps/fmsg-agents/docs/context/`)
+Tracked in-repo alongside the sub-project, so these are normal `git add` (no `-f` needed). File naming and intro-paragraph rules are the same as `.opencode/context/`:
+- `agent-framework-v0.3.0_2026-10-30.md` — `v0.3.0` framework (semver/OTA skeleton, config, auth).
+- `agent-release-v0.6.0_2026-11-02.md` — `v0.4.0`→`v0.6.0` (auth failure, zero-PII device key, live runner, Paystack).
+- `fmsg-agents-ui-redesign_2026-11-03.md` — `v0.7.0` mockup redesign, secret vault, bundles.
+- `fmsg-agents-visual-fidelity_2026-11-03.md` — `v0.7.1` visual-fidelity pass, OTA notes, deferred version-chip bug.
 
 # FMSG Agents Version Log Rules (`src/apps/fmsg-agents/docs/changelog/`)
 

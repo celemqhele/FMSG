@@ -96,6 +96,52 @@ function deriveJobStatus(
   return 'Applied';
 }
 
+/**
+ * Shared zero-data block: icon, headline, supporting line, one action.
+ * Every empty screen uses this so "nothing yet" never reads as a loading
+ * skeleton (the mockups always pair an empty state with a primary action).
+ */
+function EmptyState({
+  icon,
+  title,
+  body,
+  actionLabel,
+  onAction,
+  compact = false,
+  inline = false,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  body: string;
+  actionLabel?: string;
+  onAction?: () => void;
+  compact?: boolean;
+  inline?: boolean;
+}) {
+  return (
+    <div
+      className={`empty-state${compact ? ' compact' : ''}${
+        inline ? ' inline' : ''
+      }`}
+    >
+      <span className="empty-state-icon">{icon}</span>
+      <div className="empty-state-text">
+        <p className="empty-state-title">{title}</p>
+        <p className="empty-state-body">{body}</p>
+      </div>
+      {actionLabel && onAction && (
+        <button
+          type="button"
+          className="btn btn-primary empty-state-action"
+          onClick={onAction}
+        >
+          {actionLabel}
+        </button>
+      )}
+    </div>
+  );
+}
+
 function AppInner() {
   const { showModal, showToast } = useDialog();
 
@@ -976,16 +1022,16 @@ function AppInner() {
           </div>
 
           <div className="sidebar-footer">
-            <button
-              type="button"
-              className="btn btn-primary sidebar-launch-btn"
-              onClick={() => setShowLaunchModal(true)}
-            >
-              <span>⚡</span>
-              {!sidebarCollapsed && (
-                <span>{isRunning ? 'Run Controls' : 'Start Applying'}</span>
-              )}
-            </button>
+            {isRunning && (
+              <button
+                type="button"
+                className="btn btn-primary sidebar-launch-btn"
+                onClick={() => setShowLaunchModal(true)}
+              >
+                <span>⚡</span>
+                {!sidebarCollapsed && <span>Run Controls</span>}
+              </button>
+            )}
 
             <div className="sidebar-user-row">
               <button
@@ -1005,7 +1051,7 @@ function AppInner() {
                     <div className="sidebar-user-plan">
                       {billingMode === 'bundle'
                         ? `${bundleTier} Bundle`
-                        : `PAYG · Cap R${costCap}`}
+                        : `PAYG · R${costCap} cap`}
                     </div>
                   </div>
                 )}
@@ -1091,6 +1137,7 @@ function AppInner() {
               selectedJob={selectedDetailJob}
               onSelectJob={setSelectedDetailJob}
               onRefresh={refreshSavedJobs}
+              onStartRun={() => setCurrentView('run')}
               onDeleteJob={async (id) => {
                 await window.electronAPI?.deleteSavedJob?.(id);
                 refreshSavedJobs();
@@ -1116,6 +1163,7 @@ function AppInner() {
                 setSelectedDetailJob(job);
                 setCurrentView('applications');
               }}
+              onStartRun={() => setCurrentView('run')}
             />
           )}
 
@@ -1603,6 +1651,76 @@ function HomeDashboardView({
             {isRunning ? 'View Active Run ★' : 'Start Applying ★'}
           </button>
         </div>
+
+        <ul className="dashboard-hero-features">
+          <li className="dashboard-hero-feature">
+            <span className="dashboard-hero-feature-icon" aria-hidden="true">
+              <svg
+                width="15"
+                height="15"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <circle cx="11" cy="11" r="7" />
+                <path d="M20 20l-3.2-3.2" />
+              </svg>
+            </span>
+            <span className="dashboard-hero-feature-text">
+              <strong>Find relevant roles</strong>
+              <span>
+                Discovers live South African postings that match your active
+                FMSG profile.
+              </span>
+            </span>
+          </li>
+          <li className="dashboard-hero-feature">
+            <span className="dashboard-hero-feature-icon" aria-hidden="true">
+              <svg
+                width="15"
+                height="15"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+                <path d="M14 3v5h5" />
+                <path d="M9 13h6M9 17h4" />
+              </svg>
+            </span>
+            <span className="dashboard-hero-feature-text">
+              <strong>Tailor with AI</strong>
+              <span>
+                Aligns your verified CV highlights to each job spec, without
+                inventing anything.
+              </span>
+            </span>
+          </li>
+          <li className="dashboard-hero-feature">
+            <span className="dashboard-hero-feature-icon" aria-hidden="true">
+              <svg
+                width="15"
+                height="15"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <path d="M3 16.5 9 10l4 4 7.5-7.5" />
+                <path d="M15 3h5v5" />
+              </svg>
+            </span>
+            <span className="dashboard-hero-feature-text">
+              <strong>Apply and track</strong>
+              <span>
+                Fills forms in your own Chrome and records every application
+                here.
+              </span>
+            </span>
+          </li>
+        </ul>
       </section>
 
       {/* 4 Quick Action Cards */}
@@ -1660,19 +1778,57 @@ function HomeDashboardView({
             <h3>Last 7 days</h3>
             <span className="tag">{weekTotal} handled</span>
           </div>
-          <div className="week-bars" aria-label="Applications per day, last 7 days">
-            {last7Days.map((day) => (
-              <div key={day.iso} className="week-bar-col" title={`${day.iso}: ${day.count}`}>
-                <div className="week-bar-track">
-                  <div
-                    className="week-bar-fill"
-                    style={{ height: `${Math.round((day.count / weekPeak) * 100)}%` }}
-                  />
+          {weekTotal === 0 ? (
+            <EmptyState
+              compact
+              inline
+              icon={
+                <svg
+                  width="15"
+                  height="15"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />
+                </svg>
+              }
+              title={
+                savedJobs.length === 0
+                  ? 'No applications yet'
+                  : 'Nothing handled this week'
+              }
+              body={
+                savedJobs.length === 0
+                  ? 'Daily activity appears once the agent starts applying.'
+                  : 'Your last application was more than 7 days ago.'
+              }
+            />
+          ) : (
+            <div
+              className="week-bars"
+              aria-label="Applications per day, last 7 days"
+            >
+              {last7Days.map((day) => (
+                <div
+                  key={day.iso}
+                  className="week-bar-col"
+                  title={`${day.iso}: ${day.count}`}
+                >
+                  <div className="week-bar-track">
+                    <div
+                      className="week-bar-fill"
+                      style={{
+                        height: `${Math.round((day.count / weekPeak) * 100)}%`,
+                      }}
+                    />
+                  </div>
+                  <span className="week-bar-label">{day.weekday}</span>
                 </div>
-                <span className="week-bar-label">{day.weekday}</span>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
           <div className="week-stats-list" style={{ marginTop: 10 }}>
             <div className="week-stat-item">
               <div>
@@ -1708,9 +1864,25 @@ function HomeDashboardView({
             </button>
           </div>
           {savedJobs.length === 0 ? (
-            <div className="compact-empty">
-              No applications recorded yet. Start a run to populate your tracker.
-            </div>
+            <EmptyState
+              compact
+              inline
+              icon={
+                <svg
+                  width="15"
+                  height="15"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <path d="M4 4h16v16H4z" />
+                  <path d="M8 9h8M8 13h5" />
+                </svg>
+              }
+              title="Nothing tracked yet"
+              body="Applications recorded by the agent will show up here."
+            />
           ) : (
             <div className="recent-apps-list">
               {savedJobs.slice(0, 4).map((job) => {
@@ -1796,6 +1968,7 @@ function ApplicationsTrackerView({
   onSelectJob,
   onRefresh,
   onDeleteJob,
+  onStartRun,
 }: {
   jobs: SavedJobRow[];
   loading: boolean;
@@ -1803,6 +1976,7 @@ function ApplicationsTrackerView({
   onSelectJob: (job: SavedJobRow | null) => void;
   onRefresh: () => void;
   onDeleteJob: (id: string) => void;
+  onStartRun: () => void;
 }) {
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<
@@ -1964,14 +2138,46 @@ function ApplicationsTrackerView({
 
       <div className="tracker-table-wrap">
         {filtered.length === 0 ? (
-          <div className="matrix-empty" style={{ padding: '36px 20px' }}>
-            <p className="matrix-empty-title">No applications found</p>
-            <p className="matrix-empty-body">
-              {jobs.length === 0
-                ? 'Launch an application batch from the Run screen to start tracking your applications here.'
-                : 'No rows match your current search filter.'}
-            </p>
-          </div>
+          jobs.length === 0 ? (
+            <EmptyState
+              icon={
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                >
+                  <rect x="3" y="5" width="18" height="15" rx="2.5" />
+                  <path d="M3 10h18M8 3v4M16 3v4" />
+                </svg>
+              }
+              title="No applications yet"
+              body="Every role the agent opens or submits is recorded here. Start a run to fill this tracker."
+              actionLabel="Go to Run"
+              onAction={onStartRun}
+            />
+          ) : (
+            <EmptyState
+              compact
+              icon={
+                <svg
+                  width="17"
+                  height="17"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <circle cx="11" cy="11" r="7" />
+                  <path d="M20 20l-3.2-3.2" />
+                </svg>
+              }
+              title="No matching applications"
+              body="No tracked application matches this search and filter combination."
+            />
+          )
         ) : (
           <table className="tracker-table">
             <thead>
@@ -2041,19 +2247,22 @@ function ReviewQueueView({
   onOpenJob,
   onSkipJob,
   onInspectJob,
+  onStartRun,
 }: {
   jobs: SavedJobRow[];
   onOpenJob: (job: SavedJobRow) => void;
   onSkipJob: (id: string) => void;
   onInspectJob: (job: SavedJobRow) => void;
+  onStartRun: () => void;
 }) {
   return (
     <div className="billing-panel">
       <header className="billing-header">
         <div>
           <h2 className="billing-title">
-            {jobs.length} application{jobs.length === 1 ? '' : 's'} need your
-            review
+            {jobs.length === 0
+              ? 'Review Queue'
+              : `${jobs.length} application${jobs.length === 1 ? '' : 's'} need your review`}
           </h2>
           <p className="billing-subtitle">
             Roles prepared in Approve Each mode or awaiting final confirmation
@@ -2063,15 +2272,24 @@ function ReviewQueueView({
       </header>
 
       {jobs.length === 0 ? (
-        <div className="bento-card" style={{ textAlign: 'center', padding: 32 }}>
-          <h3 style={{ margin: '0 0 6px', fontSize: '15px' }}>
-            Review queue is all clear
-          </h3>
-          <p style={{ margin: 0, fontSize: '12.5px', color: '#94a3b8' }}>
-            Any application that pauses for your review before submission will
-            appear here.
-          </p>
-        </div>
+        <EmptyState
+          icon={
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+            >
+              <path d="M20 6L9 17l-5-5" />
+            </svg>
+          }
+          title="Review queue is all clear"
+          body="Applications that pause for your approval before submission appear here. Nothing is waiting on you."
+          actionLabel="Go to Run"
+          onAction={onStartRun}
+        />
       ) : (
         <div className="review-queue-list">
           {jobs.map((job) => (

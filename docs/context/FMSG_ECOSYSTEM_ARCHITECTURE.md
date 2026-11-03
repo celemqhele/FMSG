@@ -89,9 +89,15 @@
 - [`src/apps/fmsg-agents/docs/changelog/UNRELEASED.md`](../../src/apps/fmsg-agents/docs/changelog/UNRELEASED.md) — Active change collector between releases.
 - [`src/apps/fmsg-agents/docs/changelog/README.md`](../../src/apps/fmsg-agents/docs/changelog/README.md) — Git diff playbook and semver rules.
 
+### FMSG Agents Incident Chains (`src/apps/fmsg-agents/docs/context/`)
+Kept inside the sub-project so agent context never mixes with website context (moved out of `.opencode/context/fmsg-agents/` on 2026-11-03).
+- [`agent-framework-v0.3.0_2026-10-30.md`](../../src/apps/fmsg-agents/docs/context/agent-framework-v0.3.0_2026-10-30.md) — `v0.3.0` framework: semver/OTA skeleton, config, auth.
+- [`agent-release-v0.6.0_2026-11-02.md`](../../src/apps/fmsg-agents/docs/context/agent-release-v0.6.0_2026-11-02.md) — `v0.4.0`→`v0.6.0`: auth failure, zero-PII device key, live engine, Paystack.
+- [`fmsg-agents-ui-redesign_2026-11-03.md`](../../src/apps/fmsg-agents/docs/context/fmsg-agents-ui-redesign_2026-11-03.md) — `v0.7.0` mockup redesign, secret vault, bundles.
+- [`fmsg-agents-visual-fidelity_2026-11-03.md`](../../src/apps/fmsg-agents/docs/context/fmsg-agents-visual-fidelity_2026-11-03.md) — `v0.7.1` display type hierarchy, hero rebuild, empty states, OTA notes.
+
 ### Historical Incident Chains (`.opencode/context/`)
 - `.opencode/context/ats-scoring/` — Deterministic ATS scoring engine, pgvector RRF fusion, AI cascade fallbacks.
 - `.opencode/context/search-pipeline/` — Search profile persistence, PF 4-round career ladder, location-scope filtering, streaming pipeline.
 - `.opencode/context/job-boards/` — Static job cards, category boards, and SEO detail pages.
 - `.opencode/context/supabase-access/` — `curl.exe` direct REST/Storage/Auth workflow and PostgREST schema-cache notes.
-- `.opencode/context/fmsg-agents/` — Session-level notes for `v0.3.0`–`v0.6.0`.
