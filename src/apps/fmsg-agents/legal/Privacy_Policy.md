@@ -1,6 +1,6 @@
 PRIVACY POLICY
 FMSG AGENTS DESKTOP APPLICATION
-VERSION 0.7.2 - EFFECTIVE 2026-11-03
+VERSION 0.8.0 - EFFECTIVE 2026-11-03
 PROVIDER: FMSG (FIND ME SOME JOBS)
 
 ------------------------------------------------------------------------

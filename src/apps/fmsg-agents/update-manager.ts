@@ -738,18 +738,19 @@ export function verifyStartupSlotHealth(customBaseDir?: string): {
   if (state.installed_version !== APP_VERSION) {
     state.installed_version = APP_VERSION;
     state.launch_count_for_version = 1;
-    if (
-      !state.pending_health_check &&
-      fs.existsSync(activeDir) &&
-      semverToCode(APP_VERSION) >= semverToCode(state.active_slot_version || '0.0.0')
-    ) {
+    if (!state.pending_health_check && fs.existsSync(activeDir)) {
       try {
         fs.rmSync(activeDir, { recursive: true, force: true });
       } catch {
         // ignore
       }
-      state.active_slot_version = APP_VERSION;
     }
+    // The packaged main process now IS APP_VERSION. A slot left over from an
+    // earlier renderer must never keep the version chip behind the installed
+    // build (v0.7.1 deferred bug: the chip lagged one release after an
+    // installer upgrade because this assignment was gated on activeDir).
+    state.active_slot_version = APP_VERSION;
+    state.backup_slot_version = null;
   } else {
     state.launch_count_for_version += 1;
   }
@@ -950,17 +951,29 @@ export async function downloadAndApplyVerifiedRelease(
         throw new Error(`Non-HTTPS download URL rejected: ${fileUrl}`);
       }
 
+      // External manifests (e.g. GitHub Releases) must NOT receive Supabase
+      // credentials: presigned object-store URLs reject a conflicting
+      // Authorization header, and the bucket key has no business leaving the
+      // project. Only bucket-relative URLs carry the anon key.
+      const isExternalUrl = Boolean(entry.download_url);
+      const requestHeaders: Record<string, string> = {
+        Accept: 'application/octet-stream',
+      };
+      if (!isExternalUrl) {
+        requestHeaders.apikey = SUPABASE_ANON_KEY;
+        requestHeaders.Authorization = `Bearer ${SUPABASE_ANON_KEY}`;
+      }
+
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 30000);
+      // Large installers (~92 MB) need far more than 30s on consumer links.
+      const timeoutMs = isExternalUrl ? 15 * 60 * 1000 : 2 * 60 * 1000;
+      const timeout = setTimeout(() => controller.abort(), timeoutMs);
       let fileBuf: Buffer;
 
       try {
         const res = await fetch(fileUrl, {
           method: 'GET',
-          headers: {
-            apikey: SUPABASE_ANON_KEY,
-            Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-          },
+          headers: requestHeaders,
           signal: controller.signal,
         });
 

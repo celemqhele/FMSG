@@ -21,6 +21,18 @@ const path = require('path');
 const APP_ROOT = path.resolve(__dirname, '../..');
 const REPO_ROOT = path.resolve(APP_ROOT, '../../..');
 
+// Read the version from the repository instead of hardcoding it, so this
+// harness keeps asserting the real released string after every bump.
+const APP_VERSION = (() => {
+  try {
+    const cfg = fs.readFileSync(path.join(APP_ROOT, 'config.ts'), 'utf8');
+    const m = cfg.match(/APP_VERSION\s*=\s*'([^']+)'/);
+    return m ? m[1] : '0.0.0';
+  } catch {
+    return '0.0.0';
+  }
+})();
+
 let playwrightPkg;
 try {
   playwrightPkg = require(path.join(REPO_ROOT, 'node_modules', 'playwright'));
@@ -78,9 +90,10 @@ function buildMockScript() {
   const user = { id:'u1', email:'mqhele03@gmail.com', emailVerified:true, accountStatus:'active', name:'Mqhele', surname:'Cele' };
   const noop = async () => ({ ok:true });
   window.__openedUrls = [];
+  window.__ipcCalls = [];
 
   window.electronAPI = {
-    getStartupStatus: async () => ({ configValid:true, activeVersion:'0.7.2', installedVersion:'0.7.2', browserStatus:{available:true,browserName:'Google Chrome',message:'Google Chrome ready'}, deviceKeyStatus:{ok:true, deviceId:'dev_test'}, updateState:{channel:'stable',lastCheckAt:'2026-11-03T08:30:00.000Z',lastCheckStatus:'Up to date'}, logInfo:{} }),
+    getStartupStatus: async () => ({ configValid:true, activeVersion:'${APP_VERSION}', installedVersion:'${APP_VERSION}', browserStatus:{available:true,browserName:'Google Chrome',message:'Google Chrome ready'}, deviceKeyStatus:{ok:true, deviceId:'dev_test'}, updateState:{channel:'stable',lastCheckAt:'2026-11-03T08:30:00.000Z',lastCheckStatus:'Up to date'}, logInfo:{} }),
     runStartupUpdateFlow: async () => ({ available:false }),
     onUpdateProgress: () => () => {},
     restoreSession: async () => authed ? { ok:true, user, profiles } : { ok:false },
@@ -97,7 +110,7 @@ function buildMockScript() {
     startCheckout: noop, verifyCheckout: noop,
     getBillingSummary: async () => ({ ok:true, plan:'free' }),
     setPreventSleep: noop, checkForUpdates: async () => ({ available:false }), applyUpdate: noop,
-    getUpdateSettings: async () => ({ currentVersion:'0.7.2', installedVersion:'0.7.2', channel:'stable', lastCheckAt:'2026-11-03T08:30:00.000Z', lastCheckStatus:'Up to date', deviceId:'dev_test', deviceKeyOk:true, browserStatus:{available:true,browserName:'Google Chrome',message:'Google Chrome ready'} }),
+    getUpdateSettings: async () => ({ currentVersion:'${APP_VERSION}', installedVersion:'${APP_VERSION}', channel:'stable', lastCheckAt:'2026-11-03T08:30:00.000Z', lastCheckStatus:'Up to date', deviceId:'dev_test', deviceKeyOk:true, browserStatus:{available:true,browserName:'Google Chrome',message:'Google Chrome ready'} }),
     setUpdateChannel: noop, resetDeviceKey: noop,
     getLegalDocument: async (doc) => ({ ok:true, content: legalDocs[doc] || legalDocs.terms }),
     openExternalUrl: async (url) => { window.__openedUrls.push(url); return { ok:true }; },
@@ -110,8 +123,8 @@ function buildMockScript() {
     saveAgentPrefs: noop,
     listSavedJobs: async () => ({ ok:true, jobs }),
     deleteSavedJob: async (id) => { jobs = jobs.filter(j => j.id !== id); return { ok:true }; },
-    updateSavedJobStatus: async (id, status) => { jobs = jobs.map(j => j.id === id ? { ...j, review_status: status } : j); return { ok:true }; },
-    archiveSavedJob: noop,
+    updateSavedJobStatus: async (id, status, summary) => { window.__ipcCalls.push({ call:'updateSavedJobStatus', id, status, summary }); jobs = jobs.map(j => j.id === id ? { ...j, review_status: status } : j); return { ok:true }; },
+    archiveSavedJob: async (id, archived) => { window.__ipcCalls.push({ call:'archiveSavedJob', id, archived }); return { ok:true }; },
     sendDeleteAccountCode: noop, confirmDeleteAccount: noop,
     logUIEvent: noop, logRendererError: noop
   };
@@ -196,6 +209,21 @@ async function main() {
     );
     check('Approve opens the employer posting (RV-01)', opened >= 1, `${opened} url(s) opened`);
 
+    const approveIpc = await page.evaluate(
+      () =>
+        (window.__ipcCalls || []).filter(
+          (c) => c.call === 'updateSavedJobStatus' && c.status === 'approved'
+        )
+    );
+    check(
+      'Approve persists through the status IPC channel (P1B.2)',
+      approveIpc.length >= 1 &&
+        approveIpc[0].id === 'j3' &&
+        typeof approveIpc[0].summary === 'string' &&
+        /Approved in Review Queue/.test(approveIpc[0].summary),
+      JSON.stringify(approveIpc[0] || {}).slice(0, 120)
+    );
+
     // Approved record persists in Applications with the Approved status
     await page.locator('.sidebar-nav-item').filter({ hasText: 'Applications' }).first().click();
     await page.waitForTimeout(350);
@@ -217,6 +245,11 @@ async function main() {
     await page.waitForTimeout(400);
     const afterUndo = await page.locator('.review-queue-card').count();
     check('Undo restores the skipped item (RV-03)', afterUndo === beforeSkip, `${afterSkip} -> ${afterUndo}`);
+
+    const skipIpc = await page.evaluate(() => window.__ipcCalls || []);
+    const archivedTrue = skipIpc.filter((c) => c.call === 'archiveSavedJob' && c.archived === true).length;
+    const archivedFalse = skipIpc.filter((c) => c.call === 'archiveSavedJob' && c.archived === false).length;
+    check('Skip archives through IPC and Undo un-archives it (P1B.2)', archivedTrue >= 1 && archivedFalse >= 1, `archived=${archivedTrue}, restored=${archivedFalse}`);
 
     // ── AP-05 Remove + Undo, AP-01 sort, AP-08 search clear ─────────────────
     await page.locator('.sidebar-nav-item').filter({ hasText: 'Applications' }).first().click();
@@ -269,8 +302,8 @@ async function main() {
     );
     check(
       'Terms shows the current app version (ST-12)',
-      Boolean(legal && /VERSION 0\.7\.2/i.test(legal.text)),
-      legal ? legal.text.split('\n')[0] : ''
+      Boolean(legal && new RegExp(`VERSION ${APP_VERSION.replace(/\./g, '\\.')}`, 'i').test(legal.text)),
+      `expected ${APP_VERSION}`
     );
     await page.keyboard.press('Escape');
     await page.waitForTimeout(250);

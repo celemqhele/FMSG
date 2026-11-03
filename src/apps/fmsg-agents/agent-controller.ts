@@ -1689,6 +1689,11 @@ export class AgentRunner {
         match_summary: trimText(summary || job.reason || '', 500),
         job_url: job.url,
         full_spec: trimText(job.description, 4000),
+        // Explicit status: a confirmed submission enters the tracker as
+        // `applied`; anything prepared but not submitted needs review (RV-01).
+        review_status: /^applied via fmsg agents/i.test(summary || '')
+          ? 'applied'
+          : 'needs_review',
       });
     } catch (err: any) {
       logEvent('agent_persist', 'saved_job_failed', { error: err?.message }, 'warn');

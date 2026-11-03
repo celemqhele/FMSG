@@ -93,6 +93,18 @@ const api = {
   getAgentPrefs: () => ipcRenderer.invoke('agent-prefs-get'),
   saveAgentPrefs: (prefs: any) => ipcRenderer.invoke('agent-prefs-save', prefs),
   listSavedJobs: () => ipcRenderer.invoke('saved-jobs-list'),
+  updateSavedJobStatus: (
+    id: string,
+    reviewStatus: 'applied' | 'needs_review' | 'approved' | 'submitted' | 'skipped',
+    matchSummary?: string
+  ) =>
+    ipcRenderer.invoke('saved-jobs-update-status', {
+      id,
+      reviewStatus,
+      matchSummary,
+    }),
+  archiveSavedJob: (id: string, archived: boolean) =>
+    ipcRenderer.invoke('saved-jobs-archive', { id, archived }),
   deleteSavedJob: (id: string) =>
     ipcRenderer.invoke('saved-jobs-delete', { id }),
   sendDeleteAccountCode: () => ipcRenderer.invoke('account-send-delete-code'),

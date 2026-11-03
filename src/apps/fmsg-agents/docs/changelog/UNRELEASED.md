@@ -6,13 +6,14 @@
 
 ## Status
 
-`v0.7.2` (Phase 1A) is implemented, verified and logged in [`2026-11-03_v0.7.2_trust-accessibility-and-modal-shell.md`](./2026-11-03_v0.7.2_trust-accessibility-and-modal-shell.md). Its OTA upload is pending distribution approval.
+- **`v0.7.2`** (Phase 1A, renderer-only) — implemented and verified; OTA upload withheld pending distribution approval. See [`2026-11-03_v0.7.2_trust-accessibility-and-modal-shell.md`](./2026-11-03_v0.7.2_trust-accessibility-and-modal-shell.md).
+- **`v0.8.0`** (Phase 1B, installer) — implemented, built (`FMSG Agents Setup 0.8.0.exe`) and verified locally; **Migration 039 must be applied in the Supabase SQL editor before distribution**. See [`2026-11-03_v0.8.0_stateful-safety-and-review-status.md`](./2026-11-03_v0.8.0_stateful-safety-and-review-status.md).
 
-Active work: **Phase 1B (`v0.8.0`)** — Migration 039 (`review_status`, `archived_at`, RLS `UPDATE`), IPC/preload contract, agent insert status, startup-slot version fix and the external `download_url` download fix.
+Active work: **Phase 2 (`v0.9.0`)** — token/CSS split, shared primitives, view extraction, onboarding rebuild, responsive system.
 
 ---
 
-## Phase 1B — Stateful Safety Release (`P1B.1`–`P1B.8`)
+## Phase 2 — Design System, IA and Responsive (`P2.1`–`P2.12`)
 
 ### Added
 - *(in progress)*
@@ -25,9 +26,3 @@ Active work: **Phase 1B (`v0.8.0`)** — Migration 039 (`review_status`, `archiv
 
 ### Infrastructure Changes
 - *(in progress)*
-
----
-
-## Resolved in `v0.7.2` — Version chip lag after an installer upgrade
-
-Fixed for `v0.8.0` instead of `v0.7.2`, because the fix lives in the Electron main process (`update-manager.ts`) and `v0.7.2` had to remain renderer-only to stay OTA-deliverable. See `P1B.7` in [`docs/audits/2026-11-03_fmsg-agents-remediation-tracker.md`](../../../../../docs/audits/2026-11-03_fmsg-agents-remediation-tracker.md).

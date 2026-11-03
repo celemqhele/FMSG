@@ -18,6 +18,23 @@ const BUNDLED_LEGAL_DOCS: Record<LegalDocKey, string> = {
 };
 
 /**
+ * The running app version is supplied by the renderer once `get-startup-status`
+ * answers. It wins over the version stamped in the markdown so a legal document
+ * can never lag the app (ST-12) — even if the markdown bump is forgotten.
+ */
+let activeAppVersion: string | null = null;
+
+export function setActiveAppVersion(version?: string | null): void {
+  const clean = (version || '').replace(/^v/i, '').trim();
+  activeAppVersion = clean || null;
+}
+
+function versionFromDocument(raw: string): string | null {
+  const m = raw.match(/VERSION\s+(\d+\.\d+\.\d+)/i);
+  return m ? m[1] : null;
+}
+
+/**
  * Returns the bundled legal markdown synchronized with the active application version
  * so legal documents never lag behind an OTA or installer release (ST-12).
  */
@@ -26,7 +43,11 @@ export function getBundledLegalMarkdown(
   activeVersion?: string
 ): string {
   const raw = BUNDLED_LEGAL_DOCS[doc] || BUNDLED_LEGAL_DOCS.terms;
-  const cleanVer = (activeVersion || '0.7.2').replace(/^v/i, '').trim() || '0.7.2';
+  const cleanVer = (
+    (activeVersion || activeAppVersion || versionFromDocument(raw) || '0.0.0')
+      .replace(/^v/i, '')
+      .trim() || '0.0.0'
+  );
   return raw.replace(
     /VERSION\s+\d+\.\d+\.\d+\s+-\s+EFFECTIVE\s+\d{4}-\d{2}-\d{2}/gi,
     `VERSION ${cleanVer} - EFFECTIVE 2026-11-03`

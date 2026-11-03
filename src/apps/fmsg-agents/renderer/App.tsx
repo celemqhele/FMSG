@@ -13,6 +13,7 @@ import {
   formatZar,
   computeAllowanceUsage,
 } from './lib/format';
+import { setActiveAppVersion } from './lib/legal';
 import {
   ApplicationStatus,
   LocalJobOverride,
@@ -351,6 +352,11 @@ function AppInner() {
     loadPersistedAgentPrefs();
   }, [authenticated, refreshSavedJobs, loadPersistedAgentPrefs]);
 
+  // Keep bundled legal documents stamped with the running version (ST-12).
+  useEffect(() => {
+    if (appVersion) setActiveAppVersion(appVersion);
+  }, [appVersion]);
+
   // One-time, version-aware welcome notification (NT-01, NT-04): shown once per
   // installed version, never a hardcoded stale string, never an internal memo.
   useEffect(() => {
@@ -598,17 +604,34 @@ function AppInner() {
 
   // ── Honest Approve / Skip / Archive Semantics (RV-01, RV-03, AP-05) ──────
   const applyStatusOverride = useCallback(
-    (job: SavedJobRecord, patch: Omit<LocalJobOverride, 'updated_at'>) => {
-      // Optimistic local override (persists across restarts until backend sync)
+    (
+      job: SavedJobRecord,
+      patch: Omit<LocalJobOverride, 'updated_at'>,
+      summaryNote?: string
+    ) => {
+      // Optimistic local override keeps the UI correct even before Migration
+      // 039 lands; the IPC calls below become authoritative once it does.
       const next = saveLocalJobOverride(job.id, patch);
       setJobOverrides(next);
-      // Backend sync when available (Phase 1B IPC contract)
+
+      const api = window.electronAPI as any;
       if (
         patch.review_status &&
-        typeof (window.electronAPI as any)?.updateSavedJobStatus === 'function'
+        typeof api?.updateSavedJobStatus === 'function'
       ) {
-        (window.electronAPI as any)
-          .updateSavedJobStatus(job.id, patch.review_status)
+        const nextSummary = summaryNote
+          ? `${job.match_summary ? `${job.match_summary} ` : ''}${summaryNote}`.slice(0, 500)
+          : undefined;
+        api
+          .updateSavedJobStatus(job.id, patch.review_status, nextSummary)
+          .catch(() => {});
+      }
+      if (
+        patch.archived_at !== undefined &&
+        typeof api?.archiveSavedJob === 'function'
+      ) {
+        api
+          .archiveSavedJob(job.id, Boolean(patch.archived_at))
           .catch(() => {});
       }
     },
@@ -617,7 +640,12 @@ function AppInner() {
 
   const handleApproveJob = useCallback(
     (job: SavedJobRecord) => {
-      applyStatusOverride(job, { review_status: 'approved', archived_at: null });
+      const today = formatDateZA(new Date());
+      applyStatusOverride(
+        job,
+        { review_status: 'approved', archived_at: null },
+        `Approved in Review Queue on ${today}.`
+      );
       window.electronAPI?.openExternalUrl?.(job.job_url);
       setSavedJobs((prev) =>
         prev.map((j) =>
@@ -636,10 +664,15 @@ function AppInner() {
 
   const handleSkipJob = useCallback(
     (job: SavedJobRecord) => {
-      applyStatusOverride(job, {
-        review_status: 'skipped',
-        archived_at: new Date().toISOString(),
-      });
+      const today = formatDateZA(new Date());
+      applyStatusOverride(
+        job,
+        {
+          review_status: 'skipped',
+          archived_at: new Date().toISOString(),
+        },
+        `Skipped in Review Queue on ${today}.`
+      );
       setSavedJobs((prev) =>
         prev.map((j) =>
           j.id === job.id
@@ -717,7 +750,12 @@ function AppInner() {
 
   const handleMarkSubmitted = useCallback(
     (job: SavedJobRecord) => {
-      applyStatusOverride(job, { review_status: 'submitted', archived_at: null });
+      const today = formatDateZA(new Date());
+      applyStatusOverride(
+        job,
+        { review_status: 'submitted', archived_at: null },
+        `Marked submitted manually on ${today}.`
+      );
       setSavedJobs((prev) =>
         prev.map((j) =>
           j.id === job.id

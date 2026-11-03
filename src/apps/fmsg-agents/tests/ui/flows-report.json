@@ -1,6 +1,6 @@
 {
-  "timestamp": "2026-11-03T11:08:50.595Z",
-  "total": 22,
+  "timestamp": "2026-11-03T11:17:00.198Z",
+  "total": 24,
   "failed": 0,
   "results": [
     {
@@ -48,6 +48,11 @@
       "detail": "1 url(s) opened"
     },
     {
+      "name": "Approve persists through the status IPC channel (P1B.2)",
+      "pass": true,
+      "detail": "{\"call\":\"updateSavedJobStatus\",\"id\":\"j3\",\"status\":\"approved\",\"summary\":\"Opened via FMSG Agents on 31 Oct 2026. Not auto-"
+    },
+    {
       "name": "Approved record persists in Applications (RV-01)",
       "pass": true,
       "detail": "1 approved row(s)"
@@ -66,6 +71,11 @@
       "name": "Undo restores the skipped item (RV-03)",
       "pass": true,
       "detail": "1 -> 2"
+    },
+    {
+      "name": "Skip archives through IPC and Undo un-archives it (P1B.2)",
+      "pass": true,
+      "detail": "archived=1, restored=2"
     },
     {
       "name": "Remove archives the row (AP-05)",
@@ -95,12 +105,12 @@
     {
       "name": "Terms shows the current app version (ST-12)",
       "pass": true,
-      "detail": "TERMS OF SERVICEFMSG AGENTS DESKTOP APPLICATIONVERSION 0.7.2 - EFFECTIVE 2026-11-03PROVIDER: FMSG (FIND ME SOME JOBS)1. AGREEMENT TO TERMS1.1 By installing, accessing, or using the FMSG Agents desktop application (\"Application\"), You (\"User\", \"You\") agree to be bound by these Terms of Service (\"Terms\"), together with our End User License Agreement and Privacy Policy. If You do not agree, do not in"
+      "detail": "expected 0.8.0"
     },
     {
       "name": "Notifications never show a stale version (NT-01)",
       "pass": true,
-      "detail": "Notifications Clear all Close You're on FMSG Agents v0.7.2 1"
+      "detail": "Notifications Clear all Close You're on FMSG Agents v0.8.0 1"
     },
     {
       "name": "Opening notifications clears the unread badge (NT-03)",

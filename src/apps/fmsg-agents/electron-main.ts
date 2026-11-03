@@ -925,17 +925,120 @@ ipcMain.handle('saved-jobs-list', async () => {
     const { data, error } = await supabase
       .from('saved_jobs')
       .select(
-        'id, profile_id, job_title, company, location, estimated_salary, match_score, match_summary, job_url, full_spec, created_at'
+        'id, profile_id, job_title, company, location, estimated_salary, match_score, match_summary, job_url, full_spec, created_at, review_status, archived_at'
       )
       .eq('user_id', user.id)
+      .is('archived_at', null)
       .order('created_at', { ascending: false })
       .limit(200);
-    if (error) return { ok: false, jobs: [], error: error.message };
-    return { ok: true, jobs: data || [] };
+    if (error) {
+      // Tolerate a not-yet-applied Migration 039: fall back to the legacy column set
+      if (/review_status|archived_at/.test(error.message || '')) {
+        const legacy = await supabase
+          .from('saved_jobs')
+          .select(
+            'id, profile_id, job_title, company, location, estimated_salary, match_score, match_summary, job_url, full_spec, created_at'
+          )
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(200);
+        if (legacy.error) {
+          return { ok: false, jobs: [], error: legacy.error.message };
+        }
+        return {
+          ok: true,
+          jobs: legacy.data || [],
+          schema: 'legacy',
+        };
+      }
+      return { ok: false, jobs: [], error: error.message };
+    }
+    return { ok: true, jobs: data || [], schema: 'v039' };
   } catch (err: any) {
     return { ok: false, jobs: [], error: err?.message };
   }
 });
+
+const REVIEW_STATUSES = [
+  'applied',
+  'needs_review',
+  'approved',
+  'submitted',
+  'skipped',
+] as const;
+type ReviewStatus = (typeof REVIEW_STATUSES)[number];
+
+// IPC: Update review status (Approve / Mark submitted / Skip) — never deletes
+ipcMain.handle(
+  'saved-jobs-update-status',
+  async (
+    _event,
+    payload: { id: string; reviewStatus: ReviewStatus; matchSummary?: string }
+  ) => {
+    const token = getActiveSessionAccessToken();
+    const user = getActiveSessionUser();
+    if (!token || !user?.id || !payload?.id) {
+      return { ok: false, error: 'Not signed in.' };
+    }
+    if (!REVIEW_STATUSES.includes(payload.reviewStatus)) {
+      return { ok: false, error: 'Unknown review status.' };
+    }
+    try {
+      const supabase = createAnonSupabaseClient(token);
+      const patch: Record<string, unknown> = {
+        review_status: payload.reviewStatus,
+      };
+      if (typeof payload.matchSummary === 'string') {
+        patch.match_summary = payload.matchSummary.slice(0, 500);
+      }
+      const { data, error } = await supabase
+        .from('saved_jobs')
+        .update(patch)
+        .eq('id', payload.id)
+        .eq('user_id', user.id)
+        .select('id, review_status, archived_at')
+        .maybeSingle();
+      if (error) {
+        logIPC('saved-jobs-update-status', 'error', { error: error.message });
+        return { ok: false, error: error.message };
+      }
+      return { ok: true, job: data };
+    } catch (err: any) {
+      return { ok: false, error: err?.message };
+    }
+  }
+);
+
+// IPC: Archive / restore a record (reversible removal, no data loss)
+ipcMain.handle(
+  'saved-jobs-archive',
+  async (_event, payload: { id: string; archived: boolean }) => {
+    const token = getActiveSessionAccessToken();
+    const user = getActiveSessionUser();
+    if (!token || !user?.id || !payload?.id) {
+      return { ok: false, error: 'Not signed in.' };
+    }
+    try {
+      const supabase = createAnonSupabaseClient(token);
+      const { data, error } = await supabase
+        .from('saved_jobs')
+        .update({
+          archived_at: payload.archived ? new Date().toISOString() : null,
+        })
+        .eq('id', payload.id)
+        .eq('user_id', user.id)
+        .select('id, review_status, archived_at')
+        .maybeSingle();
+      if (error) {
+        logIPC('saved-jobs-archive', 'error', { error: error.message });
+        return { ok: false, error: error.message };
+      }
+      return { ok: true, job: data };
+    } catch (err: any) {
+      return { ok: false, error: err?.message };
+    }
+  }
+);
 
 ipcMain.handle('saved-jobs-delete', async (_event, payload: { id: string }) => {
   const token = getActiveSessionAccessToken();
