@@ -1,0 +1,163 @@
+{
+  "id": "fmsg-agents-v0.7.0-redesign_2026-11-03_02-00-00",
+  "status": "INCOMPLETE",
+  "created": "2026-11-03T00:00:00Z",
+  "updated": "2026-11-03T01:05:00Z",
+  "objective": "Redesign the FMSG Agents desktop UI to the mockup sheet as a single v0.7.0 release, shipping the agreed secrets/autofill and application-bundle billing changes in the same update, then push it live so installed apps auto-update over OTA.",
+  "plan": [
+    "Record the design spec, mockup copy and screen-coverage audit (docs/design/DESIGN_SYSTEM.md)",
+    "Add the local secret vault, rules/answer bank and agent preferences (secret-vault.ts)",
+    "Add pause/resume, vault-first sign-in and PAYG rates to the agent controller",
+    "Frameless window + custom title bar + window-control IPC in electron-main",
+    "Rebuild the renderer around the sidebar shell with every sheet screen",
+    "Agent-only billing catalogue and price whitelist in the three /api/agent/billing routes",
+    "Bump to 0.7.0, write the version log, reset UNRELEASED, update INDEX",
+    "Build the installer, sign and upload stable+beta OTA manifests",
+    "Commit, tag v0.7.0, push to production, confirm Vercel Preview-vs-Production",
+    "Update the context file and hand the app over for the visual pass"
+  ],
+  "actions": [
+    {
+      "step": 1,
+      "description": "Wrote docs/design/DESIGN_SYSTEM.md (tokens, 16 screen specs, coverage matrix, 14 phases) and copied the mockup sheet to docs/design/reference/screens-sheet.jpg.",
+      "files": ["docs/design/DESIGN_SYSTEM.md", "docs/design/reference/screens-sheet.jpg"],
+      "done": true,
+      "key_decision": "Spec first so sizing, palette and screen coverage were agreed before any code moved; the sheet is layout/mood only because it is a generated image."
+    },
+    {
+      "step": 2,
+      "description": "Created secret-vault.ts: keytar-backed Credential Manager storage with an AES-256-GCM fallback, key-name normalisation (LINKEDIN_PASSWORD, _2 suffix for extra accounts), one-domain-per-name lock, fillSecretOnVerifiedDomain that re-checks the live page hostname and blurs password inputs before screenshots, plus screening rules, answer bank and agent prefs (costCap defaults to 0).",
+      "files": ["src/apps/fmsg-agents/secret-vault.ts", "src/apps/fmsg-agents/tsconfig.main.json"],
+      "done": true,
+      "key_decision": "One fill_secret(name) tool instead of free-form scripts so a password can never be read back by the renderer, the model, or the logs."
+    },
+    {
+      "step": 3,
+      "description": "agent-controller.ts: added pause()/resume()/waitIfPaused(), vault-first sign-in handling carrying secretKeyName/allowedDomain/countdownSeconds on attention events, Answer Bank lookup in field mapping, R40 PAYG with 40/100/250/500 thresholds and bundle rates R35/R30/R25/R22.",
+      "files": ["src/apps/fmsg-agents/agent-controller.ts"],
+      "done": true,
+      "key_decision": "Pausing between postings (not mid-page) keeps the same run resumable after payment without re-navigating."
+    },
+    {
+      "step": 4,
+      "description": "electron-main.ts: frame:false + #040613 background, window-minimize/maximize/close, pause/resume/emergency-stop, secrets-*, rules-*, agent-prefs-*, saved-jobs-list/delete, account delete-code/confirm; preload.ts exposes all of it.",
+      "files": ["src/apps/fmsg-agents/electron-main.ts", "src/apps/fmsg-agents/preload.ts"],
+      "done": true,
+      "key_decision": "Emergency stop resolves every pending attention as skip, so it can never submit an application."
+    },
+    {
+      "step": 5,
+      "description": "Rebuilt the renderer: sidebar shell, Home dashboard, Applications tracker+detail, Review queue, Profiles/Rules, Account, Run setup modal, 4-step onboarding, notifications popover, verify banner; LiveLog with 6-stage pipeline and the 10:00 Needs You ring; BillingPanel with 4 bundles and R0 cap; SettingsPanel with the vault; design-system.css retokenised to the mockup palette and px scale.",
+      "files": [
+        "src/apps/fmsg-agents/renderer/App.tsx",
+        "src/apps/fmsg-agents/renderer/components/LiveLog.tsx",
+        "src/apps/fmsg-agents/renderer/components/BillingPanel.tsx",
+        "src/apps/fmsg-agents/renderer/components/SettingsPanel.tsx",
+        "src/apps/fmsg-agents/renderer/design-system.css"
+      ],
+      "done": true,
+      "key_decision": "Dock removed entirely rather than kept behind a flag: the sheet has no dock and a flag would leave two navigations in the bundle."
+    },
+    {
+      "step": 6,
+      "description": "Fixed three issues found while verifying: dashboard sparklines were hardcoded (replaced with real per-day counts from stored records), auth/modals covered the 36px title bar (pinned to inset 36px 0 0 0), and the renderer carried hardcoded version fallbacks (now read from get-startup-status / get-update-settings).",
+      "files": [
+        "src/apps/fmsg-agents/renderer/App.tsx",
+        "src/apps/fmsg-agents/renderer/components/SettingsPanel.tsx",
+        "src/apps/fmsg-agents/renderer/components/UpdateProgress.tsx",
+        "src/apps/fmsg-agents/renderer/design-system.css"
+      ],
+      "done": true,
+      "key_decision": "frame:false makes the renderer own window chrome, so every full-screen state has to sit inside .app-root-frame or the window becomes undraggable."
+    },
+    {
+      "step": 7,
+      "description": "Billing routes now serve the agent catalogue only: plans returns the four bundles + R40 PAYG + R0 cap + 5-app bonus; checkout/verify use a PURCHASABLE whitelist with their own prices.",
+      "files": [
+        "src/app/api/agent/billing/plans/route.ts",
+        "src/app/api/agent/billing/checkout/route.ts",
+        "src/app/api/agent/billing/verify/route.ts"
+      ],
+      "done": true,
+      "key_decision": "Whitelist by plan name in the route is what keeps desktop bundle pricing separate from the website plan list; nothing on the website itself changed."
+    },
+    {
+      "step": 8,
+      "description": "Bumped config.ts and package.json to 0.7.0, wrote 2026-11-03_v0.7.0_mockup-redesign-secret-vault-and-bundles.md, added the v0.7.0 row to INDEX.md and reset UNRELEASED.md to its template.",
+      "files": [
+        "src/apps/fmsg-agents/config.ts",
+        "src/apps/fmsg-agents/package.json",
+        "src/apps/fmsg-agents/docs/changelog/INDEX.md",
+        "src/apps/fmsg-agents/docs/changelog/UNRELEASED.md",
+        "src/apps/fmsg-agents/docs/changelog/2026-11-03_v0.7.0_mockup-redesign-secret-vault-and-bundles.md"
+      ],
+      "done": true,
+      "key_decision": "Minor bump (0.6.0 -> 0.7.0) per the relative-bump rule: large feature/UI change, no breaking IPC removal."
+    },
+    {
+      "step": 9,
+      "description": "Verification: npx tsc -p tsconfig.json --noEmit, npx tsc -p tsconfig.main.json --noEmit, repo-root npx tsc --noEmit, eslint on the three billing routes, and a plain esbuild renderer bundle all clean. npm run build:all produced dist/electron/FMSG Agents Setup 0.7.0.exe with the keytar native rebuild.",
+      "files": ["src/apps/fmsg-agents/dist/electron/FMSG Agents Setup 0.7.0.exe"],
+      "done": true,
+      "key_decision": "build:all, not build:renderer alone: electron-builder is what rebuilds keytar for Electron 34, and without it the vault would silently fall back to the AES file."
+    },
+    {
+      "step": 10,
+      "description": "Uploaded signed OTA manifests for 0.7.0 (min-supported 0.6.0, type required) to the stable and beta channels, then downloaded manifest.stable.sig.json back and confirmed version 0.7.0 / min_supported_version 0.6.0.",
+      "files": ["src/apps/fmsg-agents/scripts/upload-update.js"],
+      "done": true,
+      "key_decision": "Verified the manifest by reading it back out of storage rather than trusting the uploader's own output."
+    },
+    {
+      "step": 11,
+      "description": "Committed ba60675 (21 files, +7360/-1323), tagged v0.7.0 and pushed both to production. The commit had to be amended: PowerShell's Out-File utf8 wrote a BOM and the subject line began with it.",
+      "files": [],
+      "done": true,
+      "key_decision": "Re-wrote the commit message file with UTF8Encoding($false) instead of forcing a different git encoding."
+    },
+    {
+      "step": 12,
+      "description": "Deploy state: GitHub deployments show only Preview environments for ba60675 (fmsg-2 preview built successfully at 01:00:21Z). Probing https://www.findmesomejobs.co.za/api/agent/billing/plans still returns the old website plans (Seeker/Hunter/Pro), which proves the commit is not live.",
+      "files": [],
+      "done": true,
+      "key_decision": "No Vercel API token exists on this machine (.opencode/supabase-access.env holds only Supabase keys, no env var, no token in .vercel), so promotion must be done in the Vercel dashboard by the owner."
+    }
+  ],
+  "key_decisions": [
+    "Root cause of the previous UI looking unfinished: v0.6.0 was built from a written brief with no visual target; the mockup sheet is now the spec of record in docs/design/DESIGN_SYSTEM.md.",
+    "Secrets are per-domain-locked entries in Windows Credential Manager, exposed to the agent as a single fill_secret(name) tool; the value never crosses IPC, never reaches the model and is blurred before any screenshot.",
+    "Countdown expiry, Stop and Emergency Stop all resolve attention as skip, so a timeout can never submit an application.",
+    "Cost cap defaults to R0 for every account and a run started at R0 routes the user to Billing with an explicit consent prompt instead of charging silently.",
+    "Agent bundle pricing is separated from website pricing by a plan-name whitelist inside /api/agent/billing/{checkout,verify}; the public site plan list is untouched.",
+    "Deploy caveat confirmed again: a push to production produces Preview deployments only, and the live API keeps serving the previous build until the deployment is promoted in Vercel.",
+    "Background task: no watcher or dev server was left running. The only pending external state is the Vercel promotion for ba60675, which is dashboard-only because no Vercel token exists locally."
+  ],
+  "files_modified": [
+    "src/apps/fmsg-agents/renderer/App.tsx",
+    "src/apps/fmsg-agents/renderer/components/LiveLog.tsx",
+    "src/apps/fmsg-agents/renderer/components/BillingPanel.tsx",
+    "src/apps/fmsg-agents/renderer/components/SettingsPanel.tsx",
+    "src/apps/fmsg-agents/renderer/components/UpdateProgress.tsx",
+    "src/apps/fmsg-agents/renderer/design-system.css",
+    "src/apps/fmsg-agents/secret-vault.ts",
+    "src/apps/fmsg-agents/agent-controller.ts",
+    "src/apps/fmsg-agents/electron-main.ts",
+    "src/apps/fmsg-agents/preload.ts",
+    "src/apps/fmsg-agents/config.ts",
+    "src/apps/fmsg-agents/package.json",
+    "src/apps/fmsg-agents/tsconfig.main.json",
+    "src/apps/fmsg-agents/docs/changelog/INDEX.md",
+    "src/apps/fmsg-agents/docs/changelog/UNRELEASED.md",
+    "src/apps/fmsg-agents/docs/changelog/2026-11-03_v0.7.0_mockup-redesign-secret-vault-and-bundles.md",
+    "src/app/api/agent/billing/plans/route.ts",
+    "src/app/api/agent/billing/checkout/route.ts",
+    "src/app/api/agent/billing/verify/route.ts",
+    "docs/design/DESIGN_SYSTEM.md",
+    "docs/design/reference/screens-sheet.jpg",
+    ".opencode/context/fmsg-agents/fmsg-agents-ui-redesign_2026-11-03.md",
+    "AGENTS.md"
+  ],
+  "done": false,
+  "user_confirmed": false,
+  "confirmation_timestamp": null
+}
