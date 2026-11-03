@@ -115,7 +115,7 @@ Renderer-only. Revert = restore `LiveLog.tsx` + `design-system.css`.
 
 ## 17. Explicit instructions and restrictions
 
-- `IMPLEMENT ENTIRELY YOURSELF` — no Flash delegation: the restructuring is tightly coupled to the streaming event flow and the attention modal.
+- Delegation (per Argon's 2026-11-03 corrective-directive review): `LiveLog.tsx`, the tab state machine and event-flow coupling remain with Pro. The isolated workspace CSS implementation (run-page/viewport/tab rules against Pro's class contract) **may be delegated to Flash** within the boundaries recorded in the assignment file (including: not concurrent with the TASK-20261103-005 CSS sub-task). Delegation is optional.
 - **Do not copy the reference's mock data, simulated page content, fictional URLs, "60 FPS" claims, or pipeline metrics.** The reference defines structure only.
 - Do not introduce new IPC, new dependencies, or new persistence. The renderer keeps consuming the same events.
 - Do not modify the CDP streaming parameters (fps, quality, dimensions) — that belongs to BLUEPRINT-20261103-007/008 if ever needed.

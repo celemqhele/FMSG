@@ -117,7 +117,7 @@ All changes are renderer-only CSS/JSX; revert = restore the two files. No data o
 
 ## 17. Explicit instructions and restrictions
 
-- `IMPLEMENT ENTIRELY YOURSELF` — no Flash delegation; the JSX restructuring is tightly coupled to App state.
+- Delegation (per Argon's 2026-11-03 corrective-directive review): the JSX restructure, state wiring and integration remain with Pro. The isolated CSS implementation phase (`.run-setup-*` rules against Pro's class contract) **may be delegated to Flash** within the boundaries recorded in the assignment file. Delegation is optional.
 - **Do not copy the reference's hardcoded data**: no fixed profiles array, no R40/R160/R52 values, no `alert()` handler, no Tailwind classes. The reference defines structure and spacing only.
 - Do not change cost/billing math or validation behaviour. If a functional defect is noticed (e.g. wrong cost), document it in the EOT and do not silently "fix" it.
 - No version bump. No release. No installer rebuild.

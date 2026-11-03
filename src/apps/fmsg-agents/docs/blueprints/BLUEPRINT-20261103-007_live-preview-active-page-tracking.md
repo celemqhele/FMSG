@@ -111,7 +111,7 @@ Main-process-only change to `agent-controller.ts`; revert = restore the file. No
 
 ## 17. Explicit instructions and restrictions
 
-- `IMPLEMENT ENTIRELY YOURSELF` — no Flash delegation: streaming lifecycle code.
+- `IMPLEMENT ENTIRELY YOURSELF` — no Flash delegation: streaming lifecycle code. *(Re-confirmed 2026-11-03 under the founder's corrective directive: CDP session management and browser lifecycle remain senior; no isolated sub-pieces exist.)*
 - Do **not** change screencast format/quality/fps parameters; do **not** add persistence of frames; do **not** add new IPC or preload surface; do **not** modify the renderer.
 - If the founder's observed failure cannot be reproduced with the scenario matrix, say so explicitly in the EOT rather than claiming a fix.
 - No release, no version bump, no installer rebuild.

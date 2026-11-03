@@ -120,7 +120,7 @@ Prototype artifacts are deletable (recycle-bin rule); host changes (if any are a
 
 ## 17. Explicit instructions and restrictions
 
-- `IMPLEMENT ENTIRELY YOURSELF` — no Flash delegation (VM/hypervisor/security architecture per founder §8).
+- Delegation (per Argon's 2026-11-03 corrective-directive review): hypervisor/VM architecture, streaming/security design, host detection and prototype construction remain with Pro. Mechanical benchmark execution + measurement-table production against Pro's protocol **may be delegated to Flash** within the boundaries recorded in the assignment file. Delegation is optional.
 - **No host-level changes without founder approval.** No silent Windows feature installs, drivers, or restarts.
 - Do not claim measurements that were not taken. Do not present a simulated browser as the prototype.
 - Do not replace or degrade the current production streaming path.
