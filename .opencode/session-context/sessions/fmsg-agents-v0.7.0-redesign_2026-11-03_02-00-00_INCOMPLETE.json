@@ -149,6 +149,20 @@
       "files": [],
       "done": true,
       "key_decision": "active_slot_version is a renderer version, not the running main-process version; a one-time installer run is required for 0.7.0 and for anything that changes main/preload/native deps."
+    },
+    {
+      "step": 17,
+      "description": "Ran the installer silently (\"FMSG Agents Setup 0.7.0.exe\" /S /UPDATE): exit code 0, installed asar refreshed to the 0.7.0 build (27,363,990 bytes), app relaunched. Post-install state: installed_version 0.7.0, active_slot_version 0.7.0, pending_health_check false, Slot-Active auto-cleared so it boots the packaged renderer, last_check_status 'Up to date' against the restored 0.6.0 manifest.",
+      "files": ["src/apps/fmsg-agents/dist/electron/FMSG Agents Setup 0.7.0.exe"],
+      "done": true,
+      "key_decision": "verifyStartupSlotHealth clears a superseded Slot-Active when installed_version != APP_VERSION, which is exactly what moves the app off the stale 0.6.0 renderer slot and onto the 0.7.0 packaged bundle."
+    },
+    {
+      "step": 18,
+      "description": "Verified the running app: 4 FMSG Agents processes with the window titled 'FMSG Agents' (pid 18280), and the installed app.asar contains secret-vault.js, 0.7.0, window-minimize and pause-agent, i.e. the new main process and IPC surface are really on disk. The user has the app open for the visual pass.",
+      "files": [],
+      "done": true,
+      "key_decision": "Grepping the installed asar for the new module and channel names is the only local proof that the running main process is 0.7.0; install-state alone can be set by the slot logic."
     }
   ],
   "key_decisions": [

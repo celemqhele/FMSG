@@ -58,13 +58,19 @@ The correct path — `requires_installer: true` plus an `installer/FMSG-Agents-S
 
 Installing `dist/electron/FMSG Agents Setup 0.7.0.exe` once fixes the main process; after that, renderer-only releases can keep going out over OTA.
 
+## Installed on 2026-11-03
+
+`"FMSG Agents Setup 0.7.0.exe" /S /UPDATE` ran with exit code 0 and relaunched the app. Installed asar is the 0.7.0 build (27,363,990 bytes) and contains `secret-vault.js`, `0.7.0`, `window-minimize`, `pause-agent`. `install-state.json` now reads `installed_version 0.7.0`, `active_slot_version 0.7.0`, `pending_health_check false`, and `Slot-Active` was cleared automatically by `verifyStartupSlotHealth` because `installed_version !== APP_VERSION`, so the app boots the packaged 0.7.0 renderer instead of the stale 0.6.0 slot. `last_check_status` is "Up to date" against the restored `0.6.0` manifest.
+
+Note: the unpacked `0.6.0` renderer still sits in `Slot-Backup` (`%LOCALAPPDATA%\fmsg-agents\updates\Slot-Backup`, with `backup_slot_version 0.5.1` in state). It is only reachable through `rollbackToLastKnownGood`, which needs a `pending_health_check` boot; it was left in place rather than deleted.
+
 ## Verification performed (continued)
 
 - `npm run build:all` succeeded with `keytar` rebuilt for Electron 34 and produced `dist/electron/FMSG Agents Setup 0.7.0.exe` (92,404,819 bytes) plus its `.blockmap`.
 
 ## Still open
 
-- **The `0.7.0` installer has to be run once.** OTA cannot deliver it (see above). The exe is at `src/apps/fmsg-agents/dist/electron/FMSG Agents Setup 0.7.0.exe`; silent form is `"...\FMSG Agents Setup 0.7.0.exe" /S /UPDATE`, which also relaunches the app.
+- **The `0.7.0` installer has been run once on this machine** (see above), so the app the user is looking at is genuinely 0.7.0. Any other machine still on a renderer-only slot needs the same one-time install.
 - **Raising the Supabase storage file size limit** (Project Settings → Storage) is the prerequisite for installer-handoff OTA on every future release that touches the main process. Until then, keep publishing renderer-only manifests and expect to run an installer whenever `electron-main.ts`, `preload.ts`, `package.json` deps or a native module changes.
 - **Visual pass by the user.** No app screenshots exist on this machine and the browser tool cannot drive Electron, so the redesign has not been eyeballed by anyone. This is the gate before agentic-search testing.
 - **Vercel promotion.** A push to `production` lands as a **Preview**; the live domain keeps the previous build until that deployment is promoted in the Vercel dashboard. Check `https://api.github.com/repos/celemqhele/FMSG/deployments` (`environment` reads `Preview – fmsg` vs `Production – fmsg`). The repo is connected to two projects (`fmsg`, `fmsg-2`), each building every commit as a Preview.
