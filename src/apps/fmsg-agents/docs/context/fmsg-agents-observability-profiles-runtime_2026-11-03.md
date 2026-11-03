@@ -26,6 +26,7 @@ Migration `supabase/migrations/009_cv_variations.sql` **dropped** `search_profil
 ## Root cause 5 — no isolated runtime exists (strategic gap, not a defect)
 
 Current runtime = external Windows Chrome + CDP screencast. The founder's vision (watch the agent operate a real computer) may warrant an FMSG-managed Ubuntu VM runtime. `BLUEPRINT-20261103-008` stages this: Phase 1 read-only host capability detection → founder approval gate → Phase 2 measured prototype (options A–D, same-session proof, full measurement matrix) → Phase 3 custom-appliance assessment + recommendation. **No host-level changes without founder approval; no production replacement yet.**
+**Phase 1 DONE (2026-11-03/04):** report committed at `docs/HOST_PREREQUISITES_REPORT_2026-11-03.md`. Machine: Windows 11 **Home** build 26300 → no full Hyper-V; virtualisation **available** (WSL2 + Ubuntu distro running is the proof; CIM VT flags are masked by the active hypervisor — `systeminfo` confirms "A hypervisor has been detected"); 15.7 GB RAM, 119.6 GB free, iGPU only; Docker/VirtualBox/QEMU absent; `HypervisorPlatform` (WHPX) present but Disabled (enable = admin + restart); `VirtualMachinePlatform` Enabled. Harness trap recorded: `Get-WindowsOptionalFeature` rejects an array of feature names (parameter binding) — query individually. Phase 2 founder gate: Docker Desktop install (admin) for B/C; Ubuntu 26.04.1 ISO + VirtualBox install (admin) **or** WHPX enable (restart) for D.
 
 ## Process notes
 
