@@ -28,6 +28,7 @@ import {
   getActiveSessionAccessToken,
   getActiveSessionUser,
 } from './session-manager';
+import { getAgentProfileForRun, AgentProfileRunContext } from './agent-profiles';
 import { launchVisibleAutomationBrowser } from './browser-resolver';
 import { logBrowserAutomation, logEvent } from './logger';
 import {
@@ -265,28 +266,6 @@ export async function downloadRules(): Promise<string | null> {
   return JSON.stringify({ version: '0.6.0', rules: CHECKLIST });
 }
 
-export async function loadProfile(profileId: string, sessionToken?: string) {
-  const token = sessionToken || getActiveSessionAccessToken();
-  const user = getActiveSessionUser();
-  if (!token || !user?.id) {
-    throw new Error('Please sign in again before starting the agent.');
-  }
-
-  const supabase = createAnonSupabaseClient(token);
-  // Interim derivation — replaced by agent_profiles (TASK-20261103-008).
-  const { data, error } = await supabase
-    .from('search_profiles')
-    .select(
-      'id, user_id, name, job_titles, location, industry, industry_step_1, industry_step_2, location_scope, cv_variations'
-    )
-    .eq('id', profileId)
-    .eq('user_id', user.id)
-    .maybeSingle();
-
-  if (error) throw error;
-  return data;
-}
-
 export async function loadAccountProfile(sessionToken?: string) {
   const token = sessionToken || getActiveSessionAccessToken();
   const user = getActiveSessionUser();
@@ -345,6 +324,16 @@ export class AgentRunner {
   private runtime?: AgentRuntime;
   private searchProfile: any = null;
   private accountProfile: any = null;
+  // Original CV of the selected agent profile, held in memory for this run
+  // only: the file buffer for form attachments and the extracted text for
+  // tailoring. Never logged, never persisted.
+  private runCv: {
+    path: string;
+    fileName: string;
+    mime: string;
+    buffer: Buffer;
+    text: string;
+  } | null = null;
   private discovered: DiscoveredJob[] = [];
   private modelTurns = 0;
   private modelAvailable = true;
@@ -1051,9 +1040,7 @@ export class AgentRunner {
       industry: this.searchProfile?.industry || '',
       industry_step_1: this.searchProfile?.industry_step_1 || '',
       industry_step_2: this.searchProfile?.industry_step_2 || '',
-      cv_variations: Array.isArray(this.searchProfile?.cv_variations)
-        ? this.searchProfile.cv_variations.slice(0, 6)
-        : [],
+      cv_text: (this.runCv?.text || '').slice(0, 6000),
     };
 
     const content = await this.callModel(
@@ -1083,8 +1070,8 @@ export class AgentRunner {
             '',
             'Return JSON exactly like:',
             '{"pageType":"application_form","jobTitle":"","company":"","summary":"one sentence on the fit",',
-            '"tailoredHighlights":["up to 4 short, truthful CV highlights drawn only from the profile"],',
-            '"coverNote":"2-3 sentence motivation note using only profile facts (no invented claims)",',
+            '"tailoredHighlights":["up to 4 short, truthful CV highlights drawn only from PROFILE.cv_text (never invented)"],',
+            '"coverNote":"2-3 sentence motivation note using only CV facts (no invented claims)",',
             '"formValues":{"0":"value or null for field index 0","1":null},',
             '"applyButtonText":"","canSubmit":true,"notes":""}',
             '',
@@ -1254,35 +1241,17 @@ export class AgentRunner {
 
   private async attachCv(fields: DetectedField[]): Promise<boolean> {
     const fileField = fields.find((f) => f.type === 'file');
-    if (!fileField || !this.page) return false;
-
-    const token = getActiveSessionAccessToken();
-    const userId = getActiveSessionUser()?.id;
-    // Interim derivation — replaced by agent_profiles (TASK-20261103-008).
-    const variations = Array.isArray(this.searchProfile?.cv_variations)
-      ? this.searchProfile.cv_variations
-      : [];
-    const path: string =
-      (variations[0] &&
-        typeof variations[0].file_path === 'string' &&
-        variations[0].file_path) ||
-      this.accountProfile?.cv_file_path ||
-      '';
-    if (!token || !userId || !path) return false;
+    if (!fileField || !this.page || !this.runCv) return false;
 
     try {
-      const supabase = createAnonSupabaseClient(token);
-      const { data, error } = await supabase.storage.from('cv-files').download(path);
-      if (error || !data) return false;
-
-      const buffer = Buffer.from(await data.arrayBuffer());
-      const fileName = path.split('/').pop() || 'CV.pdf';
-      const mime = fileName.toLowerCase().endsWith('.docx')
-        ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-        : 'application/pdf';
-
+      // The ORIGINAL file from the private agent-cvs bucket, held in memory
+      // for this run. Never a derived/extracted copy.
       await this.fieldLocator(fileField.index).setInputFiles(
-        { name: fileName, mimeType: mime, buffer },
+        {
+          name: this.runCv.fileName,
+          mimeType: this.runCv.mime,
+          buffer: this.runCv.buffer,
+        },
         { timeout: 12_000 }
       );
       return true;
@@ -1449,9 +1418,21 @@ export class AgentRunner {
     this.abort = new AbortController();
 
     try {
-      this.searchProfile = await loadProfile(profileId);
+      // Independent agent profile gate: profile exists -> CV present -> CV
+      // retrievable -> format supported. Throwing surfaces the plain-English
+      // reason in the run view; nothing launches without a valid CV.
+      const runCtx: AgentProfileRunContext = await getAgentProfileForRun(profileId);
+      this.searchProfile = runCtx.profile;
+      this.runCv = {
+        path: runCtx.cvPath,
+        fileName: runCtx.cvFileName,
+        mime: runCtx.cvMime,
+        buffer: runCtx.cvBuffer,
+        text: runCtx.cvText,
+      };
+      // Account-level contact data (email/phone/salary) intentionally stays:
+      // agent profiles carry candidate identity + CV only.
       this.accountProfile = await loadAccountProfile();
-      if (!this.searchProfile) throw new Error('That search profile could not be loaded.');
 
       this.phase(
         'searching',

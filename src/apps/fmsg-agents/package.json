@@ -21,6 +21,8 @@
     "@supabase/supabase-js": "^2.108.2",
     "electron-updater": "^6.3.0",
     "keytar": "^7.9.0",
+    "mammoth": "^1.12.0",
+    "pdf-parse": "^1.1.1",
     "playwright": "^1.49.0"
   },
   "devDependencies": {

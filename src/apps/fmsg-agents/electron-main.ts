@@ -72,6 +72,13 @@ import {
   AgentRuntime,
 } from './agent-controller';
 import {
+  listAgentProfiles,
+  createAgentProfile,
+  updateAgentProfile,
+  deleteAgentProfile,
+  uploadAgentCv,
+} from './agent-profiles';
+import {
   listSiteSecretsMeta,
   saveSiteSecret,
   deleteSiteSecret,
@@ -349,6 +356,89 @@ ipcMain.handle('load-profiles', async () => {
     return { ok: false, profiles: [] };
   }
 });
+
+// IPC: Independent agent profiles (migration 040) under active RLS session
+ipcMain.handle('agent-profiles-list', async () => {
+  logIPC('agent-profiles-list', 'handle');
+  try {
+    const profiles = await listAgentProfiles();
+    return { ok: true, profiles };
+  } catch (err: any) {
+    logIPC('agent-profiles-list', 'error', { error: err.message });
+    return { ok: false, error: err.message };
+  }
+});
+
+ipcMain.handle(
+  'agent-profiles-create',
+  async (_event, payload: { name: string; targetJobTitle: string }) => {
+    logIPC('agent-profiles-create', 'handle');
+    try {
+      const profile = await createAgentProfile(
+        payload || { name: '', targetJobTitle: '' }
+      );
+      return { ok: true, profile };
+    } catch (err: any) {
+      logIPC('agent-profiles-create', 'error', { error: err.message });
+      return { ok: false, error: err.message };
+    }
+  }
+);
+
+ipcMain.handle(
+  'agent-profiles-update',
+  async (
+    _event,
+    payload: { id: string; name?: string; targetJobTitle?: string }
+  ) => {
+    logIPC('agent-profiles-update', 'handle');
+    try {
+      const profile = await updateAgentProfile(payload);
+      return { ok: true, profile };
+    } catch (err: any) {
+      logIPC('agent-profiles-update', 'error', { error: err.message });
+      return { ok: false, error: err.message };
+    }
+  }
+);
+
+ipcMain.handle('agent-profiles-delete', async (_event, payload: { id: string }) => {
+  logIPC('agent-profiles-delete', 'handle');
+  try {
+    await deleteAgentProfile(payload?.id);
+    return { ok: true };
+  } catch (err: any) {
+    logIPC('agent-profiles-delete', 'error', { error: err.message });
+    return { ok: false, error: err.message };
+  }
+});
+
+ipcMain.handle(
+  'agent-cv-upload',
+  async (
+    _event,
+    payload: {
+      profileId: string;
+      name: string;
+      mime: string;
+      data: ArrayBuffer;
+    }
+  ) => {
+    // Log metadata only — never CV bytes or contents.
+    logIPC('agent-cv-upload', 'handle', {
+      profileId: payload?.profileId,
+      name: payload?.name,
+      mime: payload?.mime,
+    });
+    try {
+      const profile = await uploadAgentCv(payload);
+      return { ok: true, profile };
+    } catch (err: any) {
+      logIPC('agent-cv-upload', 'error', { error: err.message });
+      return { ok: false, error: err.message };
+    }
+  }
+);
 
 // IPC: Launch visible browser
 ipcMain.handle('launch-visible-browser', async (_event, url: string) => {

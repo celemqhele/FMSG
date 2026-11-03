@@ -208,7 +208,7 @@ async function main() {
     check('Applications page has an H1', (await h1For('Applications')).includes('Applications'));
     const reviewH1 = await h1For('Review');
     check('Review page has a stable H1', reviewH1.includes('Review Queue'), reviewH1.join(' | '));
-    check('Profiles page has an H1', (await h1For('Profiles')).includes('Search Profiles'));
+    check('Profiles page has an H1', (await h1For('Profiles')).includes('Agent Profiles'));
     check('Billing page has an H1', (await h1For('Billing')).includes('Billing'));
     check('Settings page has an H1', (await h1For('Settings')).includes('Settings'));
     check('Account page has an H1', (await h1For('Account')).includes('Account'));

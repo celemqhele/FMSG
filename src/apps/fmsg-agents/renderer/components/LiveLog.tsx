@@ -160,7 +160,7 @@ export function ProfilePicker({
 
   if (profiles.length === 0) return null;
 
-  const titleOf = (p: any) => (p?.job_titles || [])[0] || 'Search profile';
+  const titleOf = (p: any) => (p?.job_titles || [])[0] || 'Agent profile';
 
   return (
     <div className="profile-picker" ref={wrapperRef}>
@@ -169,7 +169,7 @@ export function ProfilePicker({
         className={`profile-picker-trigger ${open ? 'open' : ''}`}
         aria-haspopup="listbox"
         aria-expanded={open}
-        aria-label={`Active search profile: ${formatProfileName(selected?.name)}`}
+        aria-label={`Active agent profile: ${formatProfileName(selected?.name)}`}
         onClick={() => setOpen((v) => !v)}
       >
         <span className="profile-picker-avatar" aria-hidden="true">
@@ -199,7 +199,7 @@ export function ProfilePicker({
         <div
           className="profile-picker-menu"
           role="listbox"
-          aria-label="Choose active search profile"
+          aria-label="Choose active agent profile"
         >
           {profiles.map((p: any, index: number) => {
             const active = p.id === selected?.id;
@@ -290,7 +290,7 @@ function ActivityFeed({
           <p className="matrix-empty-title">No active run right now</p>
           <p className="matrix-empty-body">
             {profiles.length === 0
-              ? 'Add a search profile on the FMSG website, then click Refresh in Profiles.'
+              ? 'Create an agent profile with a CV on the Profiles screen, then start a run.'
               : `Discover live postings for ${profileTitle}, tailor your CV highlights, and watch Chrome fill applications in real time.`}
           </p>
           {onOpenLaunchModal && (

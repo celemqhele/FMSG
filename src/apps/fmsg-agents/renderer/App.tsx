@@ -705,10 +705,22 @@ function AppInner() {
       setShowLaunchModal(false);
       setCurrentView('profiles');
       showModal({
-        title: 'Choose a Search Profile',
+        title: 'Choose an Agent Profile',
         message:
-          'Select or refresh a search profile first — the agent reads your job titles, location, and CV from it.',
+          'Create or select an agent profile first — the agent applies with the profile’s target job title and CV.',
         confirmLabel: 'OK',
+      });
+      return;
+    }
+
+    const selectedForRun = profiles.find((p) => p.id === selectedProfileId);
+    if (selectedForRun && !selectedForRun.cv_storage_path) {
+      setShowLaunchModal(false);
+      setCurrentView('profiles');
+      showModal({
+        title: 'CV Required',
+        message: `"${selectedForRun.name || 'This profile'}" has no CV on file. Upload one on the Profiles screen before starting a run.`,
+        confirmLabel: 'Go to Profiles',
       });
       return;
     }
@@ -1594,6 +1606,12 @@ function AppInner() {
                                 {(p.job_titles || [])[0] ||
                                   p.industry ||
                                   'General'}
+                                {!p.cv_storage_path && (
+                                  <em className="run-setup-no-cv">
+                                    {' '}
+                                    · No CV
+                                  </em>
+                                )}
                               </span>
                             </div>
                           </button>
@@ -1918,6 +1936,105 @@ function ProfilesAndRulesView({
   const [editQuestion, setEditQuestion] = useState('');
   const [editAnswer, setEditAnswer] = useState('');
 
+  // Agent profile creation + CV actions (migration 040, independent profiles)
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newTitle, setNewTitle] = useState('');
+  const [newCvFile, setNewCvFile] = useState<File | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [uploadingId, setUploadingId] = useState<string | null>(null);
+
+  const handleCreateProfile = async () => {
+    if (!newName.trim() || !newTitle.trim()) {
+      showToast('Candidate name and target job title are required.', 'info');
+      return;
+    }
+    setCreating(true);
+    try {
+      const res = await window.electronAPI?.createAgentProfile({
+        name: newName.trim(),
+        targetJobTitle: newTitle.trim(),
+      });
+      if (!res?.ok || !res.profile) {
+        showToast(res?.error || 'Could not create the profile.', 'error');
+        return;
+      }
+      let profile = res.profile;
+      if (newCvFile) {
+        const up = await window.electronAPI?.uploadAgentCv({
+          profileId: profile.id,
+          name: newCvFile.name,
+          mime:
+            newCvFile.type ||
+            (newCvFile.name.toLowerCase().endsWith('.docx')
+              ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+              : 'application/pdf'),
+          data: await newCvFile.arrayBuffer(),
+        });
+        if (up?.ok && up.profile) {
+          profile = up.profile;
+        } else {
+          showToast(
+            up?.error ||
+              'The profile was created but the CV upload failed. Upload it from the profile card.',
+            'error'
+          );
+        }
+      }
+      setNewName('');
+      setNewTitle('');
+      setNewCvFile(null);
+      setShowCreateForm(false);
+      onRefresh();
+      onSelect(profile.id);
+      showToast(
+        newCvFile
+          ? 'Agent profile created with CV.'
+          : 'Agent profile created. Upload a CV before starting a run.',
+        'success'
+      );
+    } catch (err: any) {
+      showToast(err?.message || 'Could not create the profile.', 'error');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const triggerCvUpload = (profileId: string) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept =
+      '.pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      setUploadingId(profileId);
+      try {
+        const res = await window.electronAPI?.uploadAgentCv({
+          profileId,
+          name: file.name,
+          mime:
+            file.type ||
+            (file.name.toLowerCase().endsWith('.docx')
+              ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+              : 'application/pdf'),
+          data: await file.arrayBuffer(),
+        });
+        if (res?.ok) {
+          showToast('CV uploaded.', 'success');
+          onRefresh();
+        } else {
+          showToast(res?.error || 'Could not upload the CV.', 'error');
+        }
+      } catch (err: any) {
+        showToast(err?.message || 'Could not upload the CV.', 'error');
+      } finally {
+        setUploadingId(null);
+      }
+    };
+    input.click();
+  };
+
   useEffect(() => {
     window.electronAPI
       ?.getScreeningRules?.()
@@ -1965,11 +2082,11 @@ function ProfilesAndRulesView({
       <header className="billing-header">
         <div>
           <h1 className="billing-title">
-            {tab === 'profiles' ? 'Search Profiles' : 'Rules & Answer Bank'}
+            {tab === 'profiles' ? 'Agent Profiles' : 'Rules & Answer Bank'}
           </h1>
           <p className="billing-subtitle">
             {tab === 'profiles'
-              ? 'Choose the active profile the agent applies with.'
+              ? 'Create the profiles the agent applies with — each needs a CV on file before a run can start.'
               : 'Configure the screening rules and reusable answers the agent uses when filling applications.'}
           </p>
         </div>
@@ -2009,90 +2126,168 @@ function ProfilesAndRulesView({
       </header>
 
       {tab === 'profiles' ? (
-        <div className="profiles-card-grid">
-          {profiles.map((p: any) => {
-            const active = selectedProfileId === p.id;
-            // Interim predicate — replaced by agent_profiles (TASK-20261103-008).
-            const hasCv =
-              Array.isArray(p?.cv_variations) && p.cv_variations.length > 0;
-            return (
-              <button
-                key={p.id}
-                type="button"
-                onClick={() => onSelect(p.id)}
-                className={`profile-card ${active ? 'is-active' : ''}`}
-                aria-pressed={active}
-              >
-                <span className="profile-card-avatar" aria-hidden="true">
-                  {(p.name || 'P').slice(0, 2).toUpperCase()}
-                </span>
-                <span className="profile-card-name">
-                  {formatProfileName(p.name)}
-                </span>
-                <span
-                  className={`profile-card-cv ${hasCv ? 'has-cv' : 'missing'}`}
+        <>
+          {showCreateForm && (
+            <div className="agent-create-form">
+              <h3 className="agent-create-form-title">New Agent Profile</h3>
+              <label className="agent-create-label" htmlFor="agent-new-name">
+                Candidate name
+              </label>
+              <input
+                id="agent-new-name"
+                className="field-input"
+                placeholder="e.g. Mqhele Cele"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+              />
+              <label className="agent-create-label" htmlFor="agent-new-title">
+                Target job title
+              </label>
+              <input
+                id="agent-new-title"
+                className="field-input"
+                placeholder="e.g. Paid Media Specialist"
+                value={newTitle}
+                onChange={(e) => setNewTitle(e.target.value)}
+              />
+              <label className="agent-create-label" htmlFor="agent-new-cv">
+                Upload CV (PDF or DOCX, max 10 MB)
+              </label>
+              <input
+                id="agent-new-cv"
+                className="field-input"
+                type="file"
+                accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                onChange={(e) => setNewCvFile(e.target.files?.[0] || null)}
+              />
+              <div className="agent-create-actions">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setShowCreateForm(false)}
                 >
-                  {hasCv ? 'CV attached' : 'No CV on file'}
-                </span>
-                <span className="profile-card-footer">
-                  {active ? (
-                    <span className="profile-card-active-pill">
-                      <svg
-                        width="13"
-                        height="13"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2.8"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        aria-hidden="true"
-                      >
-                        <polyline points="20 6 9 17 4 12" />
-                      </svg>
-                      Active Profile
-                    </span>
-                  ) : (
-                    <span className="profile-card-select">Select</span>
-                  )}
-                </span>
-              </button>
-            );
-          })}
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={creating}
+                  onClick={handleCreateProfile}
+                >
+                  {creating ? 'Creating…' : 'Create Profile'}
+                </button>
+              </div>
+            </div>
+          )}
 
-          <button
-            type="button"
-            className="profile-card create-new"
-            onClick={() =>
-              window.electronAPI?.openExternalUrl(
-                'https://www.findmesomejobs.co.za/dashboard'
-              )
-            }
-          >
-            <span
-              className="profile-card-avatar create-new-avatar"
-              aria-hidden="true"
+          <div className="profiles-card-grid">
+            {profiles.map((p: any) => {
+              const active = selectedProfileId === p.id;
+              const hasCv = Boolean(p.cv_storage_path);
+              return (
+                <div
+                  key={p.id}
+                  className={`profile-card ${active ? 'is-active' : ''}`}
+                >
+                  <button
+                    type="button"
+                    className="profile-card-select-btn"
+                    aria-pressed={active}
+                    onClick={() => onSelect(p.id)}
+                  >
+                    <span className="profile-card-avatar" aria-hidden="true">
+                      {(p.name || 'P').slice(0, 2).toUpperCase()}
+                    </span>
+                    <span className="profile-card-name">
+                      {formatProfileName(p.name)}
+                    </span>
+                    <span
+                      className={`profile-card-cv ${hasCv ? 'has-cv' : 'missing'}`}
+                    >
+                      {hasCv ? 'CV uploaded' : 'No CV on file'}
+                    </span>
+                    <span className="profile-card-footer">
+                      {active ? (
+                        <span className="profile-card-active-pill">
+                          <svg
+                            width="13"
+                            height="13"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2.8"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            aria-hidden="true"
+                          >
+                            <polyline points="20 6 9 17 4 12" />
+                          </svg>
+                          Active Profile
+                        </span>
+                      ) : (
+                        <span className="profile-card-select">Select</span>
+                      )}
+                    </span>
+                  </button>
+                  <div className="profile-card-cv-actions">
+                    {uploadingId === p.id ? (
+                      <span className="profile-card-cv-uploading">
+                        Uploading…
+                      </span>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          className="profile-card-cv-btn"
+                          onClick={() => triggerCvUpload(p.id)}
+                        >
+                          {hasCv ? 'Replace CV' : 'Upload CV'}
+                        </button>
+                        {hasCv && p.cv_filename ? (
+                          <span
+                            className="profile-card-cv-file"
+                            title={p.cv_filename}
+                          >
+                            {p.cv_filename}
+                          </span>
+                        ) : null}
+                      </>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+
+            <button
+              type="button"
+              className="profile-card create-new"
+              onClick={() => setShowCreateForm((v) => !v)}
             >
-              <svg
-                width="26"
-                height="26"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
+              <span
+                className="profile-card-avatar create-new-avatar"
+                aria-hidden="true"
               >
-                <line x1="12" y1="5" x2="12" y2="19" />
-                <line x1="5" y1="12" x2="19" y2="12" />
-              </svg>
-            </span>
-            <span className="profile-card-name">Create/Edit Profile</span>
-            <span className="profile-card-hint">
-              Opens your FMSG web dashboard, then click Refresh here.
-            </span>
-          </button>
-        </div>
+                <svg
+                  width="26"
+                  height="26"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <line x1="12" y1="5" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+              </span>
+              <span className="profile-card-name">New Profile</span>
+              <span className="profile-card-hint">
+                Create an agent profile with a name, target job title and CV.
+              </span>
+            </button>
+          </div>
+        </>
       ) : (
         <div className="rules-bank-layout">
           <section className="billing-section">

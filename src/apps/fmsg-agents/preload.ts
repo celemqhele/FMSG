@@ -39,6 +39,22 @@ const api = {
     ipcRenderer.invoke('verify-email-code', { code }),
   logout: () => ipcRenderer.invoke('logout'),
   loadProfiles: () => ipcRenderer.invoke('load-profiles'),
+  listAgentProfiles: () => ipcRenderer.invoke('agent-profiles-list'),
+  createAgentProfile: (payload: { name: string; targetJobTitle: string }) =>
+    ipcRenderer.invoke('agent-profiles-create', payload),
+  updateAgentProfile: (payload: {
+    id: string;
+    name?: string;
+    targetJobTitle?: string;
+  }) => ipcRenderer.invoke('agent-profiles-update', payload),
+  deleteAgentProfile: (id: string) =>
+    ipcRenderer.invoke('agent-profiles-delete', { id }),
+  uploadAgentCv: (payload: {
+    profileId: string;
+    name: string;
+    mime: string;
+    data: ArrayBuffer;
+  }) => ipcRenderer.invoke('agent-cv-upload', payload),
   launchVisibleBrowser: (url: string) =>
     ipcRenderer.invoke('launch-visible-browser', url),
   runAgent: (config: any) => ipcRenderer.invoke('run-agent', config),

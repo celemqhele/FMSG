@@ -601,9 +601,9 @@ export async function fetchUserAndProfilesUnderRLS(
   const supabase = createAnonSupabaseClient(accessToken);
 
   let accountRes;
-  let searchProfilesRes;
+  let agentProfilesRes;
   try {
-    [accountRes, searchProfilesRes] = await Promise.all([
+    [accountRes, agentProfilesRes] = await Promise.all([
       supabase
         .from('profiles')
         .select(
@@ -611,11 +611,11 @@ export async function fetchUserAndProfilesUnderRLS(
         )
         .eq('id', userObj.id)
         .maybeSingle(),
+      // FMSG Agents owns its own profiles now (migration 040). The website's
+      // search_profiles is no longer read by the agent app.
       supabase
-        .from('search_profiles')
-        .select(
-          'id, user_id, name, job_titles, location, industry, industry_step_1, industry_step_2, location_scope, cv_variations'
-        )
+        .from('agent_profiles')
+        .select('*')
         .eq('user_id', userObj.id)
         .order('created_at'),
     ]);
@@ -640,15 +640,15 @@ export async function fetchUserAndProfilesUnderRLS(
     );
   }
 
-  if (searchProfilesRes.error) {
-    logAuthFlow('search_profiles_query_error', 'error', {
-      db_code: searchProfilesRes.error.code,
-      raw_error: searchProfilesRes.error.message,
-      details: searchProfilesRes.error.details,
+  if (agentProfilesRes.error) {
+    logAuthFlow('agent_profiles_query_error', 'error', {
+      db_code: agentProfilesRes.error.code,
+      raw_error: agentProfilesRes.error.message,
+      details: agentProfilesRes.error.details,
     });
     throw new ProfileLoadError(
-      searchProfilesRes.error.message,
-      searchProfilesRes.error.code
+      agentProfilesRes.error.message,
+      agentProfilesRes.error.code
     );
   }
 
@@ -669,10 +669,21 @@ export async function fetchUserAndProfilesUnderRLS(
     },
   };
 
-  // Extra safety filter: ensure every returned profile belongs strictly to userObj.id
-  const safeProfiles = (searchProfilesRes.data ?? []).filter(
-    (p: any) => p.user_id === userObj.id
-  );
+  // Extra safety filter: ensure every returned profile belongs strictly to
+  // userObj.id, and expose the compatibility shim the renderer/query code
+  // expects (agent profiles carry target_job_title instead of job_titles).
+  const safeProfiles = (agentProfilesRes.data ?? [])
+    .filter((p: any) => p.user_id === userObj.id)
+    .map((p: any) => {
+      const target = (p?.target_job_title || '').trim();
+      return {
+        ...p,
+        target_job_title: target,
+        job_titles: target ? [target] : [],
+        location: '',
+        location_scope: '',
+      };
+    });
 
   return {
     user: userSummary,
