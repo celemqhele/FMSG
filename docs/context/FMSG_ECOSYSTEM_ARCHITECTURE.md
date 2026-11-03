@@ -95,6 +95,7 @@ Kept inside the sub-project so agent context never mixes with website context (m
 - [`agent-release-v0.6.0_2026-11-02.md`](../../src/apps/fmsg-agents/docs/context/agent-release-v0.6.0_2026-11-02.md) — `v0.4.0`→`v0.6.0`: auth failure, zero-PII device key, live engine, Paystack.
 - [`fmsg-agents-ui-redesign_2026-11-03.md`](../../src/apps/fmsg-agents/docs/context/fmsg-agents-ui-redesign_2026-11-03.md) — `v0.7.0` mockup redesign, secret vault, bundles.
 - [`fmsg-agents-visual-fidelity_2026-11-03.md`](../../src/apps/fmsg-agents/docs/context/fmsg-agents-visual-fidelity_2026-11-03.md) — `v0.7.1` display type hierarchy, hero rebuild, empty states, OTA notes.
+- [`fmsg-agents-audit-remediation_2026-11-03.md`](../../src/apps/fmsg-agents/docs/context/fmsg-agents-audit-remediation_2026-11-03.md) — independent UI/UX audit execution: Phase 0 harness/lints, `v0.7.2` trust release, `v0.8.0` review-status migration + IPC, `v0.9.0` design-system enforcement, and the Migration 039 / distribution blockers.
 
 ### Historical Incident Chains (`.opencode/context/`)
 - `.opencode/context/ats-scoring/` — Deterministic ATS scoring engine, pgvector RRF fusion, AI cascade fallbacks.

@@ -92,15 +92,17 @@ function main() {
     }
   }
 
-  // 3. Collect border-radius declarations
+  // 3. Collect border-radius declarations (families: first px token, % ignored)
   const radiusMatches = [...noComments.matchAll(/border-radius:\s*([^;!}]+)/g)].map((m) =>
     m[1].trim()
   );
   const literalRadii = new Set();
+  const radiusFamilies = new Set();
   for (const val of radiusMatches) {
-    if (!val.startsWith('var(') && val !== '0' && val !== 'inherit') {
-      literalRadii.add(val);
-    }
+    if (val.startsWith('var(') || val === '0' || val === 'inherit') continue;
+    literalRadii.add(val);
+    const px = val.match(/(\d+(?:\.\d+)?)px/);
+    if (px) radiusFamilies.add(`${px[1]}px`);
   }
 
   // 4. Count !important outside prefers-reduced-motion
@@ -124,7 +126,8 @@ function main() {
     distinctPxFontSizeCount: pxFontSizes.size,
     sub12pxOccurrences: sub12FontSizes.length,
     distinctLiteralRadii: [...literalRadii],
-    distinctLiteralRadiiCount: literalRadii.size,
+    distinctLiteralRadiiCount: radiusFamilies.size,
+    radiusFamilies: [...radiusFamilies],
     layoutImportantCount: importantCount,
     hasGlobalFocusVisible,
   };
@@ -136,7 +139,7 @@ function main() {
   );
   console.log(`  - Sub-12px font-size declarations: ${summary.sub12pxOccurrences}`);
   console.log(
-    `  - Distinct literal border-radii (${summary.distinctLiteralRadiiCount}): ${summary.distinctLiteralRadii.join(', ')}`
+    `  - Distinct literal border-radii (${summary.distinctLiteralRadiiCount} families): ${summary.radiusFamilies.join(', ')}`
   );
   console.log(`  - Layout !important count (excl. reduced-motion): ${summary.layoutImportantCount}`);
 
@@ -157,7 +160,9 @@ function main() {
         errors.push(`Distinct font sizes (${summary.distinctPxFontSizeCount}) exceeds Phase 2 limit of 8`);
       }
       if (summary.distinctLiteralRadiiCount > 4) {
-        errors.push(`Distinct literal border radii (${summary.distinctLiteralRadiiCount}) exceeds Phase 2 limit of 4`);
+        errors.push(
+          `Distinct border-radius families (${summary.radiusFamilies.join(', ')}) exceeds Phase 2 limit of 4`
+        );
       }
       if (summary.layoutImportantCount > 0) {
         errors.push(`Layout !important count (${summary.layoutImportantCount}) exceeds Phase 2 limit of 0`);

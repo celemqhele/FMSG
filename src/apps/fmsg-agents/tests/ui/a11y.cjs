@@ -17,6 +17,16 @@ const path = require('path');
 const APP_ROOT = path.resolve(__dirname, '../..');
 const REPO_ROOT = path.resolve(APP_ROOT, '../../..');
 
+const APP_VERSION = (() => {
+  try {
+    const cfg = fs.readFileSync(path.join(APP_ROOT, 'config.ts'), 'utf8');
+    const m = cfg.match(/APP_VERSION\s*=\s*'([^']+)'/);
+    return m ? m[1] : '0.0.0';
+  } catch {
+    return '0.0.0';
+  }
+})();
+
 let playwrightPkg;
 try {
   playwrightPkg = require(path.join(REPO_ROOT, 'node_modules', 'playwright'));
@@ -66,7 +76,7 @@ function buildMockScript() {
   const noop = async () => ({ ok:true });
 
   window.electronAPI = {
-    getStartupStatus: async () => ({ configValid:true, activeVersion:'0.7.1', installedVersion:'0.7.1', rolledBack:false, browserStatus:{available:true,browserName:'Google Chrome',message:'Google Chrome ready'}, deviceKeyStatus:{ok:true, deviceId:'dev_fd813828a7f8f9b4bb0173b1b7ea929c'}, updateState:{channel:'stable',lastCheckAt:'2026-11-03T08:30:00.000Z',lastCheckStatus:'Up to date',launchCount:2}, logInfo:{} }),
+    getStartupStatus: async () => ({ configValid:true, activeVersion:'${APP_VERSION}', installedVersion:'${APP_VERSION}', rolledBack:false, browserStatus:{available:true,browserName:'Google Chrome',message:'Google Chrome ready'}, deviceKeyStatus:{ok:true, deviceId:'dev_fd813828a7f8f9b4bb0173b1b7ea929c'}, updateState:{channel:'stable',lastCheckAt:'2026-11-03T08:30:00.000Z',lastCheckStatus:'Up to date',launchCount:2}, logInfo:{} }),
     runStartupUpdateFlow: async () => ({ available:false }),
     onUpdateProgress: () => () => {},
     restoreSession: async () => authed ? { ok:true, user, profiles } : { ok:false },
@@ -88,7 +98,7 @@ function buildMockScript() {
     startCheckout: noop, verifyCheckout: noop,
     getBillingSummary: async () => ({ ok:true, plan:'free', searches:10, cvGens:5, pfRuns:2 }),
     setPreventSleep: noop, checkForUpdates: async () => ({ available:false }), applyUpdate: noop,
-    getUpdateSettings: async () => ({ currentVersion:'0.7.1', installedVersion:'0.7.1', channel:'stable', lastCheckAt:'2026-11-03T08:30:00.000Z', lastCheckStatus:'Up to date', deviceId:'dev_fd813828a7f8f9b4bb0173b1b7ea929c', deviceKeyOk:true, browserStatus:{available:true,browserName:'Google Chrome',message:'Google Chrome ready'} }),
+    getUpdateSettings: async () => ({ currentVersion:'${APP_VERSION}', installedVersion:'${APP_VERSION}', channel:'stable', lastCheckAt:'2026-11-03T08:30:00.000Z', lastCheckStatus:'Up to date', deviceId:'dev_fd813828a7f8f9b4bb0173b1b7ea929c', deviceKeyOk:true, browserStatus:{available:true,browserName:'Google Chrome',message:'Google Chrome ready'} }),
     setUpdateChannel: noop, resetDeviceKey: noop,
     getLegalDocument: async (doc) => ({ ok:true, content: legalDocs[doc] || legalDocs.terms }),
     openExternalUrl: noop, minimizeWindow: noop, maximizeWindow: noop, closeWindow: noop,

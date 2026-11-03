@@ -6,23 +6,34 @@
 
 ## Status
 
-- **`v0.7.2`** (Phase 1A, renderer-only) — implemented and verified; OTA upload withheld pending distribution approval. See [`2026-11-03_v0.7.2_trust-accessibility-and-modal-shell.md`](./2026-11-03_v0.7.2_trust-accessibility-and-modal-shell.md).
-- **`v0.8.0`** (Phase 1B, installer) — implemented, built (`FMSG Agents Setup 0.8.0.exe`) and verified locally; **Migration 039 must be applied in the Supabase SQL editor before distribution**. See [`2026-11-03_v0.8.0_stateful-safety-and-review-status.md`](./2026-11-03_v0.8.0_stateful-safety-and-review-status.md).
+Phase 0–2 of the independent UI/UX audit remediation is implemented and verified locally:
 
-Active work: **Phase 2 (`v0.9.0`)** — token/CSS split, shared primitives, view extraction, onboarding rebuild, responsive system.
+- **`v0.7.2`** (renderer) — trust, accessibility, modal shell. Log: [`2026-11-03_v0.7.2_trust-accessibility-and-modal-shell.md`](./2026-11-03_v0.7.2_trust-accessibility-and-modal-shell.md)
+- **`v0.8.0`** (installer) — review status, IPC, migration 039, main-process fixes. Log: [`2026-11-03_v0.8.0_stateful-safety-and-review-status.md`](./2026-11-03_v0.8.0_stateful-safety-and-review-status.md)
+- **`v0.9.0`** (renderer) — design system, view extraction, tables, responsive. Log: [`2026-11-03_v0.9.0_design-system-and-responsive.md`](./2026-11-03_v0.9.0_design-system-and-responsive.md)
+
+**None of the three has been uploaded.** Distribution is pending product-owner approval; Migration 039 must be applied before `v0.8.0` is distributed.
+
+Active work: **Phase 3 (`v1.0.0`)** — invoices/cancellation wiring, device/session management, motion & density, external accessibility audit.
 
 ---
 
-## Phase 2 — Design System, IA and Responsive (`P2.1`–`P2.12`)
+## Next change
 
 ### Added
-- *(in progress)*
+- *(none yet)*
 
 ### Changed
-- *(in progress)*
+- *(none yet)*
+
+### Removed
+- *(none yet)*
+
+### Fixed
+- *(none yet)*
 
 ### Relevant Files
-- *(in progress)*
+- *(none yet)*
 
 ### Infrastructure Changes
-- *(in progress)*
+- *(none yet)*

@@ -36,6 +36,18 @@
 
 ---
 
+## 2026-11-03 — Independent UI/UX Audit Remediation (`v0.7.2` → `v0.9.0`)
+
+- **Decision 1 (verify the plan against the repository before executing it).** Three plan assumptions were wrong: `SignedFileEntry.download_url` already existed (the real defects were Supabase credentials leaking to external hosts and a 30s timeout), `saved_jobs` had **no RLS UPDATE policy** in migration 005, and `App.tsx` was 3,040 lines rather than 2,898. The plan's intent was preserved; the implementations were corrected.
+- **Decision 2 (testing infrastructure before UI change).** Built `ui:shots`, `ui:a11y`, `ui:flows`, `test:main`, `lint:content` and `lint:tokens` first, and reproduced the audit's critical findings with metrics before touching pixels. Added a stale-bundle guard after discovering that `index.tsx` injects a build-time CSS snapshot that overrides the on-disk file — the cause of a false “28px padding” measurement.
+- **Decision 3 (reversible by default).** Approve/Skip/Remove never delete: `review_status` + `archived_at` (Migration 039) with a local override cache so the UI is correct before the migration is applied. Undo is a first-class toast action, and credential removal requires typing the site name.
+- **Decision 4 (one system, enforced).** Type scale 7 sizes, radii 4 families, 0 layout `!important`, one 1200px content width; the dark browser chrome became the implementation instead of an `!important` override layer.
+- **Decision 5 (release-channel discipline).** `v0.7.2` and `v0.9.0` are renderer-only and OTA-eligible; `v0.8.0` changes main/preload/schema and is installer-only. Installer handoff now supports an external `download_url`, so a GitHub Releases asset can bypass the Supabase storage limit.
+- **Mistakes made and corrected:** PowerShell `Set-Content -Encoding UTF8` introduced a BOM into `package.json` (breaks `@electron/rebuild`) and mojibaked `design-system.css` em dashes; both were rewritten with `UTF8Encoding($false)`. An early attempt to move installers with `Get-ChildItem -Include` matched unrelated files and was redone with explicit paths.
+- **Open:** Migration 039 awaits the Supabase SQL editor; no release has been uploaded.
+
+---
+
 ## 2026-11-02 — Production Agent Engine, Real Screenshots, Apple-Dense UI & Paystack Billing (`v0.6.0`)
 
 - **Decision 1 (Server-Side AI Proxy on OpenRouter `thinkingmachines/inkling:free`):**

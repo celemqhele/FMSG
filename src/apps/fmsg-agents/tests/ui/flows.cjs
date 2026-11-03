@@ -87,6 +87,25 @@ function buildMockScript() {
     { id:'j5', profile_id:'p2', job_title:'Customer Operations Manager', company:'Takealot', location:'Cape Town', estimated_salary:'R50 000 pm', match_score:76, review_status:'applied', match_summary:'Applied via FMSG Agents on 29 Oct 2026.', job_url:'https://example.com/5', full_spec:'Scale operations.', created_at:'2026-10-29T08:00:00Z' },
     { id:'j6', profile_id:'p1', job_title:'Account Director', company:'Accenture', location:'Johannesburg, Gauteng', estimated_salary:'R72 000 pm', match_score:73, review_status:'needs_review', match_summary:'Opened via FMSG Agents on 28 Oct 2026. Not auto-submitted: work authorisation question required review.', job_url:'https://example.com/6', full_spec:'Account leadership.', created_at:'2026-10-28T08:00:00Z' }
   ];
+
+  // Large-dataset mode (?rows=100) for the G3 table stress test.
+  const rowCount = parseInt(params.get('rows') || '0', 10);
+  if (rowCount > 0) {
+    jobs = Array.from({ length: rowCount }).map((_, i) => ({
+      id: 'bulk_' + (i + 1),
+      profile_id: 'p1',
+      job_title: 'Synthetic Role ' + String(i + 1).padStart(3, '0'),
+      company: 'Employer ' + String((i % 40) + 1).padStart(2, '0'),
+      location: i % 3 === 0 ? 'Cape Town' : 'Johannesburg, Gauteng',
+      estimated_salary: 'R50 000 pm',
+      match_score: 60 + (i % 40),
+      review_status: i % 4 === 0 ? 'needs_review' : 'applied',
+      match_summary: 'Synthetic record ' + (i + 1) + ' for the pagination test.',
+      job_url: 'https://example.com/bulk/' + (i + 1),
+      full_spec: 'Synthetic job specification for table stress testing.',
+      created_at: new Date(Date.UTC(2026, 9, 1, 8, 0, 0) + i * 3600000).toISOString(),
+    }));
+  }
   const user = { id:'u1', email:'mqhele03@gmail.com', emailVerified:true, accountStatus:'active', name:'Mqhele', surname:'Cele' };
   const noop = async () => ({ ok:true });
   window.__openedUrls = [];
@@ -315,6 +334,55 @@ async function main() {
     check('Notifications never show a stale version (NT-01)', !/v0\.7\.0|v0\.6\.\d/.test(notifText), notifText.slice(0, 60).replace(/\n/g, ' '));
     const badgeAfterOpen = await page.locator('.titlebar-notif-dot').count();
     check('Opening notifications clears the unread badge (NT-03)', badgeAfterOpen === 0, `${badgeAfterOpen} badge(s)`);
+    // ── G3: 100-row dataset (pagination, page sizes, CSV export) ────────────
+    const large = await ctx.newPage();
+    await large.setViewportSize({ width: 1360, height: 860 });
+    await large.goto(`${base}/?auth=1&data=1&rows=100`);
+    await large.waitForTimeout(900);
+    await large.locator('.sidebar-nav-item').filter({ hasText: 'Applications' }).first().click();
+    await large.waitForTimeout(450);
+
+    const rowsPage1 = await large.locator('.tracker-table tbody tr').count();
+    const pageIndicator = await large.locator('.tracker-page-indicator').innerText();
+    const countText = await large.locator('.tracker-footer-count').innerText();
+    check(
+      '100-row dataset paginates at 25 rows (G3)',
+      rowsPage1 === 25 && /Page 1 of 4/.test(pageIndicator) && /1–25 of 100/.test(countText),
+      `rows=${rowsPage1}, ${pageIndicator}, ${countText}`
+    );
+
+    await large.getByRole('button', { name: 'Next' }).click();
+    await large.waitForTimeout(250);
+    const page2 = await large.locator('.tracker-page-indicator').innerText();
+    check('Pagination advances to page 2 (G3)', /Page 2 of 4/.test(page2), page2);
+
+    await large.locator('.tracker-page-size select').selectOption('100');
+    await large.waitForTimeout(300);
+    const rowsAll = await large.locator('.tracker-table tbody tr').count();
+    check('100 rows per page renders the full dataset (G3)', rowsAll === 100, `rows=${rowsAll}`);
+
+    const downloadPromise = large.waitForEvent('download', { timeout: 5000 }).catch(() => null);
+    await large.getByRole('button', { name: /Export CSV/i }).click();
+    const download = await downloadPromise;
+    check(
+      'CSV export downloads a file (P2.7)',
+      Boolean(download && /fmsg-applications-.*\.csv/.test(download.suggestedFilename())),
+      download ? download.suggestedFilename() : 'no download event'
+    );
+
+    const largeOverflow = await large.evaluate(() => {
+      const main = document.querySelector('.workspace-main');
+      return {
+        page: document.documentElement.scrollWidth > window.innerWidth + 1,
+        main: main ? main.scrollWidth > main.clientWidth + 1 : false,
+      };
+    });
+    check(
+      '100-row dataset has no horizontal overflow (G3)',
+      !largeOverflow.page && !largeOverflow.main,
+      JSON.stringify(largeOverflow)
+    );
+    await large.close();
   } finally {
     await browser.close();
     server.close();

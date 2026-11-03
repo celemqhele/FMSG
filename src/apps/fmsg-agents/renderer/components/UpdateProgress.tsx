@@ -74,7 +74,7 @@ export default function UpdateProgress({
           <BrandedOrbitalLoader />
           <h2
             style={{
-              fontSize: '20px',
+              fontSize: '18px',
               fontWeight: 700,
               color: 'var(--text-primary)',
               margin: '0 0 8px 0',
@@ -85,7 +85,7 @@ export default function UpdateProgress({
           </h2>
           <p
             style={{
-              fontSize: '13.5px',
+              fontSize: '13px',
               color: 'var(--text-secondary)',
               margin: 0,
               lineHeight: 1.55,
@@ -111,7 +111,7 @@ export default function UpdateProgress({
           </div>
           <h2
             style={{
-              fontSize: '20px',
+              fontSize: '18px',
               fontWeight: 700,
               color: 'var(--text-primary)',
               margin: '0 0 6px 0',
@@ -122,7 +122,7 @@ export default function UpdateProgress({
           </h2>
           <p
             style={{
-              fontSize: '13.5px',
+              fontSize: '13px',
               color: 'var(--text-secondary)',
               margin: '0 0 8px 0',
               lineHeight: 1.5,
@@ -165,7 +165,7 @@ export default function UpdateProgress({
           <BrandedOrbitalLoader />
           <h2
             style={{
-              fontSize: '20px',
+              fontSize: '18px',
               fontWeight: 700,
               color: 'var(--text-primary)',
               margin: '0 0 8px 0',
@@ -176,7 +176,7 @@ export default function UpdateProgress({
           </h2>
           <p
             style={{
-              fontSize: '13.5px',
+              fontSize: '13px',
               color: 'var(--text-secondary)',
               margin: 0,
               lineHeight: 1.55,
@@ -216,7 +216,7 @@ export default function UpdateProgress({
               >
                 New Feature Update Available
               </h2>
-              <div style={{ fontSize: '12.5px', color: 'var(--text-secondary)' }}>
+              <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
                 v{cleanCurrent} &rarr; v{cleanTarget}
                 {totalBytes > 0 ? ` (${formatBytes(totalBytes)})` : ''}
               </div>
@@ -234,7 +234,7 @@ export default function UpdateProgress({
             >
               <div
                 style={{
-                  fontSize: '11px',
+                  fontSize: '12px',
                   fontWeight: 600,
                   color: 'var(--text-muted)',
                   textTransform: 'uppercase',

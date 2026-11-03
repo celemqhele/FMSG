@@ -25,7 +25,14 @@
 
 ## 2. Known Issues & External Dependencies
 
-1. **Vercel Deployment Promotion Required for `/api/agent/*` on `findmesomejobs.co.za`:**
+1. **Migration 039 is not applied (blocks durable review status).**
+   - `GET /rest/v1/saved_jobs?select=review_status,archived_at` returns `42703 column saved_jobs.review_status does not exist` (verified 2026-11-03).
+   - Apply `supabase/migrations/039_saved_jobs_review_status.sql` statement-by-statement in the Supabase SQL editor, run its verification queries, then `select pg_notification_queue_usage();` to refresh the PostgREST schema cache.
+   - Until then `saved-jobs-list` falls back to the legacy column set and status/archive IPC calls fail softly; the renderer keeps a local override (`fmsg_agents_job_overrides_v1`) so approvals are visible on that PC only.
+2. **No FMSG Agents release has been published from this work.** `v0.7.2` and `v0.9.0` are renderer-only and ready for OTA; `v0.8.0` is installer-only (`FMSG Agents Setup 0.8.0.exe`, 92,415,932 bytes, built and asar-verified). A clean-VM install/upgrade test is still outstanding.
+3. **Installer delivery:** `agent-updates` rejects ~92 MB objects (`413 EntityTooLarge`). `scripts/upload-update.js --installer-url <https://…>` plus the fixed external-download path (no Supabase credentials, 15-minute timeout) is the supported workaround; the first installer carrying it must still be distributed manually.
+4. **Phase 3 residuals:** invoice/cancellation wiring against Paystack (UI present), real device/session management, motion/density tokens, and an external WCAG 2.2 AA audit — do not claim accessibility certification before that audit.
+5. **Vercel Deployment Promotion Required for `/api/agent/*` on `findmesomejobs.co.za`:**
    - The new Next.js API routes (`/api/agent/ai`, `/api/agent/tools/search-jobs`, `/api/agent/billing/plans`, `/api/agent/billing/checkout`, `/api/agent/billing/verify`, and `/payment/success`) are committed in the repository.
    - Because `config.ts` defaults `WEB_BASE_URL` to `https://findmesomejobs.co.za` (overridable via `FMSG_WEB_BASE_URL` env var for beta/local testing), those routes only become reachable on the live domain after the deployment is promoted in the Vercel dashboard.
    - Even if `/api/agent/ai` is temporarily unreachable, `AgentRunner` has a deterministic heuristic fallback (`heuristicAnalysis` + `guessValue`) so form classification and profile field mapping never crash.

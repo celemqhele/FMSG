@@ -1,6 +1,6 @@
 {
-  "timestamp": "2026-11-03T11:17:00.198Z",
-  "total": 24,
+  "timestamp": "2026-11-03T11:27:20.641Z",
+  "total": 29,
   "failed": 0,
   "results": [
     {
@@ -105,17 +105,42 @@
     {
       "name": "Terms shows the current app version (ST-12)",
       "pass": true,
-      "detail": "expected 0.8.0"
+      "detail": "expected 0.9.0"
     },
     {
       "name": "Notifications never show a stale version (NT-01)",
       "pass": true,
-      "detail": "Notifications Clear all Close You're on FMSG Agents v0.8.0 1"
+      "detail": "Notifications Clear all Close You're on FMSG Agents v0.9.0 1"
     },
     {
       "name": "Opening notifications clears the unread badge (NT-03)",
       "pass": true,
       "detail": "0 badge(s)"
+    },
+    {
+      "name": "100-row dataset paginates at 25 rows (G3)",
+      "pass": true,
+      "detail": "rows=25, Page 1 of 4, Showing 1–25 of 100"
+    },
+    {
+      "name": "Pagination advances to page 2 (G3)",
+      "pass": true,
+      "detail": "Page 2 of 4"
+    },
+    {
+      "name": "100 rows per page renders the full dataset (G3)",
+      "pass": true,
+      "detail": "rows=100"
+    },
+    {
+      "name": "CSV export downloads a file (P2.7)",
+      "pass": true,
+      "detail": "fmsg-applications-2026-11-03.csv"
+    },
+    {
+      "name": "100-row dataset has no horizontal overflow (G3)",
+      "pass": true,
+      "detail": "{\"page\":false,\"main\":false}"
     }
   ]
 }

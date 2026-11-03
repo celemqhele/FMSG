@@ -1,0 +1,10 @@
+- Every screen now uses the same 7-step type scale, so headings and body text line up across the app
+- Buttons, inputs, cards and modals share four corner radii instead of twenty-two
+- The page no longer changes width when you move between Home, Applications, Billing and Settings
+- Below 1100px wide the sidebar becomes a compact icon rail, giving the workspace its width back
+- Applications can be sorted, filtered, paginated 25/50/100 per page and exported to CSV
+- Home, Applications and Review were rebuilt as separate views for a faster, safer UI pipeline
+- Profiles and Rules now have their own page titles and the saved answers can be edited in place
+- Settings has a section index, aligned account cards and a clearly separated danger zone
+- The setup guide uses crisp icons, explains your allowance and approval mode, and can be skipped
+- The preview pane now has dark Windows-style browser chrome instead of a light macOS-style frame
