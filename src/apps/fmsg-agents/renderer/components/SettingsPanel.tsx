@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useDialog } from './DialogSystem';
+import { formatDateTimeZA } from '../lib/format';
 
 interface SettingsPanelProps {
   selectedProfileId: string;
@@ -69,6 +70,7 @@ export default function SettingsPanel({
 
   const [preventSleep, setPreventSleep] = useState(false);
   const [batteryWarningShown, setBatteryWarningShown] = useState(false);
+  const [showTechnicalDetails, setShowTechnicalDetails] = useState(false);
 
   const [updateStatus, setUpdateStatus] = useState('idle');
   const [updateInfo, setUpdateInfo] = useState<string>('');
@@ -95,7 +97,6 @@ export default function SettingsPanel({
     deviceKeyOk: true,
   });
 
-  // Local Credential Manager Site Secrets
   const [secrets, setSecrets] = useState<SiteSecretItem[]>([]);
   const [editingSite, setEditingSite] = useState<{
     siteLabel: string;
@@ -106,7 +107,7 @@ export default function SettingsPanel({
   const [secretPassword, setSecretPassword] = useState('');
   const [savingSecret, setSavingSecret] = useState(false);
 
-  // Account Deletion Modal State
+  // Account Deletion Two-Step Modal State
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteStep, setDeleteStep] = useState<'confirm' | 'code'>('confirm');
   const [deleteCode, setDeleteCode] = useState('');
@@ -169,24 +170,27 @@ export default function SettingsPanel({
   const handleChannelChange = (newChannel: 'stable' | 'beta') => {
     window.electronAPI?.setUpdateChannel(newChannel).then(() => {
       refreshSettingsMeta();
-      showToast(`Release channel set to ${newChannel}.`, 'info');
+      showToast(
+        `Update channel changed to ${newChannel === 'beta' ? 'Beta' : 'Stable'}.`,
+        'info'
+      );
     });
   };
 
   const handleResetDeviceKey = () => {
     showModal({
-      title: 'Re-register Device Key',
+      title: 'Re-register Installation Security Key',
       message:
-        'This will generate a new security key for this installation and re-register it with the update service. Continue?',
-      confirmLabel: 'Re-register',
+        'This generates a fresh local installation key and re-registers this PC with the FMSG update service. Your saved job accounts and profiles are not affected.',
+      confirmLabel: 'Re-register Key',
       cancelLabel: 'Cancel',
       onConfirm: () => {
         window.electronAPI?.resetDeviceKey().then((res) => {
           refreshSettingsMeta();
           if (res?.ok) {
-            showToast('Device key re-registered.', 'success');
+            showToast('Installation security key re-registered.', 'success');
           } else {
-            showToast('Could not reset device key.', 'error');
+            showToast('Could not reset installation key.', 'error');
           }
         });
       },
@@ -207,7 +211,7 @@ export default function SettingsPanel({
       });
       if (res?.ok) {
         showToast(
-          `Saved ${editingSite.keyName} in Windows Credential Manager (locked to ${editingSite.allowedDomain}).`,
+          `Saved ${editingSite.siteLabel} sign-in securely on this device (locked to ${editingSite.allowedDomain}).`,
           'success'
         );
         setEditingSite(null);
@@ -215,17 +219,28 @@ export default function SettingsPanel({
         setSecretPassword('');
         refreshSecrets();
       } else {
-        showToast(res?.error || 'Could not save secret.', 'error');
+        showToast(res?.error || 'Could not save sign-in details.', 'error');
       }
     } finally {
       setSavingSecret(false);
     }
   };
 
-  const handleForgetSecret = async (keyName: string) => {
-    await window.electronAPI?.deleteSiteSecret?.(keyName);
-    showToast(`Removed ${keyName} from Windows Credential Manager.`, 'info');
-    refreshSecrets();
+  const handleForgetSecret = (siteLabel: string, keyName: string) => {
+    showModal({
+      title: `Disconnect ${siteLabel}?`,
+      message: `This removes your saved ${siteLabel} sign-in from this computer. The agent will pause and ask you to sign in manually next time a posting on ${siteLabel} requires an account.`,
+      confirmLabel: `Remove ${siteLabel}`,
+      cancelLabel: 'Cancel',
+      destructive: true,
+      requireTypedText: siteLabel,
+      requireTypedPlaceholder: `Type ${siteLabel} to confirm`,
+      onConfirm: async () => {
+        await window.electronAPI?.deleteSiteSecret?.(keyName);
+        showToast(`Removed saved ${siteLabel} sign-in from this device.`, 'info');
+        refreshSecrets();
+      },
+    });
   };
 
   const handleSendDeleteCode = async () => {
@@ -273,44 +288,85 @@ export default function SettingsPanel({
     }
   };
 
+  const scrollToSection = (id: string) => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
+
   return (
     <div className="billing-panel">
       <header className="billing-header">
         <div>
-          <h2 className="billing-title">Settings &amp; Local Security Vault</h2>
+          <h1 className="billing-title">Settings</h1>
           <p className="billing-subtitle">
-            Run preferences, Windows Credential Manager site secrets, software
-            updates, and account controls.
+            Manage connected job-board accounts, run preferences, software
+            updates, and legal agreements.
           </p>
         </div>
-        <span className="balance-chip">
-          Version <strong>v{settingsMeta.currentVersion || '—'}</strong>
-        </span>
+        {onOpenOnboarding && (
+          <button
+            type="button"
+            className="btn btn-secondary"
+            style={{ whiteSpace: 'nowrap' }}
+            onClick={onOpenOnboarding}
+          >
+            Open Setup Guide
+          </button>
+        )}
       </header>
 
-      {/* Connected Job Accounts — Local Credential Manager Secret Vault */}
-      <section className="billing-section">
+      {/* Section Sub-Navigation (ST-05) */}
+      <nav className="settings-subnav" aria-label="Settings sections">
+        <button
+          type="button"
+          className="spend-preset-chip"
+          onClick={() => scrollToSection('settings-accounts')}
+        >
+          Connected Accounts
+        </button>
+        <button
+          type="button"
+          className="spend-preset-chip"
+          onClick={() => scrollToSection('settings-preferences')}
+        >
+          Run Preferences
+        </button>
+        <button
+          type="button"
+          className="spend-preset-chip"
+          onClick={() => scrollToSection('settings-updates')}
+        >
+          Software Updates
+        </button>
+        <button
+          type="button"
+          className="spend-preset-chip"
+          onClick={() => scrollToSection('settings-verification')}
+        >
+          System Verification
+        </button>
+        <button
+          type="button"
+          className="spend-preset-chip"
+          onClick={() => scrollToSection('settings-legal')}
+        >
+          Legal &amp; Danger Zone
+        </button>
+      </nav>
+
+      {/* 1. Connected Job-Board Accounts */}
+      <section id="settings-accounts" className="billing-section">
         <div className="billing-section-head">
           <div>
-            <h3 className="billing-section-title">
-              Connected Job Accounts (Local Windows Credential Manager)
-            </h3>
-            <p className="billing-section-note" style={{ margin: '2px 0 0' }}>
-              Passwords are stored locally on this PC as secret keys (e.g.{' '}
-              <code>LINKEDIN_PASSWORD</code>). The AI only sees the key name and
-              calls <code>fill_secret(name)</code> on the verified domain —
-              passwords never reach the AI, server, or screenshots.
+            <h2 className="billing-section-title">Connected Job Accounts</h2>
+            <p className="billing-section-note" style={{ margin: '4px 0 0' }}>
+              Sign-in details are encrypted and stored strictly on this
+              computer. They are used only on the matching official job-board
+              domain and are never sent to AI models or external servers.
             </p>
           </div>
-          {onOpenOnboarding && (
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={onOpenOnboarding}
-            >
-              Launch Setup Wizard
-            </button>
-          )}
         </div>
 
         <div className="site-secrets-grid">
@@ -324,36 +380,41 @@ export default function SettingsPanel({
                 className={`site-secret-card ${saved ? 'connected' : ''}`}
               >
                 <div className="site-secret-top">
-                  <div className="site-secret-badge">
+                  <div className="site-secret-badge" aria-hidden="true">
                     {site.siteLabel.slice(0, 2).toUpperCase()}
                   </div>
                   <div className="site-secret-info">
                     <div className="site-secret-name">{site.siteLabel}</div>
                     <div className="site-secret-domain">
-                      {site.allowedDomain} · <code>{site.defaultKeyName}</code>
+                      {site.allowedDomain}
                     </div>
                   </div>
                   <span
-                    className={`tag ${saved ? 'tag-connected' : ''}`}
-                    style={{
-                      color: saved ? '#22c55e' : '#94a3b8',
-                    }}
+                    className={`status-pill-sm ${
+                      saved ? 'applied' : 'neutral'
+                    }`}
                   >
-                    {saved ? 'Saved' : 'Not set'}
+                    {saved ? 'Connected' : 'Not connected'}
                   </span>
                 </div>
 
-                {saved && (
-                  <div className="site-secret-user">
-                    Account: <strong>{saved.username}</strong>
-                  </div>
-                )}
+                <div className="site-secret-user">
+                  {saved ? (
+                    <>
+                      Signed in as <strong>{saved.username}</strong>
+                    </>
+                  ) : (
+                    <span className="text-muted">
+                      Optional — connect for automatic sign-in
+                    </span>
+                  )}
+                </div>
 
                 <div className="site-secret-actions">
                   <button
                     type="button"
-                    className="btn btn-secondary"
-                    style={{ height: 28, fontSize: '11.5px', flex: 1 }}
+                    className="btn btn-secondary btn-compact"
+                    style={{ flex: 1 }}
                     onClick={() => {
                       setEditingSite({
                         siteLabel: site.siteLabel,
@@ -364,16 +425,17 @@ export default function SettingsPanel({
                       setSecretPassword('');
                     }}
                   >
-                    {saved ? 'Update Key' : 'Connect'}
+                    {saved ? 'Update Sign-In' : 'Connect'}
                   </button>
                   {saved && (
                     <button
                       type="button"
-                      className="btn btn-danger"
-                      style={{ height: 28, fontSize: '11.5px' }}
-                      onClick={() => handleForgetSecret(site.defaultKeyName)}
+                      className="btn btn-secondary btn-compact btn-danger-outline"
+                      onClick={() =>
+                        handleForgetSecret(site.siteLabel, site.defaultKeyName)
+                      }
                     >
-                      Forget
+                      Disconnect
                     </button>
                   )}
                 </div>
@@ -385,25 +447,30 @@ export default function SettingsPanel({
         {editingSite && (
           <form onSubmit={handleSaveSiteSecret} className="secret-editor-box">
             <div className="secret-editor-head">
-              <strong>
-                Configure {editingSite.siteLabel} (
-                <code>{editingSite.keyName}</code>)
-              </strong>
-              <span>Domain lock: https://{editingSite.allowedDomain}</span>
+              <strong>Connect {editingSite.siteLabel}</strong>
+              <span>Verified domain: https://{editingSite.allowedDomain}</span>
             </div>
             <div className="secret-editor-fields">
+              <label className="sr-only" htmlFor="secret-username-input">
+                {editingSite.siteLabel} email or username
+              </label>
               <input
+                id="secret-username-input"
                 type="text"
                 className="field-input"
-                placeholder={`Login email or username for ${editingSite.siteLabel}`}
+                placeholder={`Email or username for ${editingSite.siteLabel}`}
                 value={secretUsername}
                 onChange={(e) => setSecretUsername(e.target.value)}
                 required
               />
+              <label className="sr-only" htmlFor="secret-password-input">
+                {editingSite.siteLabel} password
+              </label>
               <input
+                id="secret-password-input"
                 type="password"
                 className="field-input"
-                placeholder={`Password (stored as ${editingSite.keyName})`}
+                placeholder={`Password for ${editingSite.siteLabel} (encrypted on this PC)`}
                 value={secretPassword}
                 onChange={(e) => setSecretPassword(e.target.value)}
                 required
@@ -413,7 +480,14 @@ export default function SettingsPanel({
                 className="btn btn-primary"
                 disabled={savingSecret}
               >
-                {savingSecret ? 'Encrypting…' : 'Save in Credential Manager'}
+                {savingSecret ? (
+                  <>
+                    <span className="btn-spinner" aria-hidden="true" />
+                    Saving…
+                  </>
+                ) : (
+                  'Save Account'
+                )}
               </button>
               <button
                 type="button"
@@ -427,19 +501,20 @@ export default function SettingsPanel({
         )}
       </section>
 
-      {/* Run Preferences */}
-      <section className="billing-section">
+      {/* 2. Run Preferences */}
+      <section id="settings-preferences" className="billing-section">
         <div className="billing-section-head">
-          <h3 className="billing-section-title">Run preferences</h3>
+          <h2 className="billing-section-title">Run Preferences</h2>
         </div>
         <p className="billing-section-note">
           Keep Windows awake while the agent works through a batch of job
           postings.
         </p>
 
-        <label className="checkbox-label" style={{ fontSize: '12px' }}>
+        <label className="checkbox-label">
           <input
             type="checkbox"
+            className="styled-checkbox"
             checked={preventSleep}
             onChange={(e) => {
               const enabled = e.target.checked;
@@ -456,31 +531,34 @@ export default function SettingsPanel({
               }
             }}
           />
-          <span>Prevent computer from sleeping during agent runs</span>
+          <span>Prevent computer from sleeping during active runs</span>
         </label>
       </section>
 
-      {/* Software Updates */}
-      <section className="billing-section">
+      {/* 3. Software Updates */}
+      <section id="settings-updates" className="billing-section">
         <div className="billing-section-head">
           <div>
-            <h3 className="billing-section-title">Software updates</h3>
-            <p className="billing-section-note" style={{ margin: '2px 0 0' }}>
-              Status: {settingsMeta.lastCheckStatus}
+            <h2 className="billing-section-title">Software Updates</h2>
+            <p className="billing-section-note" style={{ margin: '4px 0 0' }}>
+              Status: <strong>{settingsMeta.lastCheckStatus}</strong>
               {settingsMeta.lastCheckAt
-                ? ` · Last checked ${new Date(settingsMeta.lastCheckAt).toLocaleString()}`
+                ? ` · Last checked ${formatDateTimeZA(settingsMeta.lastCheckAt)}`
                 : ''}
             </p>
           </div>
 
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <div className="settings-updates-controls">
+            <label className="sr-only" htmlFor="update-channel-select">
+              Update channel
+            </label>
             <select
+              id="update-channel-select"
               className="select-input"
               value={settingsMeta.channel}
               onChange={(e) =>
                 handleChannelChange(e.target.value as 'stable' | 'beta')
               }
-              style={{ height: 32, minWidth: 148, fontSize: '12px' }}
               aria-label="Update channel"
             >
               <option value="stable">Stable channel</option>
@@ -490,145 +568,132 @@ export default function SettingsPanel({
             <button
               type="button"
               className="btn btn-primary"
-              style={{ height: 32, padding: '0 14px', fontSize: '12px' }}
+              style={{ whiteSpace: 'nowrap' }}
               disabled={updateStatus === 'checking'}
               onClick={handleCheckUpdate}
             >
-              {updateStatus === 'checking' ? 'Checking…' : 'Check for updates'}
+              {updateStatus === 'checking' ? (
+                <>
+                  <span className="btn-spinner" aria-hidden="true" />
+                  Checking…
+                </>
+              ) : (
+                'Check for Updates'
+              )}
             </button>
           </div>
         </div>
 
         {updateInfo && (
-          <div
-            className="form-banner info"
-            style={{ marginTop: '10px', fontSize: '12px' }}
-          >
+          <div className="form-banner info" style={{ marginTop: '12px' }}>
             {updateInfo}
           </div>
         )}
       </section>
 
-      {/* Browser & Device Security */}
-      <section className="billing-section">
+      {/* 4. System & Security Verification */}
+      <section id="settings-verification" className="billing-section">
         <div className="billing-section-head">
-          <h3 className="billing-section-title">
-            Browser &amp; installation verification
-          </h3>
+          <div>
+            <h2 className="billing-section-title">System Verification</h2>
+            <p className="billing-section-note" style={{ margin: '4px 0 0' }}>
+              Local browser readiness and signed update verification status.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="btn btn-secondary btn-compact"
+            onClick={() => setShowTechnicalDetails((v) => !v)}
+          >
+            {showTechnicalDetails ? 'Hide Technical Details' : 'Technical Details'}
+          </button>
         </div>
 
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '8px',
-            marginTop: '8px',
-          }}
-        >
-          <div
-            className="card-nested"
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              padding: '10px 12px',
-            }}
-          >
+        <div className="verification-rows">
+          <div className="card-nested verification-row">
             <div>
-              <div
-                style={{ fontSize: '12.5px', fontWeight: 600, color: '#f1f5f9' }}
-              >
-                Automation browser
-              </div>
-              <div
-                style={{ fontSize: '11.5px', color: 'rgba(148, 163, 184, 0.9)' }}
-              >
+              <div className="verification-row-title">Automation Browser</div>
+              <div className="verification-row-sub">
                 {settingsMeta.browserStatus?.message || 'Checking browser…'}
               </div>
             </div>
             <span
-              className="tag"
-              style={{
-                fontSize: '11px',
-                color: settingsMeta.browserStatus?.available
-                  ? 'var(--success)'
-                  : 'var(--danger)',
-              }}
+              className={`status-pill-sm ${
+                settingsMeta.browserStatus?.available ? 'applied' : 'review'
+              }`}
             >
               {settingsMeta.browserStatus?.available ? 'Verified' : 'Missing'}
             </span>
           </div>
 
-          <div
-            className="card-nested"
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              gap: '12px',
-              padding: '10px 12px',
-            }}
-          >
+          <div className="card-nested verification-row">
             <div>
-              <div
-                style={{ fontSize: '12.5px', fontWeight: 600, color: '#f1f5f9' }}
-              >
-                Installation security key
+              <div className="verification-row-title">
+                Installation Security Key
               </div>
-              <div
-                style={{ fontSize: '11.5px', color: 'rgba(148, 163, 184, 0.9)' }}
-              >
+              <div className="verification-row-sub">
                 {settingsMeta.deviceKeyOk
-                  ? `Active (${settingsMeta.deviceId.slice(0, 16)}…)`
-                  : 'Key mismatch detected on this device'}
+                  ? 'Verified hardware-independent key stored securely on this PC'
+                  : 'Security key needs re-registration on this PC'}
               </div>
+              {showTechnicalDetails && settingsMeta.deviceId && (
+                <div className="verification-tech-detail">
+                  Installation key status: Active · Channel:{' '}
+                  {settingsMeta.channel} · Build v
+                  {settingsMeta.installedVersion || settingsMeta.currentVersion}
+                </div>
+              )}
             </div>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              style={{ height: 30, padding: '0 12px', fontSize: '11.5px' }}
-              onClick={handleResetDeviceKey}
-            >
-              Re-register device
-            </button>
+            {showTechnicalDetails ? (
+              <button
+                type="button"
+                className="btn btn-secondary btn-compact"
+                onClick={handleResetDeviceKey}
+              >
+                Re-register Key
+              </button>
+            ) : (
+              <span
+                className={`status-pill-sm ${
+                  settingsMeta.deviceKeyOk ? 'applied' : 'review'
+                }`}
+              >
+                {settingsMeta.deviceKeyOk ? 'Active' : 'Needs Attention'}
+              </span>
+            )}
           </div>
         </div>
       </section>
 
-      {/* Agreements & Policies + Danger Zone (Delete Account) */}
-      <div className="billing-top-grid">
+      {/* 5. Legal Agreements & Danger Zone */}
+      <div id="settings-legal" className="billing-top-grid">
         <section className="billing-section" style={{ margin: 0 }}>
           <div className="billing-section-head">
-            <h3 className="billing-section-title">Agreements &amp; policies</h3>
+            <div>
+              <h2 className="billing-section-title">Legal Agreements</h2>
+              <p className="billing-section-note" style={{ margin: '4px 0 0' }}>
+                Review the agreements governing FMSG Agents.
+              </p>
+            </div>
           </div>
-          <div
-            style={{
-              display: 'flex',
-              gap: '8px',
-              flexWrap: 'wrap',
-              marginTop: '8px',
-            }}
-          >
+          <div className="legal-links-row">
             <button
               type="button"
-              className="btn btn-secondary"
-              style={{ height: 30, padding: '0 12px', fontSize: '11.5px' }}
+              className="btn btn-secondary btn-compact"
               onClick={() => openLegalDocument('eula')}
             >
               License Agreement (EULA)
             </button>
             <button
               type="button"
-              className="btn btn-secondary"
-              style={{ height: 30, padding: '0 12px', fontSize: '11.5px' }}
+              className="btn btn-secondary btn-compact"
               onClick={() => openLegalDocument('terms')}
             >
               Terms of Service
             </button>
             <button
               type="button"
-              className="btn btn-secondary"
-              style={{ height: 30, padding: '0 12px', fontSize: '11.5px' }}
+              className="btn btn-secondary btn-compact"
               onClick={() => openLegalDocument('privacy')}
             >
               Privacy Policy
@@ -642,20 +707,22 @@ export default function SettingsPanel({
         >
           <div className="billing-section-head">
             <div>
-              <h3
+              <span className="danger-eyebrow">DANGER ZONE</span>
+              <h2
                 className="billing-section-title"
-                style={{ color: '#fca5a5' }}
+                style={{ color: '#fca5a5', marginTop: 2 }}
               >
                 Delete Account
-              </h3>
-              <p className="billing-section-note" style={{ margin: '2px 0 0' }}>
-                Permanently delete your FMSG account, profiles, and saved job
-                history.
+              </h2>
+              <p className="billing-section-note" style={{ margin: '4px 0 0' }}>
+                Permanently remove your FMSG account, search profiles, CVs, and
+                application history.
               </p>
             </div>
             <button
               type="button"
               className="btn btn-danger"
+              style={{ whiteSpace: 'nowrap' }}
               onClick={() => {
                 setDeleteStep('confirm');
                 setDeleteCode('');
@@ -669,112 +736,142 @@ export default function SettingsPanel({
         </section>
       </div>
 
-      {/* Delete Account Two-Step Modal */}
+      {/* Delete Account Two-Step Modal (DL-04) */}
       {showDeleteModal && (
         <div
           className="modal-backdrop"
           onClick={() => setShowDeleteModal(false)}
         >
           <div
-            className="modal-card"
+            className="modal-card shared-modal-shell modal-sm"
             role="dialog"
             aria-modal="true"
+            aria-labelledby="delete-account-title"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3
-              style={{
-                margin: '0 0 8px 0',
-                fontSize: '16px',
-                fontWeight: 700,
-                color: '#fca5a5',
-              }}
-            >
-              Delete Account Permanently?
-            </h3>
+            <div className="modal-shell-header">
+              <h3
+                id="delete-account-title"
+                className="modal-shell-title"
+                style={{ color: '#fca5a5' }}
+              >
+                Delete Account Permanently?
+              </h3>
+              <button
+                type="button"
+                className="modal-close-btn"
+                aria-label="Close dialog"
+                onClick={() => setShowDeleteModal(false)}
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.2"
+                >
+                  <path d="M18 6L6 18M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
 
             {deleteStep === 'confirm' ? (
               <>
-                <p
-                  style={{
-                    fontSize: '12.5px',
-                    color: 'var(--text-secondary)',
-                    marginBottom: '16px',
-                    lineHeight: 1.5,
-                  }}
-                >
-                  This action is permanent and cannot be undone. All search
-                  profiles, CVs, and application history will be removed. We
-                  will send a 6-digit confirmation code to your email.
-                </p>
-                {deleteError && (
-                  <div className="field-error-text" style={{ marginBottom: 10 }}>
-                    {deleteError}
-                  </div>
-                )}
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <button
-                    type="button"
-                    className="btn btn-danger"
-                    style={{ flex: 1 }}
-                    disabled={deleteBusy}
-                    onClick={handleSendDeleteCode}
-                  >
-                    {deleteBusy ? 'Sending Code…' : 'Send Confirmation Code'}
-                  </button>
+                <div className="modal-shell-body">
+                  <p className="modal-shell-message">
+                    This action is permanent and cannot be undone. Entering the
+                    6-digit verification code in the next step will{' '}
+                    <strong>immediately delete</strong> your FMSG account,
+                    search profiles, uploaded CVs, and tracked applications.
+                  </p>
+                  {deleteError && (
+                    <div className="field-error-text" role="alert">
+                      {deleteError}
+                    </div>
+                  )}
+                </div>
+                <div className="modal-shell-footer">
                   <button
                     type="button"
                     className="btn btn-secondary"
                     onClick={() => setShowDeleteModal(false)}
                   >
                     Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-danger"
+                    disabled={deleteBusy}
+                    onClick={handleSendDeleteCode}
+                  >
+                    {deleteBusy ? (
+                      <>
+                        <span className="btn-spinner" aria-hidden="true" />
+                        Sending Code…
+                      </>
+                    ) : (
+                      'Send Verification Code'
+                    )}
                   </button>
                 </div>
               </>
             ) : (
               <form onSubmit={handleConfirmDeleteAccount}>
-                <p
-                  style={{
-                    fontSize: '12.5px',
-                    color: 'var(--text-secondary)',
-                    marginBottom: '12px',
-                  }}
-                >
-                  Enter the 6-digit code sent to your email address to confirm
-                  permanent deletion:
-                </p>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  maxLength={6}
-                  className="field-input"
-                  placeholder="123456"
-                  value={deleteCode}
-                  onChange={(e) =>
-                    setDeleteCode(e.target.value.replace(/\D/g, ''))
-                  }
-                  style={{ marginBottom: '12px' }}
-                  autoFocus
-                />
-                {deleteError && (
-                  <div className="field-error-text" style={{ marginBottom: 10 }}>
-                    {deleteError}
+                <div className="modal-shell-body">
+                  <p className="modal-shell-message">
+                    Enter the 6-digit code sent to your email. Your account and
+                    all associated data will be erased immediately upon
+                    confirmation:
+                  </p>
+                  <div className="form-group" style={{ marginTop: 12 }}>
+                    <label
+                      htmlFor="delete-account-code-input"
+                      className="field-label"
+                    >
+                      6-Digit Deletion Code
+                    </label>
+                    <input
+                      id="delete-account-code-input"
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={6}
+                      className="field-input"
+                      placeholder="123456"
+                      value={deleteCode}
+                      onChange={(e) =>
+                        setDeleteCode(e.target.value.replace(/\D/g, ''))
+                      }
+                      autoFocus
+                    />
                   </div>
-                )}
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <button
-                    type="submit"
-                    className="btn btn-danger"
-                    style={{ flex: 1 }}
-                    disabled={deleteBusy}
-                  >
-                    {deleteBusy ? 'Deleting…' : 'Permanently Delete Account'}
-                  </button>
+                  {deleteError && (
+                    <div className="field-error-text" role="alert">
+                      {deleteError}
+                    </div>
+                  )}
+                </div>
+                <div className="modal-shell-footer">
                   <button
                     type="button"
                     className="btn btn-secondary"
                     onClick={() => setShowDeleteModal(false)}
                   >
                     Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn btn-danger"
+                    disabled={deleteBusy}
+                  >
+                    {deleteBusy ? (
+                      <>
+                        <span className="btn-spinner" aria-hidden="true" />
+                        Deleting…
+                      </>
+                    ) : (
+                      'Permanently Delete Account'
+                    )}
                   </button>
                 </div>
               </form>

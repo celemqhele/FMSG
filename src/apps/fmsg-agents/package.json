@@ -1,6 +1,6 @@
 {
   "name": "fmsg-agents",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "author": "FMSG (Find Me Some Jobs)",
   "description": "FMSG Agents - desktop assistant for automated job applications",
   "main": "dist/electron-main.js",
@@ -12,6 +12,7 @@
     "build:all": "npm run build:main && npm run build:renderer && electron-builder",
     "ui:shots": "node tests/ui/shots.cjs",
     "ui:a11y": "node tests/ui/a11y.cjs",
+    "ui:flows": "node tests/ui/flows.cjs",
     "lint:content": "node scripts/lint-content.cjs",
     "lint:tokens": "node scripts/lint-tokens.cjs"
   },

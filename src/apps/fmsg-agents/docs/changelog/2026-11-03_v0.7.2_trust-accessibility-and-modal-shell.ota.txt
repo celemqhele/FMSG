@@ -1,0 +1,12 @@
+- Approve now approves: the review item leaves the queue and stays in Applications as Approved
+- Skip and Remove are reversible: a 10-second Undo restores the record
+- Keyboard focus is visible on every control, and body text now meets WCAG AA contrast
+- Text is never smaller than 12px anywhere in the app
+- Run Setup and Sign Up now fit and stay usable at the minimum 960x640 window
+- Settings no longer shows environment variable names, internal function names or the device key
+- Terms of Service, Privacy Policy and EULA render as proper documents at version 0.7.2
+- Billing shows one recommended plan, a clear monthly spend cap, invoices and a payment summary
+- Usage now reads 5 / 5 with +1 extra instead of 100% beside 6 / 5
+- Dates read 2 Nov 2026 and locations read Johannesburg, Gauteng everywhere
+- Every screen has a stable page title, and Account is reachable from the sidebar
+- Notifications no longer show an outdated version and clear when opened

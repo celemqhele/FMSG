@@ -5,6 +5,24 @@ import SettingsPanel from './components/SettingsPanel';
 import LoginScreen from './components/LoginScreen';
 import BillingPanel from './components/BillingPanel';
 import UpdateProgress, { UpdateScreenPhase } from './components/UpdateProgress';
+import {
+  formatDateZA,
+  formatLocationZA,
+  formatProfileName,
+  formatShortDayDateZA,
+  formatZar,
+  computeAllowanceUsage,
+} from './lib/format';
+import {
+  ApplicationStatus,
+  LocalJobOverride,
+  SavedJobRecord,
+  STATUS_DISPLAY,
+  isJobArchived,
+  loadLocalJobOverrides,
+  resolveApplicationStatus,
+  saveLocalJobOverride,
+} from './lib/status';
 
 export type ViewType =
   | 'home'
@@ -17,20 +35,6 @@ export type ViewType =
   | 'account';
 
 export type AutonomyMode = 'full-auto' | 'approve-each' | 'aggressive';
-
-interface SavedJobRow {
-  id: string;
-  profile_id?: string | null;
-  job_title: string;
-  company: string;
-  location?: string;
-  estimated_salary?: string;
-  match_score?: number;
-  match_summary?: string;
-  job_url: string;
-  full_spec?: string;
-  created_at?: string;
-}
 
 interface NotificationItem {
   id: string;
@@ -86,14 +90,30 @@ const ONBOARDING_SITES = [
   },
 ];
 
-function deriveJobStatus(
-  job: SavedJobRow
-): 'Applied' | 'Needs Review' | 'Skipped' {
-  const summary = (job.match_summary || '').toLowerCase();
-  if (summary.includes('applied via fmsg agents')) return 'Applied';
-  if (summary.includes('not auto-submitted') || summary.includes('opened via'))
-    return 'Needs Review';
-  return 'Applied';
+/** Shared inline loading indicator (LS-02, AU-03) */
+function Spinner({ size = 12 }: { size?: number }) {
+  return (
+    <span
+      className="btn-spinner"
+      style={{ width: size, height: size }}
+      role="status"
+      aria-label="Loading"
+    />
+  );
+}
+
+/** Canonical status pill with colour + text (never colour alone) */
+function StatusPill({ status }: { status: ApplicationStatus }) {
+  const meta = STATUS_DISPLAY[status] || STATUS_DISPLAY.applied;
+  return (
+    <span
+      className={`status-pill-sm ${meta.pillClass}`}
+      title={meta.description}
+    >
+      <span className="status-pill-dot" aria-hidden="true" />
+      {meta.label}
+    </span>
+  );
 }
 
 /**
@@ -138,6 +158,23 @@ function EmptyState({
           {actionLabel}
         </button>
       )}
+    </div>
+  );
+}
+
+/** Loading skeleton for the Applications table (LS-01) */
+function ApplicationsTableSkeleton() {
+  return (
+    <div className="skeleton-table" aria-label="Loading applications" role="status">
+      {[0, 1, 2, 3].map((row) => (
+        <div key={row} className="skeleton-table-row">
+          <span className="skeleton-block" style={{ width: '18%' }} />
+          <span className="skeleton-block" style={{ width: '28%' }} />
+          <span className="skeleton-block" style={{ width: '16%' }} />
+          <span className="skeleton-block" style={{ width: '14%' }} />
+          <span className="skeleton-block" style={{ width: '10%' }} />
+        </div>
+      ))}
     </div>
   );
 }
@@ -191,22 +228,19 @@ function AppInner() {
   >('Starter');
 
   // Saved Jobs (Applications Tracker, Review Queue & Dashboard)
-  const [savedJobs, setSavedJobs] = useState<SavedJobRow[]>([]);
+  const [savedJobs, setSavedJobs] = useState<SavedJobRecord[]>([]);
   const [jobsLoading, setJobsLoading] = useState(false);
   const [selectedDetailJob, setSelectedDetailJob] =
-    useState<SavedJobRow | null>(null);
+    useState<SavedJobRecord | null>(null);
+
+  // Local, reversible status/archive overrides (optimistic Phase 1B semantics,
+  // synced to the backend IPC once those channels exist).
+  const [jobOverrides, setJobOverrides] = useState<Record<string, LocalJobOverride>>(
+    () => loadLocalJobOverrides()
+  );
 
   // Notifications Popover
-  const [notifications, setNotifications] = useState<NotificationItem[]>([
-    {
-      id: 'notif_welcome',
-      title: 'Welcome to FMSG Agents v0.7.0',
-      body: 'Local Credential Manager secret vault and live browser preview are active.',
-      time: 'Just now',
-      read: false,
-      kind: 'info',
-    },
-  ]);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
 
   // 6-digit email verification modal state (website parity)
@@ -229,7 +263,11 @@ function AppInner() {
   } | null>(null);
 
   const pushNotification = useCallback(
-    (title: string, body: string, kind: 'info' | 'success' | 'warning' = 'info') => {
+    (
+      title: string,
+      body: string,
+      kind: 'info' | 'success' | 'warning' = 'info'
+    ) => {
       setNotifications((prev) => [
         {
           id: `n_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
@@ -238,6 +276,7 @@ function AppInner() {
           time: new Date().toLocaleTimeString('en-ZA', {
             hour: '2-digit',
             minute: '2-digit',
+            hour12: false,
           }),
           read: false,
           kind,
@@ -312,6 +351,36 @@ function AppInner() {
     loadPersistedAgentPrefs();
   }, [authenticated, refreshSavedJobs, loadPersistedAgentPrefs]);
 
+  // One-time, version-aware welcome notification (NT-01, NT-04): shown once per
+  // installed version, never a hardcoded stale string, never an internal memo.
+  useEffect(() => {
+    if (!authenticated || !appVersion) return;
+    const seenKey = `fmsg_welcome_seen_v${appVersion}`;
+    try {
+      if (window.localStorage.getItem(seenKey)) return;
+      window.localStorage.setItem(seenKey, '1');
+    } catch {
+      return;
+    }
+    setNotifications((prev) => {
+      if (prev.length > 0) return prev;
+      return [
+        {
+          id: `welcome_${appVersion}`,
+          title: `You're on FMSG Agents v${appVersion}`,
+          body: 'Choose a search profile, set your spend cap, and start your first application run.',
+          time: new Date().toLocaleTimeString('en-ZA', {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,
+          }),
+          read: false,
+          kind: 'info',
+        },
+      ];
+    });
+  }, [authenticated, appVersion]);
+
   useEffect(() => {
     const handleUpdateEvent = (e: Event) => {
       const detail = (e as CustomEvent).detail;
@@ -367,7 +436,8 @@ function AppInner() {
 
       if (event.type === 'phase' && event.phase === 'error') {
         showToast(
-          event.sublabel || 'The agent stopped unexpectedly. Please try again.',
+          event.sublabel ||
+            'The agent stopped unexpectedly. Please try again.',
           'error'
         );
       }
@@ -399,15 +469,14 @@ function AppInner() {
           ? {
               ...prev,
               phase: p.phase || prev.phase,
-              percent: typeof p.percent === 'number' ? p.percent : prev.percent,
+              percent:
+                typeof p.percent === 'number' ? p.percent : prev.percent,
               transferredBytes:
                 typeof p.transferredBytes === 'number'
                   ? p.transferredBytes
                   : prev.transferredBytes,
               totalBytes:
-                typeof p.totalBytes === 'number'
-                  ? p.totalBytes
-                  : prev.totalBytes,
+                typeof p.totalBytes === 'number' ? p.totalBytes : prev.totalBytes,
             }
           : null
       );
@@ -514,13 +583,152 @@ function AppInner() {
     );
     setVerifyLoading(false);
     if (res?.ok) {
-      setUser((prev: any) => (prev ? { ...prev, emailVerified: true } : prev));
+      setUser((prev: any) =>
+        prev ? { ...prev, emailVerified: true } : prev
+      );
       setShowVerifyModal(false);
-      showToast('Email verified! 5 welcome bonus applications unlocked.', 'success');
+      showToast(
+        'Email verified! 5 welcome bonus applications unlocked.',
+        'success'
+      );
     } else {
       setVerifyError(res?.error || 'Invalid code. Please try again.');
     }
   };
+
+  // ── Honest Approve / Skip / Archive Semantics (RV-01, RV-03, AP-05) ──────
+  const applyStatusOverride = useCallback(
+    (job: SavedJobRecord, patch: Omit<LocalJobOverride, 'updated_at'>) => {
+      // Optimistic local override (persists across restarts until backend sync)
+      const next = saveLocalJobOverride(job.id, patch);
+      setJobOverrides(next);
+      // Backend sync when available (Phase 1B IPC contract)
+      if (
+        patch.review_status &&
+        typeof (window.electronAPI as any)?.updateSavedJobStatus === 'function'
+      ) {
+        (window.electronAPI as any)
+          .updateSavedJobStatus(job.id, patch.review_status)
+          .catch(() => {});
+      }
+    },
+    []
+  );
+
+  const handleApproveJob = useCallback(
+    (job: SavedJobRecord) => {
+      applyStatusOverride(job, { review_status: 'approved', archived_at: null });
+      window.electronAPI?.openExternalUrl?.(job.job_url);
+      setSavedJobs((prev) =>
+        prev.map((j) =>
+          j.id === job.id
+            ? { ...j, review_status: 'approved' as const }
+            : j
+        )
+      );
+      showToast(
+        'Approved — posting opened in your browser and saved to Applications.',
+        'success'
+      );
+    },
+    [applyStatusOverride, showToast]
+  );
+
+  const handleSkipJob = useCallback(
+    (job: SavedJobRecord) => {
+      applyStatusOverride(job, {
+        review_status: 'skipped',
+        archived_at: new Date().toISOString(),
+      });
+      setSavedJobs((prev) =>
+        prev.map((j) =>
+          j.id === job.id
+            ? {
+                ...j,
+                review_status: 'skipped' as const,
+                archived_at: new Date().toISOString(),
+              }
+            : j
+        )
+      );
+      showToast(
+        `${job.job_title || 'Posting'} skipped and removed from the queue.`,
+        'info',
+        {
+          action: {
+            label: 'Undo',
+            onClick: () => {
+              applyStatusOverride(job, {
+                review_status: 'needs_review',
+                archived_at: null,
+              });
+              setSavedJobs((prev) =>
+                prev.map((j) =>
+                  j.id === job.id
+                    ? {
+                        ...j,
+                        review_status: 'needs_review' as const,
+                        archived_at: null,
+                      }
+                    : j
+                )
+              );
+              showToast('Restored to Review Queue.', 'success');
+            },
+          },
+          durationMs: 10000,
+        }
+      );
+    },
+    [applyStatusOverride, showToast]
+  );
+
+  const handleArchiveJob = useCallback(
+    (job: SavedJobRecord) => {
+      applyStatusOverride(job, {
+        archived_at: new Date().toISOString(),
+      });
+      setSavedJobs((prev) =>
+        prev.map((j) =>
+          j.id === job.id
+            ? { ...j, archived_at: new Date().toISOString() }
+            : j
+        )
+      );
+      if (selectedDetailJob?.id === job.id) setSelectedDetailJob(null);
+      showToast('Application record removed from this view.', 'info', {
+        action: {
+          label: 'Undo',
+          onClick: () => {
+            applyStatusOverride(job, { archived_at: null });
+            setSavedJobs((prev) =>
+              prev.map((j) =>
+                j.id === job.id ? { ...j, archived_at: null } : j
+              )
+            );
+            showToast('Application record restored.', 'success');
+          },
+        },
+        durationMs: 10000,
+      });
+    },
+    [applyStatusOverride, selectedDetailJob, showToast]
+  );
+
+  const handleMarkSubmitted = useCallback(
+    (job: SavedJobRecord) => {
+      applyStatusOverride(job, { review_status: 'submitted', archived_at: null });
+      setSavedJobs((prev) =>
+        prev.map((j) =>
+          j.id === job.id
+            ? { ...j, review_status: 'submitted' as const }
+            : j
+        )
+      );
+      showToast('Marked as submitted.', 'success');
+    },
+    [applyStatusOverride, showToast]
+  );
 
   const handleLaunchAgentBatch = () => {
     window.electronAPI?.logUIEvent('click', 'launch_agent_batch', {
@@ -532,9 +740,9 @@ function AppInner() {
       setShowLaunchModal(false);
       setCurrentView('billing');
       showModal({
-        title: 'Set Your Cost Cap First (Currently R0)',
+        title: 'Set Your Spend Cap First (Currently R0)',
         message:
-          'Your Pay-As-You-Go cost cap defaults to R0 so you are never charged without consent. Set a cost cap above R0 or choose an Application Bundle to start.',
+          'Your Pay-As-You-Go spend cap defaults to R0 so you are never charged without consent. Set a cap above R0 or choose a monthly plan to start.',
         confirmLabel: 'Go to Billing',
       });
       return;
@@ -590,7 +798,7 @@ function AppInner() {
   const handlePauseAgent = () => {
     setIsPaused(true);
     window.electronAPI?.pauseAgent?.().catch(() => {});
-    showToast('Run paused. Click Resume to continue.', 'info');
+    showToast('Run paused. Click Resume Run to continue.', 'info');
   };
 
   const handleResumeAgent = () => {
@@ -616,8 +824,13 @@ function AppInner() {
   };
 
   const reviewQueueJobs = useMemo(
-    () => savedJobs.filter((j) => deriveJobStatus(j) === 'Needs Review'),
-    [savedJobs]
+    () =>
+      savedJobs.filter(
+        (j) =>
+          !isJobArchived(j, jobOverrides) &&
+          resolveApplicationStatus(j, jobOverrides) === 'needs_review'
+      ),
+    [savedJobs, jobOverrides]
   );
 
   const unreadNotifCount = useMemo(
@@ -628,7 +841,9 @@ function AppInner() {
   const renderTitleBar = () => (
     <header className="custom-titlebar">
       <div className="titlebar-brand">
-        <span className="titlebar-logo">FM</span>
+        <span className="titlebar-logo" aria-hidden="true">
+          FM
+        </span>
         <span className="titlebar-name">FMSG Agents</span>
         <span className="titlebar-version">
           {appVersion ? `v${appVersion}` : 'v—'}
@@ -650,25 +865,41 @@ function AppInner() {
             <button
               type="button"
               className="titlebar-icon-btn"
-              title="Setup & Onboarding Wizard"
+              title="Open Setup Guide"
               onClick={() => {
                 setOnboardingStep(1);
                 setShowOnboarding(true);
               }}
             >
-              Tour
+              <svg
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                aria-hidden="true"
+              >
+                <circle cx="12" cy="12" r="9" />
+                <path d="M9.5 9a2.5 2.5 0 1 1 3.4 2.3c-.8.4-.9 1-.9 1.7" />
+                <circle cx="12" cy="17" r="0.6" fill="currentColor" />
+              </svg>
+              Guide
             </button>
 
             <div className="titlebar-notif-wrap">
               <button
                 type="button"
                 className="titlebar-icon-btn"
-                aria-label="Notifications"
+                aria-label={`Notifications${unreadNotifCount > 0 ? ` (${unreadNotifCount} unread)` : ''}`}
                 onClick={() => {
-                  setShowNotifications((v) => !v);
-                  setNotifications((prev) =>
-                    prev.map((n) => ({ ...n, read: true }))
-                  );
+                  const opening = !showNotifications;
+                  setShowNotifications(opening);
+                  if (opening) {
+                    setNotifications((prev) =>
+                      prev.map((n) => ({ ...n, read: true }))
+                    );
+                  }
                 }}
               >
                 <svg
@@ -678,6 +909,7 @@ function AppInner() {
                   fill="none"
                   stroke="currentColor"
                   strokeWidth="2"
+                  aria-hidden="true"
                 >
                   <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
                   <path d="M13.73 21a2 2 0 0 1-3.46 0" />
@@ -691,24 +923,44 @@ function AppInner() {
                 <div className="notifications-popover">
                   <div className="notifications-popover-head">
                     <strong>Notifications</strong>
-                    <button
-                      type="button"
-                      className="viewport-footer-link"
-                      onClick={() => setShowNotifications(false)}
-                    >
-                      Close
-                    </button>
+                    <div className="notifications-popover-head-actions">
+                      {notifications.length > 0 && (
+                        <button
+                          type="button"
+                          className="viewport-footer-link"
+                          onClick={() => {
+                            setNotifications([]);
+                            showToast('Notifications cleared.', 'info');
+                          }}
+                        >
+                          Clear all
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="viewport-footer-link"
+                        onClick={() => setShowNotifications(false)}
+                      >
+                        Close
+                      </button>
+                    </div>
                   </div>
                   <div className="notifications-popover-list">
-                    {notifications.map((n) => (
-                      <div key={n.id} className={`notif-row ${n.kind}`}>
-                        <div className="notif-row-top">
-                          <strong>{n.title}</strong>
-                          <span>{n.time}</span>
-                        </div>
-                        <p>{n.body}</p>
+                    {notifications.length === 0 ? (
+                      <div className="notifications-empty">
+                        You&apos;re all caught up.
                       </div>
-                    ))}
+                    ) : (
+                      notifications.map((n) => (
+                        <div key={n.id} className={`notif-row ${n.kind}`}>
+                          <div className="notif-row-top">
+                            <strong>{n.title}</strong>
+                            <span>{n.time}</span>
+                          </div>
+                          <p>{n.body}</p>
+                        </div>
+                      ))
+                    )}
                   </div>
                 </div>
               )}
@@ -723,7 +975,17 @@ function AppInner() {
             aria-label="Minimize window"
             onClick={() => window.electronAPI?.minimizeWindow?.()}
           >
-            ─
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              aria-hidden="true"
+            >
+              <path d="M5 12h14" />
+            </svg>
           </button>
           <button
             type="button"
@@ -731,7 +993,17 @@ function AppInner() {
             aria-label="Maximize window"
             onClick={() => window.electronAPI?.maximizeWindow?.()}
           >
-            □
+            <svg
+              width="11"
+              height="11"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              aria-hidden="true"
+            >
+              <rect x="5" y="5" width="14" height="14" rx="1.5" />
+            </svg>
           </button>
           <button
             type="button"
@@ -739,7 +1011,17 @@ function AppInner() {
             aria-label="Close window"
             onClick={() => window.electronAPI?.closeWindow?.()}
           >
-            ✕
+            <svg
+              width="11"
+              height="11"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              aria-hidden="true"
+            >
+              <path d="M18 6L6 18M6 6l12 12" />
+            </svg>
           </button>
         </div>
       </div>
@@ -781,11 +1063,10 @@ function AppInner() {
         {renderTitleBar()}
         <div className="auth-viewport">
           <div className="auth-card" style={{ textAlign: 'center' }}>
-            <div className="auth-logo-mark">FM</div>
-            <h1
-              className="auth-title"
-              style={{ fontSize: '18px', marginBottom: '10px' }}
-            >
+            <div className="auth-logo-mark" aria-hidden="true">
+              FM
+            </div>
+            <h1 className="auth-title" style={{ fontSize: '18px', marginBottom: '10px' }}>
               Unable to Start
             </h1>
             <p
@@ -913,7 +1194,7 @@ function AppInner() {
       id: 'home',
       label: 'Home',
       icon: (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
           <path d="M3 9.5L12 3l9 6.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1V9.5z" />
         </svg>
       ),
@@ -922,7 +1203,7 @@ function AppInner() {
       id: 'run',
       label: 'Run',
       icon: (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
           <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
         </svg>
       ),
@@ -930,9 +1211,9 @@ function AppInner() {
     {
       id: 'applications',
       label: 'Applications',
-      badge: savedJobs.length || undefined,
+      badge: savedJobs.filter((j) => !isJobArchived(j, jobOverrides)).length || undefined,
       icon: (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
           <rect x="3" y="4" width="18" height="16" rx="2" />
           <line x1="7" y1="9" x2="17" y2="9" />
           <line x1="7" y1="13" x2="17" y2="13" />
@@ -945,7 +1226,7 @@ function AppInner() {
       label: 'Review',
       badge: reviewQueueJobs.length || undefined,
       icon: (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
           <path d="M9 11l3 3L22 4" />
           <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
         </svg>
@@ -955,7 +1236,7 @@ function AppInner() {
       id: 'profiles',
       label: 'Profiles',
       icon: (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
           <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
           <circle cx="9" cy="7" r="4" />
           <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
@@ -967,7 +1248,7 @@ function AppInner() {
       id: 'billing',
       label: 'Billing',
       icon: (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
           <rect x="2" y="5" width="20" height="14" rx="2.5" />
           <line x1="2" y1="10" x2="22" y2="10" />
         </svg>
@@ -977,9 +1258,19 @@ function AppInner() {
       id: 'settings',
       label: 'Settings',
       icon: (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
           <circle cx="12" cy="12" r="3" />
           <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
+      ),
+    },
+    {
+      id: 'account',
+      label: 'Account',
+      icon: (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+          <circle cx="12" cy="8" r="4" />
+          <path d="M4 21a8 8 0 0 1 16 0" />
         </svg>
       ),
     },
@@ -1003,6 +1294,7 @@ function AppInner() {
                   key={item.id}
                   type="button"
                   title={sidebarCollapsed ? item.label : undefined}
+                  aria-current={active ? 'page' : undefined}
                   className={`sidebar-nav-item ${active ? 'active' : ''}`}
                   onClick={() => {
                     setCurrentView(item.id);
@@ -1013,9 +1305,11 @@ function AppInner() {
                   {!sidebarCollapsed && (
                     <span className="sidebar-nav-label">{item.label}</span>
                   )}
-                  {!sidebarCollapsed && item.badge != null && item.badge > 0 && (
-                    <span className="sidebar-nav-badge">{item.badge}</span>
-                  )}
+                  {!sidebarCollapsed &&
+                    item.badge != null &&
+                    item.badge > 0 && (
+                      <span className="sidebar-nav-badge">{item.badge}</span>
+                    )}
                 </button>
               );
             })}
@@ -1028,7 +1322,7 @@ function AppInner() {
                 className="btn btn-primary sidebar-launch-btn"
                 onClick={() => setShowLaunchModal(true)}
               >
-                <span>⚡</span>
+                <span aria-hidden="true">⚡</span>
                 {!sidebarCollapsed && <span>Run Controls</span>}
               </button>
             )}
@@ -1040,7 +1334,7 @@ function AppInner() {
                 onClick={() => setCurrentView('account')}
                 title={user?.email || 'Account'}
               >
-                <span className="sidebar-avatar">
+                <span className="sidebar-avatar" aria-hidden="true">
                   {(user?.email || 'U').slice(0, 1).toUpperCase()}
                 </span>
                 {!sidebarCollapsed && (
@@ -1050,8 +1344,8 @@ function AppInner() {
                     </div>
                     <div className="sidebar-user-plan">
                       {billingMode === 'bundle'
-                        ? `${bundleTier} Bundle`
-                        : `PAYG · R${costCap} cap`}
+                        ? `${bundleTier} Plan`
+                        : `${formatZar(costCap)} cap`}
                     </div>
                   </div>
                 )}
@@ -1060,7 +1354,12 @@ function AppInner() {
               <button
                 type="button"
                 className="sidebar-collapse-btn"
-                title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                title={
+                  sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'
+                }
+                aria-label={
+                  sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'
+                }
                 onClick={() => setSidebarCollapsed((v) => !v)}
               >
                 {sidebarCollapsed ? '»' : '«'}
@@ -1081,7 +1380,7 @@ function AppInner() {
               <button
                 type="button"
                 className="btn btn-primary"
-                style={{ height: 28, padding: '0 12px', fontSize: '11.5px' }}
+                style={{ height: 30, padding: '0 12px', fontSize: '12px' }}
                 onClick={handleOpenVerifyModal}
               >
                 Verify Email
@@ -1094,6 +1393,7 @@ function AppInner() {
             <HomeDashboardView
               profile={selectedProfile}
               savedJobs={savedJobs}
+              jobOverrides={jobOverrides}
               reviewCount={reviewQueueJobs.length}
               isRunning={isRunning}
               costCap={costCap}
@@ -1133,17 +1433,14 @@ function AppInner() {
           {currentView === 'applications' && (
             <ApplicationsTrackerView
               jobs={savedJobs}
+              overrides={jobOverrides}
               loading={jobsLoading}
               selectedJob={selectedDetailJob}
               onSelectJob={setSelectedDetailJob}
               onRefresh={refreshSavedJobs}
               onStartRun={() => setCurrentView('run')}
-              onDeleteJob={async (id) => {
-                await window.electronAPI?.deleteSavedJob?.(id);
-                refreshSavedJobs();
-                if (selectedDetailJob?.id === id) setSelectedDetailJob(null);
-                showToast('Removed application record.', 'info');
-              }}
+              onArchiveJob={handleArchiveJob}
+              onMarkSubmitted={handleMarkSubmitted}
             />
           )}
 
@@ -1151,14 +1448,8 @@ function AppInner() {
           {currentView === 'review' && (
             <ReviewQueueView
               jobs={reviewQueueJobs}
-              onOpenJob={(job) => {
-                window.electronAPI?.openExternalUrl?.(job.job_url);
-              }}
-              onSkipJob={async (id) => {
-                await window.electronAPI?.deleteSavedJob?.(id);
-                refreshSavedJobs();
-                showToast('Skipped and removed from review queue.', 'info');
-              }}
+              onApproveJob={handleApproveJob}
+              onSkipJob={handleSkipJob}
               onInspectJob={(job) => {
                 setSelectedDetailJob(job);
                 setCurrentView('applications');
@@ -1189,7 +1480,7 @@ function AppInner() {
             />
           )}
 
-          {/* 6. BILLING, BUNDLES & SPEND CAP */}
+          {/* 6. BILLING, PLANS & SPEND CAP */}
           {currentView === 'billing' && (
             <BillingPanel
               costCap={costCap}
@@ -1208,7 +1499,7 @@ function AppInner() {
                   ?.saveAgentPrefs?.({ bundleTier: nextTier })
                   .catch(() => {});
               }}
-              appliedTotal={savedJobs.length}
+              appliedTotal={savedJobs.filter((j) => !isJobArchived(j, jobOverrides)).length}
               emailVerified={user?.emailVerified !== false}
               onUpgraded={async () => {
                 try {
@@ -1224,7 +1515,7 @@ function AppInner() {
             />
           )}
 
-          {/* 7. SETTINGS & CREDENTIAL MANAGER VAULT */}
+          {/* 7. SETTINGS */}
           {currentView === 'settings' && (
             <SettingsPanel
               selectedProfileId={selectedProfileId}
@@ -1247,7 +1538,7 @@ function AppInner() {
             />
           )}
 
-          {/* 8. ACCOUNT */}
+          {/* 8. ACCOUNT & SECURITY CENTRE */}
           {currentView === 'account' && (
             <AccountView
               user={user}
@@ -1255,8 +1546,14 @@ function AppInner() {
               billingMode={billingMode}
               bundleTier={bundleTier}
               costCap={costCap}
+              savedJobsCount={
+                savedJobs.filter((j) => !isJobArchived(j, jobOverrides)).length
+              }
+              profilesCount={profiles.length}
               onLogout={handleLogout}
               onOpenSettings={() => setCurrentView('settings')}
+              onOpenBilling={() => setCurrentView('billing')}
+              onOpenProfiles={() => setCurrentView('profiles')}
             />
           )}
         </main>
@@ -1265,194 +1562,247 @@ function AppInner() {
       {/* RUN SETUP MODAL (Matches Sheet Screen #6) */}
       {showLaunchModal && (
         <div
-          className="modal-backdrop"
+          className={`modal-backdrop content-modal ${
+            sidebarCollapsed ? 'sidebar-collapsed' : ''
+          }`}
           onClick={() => setShowLaunchModal(false)}
         >
           <div
             className="modal-card run-setup-modal"
             role="dialog"
             aria-modal="true"
+            aria-labelledby="run-setup-title"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="run-setup-header">
+            <div className="run-setup-header modal-shell-header">
               <div>
                 <span className="needs-you-eyebrow">RUN SETUP</span>
-                <h3 className="run-setup-title">Configure Application Run</h3>
+                <h2 id="run-setup-title" className="run-setup-title">
+                  Configure Application Run
+                </h2>
               </div>
               <button
                 type="button"
-                className="win-ctrl-btn"
+                className="modal-close-btn"
+                aria-label="Close run setup"
+                title="Close (Esc)"
                 onClick={() => setShowLaunchModal(false)}
               >
-                ✕
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.2"
+                  aria-hidden="true"
+                >
+                  <path d="M18 6L6 18M6 6l12 12" />
+                </svg>
               </button>
             </div>
 
-            <div className="run-setup-grid">
-              {/* Left Column: Select Profile */}
-              <div className="run-setup-col">
-                <div className="run-setup-label">Select profile</div>
-                <div className="run-setup-profile-list">
-                  {profiles.length === 0 ? (
-                    <div className="card-nested" style={{ padding: 12 }}>
-                      <div style={{ fontSize: '12px', color: '#94a3b8' }}>
-                        No profiles loaded yet.
+            <div className="modal-shell-body">
+              <div className="run-setup-grid">
+                {/* Left Column: Select Profile */}
+                <div className="run-setup-col">
+                  <div className="run-setup-label">
+                    Select profile{' '}
+                    <span className="run-setup-count">
+                      {profiles.length} available
+                    </span>
+                  </div>
+                  <div className="run-setup-profile-list">
+                    {profiles.length === 0 ? (
+                      <div className="card-nested" style={{ padding: 12 }}>
+                        <div style={{ fontSize: '12px', color: '#94a3b8' }}>
+                          No profiles loaded yet.
+                        </div>
                       </div>
-                    </div>
-                  ) : (
-                    profiles.map((p: any) => {
-                      const active = p.id === selectedProfileId;
-                      return (
-                        <button
-                          key={p.id}
-                          type="button"
-                          className={`run-setup-profile-card ${
-                            active ? 'active' : ''
-                          }`}
-                          onClick={() => setSelectedProfileId(p.id)}
-                        >
-                          <span className="run-setup-avatar">
-                            {(p.name || 'P').slice(0, 1).toUpperCase()}
-                          </span>
-                          <div className="run-setup-profile-text">
-                            <strong>{p.name || 'Search Profile'}</strong>
-                            <span>
-                              {(p.job_titles || [])[0] ||
-                                p.industry ||
-                                'General'}
+                    ) : (
+                      profiles.map((p: any) => {
+                        const active = p.id === selectedProfileId;
+                        return (
+                          <button
+                            key={p.id}
+                            type="button"
+                            className={`run-setup-profile-card ${
+                              active ? 'active' : ''
+                            }`}
+                            aria-pressed={active}
+                            onClick={() => setSelectedProfileId(p.id)}
+                          >
+                            <span className="run-setup-avatar" aria-hidden="true">
+                              {(p.name || 'P').slice(0, 1).toUpperCase()}
                             </span>
-                          </div>
-                        </button>
-                      );
-                    })
-                  )}
+                            <div className="run-setup-profile-text">
+                              <strong>{formatProfileName(p.name)}</strong>
+                              <span>
+                                {(p.job_titles || [])[0] ||
+                                  p.industry ||
+                                  'General'}
+                              </span>
+                            </div>
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+
+                {/* Center Column: Batch Size, Autonomy Mode, Daily Cap Slider */}
+                <div className="run-setup-col">
+                  <div className="run-setup-label">Batch size</div>
+                  <div className="batch-preset-grid">
+                    {[10, 25, 50, 100].map((preset) => (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => setBatchSize(preset)}
+                        className={`batch-preset-btn ${
+                          batchSize === preset ? 'selected' : ''
+                        }`}
+                        aria-pressed={batchSize === preset}
+                      >
+                        {preset}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div
+                    className="run-setup-label"
+                    style={{ marginTop: 10 }}
+                  >
+                    Autonomy mode
+                  </div>
+                  <div className="autonomy-mode-grid">
+                    {[
+                      {
+                        id: 'full-auto' as const,
+                        title: 'Full auto',
+                        desc: 'Tailor CV & submit automatically',
+                      },
+                      {
+                        id: 'approve-each' as const,
+                        title: 'Approve each',
+                        desc: 'Pause for your review before submit',
+                      },
+                      {
+                        id: 'aggressive' as const,
+                        title: 'Fast batch',
+                        desc: 'Prioritize rapid multi-board apply',
+                      },
+                    ].map((m) => (
+                      <button
+                        key={m.id}
+                        type="button"
+                        className={`autonomy-card ${
+                          autonomyMode === m.id ? 'active' : ''
+                        }`}
+                        aria-pressed={autonomyMode === m.id}
+                        onClick={() => {
+                          setAutonomyMode(m.id);
+                          window.electronAPI
+                            ?.saveAgentPrefs?.({ autonomyMode: m.id })
+                            .catch(() => {});
+                        }}
+                      >
+                        <strong>{m.title}</strong>
+                        <span>{m.desc}</span>
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="run-setup-slider-box">
+                    <div className="run-setup-slider-top">
+                      <label htmlFor="daily-cap-slider">
+                        Daily cap: {dailyCapApps} applications
+                      </label>
+                      <span>Range 1–100</span>
+                    </div>
+                    <input
+                      id="daily-cap-slider"
+                      type="range"
+                      min={1}
+                      max={100}
+                      value={dailyCapApps}
+                      onChange={(e) =>
+                        setDailyCapApps(parseInt(e.target.value, 10) || 25)
+                      }
+                      style={{ width: '100%', accentColor: '#203eea' }}
+                    />
+                  </div>
+                </div>
+
+                {/* Right Column: Est. Cost & Start Button */}
+                <div className="run-setup-col run-setup-summary-col">
+                  <div className="run-setup-label">Estimated cost</div>
+                  <div className="run-setup-cost-box">
+                    <div className="run-setup-cost-big">
+                      {Math.min(batchSize, dailyCapApps)} applications
+                    </div>
+                    <div className="run-setup-cost-sub">
+                      {formatZar(perAppRateZar, { perApplication: true })}{' '}
+                      (job searches included)
+                    </div>
+                    <div className="run-setup-divider" />
+                    <div className="run-setup-stat-row">
+                      <span>Billing mode</span>
+                      <strong>
+                        {billingMode === 'bundle'
+                          ? `${bundleTier} Plan`
+                          : 'Pay-As-You-Go'}
+                      </strong>
+                    </div>
+                    <div className="run-setup-stat-row">
+                      <span>Spend cap</span>
+                      <strong>{formatZar(costCap)}</strong>
+                    </div>
+                    <div className="run-setup-stat-row">
+                      <span>Estimated run cost</span>
+                      <strong>
+                        {formatZar(
+                          Math.min(batchSize, dailyCapApps) * perAppRateZar
+                        )}
+                      </strong>
+                    </div>
+                  </div>
                 </div>
               </div>
+            </div>
 
-              {/* Center Column: Batch Size, Autonomy Mode, Daily Cap Slider */}
-              <div className="run-setup-col">
-                <div className="run-setup-label">Batch size</div>
-                <div className="batch-preset-grid">
-                  {[10, 25, 50, 100].map((preset) => (
-                    <button
-                      key={preset}
-                      type="button"
-                      onClick={() => setBatchSize(preset)}
-                      className={`batch-preset-btn ${
-                        batchSize === preset ? 'selected' : ''
-                      }`}
-                    >
-                      {preset}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="run-setup-label" style={{ marginTop: 10 }}>
-                  Autonomy mode
-                </div>
-                <div className="autonomy-mode-grid">
-                  {[
-                    {
-                      id: 'full-auto' as const,
-                      title: 'Full auto',
-                      desc: 'Tailor CV & submit automatically',
-                    },
-                    {
-                      id: 'approve-each' as const,
-                      title: 'Approve each',
-                      desc: 'Pause for your review before submit',
-                    },
-                    {
-                      id: 'aggressive' as const,
-                      title: 'Fast batch',
-                      desc: 'Prioritize rapid multi-board apply',
-                    },
-                  ].map((m) => (
-                    <button
-                      key={m.id}
-                      type="button"
-                      className={`autonomy-card ${
-                        autonomyMode === m.id ? 'active' : ''
-                      }`}
-                      onClick={() => {
-                        setAutonomyMode(m.id);
-                        window.electronAPI
-                          ?.saveAgentPrefs?.({ autonomyMode: m.id })
-                          .catch(() => {});
-                      }}
-                    >
-                      <strong>{m.title}</strong>
-                      <span>{m.desc}</span>
-                    </button>
-                  ))}
-                </div>
-
-                <div className="run-setup-slider-box">
-                  <div className="run-setup-slider-top">
-                    <span>Daily cap: {dailyCapApps} applications</span>
-                    <span>1–100</span>
-                  </div>
-                  <input
-                    type="range"
-                    min={1}
-                    max={100}
-                    value={dailyCapApps}
-                    onChange={(e) =>
-                      setDailyCapApps(parseInt(e.target.value, 10) || 25)
-                    }
-                    style={{ width: '100%', accentColor: '#203eea' }}
-                  />
-                </div>
-              </div>
-
-              {/* Right Column: Est. Cost & Start Button */}
-              <div className="run-setup-col run-setup-summary-col">
-                <div className="run-setup-label">Estimated cost</div>
-                <div className="run-setup-cost-box">
-                  <div className="run-setup-cost-big">
-                    {Math.min(batchSize, dailyCapApps)} applications
-                  </div>
-                  <div className="run-setup-cost-sub">
-                    Rate: R{perAppRateZar} / application (searches included)
-                  </div>
-                  <div className="run-setup-divider" />
-                  <div className="run-setup-stat-row">
-                    <span>Billing mode</span>
-                    <strong>
-                      {billingMode === 'bundle'
-                        ? `${bundleTier} Bundle`
-                        : 'Pay-As-You-Go'}
-                    </strong>
-                  </div>
-                  <div className="run-setup-stat-row">
-                    <span>Cost cap</span>
-                    <strong>R{costCap.toLocaleString('en-ZA')}</strong>
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', gap: '8px', marginTop: 'auto' }}>
-                  {isRunning && (
-                    <button
-                      type="button"
-                      className="btn btn-danger"
-                      style={{ flex: 1 }}
-                      onClick={() => {
-                        handleStopAgent();
-                        setShowLaunchModal(false);
-                      }}
-                    >
-                      Stop
-                    </button>
+            <div className="modal-shell-footer run-setup-footer">
+              <div className="run-setup-footer-cost">
+                <span>Run total:</span>
+                <strong>
+                  {formatZar(
+                    Math.min(batchSize, dailyCapApps) * perAppRateZar
                   )}
+                </strong>
+                <span className="run-setup-footer-note">
+                  capped at {formatZar(costCap)}
+                </span>
+              </div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                {isRunning && (
                   <button
                     type="button"
-                    className="btn btn-primary"
-                    style={{ flex: 2 }}
-                    onClick={handleLaunchAgentBatch}
+                    className="btn btn-danger"
+                    onClick={() => {
+                      handleStopAgent();
+                      setShowLaunchModal(false);
+                    }}
                   >
-                    Start ({Math.min(batchSize, dailyCapApps)})
+                    Stop
                   </button>
-                </div>
+                )}
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={handleLaunchAgentBatch}
+                >
+                  Start ({Math.min(batchSize, dailyCapApps)})
+                </button>
               </div>
             </div>
           </div>
@@ -1485,62 +1835,93 @@ function AppInner() {
       {/* 6-Digit Email Verification Modal */}
       {showVerifyModal && (
         <div className="modal-backdrop">
-          <div className="modal-card" role="dialog" aria-modal="true">
-            <h3
-              style={{
-                margin: '0 0 8px 0',
-                fontSize: '16px',
-                fontWeight: 700,
-              }}
-            >
-              Verify Your Email
-            </h3>
-            <p
-              style={{
-                margin: '0 0 14px 0',
-                fontSize: '12.5px',
-                color: 'var(--text-secondary)',
-              }}
-            >
-              Enter the 6-digit verification code sent to {user?.email}.
-            </p>
-            <form onSubmit={handleVerifyCodeSubmit} className="auth-form">
-              <div className="form-group">
-                <label className="field-label">6-Digit Code</label>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  maxLength={6}
-                  value={verifyCodeInput}
-                  onChange={(e) =>
-                    setVerifyCodeInput(e.target.value.replace(/\D/g, ''))
-                  }
-                  placeholder="123456"
-                  className="field-input"
-                  autoFocus
-                />
-                {verifyError && (
-                  <div className="field-error-text">{verifyError}</div>
-                )}
-              </div>
-              <div style={{ display: 'flex', gap: '10px' }}>
-                <button
-                  type="submit"
-                  className="btn btn-primary"
-                  style={{ flex: 1 }}
-                  disabled={verifyLoading}
+          <div
+            className="modal-card shared-modal-shell modal-sm"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="verify-email-title"
+          >
+            <div className="modal-shell-header">
+              <h2
+                id="verify-email-title"
+                className="modal-shell-title"
+                style={{ margin: 0 }}
+              >
+                Verify Your Email
+              </h2>
+              <button
+                type="button"
+                className="modal-close-btn"
+                aria-label="Close dialog"
+                onClick={() => setShowVerifyModal(false)}
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.2"
+                  aria-hidden="true"
                 >
-                  {verifyLoading ? 'Verifying…' : 'Verify'}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => setShowVerifyModal(false)}
-                >
-                  Cancel
-                </button>
-              </div>
-            </form>
+                  <path d="M18 6L6 18M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="modal-shell-body">
+              <p className="modal-shell-message">
+                Enter the 6-digit verification code sent to {user?.email}.
+              </p>
+              <form onSubmit={handleVerifyCodeSubmit} className="auth-form">
+                <div className="form-group">
+                  <label htmlFor="verify-code-input" className="field-label">
+                    6-Digit Code
+                  </label>
+                  <input
+                    id="verify-code-input"
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={6}
+                    value={verifyCodeInput}
+                    onChange={(e) =>
+                      setVerifyCodeInput(e.target.value.replace(/\D/g, ''))
+                    }
+                    placeholder="123456"
+                    className="field-input"
+                    autoFocus
+                  />
+                  {verifyError && (
+                    <div className="field-error-text" role="alert">
+                      {verifyError}
+                    </div>
+                  )}
+                </div>
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button
+                    type="submit"
+                    className="btn btn-primary"
+                    style={{ flex: 1 }}
+                    disabled={verifyLoading}
+                  >
+                    {verifyLoading ? (
+                      <>
+                        <Spinner />
+                        Verifying…
+                      </>
+                    ) : (
+                      'Verify'
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => setShowVerifyModal(false)}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
         </div>
       )}
@@ -1555,6 +1936,7 @@ function AppInner() {
 function HomeDashboardView({
   profile,
   savedJobs,
+  jobOverrides,
   reviewCount,
   isRunning,
   costCap,
@@ -1566,7 +1948,8 @@ function HomeDashboardView({
   onOpenJobDetail,
 }: {
   profile: any;
-  savedJobs: SavedJobRow[];
+  savedJobs: SavedJobRecord[];
+  jobOverrides: Record<string, LocalJobOverride>;
   reviewCount: number;
   isRunning: boolean;
   costCap: number;
@@ -1575,10 +1958,12 @@ function HomeDashboardView({
   emailVerified: boolean;
   onStartApplying: () => void;
   onNavigate: (v: ViewType) => void;
-  onOpenJobDetail: (job: SavedJobRow) => void;
+  onOpenJobDetail: (job: SavedJobRecord) => void;
 }) {
   const roleTitle =
-    (profile?.job_titles || [])[0] || profile?.name || 'your target roles';
+    (profile?.job_titles || [])[0] ||
+    formatProfileName(profile?.name) ||
+    'your target roles';
   const bundleAllowance =
     billingMode === 'bundle'
       ? bundleTier === 'Power'
@@ -1589,17 +1974,18 @@ function HomeDashboardView({
             ? 25
             : 10
       : 0;
-  const totalAllowance = bundleAllowance + (emailVerified ? 5 : 0);
-  const usedPct =
-    totalAllowance > 0
-      ? Math.min(100, Math.round((savedJobs.length / totalAllowance) * 100))
-      : 0;
+  const visibleJobs = savedJobs.filter((j) => !isJobArchived(j, jobOverrides));
+  const usageTruth = computeAllowanceUsage(
+    visibleJobs.length,
+    bundleAllowance + (emailVerified ? 5 : 0)
+  );
 
   // Real 7-day activity derived from stored application records (no mock data)
   const last7Days = useMemo(() => {
     const days: Array<{
       iso: string;
       weekday: string;
+      dayMonth: string;
       count: number;
     }> = [];
     for (let offset = 6; offset >= 0; offset -= 1) {
@@ -1613,9 +1999,11 @@ function HomeDashboardView({
         const stamp = new Date(job.created_at).getTime();
         return stamp >= start.getTime() && stamp < end.getTime();
       }).length;
+      const formatted = formatShortDayDateZA(start);
       days.push({
-        iso: start.toLocaleDateString('en-ZA'),
-        weekday: start.toLocaleDateString('en-ZA', { weekday: 'narrow' }),
+        iso: start.toISOString().slice(0, 10),
+        weekday: formatted.weekday,
+        dayMonth: formatted.dayMonth,
         count,
       });
     }
@@ -1639,8 +2027,8 @@ function HomeDashboardView({
             Put your job search on autopilot
           </h1>
           <p className="dashboard-hero-sub">
-            Active profile: <strong>{roleTitle}</strong> ·{' '}
-            {profile?.location || 'South Africa'}. The agent discovers matching
+            Active profile: <strong>{formatProfileName(profile?.name) || roleTitle}</strong> ·{' '}
+            {formatLocationZA(profile?.location)}. The agent discovers matching
             roles, tailors your CV, and fills applications in Chrome.
           </p>
           <button
@@ -1648,7 +2036,7 @@ function HomeDashboardView({
             className="btn btn-primary dashboard-hero-cta"
             onClick={onStartApplying}
           >
-            {isRunning ? 'View Active Run ★' : 'Start Applying ★'}
+            {isRunning ? 'View Active Run' : 'Start Applying'}
           </button>
         </div>
 
@@ -1730,7 +2118,18 @@ function HomeDashboardView({
           className="quick-action-tile"
           onClick={onStartApplying}
         >
-          <span className="quick-action-icon">⚡</span>
+          <span className="quick-action-icon" aria-hidden="true">
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+            </svg>
+          </span>
           <strong>Start a Run</strong>
           <span>Launch batch automation</span>
         </button>
@@ -1740,7 +2139,19 @@ function HomeDashboardView({
           className="quick-action-tile"
           onClick={() => onNavigate('review')}
         >
-          <span className="quick-action-icon">✓</span>
+          <span className="quick-action-icon" aria-hidden="true">
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <path d="M9 11l3 3L22 4" />
+              <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+            </svg>
+          </span>
           <strong>Review Queue</strong>
           <span>{reviewCount} awaiting review</span>
         </button>
@@ -1750,9 +2161,23 @@ function HomeDashboardView({
           className="quick-action-tile"
           onClick={() => onNavigate('applications')}
         >
-          <span className="quick-action-icon">☰</span>
+          <span className="quick-action-icon" aria-hidden="true">
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <rect x="3" y="4" width="18" height="16" rx="2" />
+              <line x1="7" y1="9" x2="17" y2="9" />
+              <line x1="7" y1="13" x2="17" y2="13" />
+              <line x1="7" y1="17" x2="13" y2="17" />
+            </svg>
+          </span>
           <strong>Applications</strong>
-          <span>{savedJobs.length} total tracked</span>
+          <span>{visibleJobs.length} total tracked</span>
         </button>
 
         <button
@@ -1760,12 +2185,24 @@ function HomeDashboardView({
           className="quick-action-tile"
           onClick={() => onNavigate('billing')}
         >
-          <span className="quick-action-icon">R</span>
-          <strong>Spend Cap &amp; Bundles</strong>
+          <span className="quick-action-icon" aria-hidden="true">
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <rect x="2" y="5" width="20" height="14" rx="2.5" />
+              <line x1="2" y1="10" x2="22" y2="10" />
+            </svg>
+          </span>
+          <strong>Spend Cap &amp; Plans</strong>
           <span>
             {billingMode === 'bundle'
-              ? `${bundleTier} Bundle`
-              : `Cap R${costCap}`}
+              ? `${bundleTier} Plan`
+              : `${formatZar(costCap)} cap`}
           </span>
         </button>
       </section>
@@ -1775,7 +2212,7 @@ function HomeDashboardView({
         {/* This Week — real 7-day activity from saved application records */}
         <div className="bento-card">
           <div className="bento-card-head">
-            <h3>Last 7 days</h3>
+            <h2>Last 7 days</h2>
             <span className="tag">{weekTotal} handled</span>
           </div>
           {weekTotal === 0 ? (
@@ -1814,8 +2251,11 @@ function HomeDashboardView({
                 <div
                   key={day.iso}
                   className="week-bar-col"
-                  title={`${day.iso}: ${day.count}`}
+                  title={`${day.weekday}, ${day.dayMonth}: ${day.count} application${day.count === 1 ? '' : 's'}`}
                 >
+                  <span className="week-bar-value" aria-hidden="true">
+                    {day.count}
+                  </span>
                   <div className="week-bar-track">
                     <div
                       className="week-bar-fill"
@@ -1825,6 +2265,7 @@ function HomeDashboardView({
                     />
                   </div>
                   <span className="week-bar-label">{day.weekday}</span>
+                  <span className="week-bar-date">{day.dayMonth}</span>
                 </div>
               ))}
             </div>
@@ -1833,7 +2274,7 @@ function HomeDashboardView({
             <div className="week-stat-item">
               <div>
                 <span>Applications handled</span>
-                <strong>{savedJobs.length}</strong>
+                <strong>{visibleJobs.length}</strong>
               </div>
             </div>
             <div className="week-stat-item">
@@ -1845,7 +2286,7 @@ function HomeDashboardView({
             <div className="week-stat-item">
               <div>
                 <span>Active profile</span>
-                <strong>{profile ? 1 : 0}</strong>
+                <strong>{formatProfileName(profile?.name) || 'None'}</strong>
               </div>
             </div>
           </div>
@@ -1854,7 +2295,7 @@ function HomeDashboardView({
         {/* Recent Applications */}
         <div className="bento-card">
           <div className="bento-card-head">
-            <h3>Recent applications</h3>
+            <h2>Recent applications</h2>
             <button
               type="button"
               className="viewport-footer-link"
@@ -1863,7 +2304,7 @@ function HomeDashboardView({
               View all
             </button>
           </div>
-          {savedJobs.length === 0 ? (
+          {visibleJobs.length === 0 ? (
             <EmptyState
               compact
               inline
@@ -1885,8 +2326,8 @@ function HomeDashboardView({
             />
           ) : (
             <div className="recent-apps-list">
-              {savedJobs.slice(0, 4).map((job) => {
-                const st = deriveJobStatus(job);
+              {visibleJobs.slice(0, 4).map((job) => {
+                const st = resolveApplicationStatus(job, jobOverrides);
                 return (
                   <button
                     key={job.id}
@@ -1894,20 +2335,16 @@ function HomeDashboardView({
                     className="recent-app-row"
                     onClick={() => onOpenJobDetail(job)}
                   >
-                    <div className="recent-app-badge">
+                    <div className="recent-app-badge" aria-hidden="true">
                       {(job.company || 'CO').slice(0, 2).toUpperCase()}
                     </div>
                     <div className="recent-app-info">
                       <strong>{job.job_title}</strong>
-                      <span>{job.company}</span>
+                      <span>
+                        {job.company} · {formatDateZA(job.created_at)}
+                      </span>
                     </div>
-                    <span
-                      className={`status-pill-sm ${
-                        st === 'Applied' ? 'applied' : 'review'
-                      }`}
-                    >
-                      {st}
-                    </span>
+                    <StatusPill status={st} />
                   </button>
                 );
               })}
@@ -1918,13 +2355,13 @@ function HomeDashboardView({
         {/* Usage Donut */}
         <div className="bento-card">
           <div className="bento-card-head">
-            <h3>Usage</h3>
+            <h2>Usage</h2>
             <span className="tag">
-              {billingMode === 'bundle' ? bundleTier : 'PAYG'}
+              {billingMode === 'bundle' ? `${bundleTier} Plan` : 'Pay-As-You-Go'}
             </span>
           </div>
           <div className="usage-donut-wrap">
-            <svg width="96" height="96" viewBox="0 0 96 96">
+            <svg width="96" height="96" viewBox="0 0 96 96" aria-hidden="true">
               <circle
                 cx="48"
                 cy="48"
@@ -1938,21 +2375,30 @@ function HomeDashboardView({
                 cy="48"
                 r="38"
                 fill="none"
-                stroke="#203eea"
+                stroke={usageTruth.isOverage ? '#f59e0b' : '#203eea'}
                 strokeWidth="7"
                 strokeLinecap="round"
                 strokeDasharray={2 * Math.PI * 38}
-                strokeDashoffset={2 * Math.PI * 38 * (1 - usedPct / 100)}
+                strokeDashoffset={
+                  2 * Math.PI * 38 * (1 - usageTruth.ringPercent / 100)
+                }
                 transform="rotate(-90 48 48)"
               />
             </svg>
             <div className="usage-donut-label">
-              <strong>{usedPct}%</strong>
-              <span>
-                {savedJobs.length} / {totalAllowance || '∞'}
-              </span>
+              <strong>{usageTruth.ringCenterTop}</strong>
+              <span>{usageTruth.ringCenterBottom}</span>
             </div>
           </div>
+          <p
+            className={`usage-truth-line ${
+              usageTruth.isOverage ? 'overage' : ''
+            }`}
+          >
+            {usageTruth.isOverage
+              ? `Allowance exceeded by ${usageTruth.overageCount} — extra applications use Pay-As-You-Go at your rate.`
+              : usageTruth.summaryLine}
+          </p>
         </div>
       </section>
     </div>
@@ -1961,32 +2407,60 @@ function HomeDashboardView({
 
 /* ── 3. APPLICATIONS TRACKER + DETAIL & REPLAY (Screens #10 & #11) ───────── */
 
+type ApplicationsFilter =
+  | 'All'
+  | 'Applied'
+  | 'Needs Review'
+  | 'Approved'
+  | 'Submitted'
+  | 'Skipped';
+
 function ApplicationsTrackerView({
   jobs,
+  overrides,
   loading,
   selectedJob,
   onSelectJob,
   onRefresh,
-  onDeleteJob,
+  onArchiveJob,
+  onMarkSubmitted,
   onStartRun,
 }: {
-  jobs: SavedJobRow[];
+  jobs: SavedJobRecord[];
+  overrides: Record<string, LocalJobOverride>;
   loading: boolean;
-  selectedJob: SavedJobRow | null;
-  onSelectJob: (job: SavedJobRow | null) => void;
+  selectedJob: SavedJobRecord | null;
+  onSelectJob: (job: SavedJobRecord | null) => void;
   onRefresh: () => void;
-  onDeleteJob: (id: string) => void;
+  onArchiveJob: (job: SavedJobRecord) => void;
+  onMarkSubmitted: (job: SavedJobRecord) => void;
   onStartRun: () => void;
 }) {
   const [query, setQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<
-    'All' | 'Applied' | 'Needs Review'
-  >('All');
+  const [statusFilter, setStatusFilter] = useState<ApplicationsFilter>('All');
+  const [sortKey, setSortKey] = useState<'date' | 'company' | 'title' | 'match'>(
+    'date'
+  );
+  const [sortDesc, setSortDesc] = useState(true);
+
+  const visibleJobs = useMemo(
+    () => jobs.filter((j) => !isJobArchived(j, overrides)),
+    [jobs, overrides]
+  );
 
   const filtered = useMemo(() => {
-    return jobs.filter((j) => {
-      const st = deriveJobStatus(j);
-      if (statusFilter !== 'All' && st !== statusFilter) return false;
+    const base = visibleJobs.filter((j) => {
+      const st = resolveApplicationStatus(j, overrides);
+      const filterMap: Record<ApplicationsFilter, ApplicationStatus | null> = {
+        All: null,
+        Applied: 'applied',
+        'Needs Review': 'needs_review',
+        Approved: 'approved',
+        Submitted: 'submitted',
+        Skipped: 'skipped',
+      };
+      const target = filterMap[statusFilter];
+      if (target && st !== target) return false;
       if (!query.trim()) return true;
       const q = query.toLowerCase();
       return (
@@ -1995,51 +2469,86 @@ function ApplicationsTrackerView({
         (j.location || '').toLowerCase().includes(q)
       );
     });
-  }, [jobs, query, statusFilter]);
+    return base.sort((a, b) => {
+      let cmp = 0;
+      if (sortKey === 'date') {
+        cmp =
+          new Date(a.created_at || 0).getTime() -
+          new Date(b.created_at || 0).getTime();
+      } else if (sortKey === 'company') {
+        cmp = (a.company || '').localeCompare(b.company || '');
+      } else if (sortKey === 'title') {
+        cmp = (a.job_title || '').localeCompare(b.job_title || '');
+      } else if (sortKey === 'match') {
+        cmp = (a.match_score || 0) - (b.match_score || 0);
+      }
+      return sortDesc ? -cmp : cmp;
+    });
+  }, [visibleJobs, query, statusFilter, sortKey, sortDesc, overrides]);
+
+  const toggleSort = (key: 'date' | 'company' | 'title' | 'match') => {
+    if (sortKey === key) {
+      setSortDesc((v) => !v);
+    } else {
+      setSortKey(key);
+      setSortDesc(true);
+    }
+  };
+
+  const renderSortArrow = (key: 'date' | 'company' | 'title' | 'match') =>
+    sortKey === key ? (sortDesc ? ' ↓' : ' ↑') : '';
 
   if (selectedJob) {
-    const st = deriveJobStatus(selectedJob);
+    const st = resolveApplicationStatus(selectedJob, overrides);
+    const archived = isJobArchived(selectedJob, overrides);
     return (
       <div className="billing-panel">
         <header className="billing-header">
           <div>
+            <nav className="detail-breadcrumb" aria-label="Breadcrumb">
+              <button
+                type="button"
+                className="link-btn"
+                onClick={() => onSelectJob(null)}
+              >
+                Applications
+              </button>
+              <span aria-hidden="true"> / </span>
+              <span aria-current="page">{selectedJob.job_title}</span>
+            </nav>
+            <h1 className="billing-title">{selectedJob.job_title}</h1>
+            <p className="billing-subtitle">
+              {selectedJob.company} ·{' '}
+              {formatLocationZA(selectedJob.location, 'Location not listed')}
+            </p>
+          </div>
+          <div className="detail-header-actions">
+            <StatusPill status={st} />
             <button
               type="button"
               className="btn btn-secondary"
-              style={{ height: 28, fontSize: '11.5px', marginBottom: 6 }}
-              onClick={() => onSelectJob(null)}
-            >
-              ← Back to Applications Tracker
-            </button>
-            <h2 className="billing-title">{selectedJob.job_title}</h2>
-            <p className="billing-subtitle">
-              {selectedJob.company} · {selectedJob.location || 'South Africa'}
-            </p>
-          </div>
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <span
-              className={`status-pill-sm ${
-                st === 'Applied' ? 'applied' : 'review'
-              }`}
-            >
-              {st}
-            </span>
-            <button
-              type="button"
-              className="btn btn-primary"
               onClick={() =>
                 window.electronAPI?.openExternalUrl?.(selectedJob.job_url)
               }
             >
               Open Job Posting ↗
             </button>
+            {st === 'needs_review' && !archived && (
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => onMarkSubmitted(selectedJob)}
+              >
+                Mark Submitted
+              </button>
+            )}
           </div>
         </header>
 
         <div className="detail-replay-grid">
           {/* Process Timeline */}
           <div className="bento-card">
-            <h3 className="billing-section-title">Application Timeline</h3>
+            <h2 className="billing-section-title">Application Timeline</h2>
             <div className="replay-timeline">
               {[
                 { label: 'Found via FMSG Job Discovery', done: true },
@@ -2050,10 +2559,13 @@ function ApplicationsTrackerView({
                 { label: 'Tailored CV highlights prepared', done: true },
                 {
                   label:
-                    st === 'Applied'
+                    st === 'applied' || st === 'submitted'
                       ? 'Application submitted in Chrome'
-                      : 'Opened in Chrome (awaiting manual submit)',
-                  done: st === 'Applied',
+                      : st === 'approved'
+                        ? 'Approved and opened in your browser'
+                        : 'Opened in Chrome (awaiting manual submit)',
+                  done:
+                    st === 'applied' || st === 'submitted' || st === 'approved',
                 },
               ].map((step, i) => (
                 <div key={i} className="replay-timeline-row">
@@ -2066,11 +2578,11 @@ function ApplicationsTrackerView({
             </div>
           </div>
 
-          {/* Summary & Spec */}
+          {/* Summary & Spec + Record Details (AD-01) */}
           <div className="bento-card">
-            <h3 className="billing-section-title">
+            <h2 className="billing-section-title">
               Agent Summary &amp; Job Spec
-            </h3>
+            </h2>
             <p
               style={{
                 fontSize: '12.5px',
@@ -2082,9 +2594,52 @@ function ApplicationsTrackerView({
               {selectedJob.match_summary ||
                 'Processed by FMSG Agents using verified profile fields.'}
             </p>
+            <dl className="detail-facts-grid">
+              <div>
+                <dt>Salary</dt>
+                <dd>{selectedJob.estimated_salary || 'Not advertised'}</dd>
+              </div>
+              <div>
+                <dt>Match</dt>
+                <dd>
+                  {selectedJob.match_score != null
+                    ? `${selectedJob.match_score}% against active search profile`
+                    : 'Not scored'}
+                </dd>
+              </div>
+              <div>
+                <dt>Recorded</dt>
+                <dd>{formatDateZA(selectedJob.created_at)}</dd>
+              </div>
+              <div>
+                <dt>Status</dt>
+                <dd>{STATUS_DISPLAY[st].label}</dd>
+              </div>
+            </dl>
             <div className="spec-scroll-box">
               {selectedJob.full_spec ||
                 'No extended job description text was stored for this posting.'}
+            </div>
+            <div className="detail-footer-actions">
+              <button
+                type="button"
+                className="btn btn-secondary btn-compact"
+                onClick={() => {
+                  navigator.clipboard
+                    ?.writeText(selectedJob.job_url)
+                    .then(() => showToastSafe('Posting link copied.', 'success'))
+                    .catch(() => {});
+                }}
+              >
+                Copy Posting Link
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary btn-compact"
+                onClick={() => onArchiveJob(selectedJob)}
+              >
+                Remove from List
+              </button>
             </div>
           </div>
         </div>
@@ -2096,7 +2651,7 @@ function ApplicationsTrackerView({
     <div className="billing-panel">
       <header className="billing-header">
         <div>
-          <h2 className="billing-title">Applications Tracker</h2>
+          <h1 className="billing-title">Applications</h1>
           <p className="billing-subtitle">
             Every role opened or submitted by FMSG Agents, synced with your
             account.
@@ -2108,26 +2663,49 @@ function ApplicationsTrackerView({
           onClick={onRefresh}
           disabled={loading}
         >
-          {loading ? 'Refreshing…' : 'Refresh'}
+          {loading ? (
+            <>
+              <Spinner />
+              Refreshing…
+            </>
+          ) : (
+            'Refresh'
+          )}
         </button>
       </header>
 
       <div className="tracker-toolbar">
-        <input
-          type="text"
-          className="field-input tracker-search"
-          placeholder="Search company, role, or location…"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
-        <div className="tracker-filter-pills">
-          {(['All', 'Applied', 'Needs Review'] as const).map((f) => (
+        <div className="tracker-search-wrap">
+          <input
+            type="text"
+            className="field-input tracker-search"
+            placeholder="Search company, role, or location…"
+            value={query}
+            aria-label="Search applications"
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          {query && (
+            <button
+              type="button"
+              className="tracker-search-clear"
+              aria-label="Clear search"
+              onClick={() => setQuery('')}
+            >
+              ×
+            </button>
+          )}
+        </div>
+        <div className="tracker-filter-pills" role="group" aria-label="Filter by status">
+          {(
+            ['All', 'Applied', 'Needs Review', 'Approved', 'Submitted', 'Skipped'] as const
+          ).map((f) => (
             <button
               key={f}
               type="button"
               className={`spend-preset-chip ${
                 statusFilter === f ? 'active' : ''
               }`}
+              aria-pressed={statusFilter === f}
               onClick={() => setStatusFilter(f)}
             >
               {f}
@@ -2137,8 +2715,10 @@ function ApplicationsTrackerView({
       </div>
 
       <div className="tracker-table-wrap">
-        {filtered.length === 0 ? (
-          jobs.length === 0 ? (
+        {loading ? (
+          <ApplicationsTableSkeleton />
+        ) : filtered.length === 0 ? (
+          visibleJobs.length === 0 ? (
             <EmptyState
               icon={
                 <svg
@@ -2182,18 +2762,50 @@ function ApplicationsTrackerView({
           <table className="tracker-table">
             <thead>
               <tr>
-                <th>Company</th>
-                <th>Role</th>
+                <th>
+                  <button
+                    type="button"
+                    className="table-sort-btn"
+                    onClick={() => toggleSort('company')}
+                  >
+                    Company{renderSortArrow('company')}
+                  </button>
+                </th>
+                <th>
+                  <button
+                    type="button"
+                    className="table-sort-btn"
+                    onClick={() => toggleSort('title')}
+                  >
+                    Role{renderSortArrow('title')}
+                  </button>
+                </th>
                 <th>Location</th>
-                <th>Date</th>
-                <th>Match</th>
+                <th>
+                  <button
+                    type="button"
+                    className="table-sort-btn"
+                    onClick={() => toggleSort('date')}
+                  >
+                    Date{renderSortArrow('date')}
+                  </button>
+                </th>
+                <th>
+                  <button
+                    type="button"
+                    className="table-sort-btn"
+                    onClick={() => toggleSort('match')}
+                  >
+                    Match{renderSortArrow('match')}
+                  </button>
+                </th>
                 <th>Status</th>
-                <th />
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
               {filtered.map((job) => {
-                const st = deriveJobStatus(job);
+                const st = resolveApplicationStatus(job, overrides);
                 return (
                   <tr
                     key={job.id}
@@ -2204,27 +2816,23 @@ function ApplicationsTrackerView({
                       <strong>{job.company}</strong>
                     </td>
                     <td>{job.job_title}</td>
-                    <td>{job.location || 'SA'}</td>
-                    <td>
-                      {job.created_at
-                        ? new Date(job.created_at).toLocaleDateString('en-ZA')
-                        : 'Recent'}
+                    <td>{formatLocationZA(job.location, '—')}</td>
+                    <td title={job.created_at ? formatDateZA(job.created_at) : undefined}>
+                      {formatDateZA(job.created_at)}
                     </td>
-                    <td>{job.match_score ? `${job.match_score}%` : '—'}</td>
                     <td>
-                      <span
-                        className={`status-pill-sm ${
-                          st === 'Applied' ? 'applied' : 'review'
-                        }`}
-                      >
-                        {st}
-                      </span>
+                      {job.match_score != null
+                        ? `${job.match_score}%`
+                        : '—'}
+                    </td>
+                    <td>
+                      <StatusPill status={st} />
                     </td>
                     <td onClick={(e) => e.stopPropagation()}>
                       <button
                         type="button"
-                        className="viewport-footer-link"
-                        onClick={() => onDeleteJob(job.id)}
+                        className="btn btn-secondary btn-compact"
+                        onClick={() => onArchiveJob(job)}
                       >
                         Remove
                       </button>
@@ -2240,35 +2848,42 @@ function ApplicationsTrackerView({
   );
 }
 
+// Small safe-toast wrapper for detail view (outside main hook scope)
+function showToastSafe(message: string, variant: 'success' | 'info' = 'info') {
+  // Reuses DialogSystem via a tiny inline helper import to avoid duplicating logic
+  window.dispatchEvent(
+    new CustomEvent('fmsg-toast', { detail: { message, variant } })
+  );
+}
+
 /* ── 4. REVIEW QUEUE VIEW (Matches Sheet Screen #9) ──────────────────────── */
 
 function ReviewQueueView({
   jobs,
-  onOpenJob,
+  onApproveJob,
   onSkipJob,
   onInspectJob,
   onStartRun,
 }: {
-  jobs: SavedJobRow[];
-  onOpenJob: (job: SavedJobRow) => void;
-  onSkipJob: (id: string) => void;
-  onInspectJob: (job: SavedJobRow) => void;
+  jobs: SavedJobRecord[];
+  onApproveJob: (job: SavedJobRecord) => void;
+  onSkipJob: (job: SavedJobRecord) => void;
+  onInspectJob: (job: SavedJobRecord) => void;
   onStartRun: () => void;
 }) {
   return (
     <div className="billing-panel">
       <header className="billing-header">
         <div>
-          <h2 className="billing-title">
-            {jobs.length === 0
-              ? 'Review Queue'
-              : `${jobs.length} application${jobs.length === 1 ? '' : 's'} need your review`}
-          </h2>
+          <h1 className="billing-title">Review Queue</h1>
           <p className="billing-subtitle">
-            Roles prepared in Approve Each mode or awaiting final confirmation
-            on the employer&apos;s site.
+            Applications that paused for your review before submission. Approve
+            opens the posting; Skip removes it without deleting the record.
           </p>
         </div>
+        <span className="status-pill-sm review">
+          {jobs.length} waiting
+        </span>
       </header>
 
       {jobs.length === 0 ? (
@@ -2296,15 +2911,18 @@ function ReviewQueueView({
             <div key={job.id} className="review-queue-card">
               <div className="review-queue-main">
                 <div className="review-queue-title-row">
-                  <h4>{job.job_title}</h4>
+                  <h2>{job.job_title}</h2>
                   {job.match_score != null && (
-                    <span className="current-job-score">
+                    <span
+                      className="current-job-score"
+                      title={`${job.match_score}% match against your active search profile`}
+                    >
                       {job.match_score}% Match
                     </span>
                   )}
                 </div>
                 <div className="review-queue-sub">
-                  {job.company} · {job.location || 'South Africa'}
+                  {job.company} · {formatLocationZA(job.location, 'South Africa')}
                 </div>
                 <p className="review-queue-summary">
                   {job.match_summary || 'Ready for review and submission.'}
@@ -2314,7 +2932,7 @@ function ReviewQueueView({
                 <button
                   type="button"
                   className="btn btn-primary"
-                  onClick={() => onOpenJob(job)}
+                  onClick={() => onApproveJob(job)}
                 >
                   Approve &amp; Open ↗
                 </button>
@@ -2328,7 +2946,7 @@ function ReviewQueueView({
                 <button
                   type="button"
                   className="btn btn-secondary"
-                  onClick={() => onSkipJob(job.id)}
+                  onClick={() => onSkipJob(job)}
                 >
                   Skip
                 </button>
@@ -2357,6 +2975,7 @@ function ProfilesAndRulesView({
   const { showToast } = useDialog();
   const [tab, setTab] = useState<'profiles' | 'rules'>('profiles');
   const [minSalary, setMinSalary] = useState(25000);
+  const [minSalaryInput, setMinSalaryInput] = useState('25 000');
   const [keywordInput, setKeywordInput] = useState('');
   const [keywords, setKeywords] = useState<string[]>([]);
   const [answers, setAnswers] = useState<
@@ -2370,6 +2989,9 @@ function ProfilesAndRulesView({
   >([]);
   const [newQuestion, setNewQuestion] = useState('');
   const [newAnswer, setNewAnswer] = useState('');
+  const [editingAnswerId, setEditingAnswerId] = useState<string | null>(null);
+  const [editQuestion, setEditQuestion] = useState('');
+  const [editAnswer, setEditAnswer] = useState('');
 
   useEffect(() => {
     window.electronAPI
@@ -2377,6 +2999,10 @@ function ProfilesAndRulesView({
       .then((res) => {
         if (res?.ok && res.rules) {
           setMinSalary(res.rules.minSalaryZar || 0);
+          setMinSalaryInput(
+            String(res.rules.minSalaryZar || 0)
+              .replace(/\B(?=(\d{3})+(?!\d))/g, ' ')
+          );
           setKeywords(res.rules.mustHaveKeywords || []);
           setAnswers(res.rules.answers || []);
         }
@@ -2398,35 +3024,55 @@ function ProfilesAndRulesView({
       .catch(() => {});
   };
 
+  const handleMinSalaryInput = (value: string) => {
+    const digits = value.replace(/[^0-9]/g, '').slice(0, 7);
+    setMinSalaryInput(
+      digits.replace(/\B(?=(\d{3})+(?!\d))/g, ' ')
+    );
+    const parsed = parseInt(digits, 10);
+    if (!Number.isNaN(parsed)) {
+      setMinSalary(Math.min(parsed, 500000));
+    }
+  };
+
   return (
     <div className="billing-panel">
       <header className="billing-header">
         <div>
-          <h2 className="billing-title">Search Profiles &amp; Answer Bank</h2>
+          <h1 className="billing-title">
+            {tab === 'profiles' ? 'Search Profiles' : 'Rules & Answer Bank'}
+          </h1>
           <p className="billing-subtitle">
-            Choose the active FMSG profile and configure reusable screening
-            answers.
+            {tab === 'profiles'
+              ? 'Choose the active profile the agent applies with.'
+              : 'Configure the screening rules and reusable answers the agent uses when filling applications.'}
           </p>
         </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button
-            type="button"
-            className={`btn ${
-              tab === 'profiles' ? 'btn-primary' : 'btn-secondary'
-            }`}
-            onClick={() => setTab('profiles')}
-          >
-            Profiles ({profiles.length})
-          </button>
-          <button
-            type="button"
-            className={`btn ${
-              tab === 'rules' ? 'btn-primary' : 'btn-secondary'
-            }`}
-            onClick={() => setTab('rules')}
-          >
-            Rules &amp; Answer Bank
-          </button>
+        <div className="profiles-header-controls">
+          <div className="tracker-filter-pills" role="tablist" aria-label="Profiles sections">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === 'profiles'}
+              className={`spend-preset-chip ${
+                tab === 'profiles' ? 'active' : ''
+              }`}
+              onClick={() => setTab('profiles')}
+            >
+              Profiles ({profiles.length})
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === 'rules'}
+              className={`spend-preset-chip ${
+                tab === 'rules' ? 'active' : ''
+              }`}
+              onClick={() => setTab('rules')}
+            >
+              Rules &amp; Answer Bank
+            </button>
+          </div>
           <button
             type="button"
             className="btn btn-secondary"
@@ -2447,20 +3093,37 @@ function ProfilesAndRulesView({
                 type="button"
                 onClick={() => onSelect(p.id)}
                 className={`profile-grid-card ${active ? 'active' : ''}`}
+                aria-pressed={active}
               >
-                <div className="profile-grid-avatar">
+                <div className="profile-grid-avatar" aria-hidden="true">
                   {(p.name || 'P').slice(0, 2).toUpperCase()}
                 </div>
                 <div className="profile-grid-body">
                   <div className="profile-grid-top">
-                    <strong>{p.name || 'Search Profile'}</strong>
-                    <span className="tag">{active ? 'Active' : 'Select'}</span>
+                    <strong>{formatProfileName(p.name)}</strong>
+                    <span
+                      className={`tag ${active ? 'tag-active' : ''}`}
+                    >
+                      {active ? '✓ Active' : 'Select'}
+                    </span>
                   </div>
                   <div className="profile-grid-roles">
-                    {(p.job_titles || []).join(' · ') || 'No titles set'}
+                    {(p.job_titles || []).slice(0, 3).join(' · ') ||
+                      'No titles set'}
                   </div>
                   <div className="profile-grid-meta">
-                    {p.industry || 'General'} · {p.location || 'South Africa'}
+                    {p.industry || 'General'} ·{' '}
+                    {formatLocationZA(p.location, 'South Africa')}
+                  </div>
+                  <div className="profile-grid-facts">
+                    {p.desired_salary ? (
+                      <span>Expected: {p.desired_salary}</span>
+                    ) : null}
+                    {p.cv_file_path ? (
+                      <span className="profile-cv-ok">CV attached</span>
+                    ) : (
+                      <span className="profile-cv-missing">No CV on file</span>
+                    )}
                   </div>
                 </div>
               </button>
@@ -2476,7 +3139,9 @@ function ProfilesAndRulesView({
               )
             }
           >
-            <div className="profile-grid-avatar">+</div>
+            <div className="profile-grid-avatar" aria-hidden="true">
+              +
+            </div>
             <div className="profile-grid-body">
               <strong>Create / Edit Profile on FMSG</strong>
               <div className="profile-grid-meta">
@@ -2489,7 +3154,7 @@ function ProfilesAndRulesView({
         <div className="rules-bank-layout">
           <section className="billing-section">
             <div className="billing-section-head">
-              <h3 className="billing-section-title">Screening Rules</h3>
+              <h2 className="billing-section-title">Screening Rules</h2>
               <button
                 type="button"
                 className="btn btn-primary"
@@ -2501,20 +3166,52 @@ function ProfilesAndRulesView({
 
             <div className="rules-slider-row">
               <div className="run-setup-slider-top">
-                <span>Minimum expected monthly salary (ZAR)</span>
-                <strong>R{minSalary.toLocaleString('en-ZA')}</strong>
+                <label htmlFor="min-salary-range">
+                  Minimum expected monthly salary (ZAR)
+                </label>
+                <strong>{formatZar(minSalary)}</strong>
               </div>
               <input
+                id="min-salary-range"
                 type="range"
                 min={0}
-                max={150000}
+                max={200000}
                 step={2500}
-                value={minSalary}
-                onChange={(e) =>
-                  setMinSalary(parseInt(e.target.value, 10) || 0)
-                }
+                value={Math.min(minSalary, 200000)}
+                onChange={(e) => {
+                  const parsed = parseInt(e.target.value, 10) || 0;
+                  setMinSalary(parsed);
+                  setMinSalaryInput(
+                    String(parsed).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')
+                  );
+                }}
                 style={{ width: '100%', accentColor: '#203eea' }}
               />
+              <div className="salary-input-row">
+                <label className="spend-field" htmlFor="min-salary-input">
+                  <span className="spend-prefix">R</span>
+                  <input
+                    id="min-salary-input"
+                    className="spend-input"
+                    type="text"
+                    inputMode="numeric"
+                    aria-label="Minimum salary in Rand"
+                    value={minSalaryInput}
+                    onChange={(e) => handleMinSalaryInput(e.target.value)}
+                    onBlur={() => {
+                      setMinSalaryInput(
+                        String(minSalary).replace(
+                          /\B(?=(\d{3})+(?!\d))/g,
+                          ' '
+                        )
+                      );
+                    }}
+                  />
+                </label>
+                <span className="field-hint">
+                  Exact amount also available as typed input
+                </span>
+              </div>
             </div>
 
             <div style={{ marginTop: 12 }}>
@@ -2547,7 +3244,7 @@ function ProfilesAndRulesView({
                     persistRules({ mustHaveKeywords: next });
                   }}
                 >
-                  Add
+                  Add Keyword
                 </button>
               </div>
               <div
@@ -2564,6 +3261,7 @@ function ProfilesAndRulesView({
                     <button
                       type="button"
                       className="viewport-footer-link"
+                      aria-label={`Remove keyword ${kw}`}
                       onClick={() => {
                         const next = keywords.filter((k) => k !== kw);
                         setKeywords(next);
@@ -2580,30 +3278,102 @@ function ProfilesAndRulesView({
 
           <section className="billing-section">
             <div className="billing-section-head">
-              <h3 className="billing-section-title">
+              <h2 className="billing-section-title">
                 Saved Application Answers
-              </h3>
+              </h2>
+              <span className="tag">Saved automatically</span>
             </div>
             <div className="answer-bank-list">
-              {answers.map((a) => (
-                <div key={a.id} className="answer-bank-row">
-                  <div>
-                    <strong>{a.question}</strong>
-                    <div className="answer-bank-val">{a.answer}</div>
+              {answers.length === 0 && (
+                <p className="billing-section-note">
+                  Add a question you see often and a truthful answer. The agent
+                  reuses saved answers so it never fills a form with guesswork.
+                </p>
+              )}
+              {answers.map((a) =>
+                editingAnswerId === a.id ? (
+                  <div key={a.id} className="answer-bank-row editing">
+                    <div className="answer-bank-edit-fields">
+                      <input
+                        type="text"
+                        className="field-input"
+                        aria-label="Edit question"
+                        value={editQuestion}
+                        onChange={(e) => setEditQuestion(e.target.value)}
+                      />
+                      <input
+                        type="text"
+                        className="field-input"
+                        aria-label="Edit answer"
+                        value={editAnswer}
+                        onChange={(e) => setEditAnswer(e.target.value)}
+                      />
+                    </div>
+                    <div className="answer-bank-row-actions">
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-compact"
+                        onClick={() => {
+                          const next = answers.map((item) =>
+                            item.id === a.id
+                              ? {
+                                  ...item,
+                                  question: editQuestion.trim() || item.question,
+                                  answer: editAnswer.trim() || item.answer,
+                                }
+                              : item
+                          );
+                          setAnswers(next);
+                          setEditingAnswerId(null);
+                          persistRules({ answers: next });
+                        }}
+                      >
+                        Save
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-compact"
+                        onClick={() => setEditingAnswerId(null)}
+                      >
+                        Cancel
+                      </button>
+                    </div>
                   </div>
-                  <button
-                    type="button"
-                    className="viewport-footer-link"
-                    onClick={() => {
-                      const next = answers.filter((item) => item.id !== a.id);
-                      setAnswers(next);
-                      persistRules({ answers: next });
-                    }}
-                  >
-                    Remove
-                  </button>
-                </div>
-              ))}
+                ) : (
+                  <div key={a.id} className="answer-bank-row">
+                    <div>
+                      <strong>{a.question}</strong>
+                      <div className="answer-bank-val">{a.answer}</div>
+                    </div>
+                    <div className="answer-bank-row-actions">
+                      <button
+                        type="button"
+                        className="viewport-footer-link"
+                        onClick={() => {
+                          setEditingAnswerId(a.id);
+                          setEditQuestion(a.question);
+                          setEditAnswer(a.answer);
+                        }}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        className="viewport-footer-link"
+                        onClick={() => {
+                          const next = answers.filter(
+                            (item) => item.id !== a.id
+                          );
+                          setAnswers(next);
+                          persistRules({ answers: next });
+                        }}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                )
+              )}
             </div>
 
             <div className="secret-editor-fields" style={{ marginTop: 10 }}>
@@ -2611,6 +3381,7 @@ function ProfilesAndRulesView({
                 type="text"
                 className="field-input"
                 placeholder="Question (e.g. How many years of experience?)"
+                aria-label="New screening question"
                 value={newQuestion}
                 onChange={(e) => setNewQuestion(e.target.value)}
               />
@@ -2618,6 +3389,7 @@ function ProfilesAndRulesView({
                 type="text"
                 className="field-input"
                 placeholder="Your truthful answer"
+                aria-label="New screening answer"
                 value={newAnswer}
                 onChange={(e) => setNewAnswer(e.target.value)}
               />
@@ -2702,7 +3474,7 @@ function OnboardingWizardModal({
     });
     if (res?.ok) {
       showToast(
-        `Saved ${activeSite.keyName} in local Windows Credential Manager.`,
+        `Saved ${activeSite.label} sign-in securely on this PC.`,
         'success'
       );
       setActiveSite(null);
@@ -2714,319 +3486,494 @@ function OnboardingWizardModal({
     }
   };
 
+  const STEP_TITLES: Record<1 | 2 | 3 | 4, string> = {
+    1: 'How it works',
+    2: 'Connect job accounts',
+    3: 'Test run',
+    4: 'You\u2019re ready',
+  };
+
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div
-        className="modal-card onboarding-modal"
+        className="modal-card onboarding-modal shared-modal-shell"
         role="dialog"
         aria-modal="true"
+        aria-labelledby="onboarding-modal-title"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="onboarding-top">
-          <span className="needs-you-eyebrow">STEP {step} OF 4</span>
-          <button type="button" className="win-ctrl-btn" onClick={onClose}>
-            ✕
-          </button>
+        <div className="onboarding-top modal-shell-header">
+          <div>
+            <span className="needs-you-eyebrow">
+              STEP {step} OF 4 · {STEP_TITLES[step].toUpperCase()}
+            </span>
+          </div>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <button
+              type="button"
+              className="viewport-footer-link"
+              onClick={onClose}
+            >
+              Skip tour
+            </button>
+            <button
+              type="button"
+              className="modal-close-btn"
+              aria-label="Close setup guide"
+              onClick={onClose}
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                aria-hidden="true"
+              >
+                <path d="M18 6L6 18M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
         </div>
 
-        {step === 1 && (
-          <div className="onboarding-body">
-            <h2 className="onboarding-title">
-              Let&apos;s get your job search on autopilot
-            </h2>
-            <p className="onboarding-sub">
-              FMSG Agents finds matching South African postings, tailors your
-              CV, and fills applications in your own Chrome browser.
-            </p>
-            <div className="onboarding-feature-grid">
-              <div className="onboarding-feature-card">
-                <span className="quick-action-icon">🔍</span>
-                <strong>Find jobs</strong>
-                <span>
-                  Searches live postings matching your FMSG search profile.
-                </span>
-              </div>
-              <div className="onboarding-feature-card">
-                <span className="quick-action-icon">📄</span>
-                <strong>Tailor your CV</strong>
-                <span>
-                  Aligns your verified profile highlights to each job spec.
-                </span>
-              </div>
-              <div className="onboarding-feature-card">
-                <span className="quick-action-icon">🚀</span>
-                <strong>Apply for you</strong>
-                <span>
-                  Fills forms in Chrome and pauses whenever it needs you.
-                </span>
-              </div>
-            </div>
-            <div className="onboarding-footer">
-              <div className="onboarding-dots">
-                <span className="active" />
-                <span />
-                <span />
-                <span />
-              </div>
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={() => onStepChange(2)}
-              >
-                Continue →
-              </button>
-            </div>
-          </div>
-        )}
-
-        {step === 2 && (
-          <div className="onboarding-body">
-            <h2 className="onboarding-title">Connect your job accounts</h2>
-            <p className="onboarding-sub">
-              Optional: save logins in your local Windows Credential Manager (
-              <code>SITE_PASSWORD</code>). The AI only sees the key name and
-              autofills only on the verified domain.
-            </p>
-            <div className="onboarding-sites-grid">
-              {ONBOARDING_SITES.map((s) => {
-                const connected = savedKeys.includes(s.keyName);
-                return (
-                  <button
-                    key={s.id}
-                    type="button"
-                    className={`onboarding-site-tile ${
-                      connected ? 'connected' : ''
-                    }`}
-                    onClick={() => {
-                      setActiveSite(s);
-                      setUsername('');
-                      setPassword('');
-                    }}
-                  >
-                    <span
-                      className="onboarding-site-icon"
-                      style={{ background: s.color }}
+        <div className="modal-shell-body">
+          {step === 1 && (
+            <div className="onboarding-body">
+              <h2 id="onboarding-modal-title" className="onboarding-title">
+                How FMSG Agents works
+              </h2>
+              <p className="onboarding-sub">
+                Three steps from live posting to a tracked application — in
+                your own Chrome, with your approval wherever it matters.
+              </p>
+              <div className="onboarding-feature-grid">
+                <div className="onboarding-feature-card">
+                  <span className="onboarding-feature-icon" aria-hidden="true">
+                    <svg
+                      width="20"
+                      height="20"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
                     >
-                      {s.label.slice(0, 2).toUpperCase()}
-                    </span>
-                    <strong>{s.label}</strong>
-                    <span>{connected ? 'Connected ✓' : 'Connect'}</span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {activeSite && (
-              <form
-                onSubmit={handleSaveConnect}
-                className="secret-editor-box"
-                style={{ marginTop: 10 }}
-              >
-                <div className="secret-editor-head">
-                  <strong>
-                    Save {activeSite.label} (<code>{activeSite.keyName}</code>)
-                  </strong>
-                  <span>Locked to {activeSite.domain}</span>
+                      <circle cx="11" cy="11" r="7" />
+                      <path d="M20 20l-3.2-3.2" />
+                    </svg>
+                  </span>
+                  <strong>Find jobs</strong>
+                  <span>
+                    Searches live postings matching your FMSG search profile.
+                  </span>
                 </div>
-                <div className="secret-editor-fields">
-                  <input
-                    type="text"
-                    className="field-input"
-                    placeholder={`Email / username for ${activeSite.label}`}
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    required
-                  />
-                  <input
-                    type="password"
-                    className="field-input"
-                    placeholder="Password (encrypted locally)"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                  />
-                  <button type="submit" className="btn btn-primary">
-                    Save
-                  </button>
+                <div className="onboarding-feature-card">
+                  <span className="onboarding-feature-icon" aria-hidden="true">
+                    <svg
+                      width="20"
+                      height="20"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                    >
+                      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+                      <path d="M14 3v5h5" />
+                      <path d="M9 13h6M9 17h4" />
+                    </svg>
+                  </span>
+                  <strong>Tailor your CV</strong>
+                  <span>
+                    Aligns your verified profile highlights to each job spec.
+                  </span>
                 </div>
-              </form>
-            )}
-
-            <div className="onboarding-footer">
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={() => onStepChange(1)}
-              >
-                ← Back
-              </button>
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={() => onStepChange(3)}
-              >
-                Continue →
-              </button>
-            </div>
-          </div>
-        )}
-
-        {step === 3 && (
-          <div className="onboarding-body">
-            <h2 className="onboarding-title">Let&apos;s run a test</h2>
-            <p className="onboarding-sub">
-              Verify your active profile and watch the agent open real postings
-              in Chrome.
-            </p>
-            <div className="bento-card" style={{ marginBottom: 14 }}>
-              <div style={{ fontSize: '13px', fontWeight: 600 }}>
-                {(profile?.job_titles || [])[0] ||
-                  profile?.name ||
-                  'Your Active Search Profile'}
+                <div className="onboarding-feature-card">
+                  <span className="onboarding-feature-icon" aria-hidden="true">
+                    <svg
+                      width="20"
+                      height="20"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                    >
+                      <path d="M3 16.5 9 10l4 4 7.5-7.5" />
+                      <path d="M15 3h5v5" />
+                    </svg>
+                  </span>
+                  <strong>Apply for you</strong>
+                  <span>
+                    Fills forms in Chrome and pauses whenever it needs you.
+                  </span>
+                </div>
               </div>
-              <div style={{ fontSize: '11.5px', color: '#94a3b8', marginTop: 4 }}>
-                Location: {profile?.location || 'South Africa'} · Industry:{' '}
-                {profile?.industry || 'All'}
-              </div>
-              <ul
-                style={{
-                  margin: '10px 0 0',
-                  paddingLeft: 18,
-                  fontSize: '12px',
-                  color: '#cbd5e1',
-                  lineHeight: 1.6,
-                }}
-              >
-                <li>Finds live matching job postings</li>
-                <li>Tailors your CV highlights honestly</li>
-                <li>Shows real-time browser screenshots in the Run tab</li>
-              </ul>
-            </div>
 
-            <div className="onboarding-footer">
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={() => onStepChange(2)}
-              >
-                ← Back
-              </button>
-              <div style={{ display: 'flex', gap: '8px' }}>
+              <div className="onboarding-explain-box">
+                <h3>Two settings worth knowing</h3>
+                <ul>
+                  <li>
+                    <strong>Your allowance:</strong> every plan includes a set
+                    number of applications, and your spend cap (starts at R0)
+                    stops Pay-As-You-Go charges before they surprise you.
+                  </li>
+                  <li>
+                    <strong>&quot;Approve each&quot;:</strong> the agent pauses
+                    before submitting so you review the form in Chrome first.
+                    Nothing is ever submitted without your chosen approval
+                    setting.
+                  </li>
+                </ul>
+              </div>
+
+              <div className="onboarding-footer">
+                <div className="onboarding-dots" aria-hidden="true">
+                  <span className="active" />
+                  <span />
+                  <span />
+                  <span />
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => onStepChange(2)}
+                >
+                  Continue
+                </button>
+              </div>
+            </div>
+          )}
+
+          {step === 2 && (
+            <div className="onboarding-body">
+              <h2 id="onboarding-modal-title" className="onboarding-title">
+                Connect your job accounts
+              </h2>
+              <p className="onboarding-sub">
+                Optional: save job-board sign-ins encrypted on this PC. The
+                agent uses them only on the matching official website, never
+                with AI models or external servers.
+              </p>
+              <div className="onboarding-sites-grid">
+                {ONBOARDING_SITES.map((s) => {
+                  const connected = savedKeys.includes(s.keyName);
+                  return (
+                    <button
+                      key={s.id}
+                      type="button"
+                      className={`onboarding-site-tile ${
+                        connected ? 'connected' : ''
+                      }`}
+                      aria-pressed={connected}
+                      onClick={() => {
+                        setActiveSite(s);
+                        setUsername('');
+                        setPassword('');
+                      }}
+                    >
+                      <span
+                        className="onboarding-site-icon"
+                        style={{ background: s.color }}
+                        aria-hidden="true"
+                      >
+                        {s.label.slice(0, 2).toUpperCase()}
+                      </span>
+                      <strong>{s.label}</strong>
+                      <span>{connected ? 'Connected ✓' : 'Connect'}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {activeSite && (
+                <form
+                  onSubmit={handleSaveConnect}
+                  className="secret-editor-box"
+                  style={{ marginTop: 10 }}
+                >
+                  <div className="secret-editor-head">
+                    <strong>Connect {activeSite.label}</strong>
+                    <span>Locked to {activeSite.domain}</span>
+                  </div>
+                  <div className="secret-editor-fields">
+                    <input
+                      type="text"
+                      className="field-input"
+                      aria-label={`${activeSite.label} email or username`}
+                      placeholder={`Email / username for ${activeSite.label}`}
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                      required
+                    />
+                    <input
+                      type="password"
+                      className="field-input"
+                      aria-label={`${activeSite.label} password`}
+                      placeholder={`Password for ${activeSite.label} (encrypted locally)`}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                    />
+                    <button type="submit" className="btn btn-primary">
+                      Save
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              <div className="onboarding-footer">
                 <button
                   type="button"
                   className="btn btn-secondary"
-                  onClick={() => onStepChange(4)}
+                  onClick={() => onStepChange(1)}
                 >
-                  Skip Test
+                  ← Back
                 </button>
                 <button
                   type="button"
                   className="btn btn-primary"
-                  onClick={onRunTest}
+                  onClick={() => onStepChange(3)}
                 >
-                  Run Test ★
+                  Continue
                 </button>
               </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {step === 4 && (
-          <div className="onboarding-body">
-            <h2 className="onboarding-title">You&apos;re ready to go</h2>
-            <p className="onboarding-sub">
-              Your account includes <strong>5 free welcome bonus applications</strong>{' '}
-              (once email is verified), and your Pay-As-You-Go cost cap starts
-              safely at <strong>R0</strong>.
-            </p>
-            <div className="onboarding-footer">
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={() => onStepChange(3)}
-              >
-                ← Back
-              </button>
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={onClose}
-              >
-                Open Workspace
-              </button>
+          {step === 3 && (
+            <div className="onboarding-body">
+              <h2 id="onboarding-modal-title" className="onboarding-title">
+                Run a quick test
+              </h2>
+              <p className="onboarding-sub">
+                Verify your active profile and watch the agent open real
+                postings in Chrome.
+              </p>
+              <div className="bento-card" style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: '13px', fontWeight: 600 }}>
+                  {(profile?.job_titles || [])[0] ||
+                    formatProfileName(profile?.name) ||
+                    'Your Active Search Profile'}
+                </div>
+                <div
+                  style={{ fontSize: '12px', color: '#94a3b8', marginTop: 4 }}
+                >
+                  Location: {formatLocationZA(profile?.location)} · Industry:{' '}
+                  {profile?.industry || 'All'}
+                </div>
+                <ul
+                  style={{
+                    margin: '10px 0 0',
+                    paddingLeft: 18,
+                    fontSize: '12px',
+                    color: '#cbd5e1',
+                    lineHeight: 1.6,
+                  }}
+                >
+                  <li>Finds live matching job postings</li>
+                  <li>Tailors your CV highlights honestly</li>
+                  <li>Shows real-time browser screenshots in the Run tab</li>
+                </ul>
+              </div>
+
+              <div className="onboarding-footer">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => onStepChange(2)}
+                >
+                  ← Back
+                </button>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => onStepChange(4)}
+                  >
+                    Skip Test
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={onRunTest}
+                  >
+                    Run Test
+                  </button>
+                </div>
+              </div>
             </div>
-          </div>
-        )}
+          )}
+
+          {step === 4 && (
+            <div className="onboarding-body">
+              <h2 id="onboarding-modal-title" className="onboarding-title">
+                You&apos;re ready to go
+              </h2>
+              <p className="onboarding-sub">
+                Your account includes{' '}
+                <strong>5 free welcome bonus applications</strong> (once email
+                is verified), and your Pay-As-You-Go spend cap starts safely at{' '}
+                <strong>R0</strong>.
+              </p>
+              <div className="onboarding-footer">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => onStepChange(3)}
+                >
+                  ← Back
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={onClose}
+                >
+                  Open Workspace
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
-/* ── 8. ACCOUNT VIEW ─────────────────────────────────────────────────────── */
+/* ── 8. ACCOUNT & SECURITY CENTRE VIEW (AC-01, AC-02, AC-05, P3.2) ────────── */
 
 function AccountView({
   user,
-  appVersion,
   billingMode,
   bundleTier,
   costCap,
+  savedJobsCount,
+  profilesCount,
   onLogout,
   onOpenSettings,
+  onOpenBilling,
+  onOpenProfiles,
 }: {
   user: any;
   appVersion: string;
   billingMode: 'pay-as-you-go' | 'bundle';
   bundleTier: string;
   costCap: number;
+  savedJobsCount: number;
+  profilesCount: number;
   onLogout: () => void;
   onOpenSettings: () => void;
+  onOpenBilling: () => void;
+  onOpenProfiles: () => void;
 }) {
   return (
     <div className="billing-panel">
       <header className="billing-header">
         <div>
-          <h2 className="billing-title">Account</h2>
+          <h1 className="billing-title">Account</h1>
           <p className="billing-subtitle">
-            Signed in as {user?.email || 'Authenticated User'}
+            Your identity, plan, and security summary for this installation.
           </p>
         </div>
-        <span className="tag">v{appVersion}</span>
       </header>
 
-      <section className="billing-section">
-        <div
-          style={{
-            display: 'flex',
-            gap: '8px',
-            flexWrap: 'wrap',
-            marginBottom: 14,
-          }}
-        >
-          <span className="tag">
-            Mode:{' '}
-            {billingMode === 'bundle'
-              ? `${bundleTier} Bundle`
-              : 'Pay-As-You-Go'}
-          </span>
-          <span className="tag">Cost Cap: R{costCap}</span>
-          <span className="tag">
-            Email: {user?.emailVerified === false ? 'Unverified' : 'Verified'}
-          </span>
-        </div>
+      <div className="account-overview-grid">
+        <section className="billing-section" style={{ margin: 0 }}>
+          <div className="billing-section-head">
+            <h2 className="billing-section-title">Profile</h2>
+          </div>
+          <div className="account-identity-row">
+            <span className="account-avatar" aria-hidden="true">
+              {(user?.name || user?.email || 'U').slice(0, 1).toUpperCase()}
+            </span>
+            <div>
+              <div className="account-name">
+                {[user?.name, user?.surname].filter(Boolean).join(' ') ||
+                  'FMSG member'}
+              </div>
+              <div className="account-email">{user?.email}</div>
+            </div>
+          </div>
+          <div className="billing-usage-meta" style={{ marginTop: 12 }}>
+            <div className="billing-stat-line">
+              <span>Email status:</span>
+              <strong>
+                {user?.emailVerified === false
+                  ? 'Unverified'
+                  : 'Verified ✓'}
+              </strong>
+            </div>
+            <div className="billing-stat-line">
+              <span>Plan:</span>
+              <strong>
+                {billingMode === 'bundle'
+                  ? `${bundleTier} Plan`
+                  : 'Pay-As-You-Go'}
+              </strong>
+            </div>
+            <div className="billing-stat-line">
+              <span>Spend cap:</span>
+              <strong>{formatZar(costCap)}</strong>
+            </div>
+            <div className="billing-stat-line">
+              <span>Active profiles:</span>
+              <strong>{profilesCount}</strong>
+            </div>
+            <div className="billing-stat-line">
+              <span>Tracked applications:</span>
+              <strong>{savedJobsCount}</strong>
+            </div>
+          </div>
+        </section>
 
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={onOpenSettings}
-          >
-            Security Vault &amp; Account Settings
-          </button>
-          <button type="button" className="btn btn-danger" onClick={onLogout}>
-            Sign Out
-          </button>
-        </div>
-      </section>
+        <section className="billing-section" style={{ margin: 0 }}>
+          <div className="billing-section-head">
+            <h2 className="billing-section-title">Security</h2>
+            <span className="status-pill-sm applied">Protected</span>
+          </div>
+          <p className="billing-section-note">
+            This installation uses a random security key stored in Windows
+            protected storage to verify signed updates. Saved job-board
+            sign-ins stay encrypted on this PC.
+          </p>
+          <div className="account-security-actions">
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={onOpenSettings}
+            >
+              Manage Security Settings
+            </button>
+          </div>
+        </section>
+
+        <section className="billing-section" style={{ margin: 0 }}>
+          <div className="billing-section-head">
+            <h2 className="billing-section-title">Quick Actions</h2>
+          </div>
+          <div className="account-security-actions">
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={onOpenBilling}
+            >
+              Manage Plan &amp; Billing
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={onOpenProfiles}
+            >
+              Manage Search Profiles
+            </button>
+            <button
+              type="button"
+              className="btn btn-danger-outline"
+              onClick={onLogout}
+            >
+              Sign Out
+            </button>
+          </div>
+        </section>
+      </div>
     </div>
   );
 }

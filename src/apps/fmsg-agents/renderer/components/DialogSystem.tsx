@@ -6,33 +6,51 @@ import React, {
   useEffect,
   useRef,
 } from 'react';
+import {
+  getBundledLegalMarkdown,
+  LEGAL_DOC_TITLES,
+  LegalDocKey,
+  renderLegalDocumentNodes,
+} from '../lib/legal';
 
 export interface ModalRequest {
   id: string;
   title: string;
   message: string;
   bodyContent?: string;
+  isLegalDoc?: boolean;
   confirmLabel?: string;
   cancelLabel?: string;
   destructive?: boolean;
   dismissible?: boolean;
+  primaryVariant?: 'primary' | 'secondary' | 'danger';
+  requireTypedText?: string;
+  requireTypedPlaceholder?: string;
   onConfirm?: () => void;
   onCancel?: () => void;
+}
+
+export interface ToastAction {
+  label: string;
+  onClick: () => void;
 }
 
 export interface ToastItem {
   id: string;
   message: string;
   variant?: 'info' | 'success' | 'warning' | 'error';
+  action?: ToastAction;
+  durationMs?: number;
 }
 
 interface DialogContextValue {
   showModal: (opts: Omit<ModalRequest, 'id'>) => void;
   showToast: (
     message: string,
-    variant?: 'info' | 'success' | 'warning' | 'error'
+    variant?: 'info' | 'success' | 'warning' | 'error',
+    options?: { action?: ToastAction; durationMs?: number }
   ) => void;
-  openLegalDocument: (doc: 'eula' | 'terms' | 'privacy') => void;
+  openLegalDocument: (doc: LegalDocKey) => void;
 }
 
 const DialogContext = createContext<DialogContextValue>({
@@ -48,53 +66,58 @@ export function useDialog(): DialogContextValue {
 export function DialogProvider({ children }: { children: React.ReactNode }) {
   const [modalQueue, setModalQueue] = useState<ModalRequest[]>([]);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const [typedInput, setTypedInput] = useState('');
+  const [copiedDoc, setCopiedDoc] = useState(false);
   const modalRef = useRef<HTMLDivElement | null>(null);
   const confirmBtnRef = useRef<HTMLButtonElement | null>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
 
   const activeModal = modalQueue[0] || null;
 
   const showModal = useCallback((opts: Omit<ModalRequest, 'id'>) => {
+    if (document.activeElement instanceof HTMLElement) {
+      previousFocusRef.current = document.activeElement;
+    }
     const id = `modal_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    setTypedInput('');
+    setCopiedDoc(false);
     setModalQueue((prev) => [...prev, { ...opts, id }]);
   }, []);
 
   const showToast = useCallback(
     (
       message: string,
-      variant: 'info' | 'success' | 'warning' | 'error' = 'info'
+      variant: 'info' | 'success' | 'warning' | 'error' = 'info',
+      options?: { action?: ToastAction; durationMs?: number }
     ) => {
       const id = `toast_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-      setToasts((prev) => [...prev, { id, message, variant }]);
+      const durationMs =
+        options?.durationMs ?? (options?.action ? 10000 : 4500);
+      setToasts((prev) => [
+        ...prev,
+        { id, message, variant, action: options?.action, durationMs },
+      ]);
       setTimeout(() => {
         setToasts((prev) => prev.filter((t) => t.id !== id));
-      }, 4200);
+      }, durationMs);
     },
     []
   );
 
   const openLegalDocument = useCallback(
-    (doc: 'eula' | 'terms' | 'privacy') => {
-      const titles: Record<'eula' | 'terms' | 'privacy', string> = {
-        eula: 'End User License Agreement',
-        terms: 'Terms of Service',
-        privacy: 'Privacy Policy',
-      };
-      window.electronAPI
-        ?.getLegalDocument(doc)
-        .then((res) => {
-          showModal({
-            title: titles[doc],
-            message: '',
-            bodyContent: res?.content || 'Document unavailable.',
-            confirmLabel: 'Close',
-            dismissible: true,
-          });
-        })
-        .catch(() => {
-          showToast('Could not load document.', 'error');
-        });
+    (doc: LegalDocKey) => {
+      const bundled = getBundledLegalMarkdown(doc);
+      showModal({
+        title: LEGAL_DOC_TITLES[doc],
+        message: '',
+        bodyContent: bundled,
+        isLegalDoc: true,
+        confirmLabel: 'Close',
+        primaryVariant: 'secondary',
+        dismissible: true,
+      });
     },
-    [showModal, showToast]
+    [showModal]
   );
 
   const closeActiveModal = useCallback((confirmed: boolean) => {
@@ -106,13 +129,42 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
       }
       return prev.slice(1);
     });
+    setTypedInput('');
+    setCopiedDoc(false);
+    setTimeout(() => {
+      if (
+        previousFocusRef.current &&
+        typeof previousFocusRef.current.focus === 'function'
+      ) {
+        previousFocusRef.current.focus();
+      }
+    }, 20);
   }, []);
 
-  // Focus trap & Escape key handler for active modal
+  // Bridge for toasts raised from views rendered outside the hook scope
+  // (e.g. the Application Detail view's copy-link action).
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail;
+      if (detail?.message) {
+        showToast(detail.message, detail.variant || 'info');
+      }
+    };
+    window.addEventListener('fmsg-toast', handler);
+    return () => window.removeEventListener('fmsg-toast', handler);
+  }, [showToast]);
+
   useEffect(() => {
     if (!activeModal) return;
     const timer = setTimeout(() => {
-      confirmBtnRef.current?.focus();
+      const firstInput = modalRef.current?.querySelector<HTMLElement>(
+        'input:not([disabled])'
+      );
+      if (firstInput) {
+        firstInput.focus();
+      } else {
+        confirmBtnRef.current?.focus();
+      }
     }, 30);
 
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -123,7 +175,7 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
       }
       if (e.key === 'Tab' && modalRef.current) {
         const focusables = modalRef.current.querySelectorAll<HTMLElement>(
-          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
         );
         if (focusables.length === 0) return;
         const first = focusables[0];
@@ -145,6 +197,17 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
     };
   }, [activeModal, closeActiveModal]);
 
+  const typedMatchOk =
+    !activeModal?.requireTypedText ||
+    typedInput.trim().toLowerCase() ===
+      activeModal.requireTypedText.trim().toLowerCase();
+
+  const confirmBtnClass = activeModal?.destructive
+    ? 'btn btn-danger'
+    : activeModal?.primaryVariant === 'secondary'
+      ? 'btn btn-secondary'
+      : 'btn btn-primary';
+
   return (
     <DialogContext.Provider
       value={{ showModal, showToast, openLegalDocument }}
@@ -163,67 +226,97 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
             role="dialog"
             aria-modal="true"
             aria-labelledby="dialog-title"
-            className="modal-card"
+            className={`modal-card shared-modal-shell ${
+              activeModal.bodyContent ? 'modal-lg' : 'modal-sm'
+            }`}
             style={{
-              maxWidth: activeModal.bodyContent ? 620 : 440,
+              maxWidth: activeModal.bodyContent ? 720 : 460,
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            <h3
-              id="dialog-title"
-              style={{
-                margin: '0 0 12px 0',
-                fontSize: 'var(--text-lg)',
-                fontWeight: 'var(--font-weight-bold)',
-                color: 'var(--text-primary)',
-                letterSpacing: '-0.02em',
-              }}
-            >
-              {activeModal.title}
-            </h3>
+            <div className="modal-shell-header">
+              <h3 id="dialog-title" className="modal-shell-title">
+                {activeModal.title}
+              </h3>
+              {activeModal.dismissible !== false && (
+                <button
+                  type="button"
+                  className="modal-close-btn"
+                  aria-label="Close dialog"
+                  title="Close (Esc)"
+                  onClick={() => closeActiveModal(false)}
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.2"
+                  >
+                    <path d="M18 6L6 18M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
+            </div>
 
-            {activeModal.message && (
-              <p
-                style={{
-                  margin: '0 0 24px 0',
-                  fontSize: 'var(--text-sm)',
-                  color: 'var(--text-secondary)',
-                  lineHeight: 1.55,
-                }}
-              >
-                {activeModal.message}
-              </p>
-            )}
+            <div className="modal-shell-body">
+              {activeModal.message && (
+                <p className="modal-shell-message">{activeModal.message}</p>
+              )}
 
-            {activeModal.bodyContent && (
-              <div
-                tabIndex={0}
-                style={{
-                  maxHeight: 380,
-                  overflowY: 'auto',
-                  padding: '16px',
-                  marginBottom: '24px',
-                  background: 'var(--bg-input)',
-                  border: '1px solid var(--border-subtle)',
-                  borderRadius: 'var(--radius-md)',
-                  fontSize: '12.5px',
-                  color: 'var(--text-secondary)',
-                  whiteSpace: 'pre-wrap',
-                  lineHeight: 1.6,
-                  fontFamily: 'var(--font-sans)',
-                }}
-              >
-                {activeModal.bodyContent}
-              </div>
-            )}
+              {activeModal.requireTypedText && (
+                <div className="form-group" style={{ marginTop: 12 }}>
+                  <label htmlFor="modal-typed-confirm" className="field-label">
+                    Type <strong>{activeModal.requireTypedText}</strong> to
+                    confirm
+                  </label>
+                  <input
+                    id="modal-typed-confirm"
+                    type="text"
+                    className="field-input"
+                    placeholder={
+                      activeModal.requireTypedPlaceholder ||
+                      activeModal.requireTypedText
+                    }
+                    value={typedInput}
+                    onChange={(e) => setTypedInput(e.target.value)}
+                  />
+                </div>
+              )}
 
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'flex-end',
-                gap: '12px',
-              }}
-            >
+              {activeModal.bodyContent && (
+                <div
+                  tabIndex={0}
+                  className="legal-scroll-container"
+                  aria-label={activeModal.title}
+                >
+                  {activeModal.isLegalDoc
+                    ? renderLegalDocumentNodes(activeModal.bodyContent)
+                    : activeModal.bodyContent}
+                </div>
+              )}
+            </div>
+
+            <div className="modal-shell-footer">
+              {activeModal.isLegalDoc && activeModal.bodyContent && (
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ marginRight: 'auto' }}
+                  onClick={() => {
+                    navigator.clipboard
+                      ?.writeText(activeModal.bodyContent || '')
+                      .then(() => {
+                        setCopiedDoc(true);
+                        setTimeout(() => setCopiedDoc(false), 2000);
+                      })
+                      .catch(() => {});
+                  }}
+                >
+                  {copiedDoc ? 'Copied ✓' : 'Copy Text'}
+                </button>
+              )}
               {activeModal.cancelLabel && (
                 <button
                   type="button"
@@ -236,9 +329,13 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
               <button
                 ref={confirmBtnRef}
                 type="button"
-                className={`btn ${
-                  activeModal.destructive ? 'btn-danger' : 'btn-primary'
-                }`}
+                className={confirmBtnClass}
+                disabled={!typedMatchOk}
+                title={
+                  !typedMatchOk
+                    ? `Type "${activeModal.requireTypedText}" above to enable confirmation`
+                    : undefined
+                }
                 onClick={() => closeActiveModal(true)}
               >
                 {activeModal.confirmLabel || 'OK'}
@@ -249,7 +346,7 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
       )}
 
       {toasts.length > 0 && (
-        <div className="toast-stack" aria-live="polite">
+        <div className="toast-stack" role="status" aria-live="polite">
           {toasts.map((t) => {
             const borderColor =
               t.variant === 'error'
@@ -266,23 +363,34 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
                 style={{ borderLeft: `3px solid ${borderColor}` }}
               >
                 <span>{t.message}</span>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setToasts((prev) => prev.filter((item) => item.id !== t.id))
-                  }
-                  style={{
-                    background: 'transparent',
-                    border: 'none',
-                    color: 'var(--text-muted)',
-                    cursor: 'pointer',
-                    fontSize: '14px',
-                    padding: '2px 6px',
-                  }}
-                  aria-label="Dismiss notification"
-                >
-                  Close
-                </button>
+                <div className="toast-card-actions">
+                  {t.action && (
+                    <button
+                      type="button"
+                      className="toast-undo-btn"
+                      onClick={() => {
+                        t.action?.onClick();
+                        setToasts((prev) =>
+                          prev.filter((item) => item.id !== t.id)
+                        );
+                      }}
+                    >
+                      {t.action.label}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="toast-dismiss-btn"
+                    onClick={() =>
+                      setToasts((prev) =>
+                        prev.filter((item) => item.id !== t.id)
+                      )
+                    }
+                    aria-label="Dismiss notification"
+                  >
+                    Dismiss
+                  </button>
+                </div>
               </div>
             );
           })}

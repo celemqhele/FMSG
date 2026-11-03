@@ -1,18 +1,18 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useDialog } from './DialogSystem';
+import {
+  computeAllowanceUsage,
+  formatDateZA,
+  formatZar,
+} from '../lib/format';
 
 /**
- * FMSG Agents — Billing, Bundles & Pay-As-You-Go Spend Cap (v0.7.0)
+ * FMSG Agents — Billing, Plans & Monthly Spend Cap
  *
- * - Strictly separate from FMSG website pricing (searches are included in every
- *   FMSG Agents application).
- * - Monthly Subscription Bundles (unused applications roll over & stack forever):
- *   Starter Pack (10 apps · R349 · R35/app · 12% off)
- *   Lite         (25 apps · R749 · R30/app · 25% off)
- *   Standard     (60 apps · R1,499 · R25/app · 38% off)
- *   Power        (150 apps · R3,299 · R22/app · 45% off)
- * - Cost cap defaults to R0 (never charges extra without explicit user consent).
- * - Progressive Pay-As-You-Go charge thresholds: R40 -> R100 -> R250 -> R500 max.
+ * - Clear plan hierarchy (`Starter`, `Lite`, `Standard` [Recommended], `Power`)
+ * - Single primary CTA (`Standard`) so the user has one clear recommended path
+ * - Non-contradictory allowance/overage presentation (`computeAllowanceUsage`)
+ * - Plain-English spend cap and billing backoffice (invoices, payment method, renewal)
  */
 
 interface BillingPanelProps {
@@ -40,10 +40,19 @@ interface AgentBundlePlan {
   features: string[];
 }
 
+interface BillingInvoiceItem {
+  id: string;
+  reference: string;
+  plan: string;
+  amountZar: number;
+  status: string;
+  createdAt: string;
+}
+
 const DEFAULT_AGENT_BUNDLES: AgentBundlePlan[] = [
   {
     name: 'Starter',
-    displayName: 'Starter Pack',
+    displayName: 'Starter',
     applications: 10,
     price: 34900,
     priceLabel: 'R349',
@@ -51,10 +60,10 @@ const DEFAULT_AGENT_BUNDLES: AgentBundlePlan[] = [
     discountPct: 12,
     graceApps: 1,
     features: [
-      '10 automated applications / month',
-      'R35 per application (12% off R40)',
+      '10 automated applications per month',
+      'R35 per application (save 12%)',
       'Job searches & CV tailoring included',
-      'Unused applications roll over & stack',
+      'Unused applications roll over each month',
     ],
   },
   {
@@ -67,10 +76,10 @@ const DEFAULT_AGENT_BUNDLES: AgentBundlePlan[] = [
     discountPct: 25,
     graceApps: 2,
     features: [
-      '25 automated applications / month',
-      'R30 per application (25% off R40)',
+      '25 automated applications per month',
+      'R30 per application (save 25%)',
       'Job searches & CV tailoring included',
-      'Unused applications roll over & stack',
+      'Unused applications roll over each month',
     ],
   },
   {
@@ -78,16 +87,16 @@ const DEFAULT_AGENT_BUNDLES: AgentBundlePlan[] = [
     displayName: 'Standard',
     applications: 60,
     price: 149900,
-    priceLabel: 'R1,499',
+    priceLabel: 'R1 499',
     perAppZar: 25,
     discountPct: 38,
     graceApps: 6,
     popular: true,
     features: [
-      '60 automated applications / month',
-      'R25 per application (38% off R40)',
+      '60 automated applications per month',
+      'R25 per application (save 38%)',
       'Job searches & CV tailoring included',
-      'Unused applications roll over & stack',
+      'Unused applications roll over each month',
     ],
   },
   {
@@ -95,24 +104,17 @@ const DEFAULT_AGENT_BUNDLES: AgentBundlePlan[] = [
     displayName: 'Power',
     applications: 150,
     price: 329900,
-    priceLabel: 'R3,299',
+    priceLabel: 'R3 299',
     perAppZar: 22,
     discountPct: 45,
     graceApps: 15,
     features: [
-      '150 automated applications / month',
-      'R22 per application (45% off R40)',
+      '150 automated applications per month',
+      'R22 per application (save 45%)',
       'Job searches & CV tailoring included',
-      'Unused applications roll over & stack',
+      'Unused applications roll over each month',
     ],
   },
-];
-
-const THRESHOLD_STAGES = [
-  { stage: 1, label: 'First charge', thresholdZar: 40, trigger: 'New PAYG user' },
-  { stage: 2, label: 'Stage 2', thresholdZar: 100, trigger: 'After 1 payment' },
-  { stage: 3, label: 'Stage 3', thresholdZar: 250, trigger: 'After 3 payments' },
-  { stage: 4, label: 'Max threshold', thresholdZar: 500, trigger: 'After 6 payments' },
 ];
 
 const POLL_MS = 3500;
@@ -129,12 +131,20 @@ export default function BillingPanel({
   emailVerified = true,
   onUpgraded,
 }: BillingPanelProps) {
-  const { showToast } = useDialog();
+  const { showToast, showModal } = useDialog();
 
   const [capInput, setCapInput] = useState<string>(String(Math.max(0, costCap)));
-  const [capSaved, setCapSaved] = useState(false);
+  const [capSavedAt, setCapSavedAt] = useState<string | null>(null);
   const [plans, setPlans] = useState<AgentBundlePlan[]>(DEFAULT_AGENT_BUNDLES);
   const [activePlanName, setActivePlanName] = useState<string>('free');
+  const [invoices, setInvoices] = useState<BillingInvoiceItem[]>([]);
+  const [paymentMethod, setPaymentMethod] = useState<{
+    brand?: string;
+    last4?: string;
+    expMonth?: string;
+    expYear?: string;
+  } | null>(null);
+  const [nextRenewalDate, setNextRenewalDate] = useState<string | null>(null);
 
   const [checkout, setCheckout] = useState<{
     plan: string;
@@ -145,6 +155,16 @@ export default function BillingPanel({
   const [waitNote, setWaitNote] = useState('');
   const pollBusy = useRef(false);
 
+  const normalizePlanName = (
+    rawName?: string
+  ): 'Starter' | 'Lite' | 'Standard' | 'Power' => {
+    const clean = (rawName || '').replace(/\s+(Pack|Bundle)$/i, '').trim();
+    if (clean === 'Lite' || clean === 'Standard' || clean === 'Power') {
+      return clean;
+    }
+    return 'Starter';
+  };
+
   const loadPlansAndSummary = useCallback(async () => {
     try {
       const res = await window.electronAPI?.getBillingPlans?.();
@@ -153,32 +173,24 @@ export default function BillingPanel({
           .filter((p: any) =>
             ['Starter', 'Lite', 'Standard', 'Power'].includes(p.name)
           )
-          .map((p: any) => ({
-            name: p.name,
-            displayName: p.displayName || p.name,
-            applications:
-              p.applications ||
-              DEFAULT_AGENT_BUNDLES.find((d) => d.name === p.name)
-                ?.applications ||
-              10,
-            price: p.price,
-            priceLabel: p.priceLabel,
-            perAppZar:
-              p.perAppZar ||
-              DEFAULT_AGENT_BUNDLES.find((d) => d.name === p.name)?.perAppZar ||
-              35,
-            discountPct:
-              p.discountPct ||
-              DEFAULT_AGENT_BUNDLES.find((d) => d.name === p.name)
-                ?.discountPct ||
-              12,
-            graceApps:
-              p.graceApps ||
-              DEFAULT_AGENT_BUNDLES.find((d) => d.name === p.name)?.graceApps ||
-              1,
-            popular: p.popular,
-            features: p.features || [],
-          }));
+          .map((p: any) => {
+            const def =
+              DEFAULT_AGENT_BUNDLES.find((d) => d.name === p.name) ||
+              DEFAULT_AGENT_BUNDLES[0];
+            const cleanName = normalizePlanName(p.name);
+            return {
+              name: cleanName,
+              displayName: cleanName,
+              applications: p.applications || def.applications,
+              price: p.price || def.price,
+              priceLabel: formatZar(Math.round((p.price || def.price) / 100)),
+              perAppZar: p.perAppZar || def.perAppZar,
+              discountPct: p.discountPct || def.discountPct,
+              graceApps: p.graceApps || def.graceApps,
+              popular: cleanName === 'Standard',
+              features: def.features,
+            };
+          });
         if (mapped.length === 4) {
           setPlans(mapped);
         }
@@ -188,9 +200,12 @@ export default function BillingPanel({
     }
 
     try {
-      const sum = await window.electronAPI?.getBillingSummary?.();
-      if (sum?.ok && sum.plan) {
-        setActivePlanName(String(sum.plan).toLowerCase());
+      const sum: any = await window.electronAPI?.getBillingSummary?.();
+      if (sum?.ok) {
+        if (sum.plan) setActivePlanName(String(sum.plan).toLowerCase());
+        if (Array.isArray(sum.invoices)) setInvoices(sum.invoices);
+        if (sum.paymentMethod) setPaymentMethod(sum.paymentMethod);
+        if (sum.nextRenewalDate) setNextRenewalDate(sum.nextRenewalDate);
       }
     } catch {
       // ignore
@@ -215,13 +230,17 @@ export default function BillingPanel({
     onCostCapChange(value);
     setCapInput(String(value));
     window.electronAPI?.saveAgentPrefs?.({ costCap: value }).catch(() => {});
-    setCapSaved(true);
-    window.setTimeout(() => setCapSaved(false), 2200);
+    const stamp = new Date().toLocaleTimeString('en-ZA', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+    setCapSavedAt(stamp);
     showToast(
       value === 0
-        ? 'Pay-As-You-Go cost cap set to R0 (no extra charges allowed).'
-        : `Monthly Pay-As-You-Go cost cap updated to R${value.toLocaleString('en-ZA')}.`,
-      'info'
+        ? 'Monthly spend cap set to R0 (no Pay-As-You-Go charges allowed).'
+        : `Monthly spend cap saved as ${formatZar(value)}.`,
+      'success'
     );
   };
 
@@ -240,7 +259,7 @@ export default function BillingPanel({
           startedAt: Date.now(),
         });
         setWaitNote(
-          'Complete payment in the browser window that opened. Unused applications stack automatically.'
+          'Complete payment in the browser window that opened. Unused applications roll over automatically.'
         );
       } else {
         showToast(
@@ -278,7 +297,6 @@ export default function BillingPanel({
         if (!cancelled && res?.ok && res.data?.ok) {
           setCheckout(null);
           setWaitNote('');
-          // Reset costCap to R0 when a bundle starts so user is never charged extra without consent
           onCostCapChange(0);
           window.electronAPI
             ?.saveAgentPrefs?.({
@@ -288,7 +306,7 @@ export default function BillingPanel({
             })
             .catch(() => {});
           showToast(
-            `${checkout.plan} bundle activated! Applications added to your stacked balance.`,
+            `${checkout.plan} plan activated. Applications added to your balance.`,
             'success'
           );
           loadPlansAndSummary();
@@ -315,134 +333,145 @@ export default function BillingPanel({
   const welcomeBonus = emailVerified ? 5 : 0;
   const totalAllowance =
     (mode === 'bundle' ? selectedBundle.applications : 0) + welcomeBonus;
-  const usedPct =
-    totalAllowance > 0
-      ? Math.min(100, Math.round((appliedTotal / totalAllowance) * 100))
-      : 0;
+
+  const usageTruth = computeAllowanceUsage(appliedTotal, totalAllowance);
+  const welcomeUsed = Math.min(appliedTotal, welcomeBonus);
 
   const ringRadius = 32;
   const ringCircumference = 2 * Math.PI * ringRadius;
-  const ringOffset = ringCircumference * (1 - usedPct / 100);
+  const ringOffset =
+    ringCircumference * (1 - usageTruth.ringPercent / 100);
+
+  const estimatedMaxAppsAtCap =
+    costCap > 0 ? Math.floor(costCap / effectivePaygRate) : 0;
 
   return (
     <div className="billing-panel">
       <header className="billing-header">
         <div>
-          <h2 className="billing-title">Billing, Bundles &amp; Spend Cap</h2>
+          <h1 className="billing-title">Billing</h1>
           <p className="billing-subtitle">
-            FMSG Agents pricing includes job searches and CV tailoring in every
-            application. Unused bundle applications stack indefinitely.
+            Manage your monthly application plan, Pay-As-You-Go spend cap, and
+            billing history. Job searches and CV tailoring are included in every
+            application.
           </p>
         </div>
         <div className="billing-balance">
           <span className="balance-chip">
-            Welcome bonus <strong>{welcomeBonus} apps</strong>
+            Active rate{' '}
+            <strong>{formatZar(effectivePaygRate, { perApplication: true })}</strong>
           </span>
           <span className="balance-chip">
-            Active rate <strong>R{effectivePaygRate}/app</strong>
-          </span>
-          <span className="balance-chip">
-            Spend cap <strong>R{Math.max(0, costCap).toLocaleString('en-ZA')}</strong>
+            Monthly cap <strong>{formatZar(costCap)}</strong>
           </span>
         </div>
       </header>
 
-      {/* Top Row: Usage Ring + Pay-As-You-Go Spend Cap + Progressive Thresholds */}
+      {/* Top Row: Application Allowance + Monthly Spend Cap */}
       <div className="billing-top-grid">
-        {/* Usage & Stacked Balance Card */}
+        {/* Application Balance Card (BL-02, BL-08) */}
         <section className="billing-section" style={{ margin: 0 }}>
           <div className="billing-section-head">
-            <h3 className="billing-section-title">Application Balance</h3>
-            <span className="tag">Stacks forever</span>
+            <h2 className="billing-section-title">Application Balance</h2>
+            <span
+              className={`status-pill-sm ${
+                usageTruth.isOverage ? 'review' : 'applied'
+              }`}
+            >
+              {usageTruth.badgeText}
+            </span>
           </div>
           <div className="billing-usage-row">
             <div className="billing-ring-box">
-              <svg width="78" height="78" viewBox="0 0 78 78">
+              <svg width="82" height="82" viewBox="0 0 82 82" aria-hidden="true">
                 <circle
-                  cx="39"
-                  cy="39"
+                  cx="41"
+                  cy="41"
                   r={ringRadius}
                   fill="none"
-                  stroke="rgba(148, 163, 184, 0.16)"
-                  strokeWidth="5.5"
+                  stroke="rgba(148, 163, 184, 0.18)"
+                  strokeWidth="6"
                 />
                 <circle
-                  cx="39"
-                  cy="39"
+                  cx="41"
+                  cy="41"
                   r={ringRadius}
                   fill="none"
-                  stroke="#203eea"
-                  strokeWidth="5.5"
+                  stroke={usageTruth.isOverage ? '#f59e0b' : '#203eea'}
+                  strokeWidth="6"
                   strokeLinecap="round"
                   strokeDasharray={ringCircumference}
                   strokeDashoffset={ringOffset}
-                  transform="rotate(-90 39 39)"
+                  transform="rotate(-90 41 41)"
                 />
               </svg>
               <div className="billing-ring-center">
-                <strong>{usedPct}%</strong>
-                <span>used</span>
+                <strong>{usageTruth.ringCenterTop}</strong>
+                <span>{usageTruth.ringCenterBottom}</span>
               </div>
             </div>
             <div className="billing-usage-meta">
               <div className="billing-stat-line">
-                <span>Mode:</span>
+                <span>Current plan:</span>
                 <strong>
                   {mode === 'bundle'
-                    ? `${selectedBundle.displayName} (${selectedBundle.applications} apps/mo)`
-                    : 'Pure Pay-As-You-Go (R40/app)'}
+                    ? `${selectedBundle.displayName} (${selectedBundle.applications} applications / month)`
+                    : 'Pay-As-You-Go'}
                 </strong>
               </div>
               <div className="billing-stat-line">
-                <span>Fallback PAYG rate:</span>
-                <strong>
-                  R{effectivePaygRate}/app{' '}
-                  {mode === 'bundle'
-                    ? `(${selectedBundle.discountPct}% bundle discount locked in)`
-                    : '(standard rate)'}
-                </strong>
+                <span>Included usage:</span>
+                <strong>{usageTruth.summaryLine}</strong>
               </div>
               <div className="billing-stat-line">
-                <span>Grace protection:</span>
+                <span>Welcome bonus:</span>
                 <strong>
-                  {mode === 'bundle'
-                    ? `${selectedBundle.graceApps} grace app(s) (10%) + gentle pause`
-                    : 'Gentle pause on cap reached'}
+                  {emailVerified
+                    ? welcomeUsed >= welcomeBonus
+                      ? `All ${welcomeBonus} welcome applications used`
+                      : `${welcomeBonus - welcomeUsed} of ${welcomeBonus} free applications remaining`
+                    : 'Verify your email to unlock 5 free applications'}
                 </strong>
               </div>
             </div>
           </div>
         </section>
 
-        {/* Manual Spend Cap (Starts at R0) */}
+        {/* Monthly Spend Cap Card (BL-01, BL-06) */}
         <section className="billing-section" style={{ margin: 0 }}>
           <div className="billing-section-head">
-            <h3 className="billing-section-title">
-              Pay-As-You-Go Cost Cap (Default R0)
-            </h3>
-            <span className="tag" style={{ color: costCap > 0 ? '#22c55e' : '#94a3b8' }}>
+            <h2 className="billing-section-title">
+              Monthly Pay-As-You-Go Spend Cap
+            </h2>
+            <span
+              className={`status-pill-sm ${
+                costCap > 0 ? 'applied' : 'neutral'
+              }`}
+            >
               {costCap > 0
-                ? `R${costCap.toLocaleString('en-ZA')} max`
-                : 'R0 (No extra charges)'}
+                ? `${formatZar(costCap)} monthly cap`
+                : 'R0 (Extra charges off)'}
             </span>
           </div>
           <p className="billing-section-note">
-            Starts at <strong>R0</strong> so you are never charged extra without
-            consent. When your bundle balance hits 0, set a cap above R0 to
-            continue applying at your discounted rate (R{effectivePaygRate}/app),
-            or leave at R0 to wait for next month&apos;s renewal.
+            Controls the maximum amount you can spend on Pay-As-You-Go
+            applications each month ({formatZar(effectivePaygRate, { perApplication: true })}).
+            {costCap > 0
+              ? ` Your current ${formatZar(costCap)} cap covers up to ${estimatedMaxAppsAtCap} Pay-As-You-Go application${estimatedMaxAppsAtCap === 1 ? '' : 's'}, then pauses automatically.`
+              : ' Set to R0 to prevent any charges beyond your included balance.'}
           </p>
 
           <div className="spend-input-row">
-            <label className="spend-field">
+            <label className="spend-field" htmlFor="billing-spend-cap-input">
               <span className="spend-prefix">R</span>
               <input
+                id="billing-spend-cap-input"
                 className="spend-input"
                 type="text"
                 inputMode="numeric"
                 autoComplete="off"
                 placeholder="0"
-                aria-label="Monthly spend cap in rand"
+                aria-label="Monthly spend cap in South African Rand"
                 value={capInput}
                 onChange={(e) =>
                   setCapInput(e.target.value.replace(/[^0-9]/g, ''))
@@ -462,63 +491,46 @@ export default function BillingPanel({
             >
               Save Cap
             </button>
-            {capSaved && <span className="spend-saved">Saved</span>}
+            {capSavedAt && (
+              <span className="spend-saved" role="status">
+                Saved at {capSavedAt}
+              </span>
+            )}
           </div>
 
-          <div className="spend-preset-pills">
+          <div className="spend-preset-pills" role="group" aria-label="Spend cap presets">
             {[0, 160, 350, 500, 1000].map((preset) => (
               <button
                 key={preset}
                 type="button"
-                className={`spend-preset-chip ${costCap === preset ? 'active' : ''}`}
+                className={`spend-preset-chip ${
+                  costCap === preset ? 'active' : ''
+                }`}
                 onClick={() => saveCap(preset)}
               >
-                {preset === 0 ? 'R0 (Off)' : `R${preset}`}
+                {preset === 0 ? 'R0 (Off)' : formatZar(preset)}
               </button>
             ))}
           </div>
         </section>
       </div>
 
-      {/* Progressive Charge Threshold Schedule */}
-      <section className="billing-section">
-        <div className="billing-section-head">
-          <h3 className="billing-section-title">
-            Pay-As-You-Go Charge Thresholds
-          </h3>
-          <span className="billing-section-note" style={{ margin: 0 }}>
-            R40/app pure PAYG · Bundle buyers keep their R35–R22/app rate
-          </span>
-        </div>
-        <div className="threshold-grid">
-          {THRESHOLD_STAGES.map((t) => (
-            <div key={t.stage} className="threshold-card">
-              <span className="threshold-eyebrow">{t.trigger}</span>
-              <strong className="threshold-amount">R{t.thresholdZar}</strong>
-              <span className="threshold-label">{t.label}</span>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* Monthly Subscription Bundles */}
+      {/* Monthly Plans (BL-04, BL-05, BL-09, BL-12) */}
       <section className="billing-section">
         <div className="billing-section-head">
           <div>
-            <h3 className="billing-section-title">
-              Monthly Application Bundles (One Active Bundle per Account)
-            </h3>
-            <p className="billing-section-note" style={{ margin: '2px 0 0' }}>
-              Monthly subscriptions renew and stack unused applications forever.
-              Upgrades stack immediately; downgrades can stack today or take
-              effect at next renewal. Non-refundable.
+            <h2 className="billing-section-title">Monthly Application Plans</h2>
+            <p className="billing-section-note" style={{ margin: '4px 0 0' }}>
+              Lower your per-application rate from R40 down to R22. Unused
+              monthly applications roll over automatically while your plan is
+              active.
             </p>
           </div>
         </div>
 
         {checkout && (
-          <div className="billing-wait" style={{ marginBottom: 10 }}>
-            <span className="billing-spinner" />
+          <div className="billing-wait" style={{ marginBottom: 12 }}>
+            <span className="billing-spinner" aria-hidden="true" />
             <span>
               {waitNote || 'Waiting for Paystack confirmation…'} ·{' '}
               <button
@@ -526,7 +538,7 @@ export default function BillingPanel({
                 className="viewport-footer-link"
                 onClick={() => setCheckout(null)}
               >
-                cancel
+                Cancel checkout
               </button>
             </span>
           </div>
@@ -537,25 +549,31 @@ export default function BillingPanel({
             const isSelected =
               (mode === 'bundle' && tier === plan.name) ||
               activePlanName === plan.name.toLowerCase();
+            const isRecommended = plan.name === 'Standard';
             const busy = starting === plan.name;
+            // Decision D4 / BL-04: Only Standard (Recommended) uses primary CTA
+            const usePrimaryCta = isRecommended && !isSelected;
+
             return (
               <article
                 key={plan.name}
                 className={`plan-card ${isSelected ? 'current' : ''} ${
-                  plan.popular ? 'popular' : ''
+                  isRecommended ? 'popular' : ''
                 }`}
               >
                 <div className="plan-card-top">
                   <div>
-                    <h4 className="plan-name">{plan.displayName}</h4>
+                    <h3 className="plan-name">{plan.displayName}</h3>
                     <span className="plan-apps-pill">
-                      {plan.applications} applications / mo
+                      {plan.applications} applications / month
                     </span>
                   </div>
-                  {plan.popular && !isSelected && (
-                    <span className="plan-badge">Popular</span>
+                  {isRecommended && !isSelected && (
+                    <span className="plan-badge-inline">Recommended</span>
                   )}
-                  {isSelected && <span className="plan-badge">Selected</span>}
+                  {isSelected && (
+                    <span className="plan-badge-inline current">Active</span>
+                  )}
                 </div>
 
                 <div className="plan-price">
@@ -565,7 +583,7 @@ export default function BillingPanel({
 
                 <div className="plan-rate-highlight">
                   <span>
-                    <strong>R{plan.perAppZar}</strong> per application
+                    <strong>{formatZar(plan.perAppZar)}</strong> per application
                   </span>
                   <span className="plan-discount-tag">
                     Save {plan.discountPct}%
@@ -581,22 +599,135 @@ export default function BillingPanel({
                 <button
                   type="button"
                   className={`btn ${
-                    isSelected ? 'btn-secondary' : 'btn-primary'
+                    usePrimaryCta ? 'btn-primary' : 'btn-secondary'
                   } plan-cta`}
                   disabled={Boolean(starting) || Boolean(checkout)}
                   onClick={() => startUpgrade(plan)}
                 >
-                  {busy
-                    ? 'Opening Checkout…'
-                    : isSelected
-                      ? 'Renew / Stack Bundle'
-                      : `Choose ${plan.displayName}`}
+                  {busy ? (
+                    <>
+                      <span className="btn-spinner" aria-hidden="true" />
+                      Opening Checkout…
+                    </>
+                  ) : isSelected ? (
+                    `Add ${plan.displayName} Allowance`
+                  ) : (
+                    `Choose ${plan.displayName}`
+                  )}
                 </button>
               </article>
             );
           })}
         </div>
       </section>
+
+      {/* Billing Backoffice: Payment Method, Renewal & Invoices (BL-07 / P3.1) */}
+      <div className="billing-top-grid">
+        <section className="billing-section" style={{ margin: 0 }}>
+          <div className="billing-section-head">
+            <h2 className="billing-section-title">
+              Payment Method &amp; Subscription
+            </h2>
+            <span className="status-pill-sm neutral">Paystack ZAR</span>
+          </div>
+          <div className="billing-usage-meta" style={{ marginTop: 8 }}>
+            <div className="billing-stat-line">
+              <span>Payment method:</span>
+              <strong>
+                {paymentMethod?.last4
+                  ? `${paymentMethod.brand || 'Card'} ending in ${paymentMethod.last4} (exp ${paymentMethod.expMonth}/${paymentMethod.expYear})`
+                  : 'Authorized via Paystack Checkout on purchase'}
+              </strong>
+            </div>
+            <div className="billing-stat-line">
+              <span>Next renewal date:</span>
+              <strong>
+                {mode === 'bundle' && nextRenewalDate
+                  ? formatDateZA(nextRenewalDate)
+                  : mode === 'bundle'
+                    ? 'Monthly from activation date'
+                    : 'No recurring plan active'}
+              </strong>
+            </div>
+            <div className="billing-stat-line">
+              <span>Monthly spend forecast:</span>
+              <strong>
+                {mode === 'bundle'
+                  ? `${selectedBundle.priceLabel} plan + up to ${formatZar(costCap)} cap`
+                  : `Up to ${formatZar(costCap)} monthly cap`}
+              </strong>
+            </div>
+          </div>
+          {mode === 'bundle' && (
+            <div style={{ marginTop: 12 }}>
+              <button
+                type="button"
+                className="btn btn-secondary btn-compact"
+                onClick={() => {
+                  showModal({
+                    title: 'Switch to Pay-As-You-Go?',
+                    message:
+                      'Your existing application balance remains available, and your plan will not renew next month. Continue?',
+                    confirmLabel: 'Switch to Pay-As-You-Go',
+                    cancelLabel: 'Keep Plan',
+                    onConfirm: () => {
+                      onModeChange?.('pay-as-you-go');
+                      showToast(
+                        'Switched to Pay-As-You-Go. Remaining applications stay in your balance.',
+                        'info'
+                      );
+                    },
+                  });
+                }}
+              >
+                Cancel Monthly Renewal
+              </button>
+            </div>
+          )}
+        </section>
+
+        <section className="billing-section" style={{ margin: 0 }}>
+          <div className="billing-section-head">
+            <h2 className="billing-section-title">Billing History &amp; Receipts</h2>
+            <button
+              type="button"
+              className="viewport-footer-link"
+              onClick={() =>
+                window.electronAPI?.openExternalUrl?.(
+                  'https://www.findmesomejobs.co.za/dashboard'
+                )
+              }
+            >
+              Open Web Billing Portal ↗
+            </button>
+          </div>
+          {invoices.length === 0 ? (
+            <p className="billing-section-note" style={{ marginTop: 8 }}>
+              No completed card charges recorded yet. Receipts are emailed
+              automatically after every Paystack payment and appear here.
+            </p>
+          ) : (
+            <div className="invoices-mini-list">
+              {invoices.map((inv) => (
+                <div key={inv.id} className="invoice-mini-row">
+                  <div>
+                    <strong>{inv.plan} Plan</strong>
+                    <span>
+                      {formatDateZA(inv.createdAt)} · Ref {inv.reference}
+                    </span>
+                  </div>
+                  <div className="invoice-mini-right">
+                    <strong>{formatZar(inv.amountZar)}</strong>
+                    <span className="status-pill-sm applied">
+                      {inv.status === 'paid' ? 'Paid' : inv.status}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
     </div>
   );
 }

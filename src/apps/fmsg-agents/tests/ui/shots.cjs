@@ -79,6 +79,48 @@ function readLegalDoc(docKey) {
   }
 }
 
+/**
+ * The renderer bundle inlines design-system.css at build time (index.tsx injects
+ * it after the <link>), so a stale bundle silently overrides the on-disk CSS and
+ * produces false measurements. Fail fast instead of reporting phantom results.
+ */
+function assertBundleFresh() {
+  const bundlePath = path.join(APP_ROOT, 'renderer', 'bundle.js');
+  if (!fs.existsSync(bundlePath)) {
+    console.error('[ui:shots] renderer/bundle.js is missing. Run: npm run build:renderer');
+    process.exit(1);
+  }
+  const bundleMtime = fs.statSync(bundlePath).mtimeMs;
+  const roots = [
+    path.join(APP_ROOT, 'renderer'),
+    path.join(APP_ROOT, 'legal'),
+  ];
+  const stale = [];
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+        continue;
+      }
+      if (!/\.(tsx?|css|md)$/.test(entry.name)) continue;
+      if (entry.name === 'bundle.js') continue;
+      if (fs.statSync(full).mtimeMs > bundleMtime) {
+        stale.push(path.relative(APP_ROOT, full));
+      }
+    }
+  };
+  for (const root of roots) {
+    if (fs.existsSync(root)) walk(root);
+  }
+  if (stale.length > 0) {
+    console.error(
+      `[ui:shots] Stale renderer bundle — newer sources: ${stale.slice(0, 5).join(', ')}. Run: npm run build:renderer`
+    );
+    process.exit(1);
+  }
+}
+
 function buildMockScript() {
   const eula = JSON.stringify(readLegalDoc('eula'));
   const terms = JSON.stringify(readLegalDoc('terms'));
@@ -329,6 +371,7 @@ async function collectViewportMetrics(page) {
 
 async function run() {
   const { sizes, outDir } = parseArgs();
+  assertBundleFresh();
   fs.mkdirSync(outDir, { recursive: true });
 
   const server = createHarnessServer();

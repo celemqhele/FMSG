@@ -1,14 +1,9 @@
 {
-  "timestamp": "2026-11-03T09:57:17.101Z",
-  "textMutedHex": "#64748b",
+  "timestamp": "2026-11-03T11:08:57.841Z",
+  "textMutedHex": "#94a3b8",
   "bgCardHex": "#0e111a",
-  "textMutedContrastOnCard": 3.96,
+  "textMutedContrastOnCard": 7.35,
   "distinctPxFontSizes": [
-    "8.5px",
-    "10px",
-    "10.5px",
-    "11px",
-    "11.5px",
     "12px",
     "12.5px",
     "13px",
@@ -18,23 +13,24 @@
     "15px",
     "16px",
     "18px",
+    "19px",
     "20px",
     "22px",
     "24px",
     "26px"
   ],
-  "distinctPxFontSizeCount": 18,
-  "sub12pxOccurrences": 90,
+  "distinctPxFontSizeCount": 14,
+  "sub12pxOccurrences": 0,
   "distinctLiteralRadii": [
     "4px",
     "13px",
     "8px",
     "6px",
+    "10px",
     "50%",
     "9px",
     "20px",
     "14px",
-    "10px",
     "5px",
     "999px",
     "12px",
@@ -46,6 +42,6 @@
     "4px 4px 0 0"
   ],
   "distinctLiteralRadiiCount": 18,
-  "layoutImportantCount": 16,
+  "layoutImportantCount": 17,
   "hasGlobalFocusVisible": true
 }

@@ -1,17 +1,16 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDialog } from './DialogSystem';
+import { formatLocationZA, formatProfileName } from '../lib/format';
 
 /**
- * Live Run & Browser Preview (v0.7.0)
+ * Live Run & Browser Preview
  *
- * - Renders real `agent-event` IPC steps from `AgentRunner`
- * - Vertical 6-stage pipeline (Finding jobs -> Filtering -> Tailoring -> Applying -> Monitoring -> Complete)
- * - Active job card with match % badge and progress bar
- * - Pause / Resume, Stop, and Emergency Stop controls
- * - Real Playwright JPEG screenshot monitor (`page.screenshot`) in a dark bezel
- * - "Needs You" modal with a live 10:00 (600s) SVG countdown ring that expires
- *   into `skip` (never auto-submits) and supports saving a domain-locked
- *   `SITE_PASSWORD` into Windows Credential Manager (`secret-vault.ts`).
+ * - Page header with H1 ("Run"), subtitle, and non-truncating ProfilePicker (RN-01, RN-02)
+ * - Real `agent-event` IPC steps from `AgentRunner`
+ * - Vertical 6-stage pipeline + active job spotlight + activity log
+ * - Dark Windows-native browser preview bezel with crisp status pill (RN-06, RN-07, GS-14)
+ * - "Needs You" modal with 10:00 SVG countdown ring (expires into `skip`) and plain-English
+ *   local encrypted sign-in storage (no env-var names or internal jargon)
  */
 
 export type StepPhase =
@@ -162,11 +161,12 @@ export function ProfilePicker({
         className={`profile-picker-trigger ${open ? 'open' : ''}`}
         aria-haspopup="listbox"
         aria-expanded={open}
+        aria-label="Active search profile"
         onClick={() => setOpen((v) => !v)}
       >
-        <span className="profile-picker-dot" />
+        <span className="profile-picker-dot" aria-hidden="true" />
         <span className="profile-picker-text">
-          {selected?.name ? `${selected.name} · ` : ''}
+          {selected?.name ? `${formatProfileName(selected.name)} · ` : ''}
           {titleOf(selected)}
         </span>
         <svg
@@ -179,13 +179,18 @@ export function ProfilePicker({
           strokeWidth="2.4"
           strokeLinecap="round"
           strokeLinejoin="round"
+          aria-hidden="true"
         >
           <polyline points="6 9 12 15 18 9" />
         </svg>
       </button>
 
       {open && (
-        <div className="profile-picker-menu" role="listbox">
+        <div
+          className="profile-picker-menu"
+          role="listbox"
+          aria-label="Choose active search profile"
+        >
           {profiles.map((p: any, index: number) => {
             const active = p.id === selected?.id;
             return (
@@ -201,11 +206,11 @@ export function ProfilePicker({
                   setOpen(false);
                 }}
               >
-                <span className="profile-picker-item-title">{titleOf(p)}</span>
+                <span className="profile-picker-item-title">
+                  {formatProfileName(p.name)} — {titleOf(p)}
+                </span>
                 <span className="profile-picker-item-meta">
-                  {[p.name, p.location || p.location_scope]
-                    .filter(Boolean)
-                    .join(' · ') || 'Saved profile'}
+                  {formatLocationZA(p.location || p.location_scope)}
                 </span>
                 {active && (
                   <svg
@@ -218,6 +223,7 @@ export function ProfilePicker({
                     strokeWidth="2.6"
                     strokeLinecap="round"
                     strokeLinejoin="round"
+                    aria-hidden="true"
                   >
                     <polyline points="20 6 9 17 4 12" />
                   </svg>
@@ -258,7 +264,6 @@ export default function LiveLog({
   const [attention, setAttention] = useState<AttentionPrompt | null>(null);
   const [secondsLeft, setSecondsLeft] = useState<number>(600);
 
-  // Optional local Credential Manager save inside the Needs You modal
   const [vaultUser, setVaultUser] = useState('');
   const [vaultPass, setVaultPass] = useState('');
   const [saveToVault, setSaveToVault] = useState(false);
@@ -276,7 +281,9 @@ export default function LiveLog({
   const pushEntry = useCallback((entry: MatrixLogEntry) => {
     setEntries((prev) => {
       const settled = prev.map((item) =>
-        item.status === 'active' ? { ...item, status: 'completed' as const } : item
+        item.status === 'active'
+          ? { ...item, status: 'completed' as const }
+          : item
       );
       return [...settled, entry].slice(-60);
     });
@@ -292,7 +299,8 @@ export default function LiveLog({
         pushEntry({
           id: `step_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
           phase: event.phase,
-          label: event.label || PHASE_LABEL[event.phase as StepPhase] || 'Working',
+          label:
+            event.label || PHASE_LABEL[event.phase as StepPhase] || 'Working',
           sublabel: event.sublabel,
           status: 'active',
           timestamp: nowLabel(),
@@ -360,7 +368,9 @@ export default function LiveLog({
     setAttention(null);
     setEntries((prev) =>
       prev.map((item) =>
-        item.status === 'active' ? { ...item, status: 'completed' as const } : item
+        item.status === 'active'
+          ? { ...item, status: 'completed' as const }
+          : item
       )
     );
   }, [isRunning]);
@@ -376,7 +386,6 @@ export default function LiveLog({
       const current = attention;
       if (!current) return;
 
-      // If user opted to save login to local Credential Manager before continuing
       if (
         answer === 'continue' &&
         current.kind === 'login' &&
@@ -387,8 +396,9 @@ export default function LiveLog({
       ) {
         setSavingVault(true);
         try {
+          const siteLabel = current.company || current.allowedDomain;
           const res = await window.electronAPI?.saveSiteSecret?.({
-            siteLabel: current.company || current.allowedDomain,
+            siteLabel,
             allowedDomain: current.allowedDomain,
             username: vaultUser.trim(),
             password: vaultPass,
@@ -396,7 +406,7 @@ export default function LiveLog({
           });
           if (res?.ok) {
             showToast(
-              `Saved ${res.meta?.keyName || current.secretKeyName} to Windows Credential Manager.`,
+              `Saved ${siteLabel} sign-in securely on this PC.`,
               'success'
             );
           }
@@ -451,7 +461,9 @@ export default function LiveLog({
   };
 
   const activeEntry = useMemo(
-    () => [...entries].reverse().find((e) => e.status === 'active') || entries[entries.length - 1],
+    () =>
+      [...entries].reverse().find((e) => e.status === 'active') ||
+      entries[entries.length - 1],
     [entries]
   );
 
@@ -485,7 +497,9 @@ export default function LiveLog({
   }, [activePipelineIdx, currentJobEntry]);
 
   const profileTitle =
-    (profile?.job_titles || [])[0] || profile?.name || 'your saved profile';
+    (profile?.job_titles || [])[0] ||
+    formatProfileName(profile?.name) ||
+    'your saved profile';
 
   const totalCountdown = attention?.countdownSeconds || 600;
   const ringRadius = 28;
@@ -494,447 +508,489 @@ export default function LiveLog({
     ringCircumference * (1 - Math.max(0, secondsLeft) / totalCountdown);
 
   return (
-    <div className="live-feed-root">
-      {/* LEFT / CENTER: Live Run Pipeline, Current Job Card & Activity */}
-      <section className="matrix-log-column">
-        {/* Top Progress Header */}
-        <div className="matrix-log-header">
-          <div className="matrix-log-heading">
-            <span
-              className={`matrix-live-dot ${
-                isPaused ? 'paused' : isRunning ? 'running' : 'idle'
-              }`}
+    <div className="run-page-shell">
+      {/* Page Header (RN-01, RN-02) */}
+      <header className="billing-header run-page-header">
+        <div>
+          <h1 className="billing-title">Run</h1>
+          <p className="billing-subtitle">
+            Monitor live browser automation and step in whenever a job posting
+            needs your input.
+          </p>
+        </div>
+        <div className="run-header-controls">
+          {onProfileChange && (
+            <ProfilePicker
+              profiles={profiles}
+              selectedProfileId={selectedProfileId}
+              onProfileChange={onProfileChange}
             />
-            <span className="matrix-log-title">
-              {isPaused
-                ? 'Run Paused'
-                : isRunning
-                  ? 'Live Run in Progress'
-                  : entries.length
-                    ? 'Run Complete'
-                    : 'Ready to Run'}
-            </span>
-            <span className="matrix-counter">
-              {stats.applied} applied
-              {stats.skipped > 0 ? ` · ${stats.skipped} skipped` : ''}
-            </span>
-          </div>
-
-          <div className="matrix-log-meta">
-            {onProfileChange && (
-              <ProfilePicker
-                profiles={profiles}
-                selectedProfileId={selectedProfileId}
-                onProfileChange={onProfileChange}
-              />
-            )}
-          </div>
-        </div>
-
-        {/* Determinate Run Progress Bar */}
-        <div className="live-run-progress-wrap">
-          <div className="live-run-progress-labels">
-            <span>Progress</span>
-            <span>
-              {currentJobEntry?.jobIndex && currentJobEntry?.totalJobs
-                ? `Job ${currentJobEntry.jobIndex} of ${currentJobEntry.totalJobs} (${progressPct}%)`
-                : isRunning
-                  ? `${progressPct}%`
-                  : 'Idle'}
-            </span>
-          </div>
-          <div className="live-run-progress-track">
-            <div
-              className="live-run-progress-fill"
-              style={{ width: `${isRunning || entries.length ? Math.max(6, progressPct) : 0}%` }}
-            />
-          </div>
-        </div>
-
-        {/* Middle Split: 6-Step Pipeline + Current Job Card + Activity Stream */}
-        <div className="live-run-middle-grid">
-          {/* 6-Step Vertical Stepper */}
-          <div className="live-run-stepper">
-            {PIPELINE_STEPS.map((step, idx) => {
-              const done =
-                activePipelineIdx > idx ||
-                (!isRunning && entries.length > 0 && activeEntry?.phase === 'completed');
-              const current = isRunning && activePipelineIdx === idx;
-              return (
-                <div
-                  key={step.key}
-                  className={`pipeline-step-row ${
-                    done ? 'done' : current ? 'current' : 'upcoming'
-                  }`}
-                >
-                  <span className="pipeline-step-indicator">
-                    {done ? '✓' : idx + 1}
-                  </span>
-                  <span className="pipeline-step-label">{step.label}</span>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Current Job Card + Scrollable Activity Log */}
-          <div className="live-run-center-col">
-            {currentJobEntry && (currentJobEntry.jobTitle || currentJobEntry.company) && (
-              <div className="current-job-spotlight">
-                <div className="current-job-spotlight-top">
-                  <div className="current-job-badge">
-                    {(currentJobEntry.company || 'JOB').slice(0, 4).toUpperCase()}
-                  </div>
-                  <div className="current-job-meta">
-                    <div className="current-job-title">
-                      {currentJobEntry.jobTitle || 'Active Posting'}
-                    </div>
-                    <div className="current-job-sub">
-                      {[
-                        currentJobEntry.company,
-                        currentJobEntry.location,
-                        currentJobEntry.salary,
-                      ]
-                        .filter(Boolean)
-                        .join(' · ')}
-                    </div>
-                  </div>
-                  {currentJobEntry.matchScore != null && (
-                    <span className="current-job-score">
-                      {currentJobEntry.matchScore}% Match
-                    </span>
-                  )}
-                </div>
-                <div className="current-job-status-line">
-                  {activeEntry?.label || 'Processing posting…'}
-                </div>
-              </div>
-            )}
-
-            <div
-              className="matrix-log-scroll"
-              ref={scrollRef}
-              onScroll={handleScroll}
-              aria-live="polite"
-            >
-              {entries.length === 0 ? (
-                <div className="matrix-empty">
-                  <p className="matrix-empty-title">No active run right now</p>
-                  <p className="matrix-empty-body">
-                    {profiles.length === 0
-                      ? 'Add a search profile on the FMSG website, then click Refresh in Profiles.'
-                      : `Click Start Applying to discover live postings for ${profileTitle}, tailor your CV, and watch the browser work in real time.`}
-                  </p>
-                </div>
-              ) : (
-                entries.map((entry) => (
-                  <div
-                    key={entry.id}
-                    className={`matrix-log-row ${entry.status} ${
-                      entry.id === activeEntry?.id ? 'current' : ''
-                    }`}
-                  >
-                    <span className={`matrix-dot ${entry.status}`} />
-                    <div className="matrix-log-body">
-                      <div className="matrix-log-text">{entry.label}</div>
-                      {entry.sublabel && (
-                        <div className="matrix-log-sub">{entry.sublabel}</div>
-                      )}
-                      {(entry.company || entry.jobTitle) && (
-                        <div className="matrix-log-tags">
-                          {entry.jobTitle && <span>{entry.jobTitle}</span>}
-                          {entry.company && <span>{entry.company}</span>}
-                          {entry.location && <span>{entry.location}</span>}
-                          {entry.matchScore != null && (
-                            <span className="matrix-score">
-                              {entry.matchScore}% fit
-                            </span>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                    <span className="matrix-log-time">
-                      {entry.jobIndex && entry.totalJobs
-                        ? `${entry.jobIndex}/${entry.totalJobs}`
-                        : entry.timestamp}
-                    </span>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Bottom Run Controls: Pause / Stop / Emergency Stop (or Start Applying) */}
-        <div className="agent-action-row">
-          {isRunning ? (
-            <div className="live-run-control-group">
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={isPaused ? onResumeAgent : onPauseAgent}
-              >
-                {isPaused ? '▶ Resume' : '⏸ Pause'}
-              </button>
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={onStopAgent}
-              >
-                ■ Stop
-              </button>
-              <button
-                type="button"
-                className="btn btn-danger"
-                onClick={onEmergencyStopAgent || onStopAgent}
-              >
-                ⊗ Emergency Stop
-              </button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              className="btn btn-primary agent-primary-action"
-              onClick={onOpenLaunchModal}
-            >
-              Start Applying · {batchSize} jobs
-            </button>
           )}
-          <span className="agent-action-hint">
-            {isPaused
-              ? 'Paused — click Resume to continue from this posting'
-              : isRunning
-                ? activeEntry?.label || 'Working in visible Chrome window…'
-                : 'Opens a visible Chrome window on your PC'}
-          </span>
         </div>
-      </section>
+      </header>
 
-      {/* RIGHT: Real Browser Preview Monitor (Dark Bezel) */}
-      <section className="live-viewport-column">
-        <div className="live-viewport-monitor">
-          <div className="viewport-browser-bar">
-            <div className="viewport-traffic-dots">
+      <div className="live-feed-root">
+        {/* LEFT / CENTER: Live Run Pipeline, Current Job Card & Activity */}
+        <section className="matrix-log-column">
+          {/* Status Strip */}
+          <div className="matrix-log-header">
+            <div className="matrix-log-heading">
               <span
-                className="viewport-traffic-dot"
-                style={{ background: '#ef4444' }}
+                className={`matrix-live-dot ${
+                  isPaused ? 'paused' : isRunning ? 'running' : 'idle'
+                }`}
               />
-              <span
-                className="viewport-traffic-dot"
-                style={{ background: '#f59e0b' }}
-              />
-              <span
-                className="viewport-traffic-dot"
-                style={{ background: '#22c55e' }}
-              />
-            </div>
-            <div className="viewport-url-pill">
-              <svg
-                width="11"
-                height="11"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="#94a3b8"
-                strokeWidth="2.2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <rect x="3" y="11" width="18" height="11" rx="2" />
-                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-              </svg>
-              <span>
-                {screenshot?.host
-                  ? `https://${screenshot.host}`
-                  : 'Live browser preview'}
+              <span className="matrix-log-title">
+                {isPaused
+                  ? 'Run Paused'
+                  : isRunning
+                    ? 'Live Run in Progress'
+                    : entries.length
+                      ? 'Run Complete'
+                      : 'Ready to Start'}
+              </span>
+              <span className="matrix-counter">
+                {stats.applied} applied
+                {stats.skipped > 0 ? ` · ${stats.skipped} skipped` : ''}
               </span>
             </div>
-            <span
-              className={`viewport-live-badge ${isRunning ? 'live' : 'idle'}`}
-            >
-              {isPaused ? 'PAUSED' : isRunning ? 'LIVE' : 'IDLE'}
+            <span className="status-pill-sm neutral">
+              Batch target: {batchSize} jobs
             </span>
           </div>
 
-          <div className="viewport-body">
-            {screenshot ? (
-              <div className="viewport-shot-wrap">
-                <img
-                  className="viewport-shot"
-                  src={screenshot.dataUrl}
-                  alt={screenshot.caption}
-                />
-                <div className="viewport-caption">{screenshot.caption}</div>
-              </div>
-            ) : (
-              <div className="viewport-idle">
-                <div className="viewport-idle-mark">
-                  <svg
-                    width="24"
-                    height="24"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.7"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <rect x="2" y="4" width="20" height="14" rx="2.5" />
-                    <line x1="2" y1="9" x2="22" y2="9" />
-                    <line x1="8" y1="22" x2="16" y2="22" />
-                    <line x1="12" y1="18" x2="12" y2="22" />
-                  </svg>
-                </div>
-                <p className="viewport-idle-title">
-                  {isRunning
-                    ? 'Opening first job posting…'
-                    : 'Live Browser Viewport'}
-                </p>
-                <p className="viewport-idle-body">
-                  {isRunning
-                    ? 'Each page the agent opens in Chrome is captured and mirrored here automatically.'
-                    : 'When a run starts, real screenshots of each job posting, form, and confirmation receipt appear in this dark viewport.'}
-                </p>
-              </div>
-            )}
-
-            {/* NEEDS YOU MODAL WITH 10:00 SVG COUNTDOWN RING */}
-            {attention && (
+          {/* Determinate Run Progress Bar */}
+          <div className="live-run-progress-wrap">
+            <div className="live-run-progress-labels">
+              <span>Run progress</span>
+              <span>
+                {currentJobEntry?.jobIndex && currentJobEntry?.totalJobs
+                  ? `Job ${currentJobEntry.jobIndex} of ${currentJobEntry.totalJobs} (${progressPct}%)`
+                  : isRunning
+                    ? `${progressPct}%`
+                    : 'Waiting to start'}
+              </span>
+            </div>
+            <div className="live-run-progress-track">
               <div
-                className="needs-you-overlay"
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby="needs-you-title"
-              >
-                <div className="needs-you-card">
-                  <div className="needs-you-header">
-                    <div>
-                      <span className="needs-you-eyebrow">NEEDS YOU</span>
-                      <h4 id="needs-you-title" className="needs-you-title">
-                        {attention.title}
-                      </h4>
-                      {(attention.jobTitle || attention.company) && (
-                        <div className="needs-you-sub">
-                          {[attention.jobTitle, attention.company]
+                className="live-run-progress-fill"
+                style={{
+                  width: `${
+                    isRunning || entries.length ? Math.max(6, progressPct) : 0
+                  }%`,
+                }}
+              />
+            </div>
+          </div>
+
+          {/* Middle Split: 6-Step Pipeline + Current Job Card + Activity Stream */}
+          <div className="live-run-middle-grid">
+            {/* 6-Step Vertical Stepper */}
+            <div className="live-run-stepper" aria-label="Application stages">
+              {PIPELINE_STEPS.map((step, idx) => {
+                const done =
+                  activePipelineIdx > idx ||
+                  (!isRunning &&
+                    entries.length > 0 &&
+                    activeEntry?.phase === 'completed');
+                const current = isRunning && activePipelineIdx === idx;
+                return (
+                  <div
+                    key={step.key}
+                    className={`pipeline-step-row ${
+                      done ? 'done' : current ? 'current' : 'upcoming'
+                    }`}
+                  >
+                    <span className="pipeline-step-indicator">
+                      {done ? '✓' : idx + 1}
+                    </span>
+                    <span className="pipeline-step-label">{step.label}</span>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Current Job Card + Scrollable Activity Log */}
+            <div className="live-run-center-col">
+              {currentJobEntry &&
+                (currentJobEntry.jobTitle || currentJobEntry.company) && (
+                  <div className="current-job-spotlight">
+                    <div className="current-job-spotlight-top">
+                      <div className="current-job-badge">
+                        {(currentJobEntry.company || 'JOB')
+                          .slice(0, 4)
+                          .toUpperCase()}
+                      </div>
+                      <div className="current-job-meta">
+                        <div className="current-job-title">
+                          {currentJobEntry.jobTitle || 'Active Posting'}
+                        </div>
+                        <div className="current-job-sub">
+                          {[
+                            currentJobEntry.company,
+                            currentJobEntry.location
+                              ? formatLocationZA(currentJobEntry.location)
+                              : null,
+                            currentJobEntry.salary,
+                          ]
                             .filter(Boolean)
                             .join(' · ')}
                         </div>
+                      </div>
+                      {currentJobEntry.matchScore != null && (
+                        <span className="current-job-score">
+                          {currentJobEntry.matchScore}% Match
+                        </span>
                       )}
                     </div>
+                    <div className="current-job-status-line">
+                      {activeEntry?.label || 'Processing posting…'}
+                    </div>
+                  </div>
+                )}
 
-                    {/* 10:00 SVG Countdown Ring */}
+              <div
+                className="matrix-log-scroll"
+                ref={scrollRef}
+                onScroll={handleScroll}
+                aria-live="polite"
+              >
+                {entries.length === 0 ? (
+                  <div className="matrix-empty">
+                    <p className="matrix-empty-title">No active run right now</p>
+                    <p className="matrix-empty-body">
+                      {profiles.length === 0
+                        ? 'Add a search profile on the FMSG website, then click Refresh in Profiles.'
+                        : `Discover live postings for ${profileTitle}, tailor your CV highlights, and watch Chrome fill applications in real time.`}
+                    </p>
+                    {onOpenLaunchModal && (
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        style={{ marginTop: 12 }}
+                        onClick={onOpenLaunchModal}
+                      >
+                        Configure &amp; Start Run
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  entries.map((entry) => (
                     <div
-                      className="needs-you-ring-wrap"
-                      title="When the timer hits 00:00, this posting is skipped safely (never auto-submitted)"
+                      key={entry.id}
+                      className={`matrix-log-row ${entry.status} ${
+                        entry.id === activeEntry?.id ? 'current' : ''
+                      }`}
                     >
-                      <svg width="68" height="68" viewBox="0 0 68 68">
-                        <circle
-                          cx="34"
-                          cy="34"
-                          r={ringRadius}
-                          fill="none"
-                          stroke="rgba(148, 163, 184, 0.18)"
-                          strokeWidth="4.5"
-                        />
-                        <circle
-                          cx="34"
-                          cy="34"
-                          r={ringRadius}
-                          fill="none"
-                          stroke={secondsLeft < 60 ? '#ef4444' : '#203eea'}
-                          strokeWidth="4.5"
-                          strokeLinecap="round"
-                          strokeDasharray={ringCircumference}
-                          strokeDashoffset={ringOffset}
-                          transform="rotate(-90 34 34)"
-                        />
-                      </svg>
-                      <div className="needs-you-ring-text">
-                        <strong>{formatCountdown(secondsLeft)}</strong>
-                        <span>to skip</span>
+                      <span className={`matrix-dot ${entry.status}`} />
+                      <div className="matrix-log-body">
+                        <div className="matrix-log-text">{entry.label}</div>
+                        {entry.sublabel && (
+                          <div className="matrix-log-sub">{entry.sublabel}</div>
+                        )}
+                        {(entry.company || entry.jobTitle) && (
+                          <div className="matrix-log-tags">
+                            {entry.jobTitle && <span>{entry.jobTitle}</span>}
+                            {entry.company && <span>{entry.company}</span>}
+                            {entry.location && (
+                              <span>{formatLocationZA(entry.location)}</span>
+                            )}
+                            {entry.matchScore != null && (
+                              <span className="matrix-score">
+                                {entry.matchScore}% match
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      <span className="matrix-log-time">
+                        {entry.jobIndex && entry.totalJobs
+                          ? `${entry.jobIndex}/${entry.totalJobs}`
+                          : entry.timestamp}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Bottom Run Controls */}
+          <div className="agent-action-row">
+            {isRunning ? (
+              <div className="live-run-control-group">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={isPaused ? onResumeAgent : onPauseAgent}
+                >
+                  {isPaused ? 'Resume Run' : 'Pause Run'}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={onStopAgent}
+                >
+                  Stop Run
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-danger"
+                  onClick={onEmergencyStopAgent || onStopAgent}
+                >
+                  Emergency Stop
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className="btn btn-primary agent-primary-action"
+                onClick={onOpenLaunchModal}
+              >
+                Start Applying ({batchSize} jobs)
+              </button>
+            )}
+            <span className="agent-action-hint">
+              {isPaused
+                ? 'Paused — click Resume Run to continue from this posting'
+                : isRunning
+                  ? activeEntry?.label || 'Working in visible Chrome window…'
+                  : 'Opens a visible Chrome window on your PC'}
+            </span>
+          </div>
+        </section>
+
+        {/* RIGHT: Real Browser Preview Monitor (Dark Windows-Native Bezel) */}
+        <section className="live-viewport-column">
+          <div className="live-viewport-monitor">
+            <div className="viewport-browser-bar">
+              <span className="viewport-window-icon" aria-hidden="true">
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <rect x="2" y="4" width="20" height="16" rx="2" />
+                  <line x1="2" y1="9" x2="22" y2="9" />
+                </svg>
+              </span>
+              <div className="viewport-url-pill">
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="#94a3b8"
+                  strokeWidth="2.2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <rect x="3" y="11" width="18" height="11" rx="2" />
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                </svg>
+                <span>
+                  {screenshot?.host
+                    ? `https://${screenshot.host}`
+                    : 'Chrome Automation Preview'}
+                </span>
+              </div>
+              <span
+                className={`viewport-live-badge ${
+                  isPaused ? 'paused' : isRunning ? 'live' : 'idle'
+                }`}
+              >
+                {isPaused ? 'Paused' : isRunning ? 'Live' : 'Standby'}
+              </span>
+            </div>
+
+            <div className="viewport-body">
+              {screenshot ? (
+                <div className="viewport-shot-wrap">
+                  <img
+                    className="viewport-shot"
+                    src={screenshot.dataUrl}
+                    alt={screenshot.caption}
+                  />
+                  <div className="viewport-caption">{screenshot.caption}</div>
+                </div>
+              ) : (
+                <div className="viewport-idle">
+                  <div className="viewport-idle-mark" aria-hidden="true">
+                    <svg
+                      width="24"
+                      height="24"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.7"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <rect x="2" y="4" width="20" height="14" rx="2.5" />
+                      <line x1="2" y1="9" x2="22" y2="9" />
+                      <line x1="8" y1="22" x2="16" y2="22" />
+                      <line x1="12" y1="18" x2="12" y2="22" />
+                    </svg>
+                  </div>
+                  <p className="viewport-idle-title">
+                    {isRunning
+                      ? 'Opening first job posting…'
+                      : 'Live Browser Preview'}
+                  </p>
+                  <p className="viewport-idle-body">
+                    {isRunning
+                      ? 'Each page the agent opens in Chrome is captured and mirrored here automatically.'
+                      : 'When a run starts, real screenshots of each job posting, form, and confirmation receipt appear here.'}
+                  </p>
+                </div>
+              )}
+
+              {/* NEEDS YOU MODAL WITH 10:00 SVG COUNTDOWN RING */}
+              {attention && (
+                <div
+                  className="needs-you-overlay"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="needs-you-title"
+                >
+                  <div className="needs-you-card">
+                    <div className="needs-you-header">
+                      <div>
+                        <span className="needs-you-eyebrow">NEEDS YOU</span>
+                        <h4 id="needs-you-title" className="needs-you-title">
+                          {attention.title}
+                        </h4>
+                        {(attention.jobTitle || attention.company) && (
+                          <div className="needs-you-sub">
+                            {[attention.jobTitle, attention.company]
+                              .filter(Boolean)
+                              .join(' · ')}
+                          </div>
+                        )}
+                      </div>
+
+                      <div
+                        className="needs-you-ring-wrap"
+                        title="When the timer hits 00:00, this posting is skipped safely (never auto-submitted)"
+                      >
+                        <svg width="68" height="68" viewBox="0 0 68 68">
+                          <circle
+                            cx="34"
+                            cy="34"
+                            r={ringRadius}
+                            fill="none"
+                            stroke="rgba(148, 163, 184, 0.18)"
+                            strokeWidth="4.5"
+                          />
+                          <circle
+                            cx="34"
+                            cy="34"
+                            r={ringRadius}
+                            fill="none"
+                            stroke={secondsLeft < 60 ? '#ef4444' : '#203eea'}
+                            strokeWidth="4.5"
+                            strokeLinecap="round"
+                            strokeDasharray={ringCircumference}
+                            strokeDashoffset={ringOffset}
+                            transform="rotate(-90 34 34)"
+                          />
+                        </svg>
+                        <div className="needs-you-ring-text">
+                          <strong>{formatCountdown(secondsLeft)}</strong>
+                          <span>to skip</span>
+                        </div>
                       </div>
                     </div>
-                  </div>
 
-                  <p className="needs-you-message">{attention.message}</p>
+                    <p className="needs-you-message">{attention.message}</p>
 
-                  {/* Optional Local Credential Manager Save on Login Walls */}
-                  {attention.kind === 'login' && attention.allowedDomain && (
-                    <div className="needs-you-vault-box">
-                      <label className="checkbox-label" style={{ fontSize: '11.5px' }}>
-                        <input
-                          type="checkbox"
-                          checked={saveToVault}
-                          onChange={(e) => setSaveToVault(e.target.checked)}
-                        />
-                        <span>
-                          Save <strong>{attention.secretKeyName}</strong> in local
-                          Windows Credential Manager for{' '}
-                          <strong>{attention.allowedDomain}</strong> (never sent to
-                          AI or server)
-                        </span>
-                      </label>
-
-                      {saveToVault && (
-                        <div className="needs-you-vault-inputs">
+                    {attention.kind === 'login' && attention.allowedDomain && (
+                      <div className="needs-you-vault-box">
+                        <label className="checkbox-label">
                           <input
-                            type="text"
-                            className="field-input"
-                            placeholder={`Email / username for ${attention.allowedDomain}`}
-                            value={vaultUser}
-                            onChange={(e) => setVaultUser(e.target.value)}
+                            type="checkbox"
+                            className="styled-checkbox"
+                            checked={saveToVault}
+                            onChange={(e) => setSaveToVault(e.target.checked)}
                           />
-                          <input
-                            type="password"
-                            className="field-input"
-                            placeholder={`Password (${attention.secretKeyName})`}
-                            value={vaultPass}
-                            onChange={(e) => setVaultPass(e.target.value)}
-                          />
-                        </div>
-                      )}
+                          <span>
+                            Save sign-in securely on this PC for{' '}
+                            <strong>{attention.allowedDomain}</strong> (never
+                            sent to AI or external servers)
+                          </span>
+                        </label>
+
+                        {saveToVault && (
+                          <div className="needs-you-vault-inputs">
+                            <input
+                              type="text"
+                              className="field-input"
+                              aria-label={`Email or username for ${attention.allowedDomain}`}
+                              placeholder={`Email / username for ${attention.allowedDomain}`}
+                              value={vaultUser}
+                              onChange={(e) => setVaultUser(e.target.value)}
+                            />
+                            <input
+                              type="password"
+                              className="field-input"
+                              aria-label={`Password for ${attention.allowedDomain}`}
+                              placeholder={`Password for ${attention.allowedDomain} (encrypted locally)`}
+                              value={vaultPass}
+                              onChange={(e) => setVaultPass(e.target.value)}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="needs-you-actions">
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        disabled={savingVault}
+                        onClick={() => answerAttention('continue')}
+                      >
+                        {savingVault
+                          ? 'Saving & Continuing…'
+                          : 'Save and Continue'}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        disabled={savingVault}
+                        onClick={() => answerAttention('skip')}
+                      >
+                        Skip This Job
+                      </button>
                     </div>
-                  )}
-
-                  <div className="needs-you-actions">
-                    <button
-                      type="button"
-                      className="btn btn-primary"
-                      disabled={savingVault}
-                      onClick={() => answerAttention('continue')}
-                    >
-                      {savingVault ? 'Saving & Continuing…' : 'Save and Continue'}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-secondary"
-                      disabled={savingVault}
-                      onClick={() => answerAttention('skip')}
-                    >
-                      Skip This Job
-                    </button>
                   </div>
                 </div>
-              </div>
+              )}
+            </div>
+          </div>
+
+          <div className="viewport-footer">
+            <span>
+              {activeEntry
+                ? `${PHASE_LABEL[activeEntry.phase] || 'Working'} · ${activeEntry.label}`
+                : 'Local Chrome automation · FMSG job discovery & CV tailoring'}
+            </span>
+            {screenshot && (
+              <button
+                type="button"
+                className="viewport-footer-link"
+                onClick={() => setScreenshot(null)}
+              >
+                Clear preview
+              </button>
             )}
           </div>
-        </div>
-
-        <div className="viewport-footer">
-          <span>
-            {activeEntry
-              ? `${PHASE_LABEL[activeEntry.phase] || 'Working'} · ${activeEntry.label}`
-              : 'Browser automation runs locally in Chrome; job search & AI ranking use FMSG'}
-          </span>
-          {screenshot && (
-            <button
-              type="button"
-              className="viewport-footer-link"
-              onClick={() => setScreenshot(null)}
-            >
-              Clear preview
-            </button>
-          )}
-        </div>
-      </section>
+        </section>
+      </div>
     </div>
   );
 }

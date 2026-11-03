@@ -14,7 +14,6 @@ interface LoginScreenProps {
 }
 
 export default function LoginScreen({
-  version,
   onAuthenticated,
 }: LoginScreenProps) {
   const { openLegalDocument, showToast } = useDialog();
@@ -25,7 +24,8 @@ export default function LoginScreen({
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [keepSignedIn, setKeepSignedIn] = useState(true);
+  // AU-01: Default to false so shared/demo machines never persist sessions silently
+  const [keepSignedIn, setKeepSignedIn] = useState(false);
 
   const [agreeTos, setAgreeTos] = useState(false);
   const [agreePrivacy, setAgreePrivacy] = useState(false);
@@ -58,12 +58,15 @@ export default function LoginScreen({
     clearErrors();
 
     const cleanEmail = email.trim();
+    const nextErrors: typeof fieldErrors = {};
     if (!cleanEmail) {
-      setFieldErrors({ email: 'Please enter your email address.' });
-      return;
+      nextErrors.email = 'Please enter your email address.';
     }
     if (!password) {
-      setFieldErrors({ password: 'Please enter your password.' });
+      nextErrors.password = 'Please enter your password.';
+    }
+    if (Object.keys(nextErrors).length > 0) {
+      setFieldErrors(nextErrors);
       return;
     }
 
@@ -116,40 +119,27 @@ export default function LoginScreen({
     const cleanSurname = surname.trim();
     const cleanEmail = email.trim();
 
+    // AU-09: Validate all fields simultaneously so the user sees every required correction at once
+    const nextErrors: typeof fieldErrors = {};
     if (!cleanName) {
-      setFieldErrors({ name: 'Please enter your name.' });
-      return;
+      nextErrors.name = 'Enter your first name.';
     }
     if (!cleanSurname) {
-      setFieldErrors({ surname: 'Please enter your surname.' });
-      return;
+      nextErrors.surname = 'Enter your surname.';
     }
-    if (!cleanEmail) {
-      setFieldErrors({ email: 'Please enter your email address.' });
-      return;
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      nextErrors.email = 'Enter a valid email address.';
     }
     if (!password || password.length < 8) {
-      setFieldErrors({
-        password: 'Password must be at least 8 characters long.',
-      });
-      return;
+      nextErrors.password = 'Password must be at least 8 characters long.';
     }
-    if (!agreeTos) {
-      setFieldErrors({
-        terms: 'You must agree to the Terms of Service.',
-      });
-      return;
+    if (!agreeTos || !agreePrivacy || !agreeAge) {
+      nextErrors.terms =
+        'Please accept the Terms of Service, Privacy Policy, and age confirmation to continue.';
     }
-    if (!agreePrivacy) {
-      setFieldErrors({
-        terms: 'You must agree to the Privacy Policy.',
-      });
-      return;
-    }
-    if (!agreeAge) {
-      setFieldErrors({
-        terms: 'You must confirm you are 18 or older.',
-      });
+
+    if (Object.keys(nextErrors).length > 0) {
+      setFieldErrors(nextErrors);
       return;
     }
 
@@ -247,7 +237,10 @@ export default function LoginScreen({
       const res = await window.electronAPI.resendConfirmation(targetEmail);
       setResending(false);
       if (res?.ok) {
-        showToast('Confirmation email sent. Please check your inbox.', 'success');
+        showToast(
+          'Confirmation email sent. Please check your inbox.',
+          'success'
+        );
       } else {
         showToast(
           res?.error || 'Could not resend email. Please try again shortly.',
@@ -260,20 +253,27 @@ export default function LoginScreen({
     }
   };
 
+  const errorCount = Object.keys(fieldErrors).filter(
+    (k) => Boolean((fieldErrors as any)[k])
+  ).length;
+
   return (
-    <div className="auth-viewport">
+    <main className="auth-viewport" aria-label="FMSG Agents sign in">
       <div className="auth-card">
-        {/* Logo & Title Block (32px bottom margin to toggle) */}
+        {/* Logo, Title & Value Proposition (AU-06) */}
         <div className="auth-title-block">
           <div className="auth-logo-mark" aria-hidden="true">
             FM
           </div>
           <h1 className="auth-title">FMSG Agents</h1>
+          <p className="auth-subtitle">
+            Automated South African job applications in your own browser
+          </p>
         </div>
 
-        {/* Segmented Toggle (30px bottom margin to first field) */}
+        {/* Segmented Toggle */}
         {(screen === 'login' || screen === 'signup') && (
-          <div className="segmented-toggle" role="tablist">
+          <div className="segmented-toggle" role="tablist" aria-label="Authentication mode">
             <button
               type="button"
               role="tab"
@@ -299,14 +299,36 @@ export default function LoginScreen({
           </div>
         )}
 
-        {/* General Banner Error */}
+        {/* General Error Banner with Recovery Action (AU-02, LS-04) */}
         {fieldErrors.general && (
           <div
             className="form-banner error"
             role="alert"
-            style={{ marginBottom: '18px' }}
+            style={{ marginBottom: '14px' }}
           >
-            {fieldErrors.general}
+            <div>{fieldErrors.general}</div>
+            {screen === 'login' && (
+              <button
+                type="button"
+                className="link-btn"
+                style={{ marginTop: 4 }}
+                onClick={() => switchScreen('forgot')}
+              >
+                Forgot your password? Reset it here →
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Multi-Field Validation Summary Banner (AU-09) */}
+        {!fieldErrors.general && errorCount > 1 && (
+          <div
+            className="form-banner error"
+            role="alert"
+            style={{ marginBottom: '12px' }}
+          >
+            Please correct the {errorCount} highlighted fields below to
+            continue.
           </div>
         )}
 
@@ -323,6 +345,10 @@ export default function LoginScreen({
                   name="email"
                   type="email"
                   autoComplete="email"
+                  aria-invalid={Boolean(fieldErrors.email)}
+                  aria-describedby={
+                    fieldErrors.email ? 'login-email-error' : undefined
+                  }
                   value={email}
                   onChange={(e) => {
                     setEmail(e.target.value);
@@ -336,7 +362,11 @@ export default function LoginScreen({
                 />
               </div>
               {fieldErrors.email && (
-                <div className="field-error-text" role="alert">
+                <div
+                  id="login-email-error"
+                  className="field-error-text"
+                  role="alert"
+                >
                   {fieldErrors.email}
                 </div>
               )}
@@ -352,6 +382,10 @@ export default function LoginScreen({
                   name="password"
                   type={showPassword ? 'text' : 'password'}
                   autoComplete="current-password"
+                  aria-invalid={Boolean(fieldErrors.password)}
+                  aria-describedby={
+                    fieldErrors.password ? 'login-password-error' : undefined
+                  }
                   value={password}
                   onChange={(e) => {
                     setPassword(e.target.value);
@@ -375,7 +409,11 @@ export default function LoginScreen({
                 </button>
               </div>
               {fieldErrors.password && (
-                <div className="field-error-text" role="alert">
+                <div
+                  id="login-password-error"
+                  className="field-error-text"
+                  role="alert"
+                >
                   {fieldErrors.password}
                 </div>
               )}
@@ -385,10 +423,11 @@ export default function LoginScreen({
               <label className="checkbox-label">
                 <input
                   type="checkbox"
+                  className="styled-checkbox"
                   checked={keepSignedIn}
                   onChange={(e) => setKeepSignedIn(e.target.checked)}
                 />
-                <span>Keep me signed in</span>
+                <span>Keep me signed in on this PC</span>
               </label>
 
               <button
@@ -405,37 +444,57 @@ export default function LoginScreen({
               disabled={loading}
               className="auth-submit-btn"
             >
-              {loading ? 'Signing in...' : 'Log In'}
+              {loading ? (
+                <>
+                  <span className="btn-spinner" aria-hidden="true" />
+                  Signing in…
+                </>
+              ) : (
+                'Log In'
+              )}
             </button>
           </form>
         )}
 
         {/* SCREEN: SIGN UP */}
         {screen === 'signup' && (
-          <form onSubmit={handleSignUpSubmit} className="auth-form" noValidate>
+          <form
+            onSubmit={handleSignUpSubmit}
+            className="auth-form auth-form-compact"
+            noValidate
+          >
             <div className="auth-row-two">
               <div className="form-group">
                 <label htmlFor="signup-name" className="field-label">
-                  Name
+                  First name
                 </label>
                 <input
                   id="signup-name"
                   name="given-name"
                   type="text"
                   autoComplete="given-name"
+                  aria-invalid={Boolean(fieldErrors.name)}
+                  aria-describedby={
+                    fieldErrors.name ? 'signup-name-error' : undefined
+                  }
                   value={name}
                   onChange={(e) => {
                     setName(e.target.value);
-                    if (fieldErrors.name) clearErrors();
+                    if (fieldErrors.name)
+                      setFieldErrors((p) => ({ ...p, name: undefined }));
                   }}
-                  placeholder="Your name"
+                  placeholder="First name"
                   className={`field-input ${
                     fieldErrors.name ? 'has-error' : ''
                   }`}
                   required
                 />
                 {fieldErrors.name && (
-                  <div className="field-error-text" role="alert">
+                  <div
+                    id="signup-name-error"
+                    className="field-error-text"
+                    role="alert"
+                  >
                     {fieldErrors.name}
                   </div>
                 )}
@@ -450,19 +509,28 @@ export default function LoginScreen({
                   name="family-name"
                   type="text"
                   autoComplete="family-name"
+                  aria-invalid={Boolean(fieldErrors.surname)}
+                  aria-describedby={
+                    fieldErrors.surname ? 'signup-surname-error' : undefined
+                  }
                   value={surname}
                   onChange={(e) => {
                     setSurname(e.target.value);
-                    if (fieldErrors.surname) clearErrors();
+                    if (fieldErrors.surname)
+                      setFieldErrors((p) => ({ ...p, surname: undefined }));
                   }}
-                  placeholder="Your surname"
+                  placeholder="Surname"
                   className={`field-input ${
                     fieldErrors.surname ? 'has-error' : ''
                   }`}
                   required
                 />
                 {fieldErrors.surname && (
-                  <div className="field-error-text" role="alert">
+                  <div
+                    id="signup-surname-error"
+                    className="field-error-text"
+                    role="alert"
+                  >
                     {fieldErrors.surname}
                   </div>
                 )}
@@ -478,10 +546,15 @@ export default function LoginScreen({
                 name="email"
                 type="email"
                 autoComplete="email"
+                aria-invalid={Boolean(fieldErrors.email)}
+                aria-describedby={
+                  fieldErrors.email ? 'signup-email-error' : undefined
+                }
                 value={email}
                 onChange={(e) => {
                   setEmail(e.target.value);
-                  if (fieldErrors.email) clearErrors();
+                  if (fieldErrors.email)
+                    setFieldErrors((p) => ({ ...p, email: undefined }));
                 }}
                 placeholder="you@example.com"
                 className={`field-input ${
@@ -490,16 +563,32 @@ export default function LoginScreen({
                 required
               />
               {fieldErrors.email && (
-                <div className="field-error-text" role="alert">
+                <div
+                  id="signup-email-error"
+                  className="field-error-text"
+                  role="alert"
+                >
                   {fieldErrors.email}
                 </div>
               )}
             </div>
 
             <div className="form-group">
-              <label htmlFor="signup-password" className="field-label">
-                Password
-              </label>
+              <div className="field-label-row">
+                <label htmlFor="signup-password" className="field-label">
+                  Password
+                </label>
+                <span
+                  id="signup-password-hint"
+                  className={`field-hint ${
+                    password.length >= 8 ? 'valid' : ''
+                  }`}
+                >
+                  {password.length >= 8
+                    ? '8+ characters ✓'
+                    : 'Minimum 8 characters'}
+                </span>
+              </div>
               <div className="field-input-wrap">
                 <input
                   id="signup-password"
@@ -507,12 +596,15 @@ export default function LoginScreen({
                   type={showPassword ? 'text' : 'password'}
                   autoComplete="new-password"
                   minLength={8}
+                  aria-invalid={Boolean(fieldErrors.password)}
+                  aria-describedby="signup-password-hint"
                   value={password}
                   onChange={(e) => {
                     setPassword(e.target.value);
-                    if (fieldErrors.password) clearErrors();
+                    if (fieldErrors.password)
+                      setFieldErrors((p) => ({ ...p, password: undefined }));
                   }}
-                  placeholder="At least 8 characters"
+                  placeholder="Create a password (8+ characters)"
                   className={`field-input ${
                     fieldErrors.password ? 'has-error' : ''
                   }`}
@@ -535,21 +627,16 @@ export default function LoginScreen({
               )}
             </div>
 
-            <div
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '10px',
-                marginTop: '2px',
-              }}
-            >
+            <div className="auth-consent-stack">
               <label className="checkbox-label">
                 <input
                   type="checkbox"
+                  className="styled-checkbox"
                   checked={agreeTos}
                   onChange={(e) => {
                     setAgreeTos(e.target.checked);
-                    if (fieldErrors.terms) clearErrors();
+                    if (fieldErrors.terms)
+                      setFieldErrors((p) => ({ ...p, terms: undefined }));
                   }}
                 />
                 <span>
@@ -557,7 +644,11 @@ export default function LoginScreen({
                   <button
                     type="button"
                     className="link-btn"
-                    onClick={() => openLegalDocument('terms')}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      openLegalDocument('terms');
+                    }}
                   >
                     Terms of Service
                   </button>
@@ -567,10 +658,12 @@ export default function LoginScreen({
               <label className="checkbox-label">
                 <input
                   type="checkbox"
+                  className="styled-checkbox"
                   checked={agreePrivacy}
                   onChange={(e) => {
                     setAgreePrivacy(e.target.checked);
-                    if (fieldErrors.terms) clearErrors();
+                    if (fieldErrors.terms)
+                      setFieldErrors((p) => ({ ...p, terms: undefined }));
                   }}
                 />
                 <span>
@@ -578,7 +671,11 @@ export default function LoginScreen({
                   <button
                     type="button"
                     className="link-btn"
-                    onClick={() => openLegalDocument('privacy')}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      openLegalDocument('privacy');
+                    }}
                   >
                     Privacy Policy
                   </button>
@@ -588,10 +685,12 @@ export default function LoginScreen({
               <label className="checkbox-label">
                 <input
                   type="checkbox"
+                  className="styled-checkbox"
                   checked={agreeAge}
                   onChange={(e) => {
                     setAgreeAge(e.target.checked);
-                    if (fieldErrors.terms) clearErrors();
+                    if (fieldErrors.terms)
+                      setFieldErrors((p) => ({ ...p, terms: undefined }));
                   }}
                 />
                 <span>I confirm that I am 18 years or older</span>
@@ -609,24 +708,28 @@ export default function LoginScreen({
               disabled={loading}
               className="auth-submit-btn"
             >
-              {loading ? 'Creating account...' : 'Create Account'}
+              {loading ? (
+                <>
+                  <span className="btn-spinner" aria-hidden="true" />
+                  Creating account…
+                </>
+              ) : (
+                'Create Account'
+              )}
             </button>
           </form>
         )}
 
-        {/* SCREEN: FORGOT PASSWORD */}
+        {/* SCREEN: FORGOT PASSWORD (AU-15, AU-16, AU-17) */}
         {screen === 'forgot' && (
           <form onSubmit={handleForgotSubmit} className="auth-form" noValidate>
-            <p
-              style={{
-                margin: '0 0 6px 0',
-                fontSize: '13.5px',
-                color: 'var(--text-secondary)',
-                textAlign: 'center',
-              }}
-            >
-              Enter your email and we will send you a password reset link.
-            </p>
+            <div style={{ marginBottom: '4px' }}>
+              <h2 className="auth-section-heading">Reset your password</h2>
+              <p className="auth-section-copy">
+                Enter the email address linked to your FMSG account and we will
+                send a password reset link.
+              </p>
+            </div>
 
             <div className="form-group">
               <label htmlFor="forgot-email" className="field-label">
@@ -640,7 +743,7 @@ export default function LoginScreen({
                 value={email}
                 onChange={(e) => {
                   setEmail(e.target.value);
-                  if (fieldErrors.email) clearErrors();
+                  if (fieldErrors.email || fieldErrors.general) clearErrors();
                 }}
                 placeholder="you@example.com"
                 className={`field-input ${
@@ -660,52 +763,39 @@ export default function LoginScreen({
               disabled={loading}
               className="auth-submit-btn"
             >
-              {loading ? 'Sending...' : 'Send Reset Link'}
+              {loading ? (
+                <>
+                  <span className="btn-spinner" aria-hidden="true" />
+                  Sending link…
+                </>
+              ) : (
+                'Send Reset Link'
+              )}
             </button>
 
-            <div style={{ textAlign: 'center', marginTop: '8px' }}>
-              <button
-                type="button"
-                className="link-btn"
-                onClick={() => switchScreen('login')}
-              >
-                Back to Log In
-              </button>
-            </div>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              style={{ width: '100%' }}
+              onClick={() => switchScreen('login')}
+            >
+              ← Back to Log In
+            </button>
           </form>
         )}
 
         {/* SCREEN: FORGOT PASSWORD SENT */}
         {screen === 'forgot-sent' && (
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              gap: '16px',
-              textAlign: 'center',
-            }}
-          >
-            <p
-              style={{
-                margin: 0,
-                fontSize: '14px',
-                color: 'var(--text-secondary)',
-                lineHeight: 1.5,
-              }}
-            >
-              Check your email. We sent a password reset link to
+          <div className="auth-form" style={{ textAlign: 'center' }}>
+            <h2 className="auth-section-heading">Check your email</h2>
+            <p className="auth-section-copy">
+              We sent a password reset link to{' '}
+              <strong style={{ color: 'var(--text-primary)' }}>
+                {pendingEmail || email}
+              </strong>
+              . Follow the link in that email, then return here to sign in.
             </p>
-            <p
-              style={{
-                margin: 0,
-                fontSize: '14.5px',
-                fontWeight: 'var(--font-weight-semibold)',
-                color: 'var(--text-primary)',
-              }}
-            >
-              {pendingEmail}
-            </p>
+
             <button
               type="button"
               className="auth-submit-btn"
@@ -716,55 +806,31 @@ export default function LoginScreen({
           </div>
         )}
 
-        {/* SCREEN: CHECK EMAIL (Unconfirmed Email State) */}
+        {/* SCREEN: CHECK EMAIL FOR CONFIRMATION */}
         {screen === 'check-email' && (
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              gap: '16px',
-              textAlign: 'center',
-            }}
-          >
-            <h2
-              style={{
-                margin: 0,
-                fontSize: '18px',
-                fontWeight: 'var(--font-weight-bold)',
-                color: 'var(--text-primary)',
-              }}
-            >
-              Check your email
-            </h2>
-            <p
-              style={{
-                margin: 0,
-                fontSize: '13.5px',
-                color: 'var(--text-secondary)',
-                lineHeight: 1.55,
-              }}
-            >
-              We sent a confirmation link to{' '}
+          <div className="auth-form" style={{ textAlign: 'center' }}>
+            <h2 className="auth-section-heading">Confirm your email</h2>
+            <p className="auth-section-copy">
+              Please confirm your email address at{' '}
               <strong style={{ color: 'var(--text-primary)' }}>
                 {pendingEmail || email}
-              </strong>
-              . Confirm your email address in your inbox, then sign in below.
+              </strong>{' '}
+              to activate your account.
             </p>
+
+            <button
+              type="button"
+              disabled={resending}
+              className="auth-submit-btn"
+              onClick={handleResendConfirmation}
+            >
+              {resending ? 'Sending…' : 'Resend Confirmation Email'}
+            </button>
 
             <button
               type="button"
               className="btn btn-secondary"
-              style={{ width: '100%', height: '48px' }}
-              disabled={resending}
-              onClick={handleResendConfirmation}
-            >
-              {resending ? 'Sending...' : 'Resend Confirmation Email'}
-            </button>
-
-            <button
-              type="button"
-              className="auth-submit-btn"
+              style={{ width: '100%' }}
               onClick={() => switchScreen('login')}
             >
               Back to Log In
@@ -772,25 +838,26 @@ export default function LoginScreen({
           </div>
         )}
 
-        {/* Footer line (28px below button) */}
-        <div className="auth-footer">
-          No account?{' '}
-          <button
-            type="button"
-            className="link-btn"
-            onClick={() =>
-              window.electronAPI?.openExternalUrl(
-                'https://findmesomejobs.co.za'
-              )
-            }
-          >
-            Sign up on FMSG
-          </button>
-        </div>
-
-        {/* Muted version tag at bottom */}
-        <div className="auth-version-tag">v{version.replace(/^v/i, '')}</div>
+        {/* Single Clear Footer Note (AU-04, AU-07) */}
+        {(screen === 'login' || screen === 'signup') && (
+          <div className="auth-footer">
+            <span className="text-muted">
+              Manage CVs and search profiles at{' '}
+              <button
+                type="button"
+                className="link-btn"
+                onClick={() =>
+                  window.electronAPI?.openExternalUrl(
+                    'https://www.findmesomejobs.co.za/dashboard'
+                  )
+                }
+              >
+                findmesomejobs.co.za ↗
+              </button>
+            </span>
+          </div>
+        )}
       </div>
-    </div>
+    </main>
   );
 }

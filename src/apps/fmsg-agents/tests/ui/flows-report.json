@@ -1,0 +1,111 @@
+{
+  "timestamp": "2026-11-03T11:08:50.595Z",
+  "total": 22,
+  "failed": 0,
+  "results": [
+    {
+      "name": "Home has exactly one H1",
+      "pass": true,
+      "detail": "Put your job search on autopilot"
+    },
+    {
+      "name": "Run page has an H1",
+      "pass": true
+    },
+    {
+      "name": "Applications page has an H1",
+      "pass": true
+    },
+    {
+      "name": "Review page has a stable H1",
+      "pass": true,
+      "detail": "Review Queue"
+    },
+    {
+      "name": "Profiles page has an H1",
+      "pass": true
+    },
+    {
+      "name": "Billing page has an H1",
+      "pass": true
+    },
+    {
+      "name": "Settings page has an H1",
+      "pass": true
+    },
+    {
+      "name": "Account page has an H1",
+      "pass": true
+    },
+    {
+      "name": "Approve clears the item from the queue (RV-01)",
+      "pass": true,
+      "detail": "3 -> 2"
+    },
+    {
+      "name": "Approve opens the employer posting (RV-01)",
+      "pass": true,
+      "detail": "1 url(s) opened"
+    },
+    {
+      "name": "Approved record persists in Applications (RV-01)",
+      "pass": true,
+      "detail": "1 approved row(s)"
+    },
+    {
+      "name": "Skip removes the item (RV-03)",
+      "pass": true,
+      "detail": "2 -> 1"
+    },
+    {
+      "name": "Skip offers an Undo action (RV-03/DL-03)",
+      "pass": true,
+      "detail": "1 undo button(s)"
+    },
+    {
+      "name": "Undo restores the skipped item (RV-03)",
+      "pass": true,
+      "detail": "1 -> 2"
+    },
+    {
+      "name": "Remove archives the row (AP-05)",
+      "pass": true,
+      "detail": "6 -> 5"
+    },
+    {
+      "name": "Undo restores the removed row (AP-05)",
+      "pass": true,
+      "detail": "5 -> 6"
+    },
+    {
+      "name": "Company column sorts (AP-01)",
+      "pass": true,
+      "detail": "Deloitte -> Takealot"
+    },
+    {
+      "name": "Search filters and clear restores rows (AP-08)",
+      "pass": true,
+      "detail": "noMatch=1, restored=6"
+    },
+    {
+      "name": "Terms renders structured headings (ST-11)",
+      "pass": true,
+      "detail": "headings=8, paragraphs=17, rawDashes=false"
+    },
+    {
+      "name": "Terms shows the current app version (ST-12)",
+      "pass": true,
+      "detail": "TERMS OF SERVICEFMSG AGENTS DESKTOP APPLICATIONVERSION 0.7.2 - EFFECTIVE 2026-11-03PROVIDER: FMSG (FIND ME SOME JOBS)1. AGREEMENT TO TERMS1.1 By installing, accessing, or using the FMSG Agents desktop application (\"Application\"), You (\"User\", \"You\") agree to be bound by these Terms of Service (\"Terms\"), together with our End User License Agreement and Privacy Policy. If You do not agree, do not in"
+    },
+    {
+      "name": "Notifications never show a stale version (NT-01)",
+      "pass": true,
+      "detail": "Notifications Clear all Close You're on FMSG Agents v0.7.2 1"
+    },
+    {
+      "name": "Opening notifications clears the unread badge (NT-03)",
+      "pass": true,
+      "detail": "0 badge(s)"
+    }
+  ]
+}
